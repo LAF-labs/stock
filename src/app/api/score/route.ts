@@ -1,0 +1,58 @@
+import { NextRequest, NextResponse } from "next/server";
+import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { cleanView, getStockScore, normalizeTickerRef, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export async function GET(request: NextRequest) {
+  const ticker = normalizeTickerRef(request.nextUrl.searchParams.get("ticker"));
+  const view = cleanView(request.nextUrl.searchParams.get("view"));
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
+  const cooldown = forceRefresh ? await acquireRefreshCooldown(request) : undefined;
+
+  if (cooldown?.blocked) {
+    const response = NextResponse.json(
+      {
+        ok: false,
+        error: "refresh_cooldown",
+        message: "Manual refresh is cooling down.",
+        refresh_cooldown: cooldownPayload(cooldown.nextAllowedAt),
+      },
+      { status: 429, headers: privateNoStoreHeaders() }
+    );
+    applyRefreshUserCookie(response, cooldown);
+    return response;
+  }
+
+  try {
+    const result = await getStockScore(ticker, view, { forceRefresh });
+    const payload = forceRefresh
+      ? {
+          ...result.payload,
+          refresh_cooldown: cooldownPayload(cooldown?.nextAllowedAt),
+        }
+      : result.payload;
+    const response = NextResponse.json(
+      payload,
+      {
+        status: statusFromPayload(result.payload),
+        headers: forceRefresh ? privateNoStoreHeaders() : responseCacheHeaders(result),
+      }
+    );
+    if (cooldown) applyRefreshUserCookie(response, cooldown);
+    return response;
+  } catch (error) {
+    console.warn("stock_collector_unreachable", { ticker, view, error: error instanceof Error ? error.message : "unknown" });
+    const response = NextResponse.json(
+      {
+        ok: false,
+        error: "collector_unreachable",
+        message: "Stock collector is unavailable.",
+      },
+      { status: 502, headers: privateNoStoreHeaders() }
+    );
+    if (cooldown) applyRefreshUserCookie(response, cooldown);
+    return response;
+  }
+}
