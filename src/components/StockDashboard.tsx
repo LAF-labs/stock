@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppTopbar, useThemePreference } from "@/components/AppChrome";
@@ -766,7 +766,7 @@ export default function StockDashboard() {
 
       {data && (
         <>
-          <DetailIndex sections={visibleDetailSections} activeSection={activeSection} onSelect={scrollToDetailSection} />
+          <DetailIndex sections={visibleDetailSections} activeSection={activeSection} onSelect={scrollToDetailSection} compareHref={`/compare?tickers=${encodeURIComponent(tickerParam)}`} />
           <div className="stock-feed">
             <DetailSection id="detail-summary">
               <StockHeader
@@ -877,10 +877,12 @@ function DetailIndex({
   sections,
   activeSection,
   onSelect,
+  compareHref,
 }: {
   sections: ReadonlyArray<{ id: DetailSectionId; label: string }>;
   activeSection: DetailSectionId;
   onSelect: (id: DetailSectionId) => void;
+  compareHref: string;
 }) {
   return (
     <nav className="stock-detail-index" aria-label="상세 화면 목차">
@@ -898,6 +900,9 @@ function DetailIndex({
           </button>
         ))}
       </div>
+      <a className="detail-index-compare" href={compareHref}>
+        비교하기
+      </a>
     </nav>
   );
 }
@@ -1011,18 +1016,8 @@ function StockHeader({
           <span>시가총액</span>
           <strong>{marketCap}</strong>
         </article>
-        <article className="score-panel">
-          <span>품질 점수</span>
-          <strong>{qualityScore.toFixed(1)}점</strong>
-          <p>
-            {signal} 신호 · 변동성 {risk}
-          </p>
-        </article>
-        <article className="score-panel opportunity-panel">
-          <span>기회 점수</span>
-          <strong>{opportunityScore === undefined ? "-" : `${opportunityScore.toFixed(1)}점`}</strong>
-          <p>성장, 목표가, 모멘텀, 유동성을 따로 봐요</p>
-        </article>
+        <HeroScorePanel label="품질 점수" value={qualityScore} caption={`${signal} 신호 · 변동성 ${risk}`} tone="quality" />
+        <HeroScorePanel label="기회 점수" value={opportunityScore} caption="성장, 목표가, 모멘텀, 유동성을 따로 봐요" tone="opportunity" />
       </div>
 
       <div className={`hero-verdict ${stockJudgment?.tone || "neutral"}`}>
@@ -1047,6 +1042,30 @@ function StockHeader({
         <strong>{symbol} 기준으로 보기</strong>
       </a>
     </section>
+  );
+}
+
+function HeroScorePanel({
+  label,
+  value,
+  caption,
+  tone,
+}: {
+  label: string;
+  value: number | undefined;
+  caption: string;
+  tone: "quality" | "opportunity";
+}) {
+  const score = typeof value === "number" && Number.isFinite(value) ? clampScore(value) : undefined;
+  return (
+    <article className={`score-panel hero-score-panel ${tone}`} style={{ "--score": `${score ?? 0}` } as CSSProperties}>
+      <i aria-hidden="true" />
+      <div>
+        <span>{label}</span>
+        <strong>{score === undefined ? "-" : `${score.toFixed(1)}점`}</strong>
+        <p>{caption}</p>
+      </div>
+    </article>
   );
 }
 

@@ -1030,16 +1030,47 @@ a:focus-visible {
   background: transparent;
 }
 
+.quick-read .hero-score-panel {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.hero-score-panel i {
+  width: 58px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, color-mix(in srgb, var(--surface) 92%, var(--bg)) 0 54%, transparent 55%),
+    conic-gradient(var(--accent) calc(var(--score) * 1%), color-mix(in srgb, var(--line) 72%, transparent) 0);
+}
+
+.hero-score-panel.opportunity i {
+  background:
+    radial-gradient(circle at center, color-mix(in srgb, var(--surface) 92%, var(--bg)) 0 54%, transparent 55%),
+    conic-gradient(var(--opportunity) calc(var(--score) * 1%), color-mix(in srgb, var(--line) 72%, transparent) 0);
+}
+
+.hero-score-panel > div {
+  min-width: 0;
+}
+
 .quick-read .score-panel strong {
   margin-top: 6px;
   color: var(--accent);
   font-size: 46px;
   line-height: 1;
   font-weight: 760;
+  white-space: nowrap;
 }
 
 .quick-read .opportunity-panel strong {
   color: #0f9f6e;
+}
+
+.quick-read .hero-score-panel.opportunity strong {
+  color: var(--opportunity);
 }
 
 .quick-read .score-panel p {
@@ -2685,6 +2716,26 @@ a:focus-visible {
     font-weight: 800;
   }
 
+  .detail-index-compare {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 850;
+    text-decoration: none;
+  }
+
+  .detail-index-compare:hover {
+    background: var(--accent-strong);
+  }
+
   .stock-detail-app .stock-search {
     top: 16px;
     margin-top: 16px;
@@ -2747,7 +2798,7 @@ a:focus-visible {
   }
 
   .stock-detail-app .quick-read {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 16px 20px;
     padding-top: 2px;
   }
@@ -2755,9 +2806,13 @@ a:focus-visible {
   .stock-detail-app .quick-read article,
   .stock-detail-app .quick-read article:nth-child(3),
   .stock-detail-app .quick-read .score-panel {
-    grid-column: auto;
+    grid-column: span 2;
     padding: 0;
     border-top: 0;
+  }
+
+  .stock-detail-app .quick-read .hero-score-panel {
+    grid-column: span 3;
   }
 
   .stock-detail-app .quick-read .score-panel strong {
