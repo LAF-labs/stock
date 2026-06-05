@@ -19,6 +19,7 @@ use crate::{
     jobs::MemoryRefreshQueue,
     market::{Market, ScoreView},
     provider::kis::KisQuoteProvider,
+    score::{ScoreEngineInput, compute_score},
     service::{MarketDataError, MarketDataErrorKind, MarketDataService, QuoteProvider},
 };
 
@@ -61,6 +62,12 @@ struct RefreshPayload {
     view: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ScoreComputePayload {
+    view: Option<String>,
+    input: ScoreEngineInput,
+}
+
 pub fn router(config: AppConfig) -> Router {
     let provider = KisQuoteProvider::from_config(&config);
     let service = MarketDataService::new(
@@ -81,6 +88,7 @@ where
         .route("/metrics", get(metrics))
         .route("/v1/quote/{market}/{symbol}", get(quote::<P>))
         .route("/v1/score/{market}/{symbol}", get(score::<P>))
+        .route("/v1/score/compute", post(score_compute::<P>))
         .route("/v1/refresh", post(refresh::<P>))
         .layer(TraceLayer::new_for_http())
         .with_state(AppState { config, service })
@@ -209,6 +217,44 @@ where
                 }),
             )
         }
+        Err(error) => service_error_response(error),
+    }
+}
+
+async fn score_compute<P>(
+    State(state): State<AppState<P>>,
+    headers: HeaderMap,
+    Json(payload): Json<ScoreComputePayload>,
+) -> Response<Body>
+where
+    P: QuoteProvider,
+{
+    if !has_internal_bearer(&headers, &state.config.internal_token) {
+        return unauthorized_response();
+    }
+
+    let view = match ScoreView::parse(payload.view.as_deref()) {
+        Ok(view) => view,
+        Err(error) => {
+            return service_error_response(MarketDataError::new(
+                MarketDataErrorKind::InvalidRequest,
+                error.to_string(),
+            ));
+        }
+    };
+
+    match compute_score(payload.input, view) {
+        Ok(output) => json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "data": output.payload,
+                "engine": {
+                    "name": "rust_score_engine",
+                    "view": view.as_str()
+                }
+            }),
+        ),
         Err(error) => service_error_response(error),
     }
 }

@@ -6,4 +6,5 @@ pub mod jobs;
 pub mod market;
 pub mod provider;
 pub mod rate_limit;
+pub mod score;
 pub mod service;
