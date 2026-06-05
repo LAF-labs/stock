@@ -7,13 +7,24 @@
   "name": "삼성전자",
   "exchange": "KOSPI",
   "currency": "KRW",
-  "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+  "score_model_version": "score-v5-dual-quality-opportunity-2026-06-05",
   "score": 68.7,
+  "quality_score": 68.7,
+  "quality_grade": {
+    "class": "watch",
+    "label": "관찰"
+  },
+  "opportunity_score": 63.2,
+  "opportunity_grade": {
+    "class": "normal",
+    "label": "보통"
+  },
+  "opportunity_confidence": 0.82,
   "grade": {
     "class": "watch",
     "label": "관찰"
   },
-  "summary": "삼성전자는 종합 점수 68.7/100점이에요.",
+  "summary": "삼성전자는 품질 점수 68.7/100점, 기회 점수 63.2/100점이에요.",
   "latest_price": 72000,
   "latest_bar_date": "2026-06-05",
   "evaluation_label": "2026-06-05 09:00:00 조회",
@@ -30,6 +41,21 @@
         {
           "label": "1개월 수익률",
           "value": "+3.20%"
+        }
+      ]
+    }
+  ],
+  "opportunity_components": [
+    {
+      "key": "opportunity_momentum",
+      "label": "기회 모멘텀",
+      "short": "모",
+      "score": 71.2,
+      "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
+      "metrics": [
+        {
+          "label": "신뢰도",
+          "value": "100.0%"
         }
       ]
     }
@@ -107,14 +133,17 @@
     "price": 72000,
     "raw_signal": "WATCH",
     "risk_level": "LOW",
-    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+    "score_model_version": "score-v5-dual-quality-opportunity-2026-06-05",
     "confidence": 1,
+    "quality_score": 0.687,
+    "opportunity_score": 0.632,
+    "opportunity_confidence": 0.82,
     "spot_score": 0.687,
     "signal_source": "market-data:domestic-stock"
   },
   "fetch": {
     "source": "market_data+yfinance_fundamentals",
-    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+    "score_model_version": "score-v5-dual-quality-opportunity-2026-06-05",
     "cache": "server",
     "fundamentals_symbol": "005930.KS"
   },

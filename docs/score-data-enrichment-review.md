@@ -23,10 +23,11 @@ No external code was copied.
 
 ## Implemented Now
 
-- Domestic score model version bumped to `score-v4-valuation-guardrails-2026-06-05`.
+- Score model version bumped to `score-v5-dual-quality-opportunity-2026-06-05`.
 - Domestic collector maps Korean symbols to `.KS`/`.KQ` yfinance symbols.
 - Domestic score now uses available margins, ROE fallback, revenue/earnings growth, operating cash flow margin, debt/equity, current/quick ratios, Forward PER, EV/Revenue, and Price/Sales.
 - V4 valuation guardrails reduce confidence and cap valuation for names with no Forward PER, weak profitability or cash flow, and expensive sales multiples.
+- V5 adds a separate opportunity score using target price, analyst count, recommendation mean, beta, momentum, liquidity, and risk caps without changing the meaning of the quality score.
 - Domestic payload exposes `financial_statement.yfinance_fundamentals` with source symbol, cache state, and raw cached fields.
 - Rust score engine now applies the same domestic enriched-factor weights when those inputs are supplied.
 - Rule-based judgment now explains Forward PER against industry benchmarks before trailing PER/PBR when benchmark rows are available.

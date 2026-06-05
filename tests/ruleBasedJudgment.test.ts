@@ -43,7 +43,7 @@ test("rule judgment flags expensive PER against industry benchmark", () => {
   });
 
   assert.equal(judgment.model, "rule-v2");
-  assert.equal(judgment.promptVersion, "stock-rule-judge-v2");
+  assert.equal(judgment.promptVersion, "stock-rule-judge-v3");
   assert.equal(judgment.headline, "수익성은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
@@ -167,5 +167,28 @@ test("rule judgment can use PBR industry benchmark when PER is missing", () => {
     "점수는 67.0점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 PBR이 국내 반도체 업종 기준 1.4배보다 높은 2.4배라 가격 부담은 함께 봐야 해요."
   );
   assert.equal(judgment.watch, "PBR이 국내 반도체 업종 상위권 기준 2.0배보다 높은지 먼저 확인해요.");
+  assert.equal(judgment.tone, "cautious");
+});
+
+test("rule judgment mentions high opportunity separately from cautious quality", () => {
+  const stock = compactRuleJudgmentStock({
+    market: "KR",
+    symbol: "108490",
+    name: "로보티즈",
+    quality_score: 38.9,
+    opportunity_score: 68.4,
+    sia_snapshot: { risk_level: "HIGH" },
+    components: [
+      { label: "모멘텀", score: 76.2 },
+      { label: "밸류에이션", score: 0.0 },
+    ],
+    valuation_rows: [{ label: "Forward PER", value: "176.7" }],
+  });
+
+  const judgment = buildRuleBasedJudgment(stock, {
+    cacheBucketStart: "2026-06-05T00:00:00.000Z",
+  });
+
+  assert.match(judgment.body, /기회 점수는 68\.4점/);
   assert.equal(judgment.tone, "cautious");
 });

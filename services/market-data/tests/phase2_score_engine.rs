@@ -96,6 +96,10 @@ fn strong_input(market: Market) -> ScoreEngineInput {
         ev_to_revenue: Some(2.0),
         price_to_sales: None,
         rsi14: Some(62.0),
+        target_mean_price: None,
+        analyst_count: None,
+        recommendation_mean: None,
+        beta: None,
         trade_enabled: Some(true),
     }
 }
@@ -133,6 +137,10 @@ fn nvda_like_input() -> ScoreEngineInput {
         ev_to_revenue: Some(35.0),
         price_to_sales: None,
         rsi14: Some(63.0),
+        target_mean_price: Some(190.0),
+        analyst_count: Some(58.0),
+        recommendation_mean: Some(1.7),
+        beta: Some(1.9),
         trade_enabled: Some(true),
     }
 }
@@ -170,6 +178,51 @@ fn speculative_no_forward_input() -> ScoreEngineInput {
         ev_to_revenue: Some(13.5),
         price_to_sales: Some(14.2),
         rsi14: Some(68.0),
+        target_mean_price: None,
+        analyst_count: Some(1.0),
+        recommendation_mean: Some(1.8),
+        beta: Some(2.1),
+        trade_enabled: Some(true),
+    }
+}
+
+fn speculative_covered_opportunity_input() -> ScoreEngineInput {
+    ScoreEngineInput {
+        market: Market::Kr,
+        symbol: "108490".to_string(),
+        name: "Robotis".to_string(),
+        currency: "KRW".to_string(),
+        latest_price: Some(320_500.0),
+        previous_close: Some(300_000.0),
+        eps: Some(380.0),
+        bps: Some(8_500.0),
+        profit_margin: Some(0.01),
+        operating_margin: Some(-0.03),
+        ocf_margin: Some(-0.02),
+        revenue_growth: Some(1.0),
+        earnings_growth: Some(0.20),
+        return_1m: Some(0.18),
+        return_3m: Some(0.42),
+        return_6m: Some(0.85),
+        return_52w: Some(1.35),
+        distance_52w_high: Some(-0.03),
+        ma50: Some(280_000.0),
+        ma200: Some(155_000.0),
+        avg_volume_20: Some(1_200_000.0),
+        market_cap: Some(2_100_000_000_000.0),
+        debt_to_equity: Some(35.0),
+        current_ratio: Some(2.1),
+        quick_ratio: Some(1.8),
+        trailing_pe: Some(850.0),
+        forward_pe: Some(176.0),
+        price_to_book: Some(38.0),
+        ev_to_revenue: Some(117.0),
+        price_to_sales: Some(103.0),
+        rsi14: Some(72.0),
+        target_mean_price: Some(340_000.0),
+        analyst_count: Some(1.0),
+        recommendation_mean: Some(1.7),
+        beta: Some(1.8),
         trade_enabled: Some(true),
     }
 }
@@ -207,6 +260,10 @@ fn sparse_input() -> ScoreEngineInput {
         ev_to_revenue: None,
         price_to_sales: None,
         rsi14: None,
+        target_mean_price: None,
+        analyst_count: None,
+        recommendation_mean: None,
+        beta: None,
         trade_enabled: None,
     }
 }
@@ -232,9 +289,13 @@ fn computes_us_score_with_rust_ported_weights() {
     assert_eq!(output.components[0].key, "profitability");
     assert_eq!(output.components[0].score, 93.2);
     assert_eq!(output.payload["score"], 97.2);
+    assert_eq!(output.payload["quality_score"], 97.2);
+    assert!(output.payload["opportunity_score"].as_f64().expect("opportunity score").is_finite());
+    assert!(output.payload["opportunity_confidence"].as_f64().expect("opportunity confidence") > 0.0);
+    assert_eq!(output.payload["opportunity_components"].as_array().expect("opportunity components").len(), 5);
     assert_eq!(
         output.payload["score_model_version"],
-        "score-v4-valuation-guardrails-2026-06-05"
+        "score-v5-dual-quality-opportunity-2026-06-05"
     );
     assert_eq!(
         output.payload["sia_snapshot"]["signal_source"],
@@ -322,6 +383,30 @@ fn premium_growth_leader_stays_excellent_despite_expensive_multiples() {
         valuation.score
     );
     assert_eq!(output.grade.class, "excellent");
+}
+
+#[test]
+fn speculative_growth_setup_gets_separate_capped_opportunity_score() {
+    let output = compute_score(speculative_covered_opportunity_input(), ScoreView::Detail)
+        .expect("score");
+    let opportunity = output.payload["opportunity_score"]
+        .as_f64()
+        .expect("opportunity score");
+
+    assert!(
+        output.score < 55.0,
+        "quality score should remain cautious for weak profitability and extreme valuation: {}",
+        output.score
+    );
+    assert!(
+        (58.0..=72.0).contains(&opportunity),
+        "opportunity should reflect setup but respect risk caps: {opportunity}"
+    );
+    let snapshot_quality = output.payload["sia_snapshot"]["quality_score"]
+        .as_f64()
+        .expect("snapshot quality");
+    assert!((snapshot_quality - output.score / 100.0).abs() < 0.001);
+    assert!(output.payload["sia_snapshot"]["opportunity_score"].as_f64().expect("snapshot opportunity") > 0.55);
 }
 
 #[test]

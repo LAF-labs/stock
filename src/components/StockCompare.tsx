@@ -47,6 +47,7 @@ type CompareItem = {
   ticker: string;
   data: StockScoreResponse;
   score: number;
+  opportunityScore?: number;
   daily?: number;
   return1m?: number;
   return3m?: number;
@@ -151,7 +152,8 @@ function toCompareItem(data: StockScoreResponse, requestedTicker: string): Compa
   return {
     ticker,
     data,
-    score: clampScore(data.score),
+    score: clampScore(data.quality_score ?? data.score),
+    opportunityScore: typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined,
     daily: numberFromRecord(data.price_metrics, "latest_change"),
     return1m: numberFromRecord(data.price_metrics, "return_1m"),
     return3m: numberFromRecord(data.price_metrics, "return_3m"),
@@ -364,6 +366,7 @@ function CompareSkeleton() {
 
 function CompareBrief({ items, baseTicker }: { items: CompareItem[]; baseTicker: string }) {
   const bestScore = bestBy(items, (item) => item.score);
+  const bestOpportunity = bestBy(items, (item) => item.opportunityScore);
   const bestMomentum = bestBy(items, (item) => item.return52w ?? item.return6m ?? item.return3m);
   const bestValue = bestBy(items, (item) => componentScore(item, "valuation"));
   const bestProfit = bestBy(items, (item) => componentScore(item, "profitability"));
@@ -382,6 +385,7 @@ function CompareBrief({ items, baseTicker }: { items: CompareItem[]; baseTicker:
       {items.length >= 2 ? (
         <div className="compare-insight-grid">
           <Insight label="전체 균형" ticker={bestScore?.ticker} value={bestScore ? `${bestScore.score.toFixed(1)}점` : "-"} />
+          <Insight label="기회 점수" ticker={bestOpportunity?.ticker} value={bestOpportunity?.opportunityScore === undefined ? "-" : `${bestOpportunity.opportunityScore.toFixed(1)}점`} />
           <Insight label="최근 흐름" ticker={bestMomentum?.ticker} value={percentText(bestMomentum?.return52w ?? bestMomentum?.return6m)} />
           <Insight label="가격 부담" ticker={bestValue?.ticker} value={bestValue ? `${ratioText(componentScore(bestValue, "valuation"))}점` : "-"} />
           <Insight label="수익성" ticker={bestProfit?.ticker} value={bestProfit ? `${ratioText(componentScore(bestProfit, "profitability"))}점` : "-"} />
@@ -420,11 +424,15 @@ function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker:
             <p>{displayName(item.data)}</p>
             <div className="compare-score-line">
               <strong>{item.score.toFixed(1)}점</strong>
-              <span>{scoreWord(item.score)}</span>
+              <span>품질 {scoreWord(item.score)}</span>
             </div>
             <i className="compare-card-scorebar" aria-hidden="true">
               <em style={{ width: `${item.score}%` }} />
             </i>
+            <div className="compare-opportunity-line">
+              <span>기회</span>
+              <strong>{item.opportunityScore === undefined ? "-" : `${item.opportunityScore.toFixed(1)}점`}</strong>
+            </div>
             <dl>
               <div>
                 <dt>시가총액</dt>

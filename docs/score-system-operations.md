@@ -2,12 +2,16 @@
 
 ## Current Model
 
-- Current score model: `score-v4-valuation-guardrails-2026-06-05`
-- The model uses five factors: profitability, growth, health, momentum, valuation.
+- Current score model: `score-v5-dual-quality-opportunity-2026-06-05`
+- The public `score` remains a backward-compatible alias for `quality_score`.
+- The model now exposes two separate scores:
+  - `quality_score`: profitability, growth, health, momentum, valuation.
+  - `opportunity_score`: momentum setup, estimated growth, analyst/target upside, liquidity attention, risk control.
 - Domestic scores enrich KIS price/quote data with cached yfinance fundamentals (`.KS`/`.KQ`) when available. This adds margins, growth, leverage, liquidity ratios, Forward PER, and EV/Revenue without making every request depend on a fresh Yahoo call.
 - Missing factor inputs are not filled with a neutral-looking score. They lower factor confidence, and the final score is pulled toward 50 when coverage is weak.
 - Expensive valuation is still penalized, but high profitability and growth can partially moderate the valuation penalty. This prevents premium compounders from being scored like distressed stocks only because headline multiples are high.
-- V4 weights are profitability 24%, growth 22%, health 18%, valuation 22%, momentum 14%. Momentum is intentionally a supporting signal, not the main path to a high score.
+- Quality weights are profitability 24%, growth 22%, health 18%, valuation 22%, momentum 14%. Momentum is intentionally a supporting signal, not the main path to a high quality score.
+- Opportunity weights are momentum 30%, estimated growth 25%, analyst/target upside 20%, liquidity attention 15%, risk control 10%. Missing opportunity inputs reduce confidence and anchor the final opportunity score toward 50.
 - If Forward PER is unavailable, weak-profitability growth stories with expensive EV/Revenue or Price/Sales are capped on valuation and carry lower confidence.
 - The rule-based judgment layer is separate from the numeric score. It prefers Forward PER benchmarks before trailing PER, then can fall back to PER, EV/Revenue, Price/Sales, or PBR for valuation explanation.
 
@@ -32,11 +36,11 @@ group by score_model_version
 order by newest_snapshot desc;
 ```
 
-Optional cleanup after the new model has been live long enough:
+Optional cleanup after the v5 model has been live long enough:
 
 ```sql
 delete from public.stock_score_snapshots
-where score_model_version <> 'score-v4-valuation-guardrails-2026-06-05';
+where score_model_version <> 'score-v5-dual-quality-opportunity-2026-06-05';
 ```
 
 ## Daily Operation
@@ -56,7 +60,9 @@ PYTHON_BIN=.venv/bin/python npm run score:smoke
 The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MVRL`, `005930`, `000660`, `253590`. It checks:
 
 - every score is finite and in `0..100`
+- `quality_score` and `opportunity_score` are finite and in `0..100`
 - every confidence is in `0..1`
+- `opportunity_confidence` is in `0..1`
 - payload score model version matches the application version
 - low-confidence names do not get aggressive high scores
 - NVDA-like premium growth leaders stay above the configured minimum, default `80`
@@ -75,6 +81,7 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Keep score detail cache hour-level during market hours and serve stale only for short recovery windows.
 - Keep rule-based judgment cache in six-hour buckets.
 - Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days; user requests should read cache first and refresh under a file lock only on miss.
+- yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.
 - Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Do not prewarm the whole universe daily.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
 - Prefer Rust `market-data` for long-term serving. Python collector should remain a fallback until Rust owns quote, score, batch, and refresh jobs end to end.

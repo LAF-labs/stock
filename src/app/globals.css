@@ -695,6 +695,10 @@ a:focus-visible {
   font-weight: 760;
 }
 
+.quick-read .opportunity-panel strong {
+  color: #0f9f6e;
+}
+
 .quick-read .score-panel p {
   margin: 8px 0 0;
   color: var(--subtext);
@@ -1557,6 +1561,23 @@ a:focus-visible {
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
+}
+
+.compare-opportunity-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--subtext);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.compare-opportunity-line strong {
+  color: #0f9f6e;
+  font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .compare-stock-card dl {

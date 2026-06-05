@@ -31,6 +31,13 @@ def score_confidence(result: dict[str, Any]) -> float | None:
     return None
 
 
+def finite_score_field(result: dict[str, Any], field: str) -> float | None:
+    score = result.get(field)
+    if isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(float(score)):
+        return float(score)
+    return None
+
+
 def score_model_version(result: dict[str, Any]) -> str | None:
     version = result.get("score_model_version")
     if isinstance(version, str) and version.strip():
@@ -49,13 +56,21 @@ def validate_result(ticker: str, result: dict[str, Any], nvda_min_score: float) 
         issues.append(f"{ticker}: fetch failed ({result.get('error') or result.get('status') or 'unknown_error'})")
         return issues
 
-    score = result.get("score")
-    if not isinstance(score, (int, float)) or isinstance(score, bool) or not math.isfinite(float(score)):
+    score = finite_score_field(result, "score")
+    quality_score = finite_score_field(result, "quality_score")
+    opportunity_score = finite_score_field(result, "opportunity_score")
+    if score is None:
         issues.append(f"{ticker}: score is not finite")
         return issues
-    score = float(score)
     if not 0.0 <= score <= 100.0:
         issues.append(f"{ticker}: score {score:.1f} is outside 0..100")
+    if quality_score is None or not 0.0 <= quality_score <= 100.0:
+        issues.append(f"{ticker}: quality_score is missing or outside 0..100")
+    if opportunity_score is None or not 0.0 <= opportunity_score <= 100.0:
+        issues.append(f"{ticker}: opportunity_score is missing or outside 0..100")
+    opportunity_confidence = finite_score_field(result, "opportunity_confidence")
+    if opportunity_confidence is None or not 0.0 <= opportunity_confidence <= 1.0:
+        issues.append(f"{ticker}: opportunity_confidence is missing or outside 0..1")
 
     confidence = score_confidence(result)
     if confidence is None or not 0.0 <= confidence <= 1.0:
@@ -70,6 +85,9 @@ def validate_result(ticker: str, result: dict[str, Any], nvda_min_score: float) 
     components = result.get("components")
     if not isinstance(components, list) or len(components) < 5:
         issues.append(f"{ticker}: expected at least 5 score components")
+    opportunity_components = result.get("opportunity_components")
+    if not isinstance(opportunity_components, list) or len(opportunity_components) < 5:
+        issues.append(f"{ticker}: expected at least 5 opportunity components")
 
     if ticker.upper() == "NVDA" and score < nvda_min_score:
         issues.append(f"NVDA: premium growth leader guardrail failed ({score:.1f} < {nvda_min_score:.1f})")
@@ -83,6 +101,9 @@ def summarize_result(ticker: str, result: dict[str, Any]) -> dict[str, Any]:
         "ok": result.get("ok") is True,
         "symbol": result.get("symbol"),
         "score": result.get("score"),
+        "quality_score": result.get("quality_score"),
+        "opportunity_score": result.get("opportunity_score"),
+        "opportunity_confidence": result.get("opportunity_confidence"),
         "grade": (result.get("grade") or {}).get("class") if isinstance(result.get("grade"), dict) else None,
         "confidence": score_confidence(result),
         "score_model_version": score_model_version(result),
@@ -134,6 +155,7 @@ def main() -> int:
         for row in rows:
             print(
                 "{ticker:>8} score={score!s:>5} confidence={confidence!s:>5} "
+                "opportunity={opportunity_score!s:>5} opp_conf={opportunity_confidence!s:>5} "
                 "P/G/H/M/V={profitability!s}/{growth!s}/{health!s}/{momentum!s}/{valuation!s}".format(**row)
             )
         if issues:

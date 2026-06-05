@@ -6,7 +6,7 @@ use crate::{
     service::{MarketDataError, MarketDataErrorKind},
 };
 
-const SCORE_MODEL_VERSION: &str = "score-v4-valuation-guardrails-2026-06-05";
+const SCORE_MODEL_VERSION: &str = "score-v5-dual-quality-opportunity-2026-06-05";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ScoreEngineInput {
@@ -41,6 +41,10 @@ pub struct ScoreEngineInput {
     pub ev_to_revenue: Option<f64>,
     pub price_to_sales: Option<f64>,
     pub rsi14: Option<f64>,
+    pub target_mean_price: Option<f64>,
+    pub analyst_count: Option<f64>,
+    pub recommendation_mean: Option<f64>,
+    pub beta: Option<f64>,
     pub trade_enabled: Option<bool>,
 }
 
@@ -88,6 +92,23 @@ struct ComponentScores {
     health: ComponentScore,
     momentum: ComponentScore,
     valuation: ComponentScore,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OpportunityScores {
+    momentum: ComponentScore,
+    estimate_growth: ComponentScore,
+    analyst: ComponentScore,
+    liquidity: ComponentScore,
+    risk: ComponentScore,
+}
+
+#[derive(Clone, Debug)]
+struct OpportunityResult {
+    score: f64,
+    confidence: f64,
+    components: OpportunityScores,
+    caps: Vec<&'static str>,
 }
 
 pub fn compute_score(
@@ -295,9 +316,12 @@ fn build_output(
     scores: ComponentScores,
 ) -> Result<ScoreEngineOutput, MarketDataError> {
     let (score, confidence) = composite_score(scores);
+    let opportunity = opportunity_score(&input);
     let grade = grade_for(score);
+    let opportunity_grade = grade_for(opportunity.score);
     let signal = signal_for(score, input.rsi14, input.return_3m);
     let components = components_for(scores);
+    let opportunity_components = opportunity_components_for(&opportunity);
     let requested_ticker = format!("{}:{symbol}", market_code(input.market));
     let payload_symbol = symbol.clone();
     let latest_change = match (input.latest_price, input.previous_close) {
@@ -314,10 +338,16 @@ fn build_output(
         "currency": input.currency,
         "score_model_version": SCORE_MODEL_VERSION,
         "score": score,
+        "quality_score": score,
+        "quality_grade": grade.clone(),
+        "opportunity_score": opportunity.score,
+        "opportunity_grade": opportunity_grade,
+        "opportunity_confidence": round3(opportunity.confidence),
         "grade": grade.clone(),
-        "summary": format!("{} score {:.1}/100.", market_code(input.market), score),
+        "summary": format!("{} quality {:.1}/100, opportunity {:.1}/100.", market_code(input.market), score, opportunity.score),
         "latest_price": input.latest_price,
         "components": components.clone(),
+        "opportunity_components": opportunity_components,
         "price_metrics": {
             "price": input.latest_price,
             "previous_close": input.previous_close,
@@ -334,12 +364,16 @@ fn build_output(
             "risk_level": risk_level(score),
             "score_model_version": SCORE_MODEL_VERSION,
             "confidence": round3(confidence),
+            "quality_score": round3(score / 100.0),
+            "opportunity_score": round3(opportunity.score / 100.0),
+            "opportunity_confidence": round3(opportunity.confidence),
             "spot_score": round3(score / 100.0),
             "profitability_score": round3(scores.profitability.score / 100.0),
             "growth_score": round3(scores.growth.score / 100.0),
             "health_score": round3(scores.health.score / 100.0),
             "momentum_score": round3(scores.momentum.score / 100.0),
             "valuation_score": round3(scores.valuation.score / 100.0),
+            "opportunity_caps": opportunity.caps,
             "signal_source": "market-data:rust-score-engine"
         },
         "fetch": {
@@ -369,6 +403,41 @@ fn components_for(scores: ComponentScores) -> Vec<ScoreComponent> {
     ]
 }
 
+fn opportunity_components_for(opportunity: &OpportunityResult) -> Vec<ScoreComponent> {
+    vec![
+        component(
+            "opportunity_momentum",
+            "Opportunity momentum",
+            "M",
+            opportunity.components.momentum,
+        ),
+        component(
+            "opportunity_growth",
+            "Estimate growth",
+            "G",
+            opportunity.components.estimate_growth,
+        ),
+        component(
+            "opportunity_analyst",
+            "Target upside",
+            "T",
+            opportunity.components.analyst,
+        ),
+        component(
+            "opportunity_liquidity",
+            "Liquidity attention",
+            "L",
+            opportunity.components.liquidity,
+        ),
+        component(
+            "opportunity_risk",
+            "Risk control",
+            "R",
+            opportunity.components.risk,
+        ),
+    ]
+}
+
 fn component(key: &str, label: &str, short: &str, score: ComponentScore) -> ScoreComponent {
     ScoreComponent {
         key: key.to_string(),
@@ -389,6 +458,145 @@ fn momentum_score(input: &ScoreEngineInput) -> ComponentScore {
         (ma_spread_score(input.latest_price, input.ma50), 0.8),
         (ma_spread_score(input.latest_price, input.ma200), 0.8),
         (rsi_score(input.rsi14), 0.6),
+    ])
+}
+
+fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
+    let momentum = momentum_score(input);
+    let estimate_growth = weighted_average(&[
+        (score_positive_opt(input.revenue_growth, -0.05, 0.60), 1.2),
+        (score_positive_opt(input.earnings_growth, -0.10, 0.70), 1.0),
+        (score_positive_opt(input.return_52w, -0.30, 1.20), 0.4),
+    ]);
+    let coverage_confidence = analyst_count_confidence(input.analyst_count);
+    let analyst = weighted_average(&[
+        (
+            target_upside_score(input.latest_price, input.target_mean_price),
+            1.2 * coverage_confidence,
+        ),
+        (
+            recommendation_score(input.recommendation_mean),
+            0.8 * coverage_confidence,
+        ),
+    ]);
+    let liquidity = weighted_average(&[
+        (liquidity_floor_score(input.market, input.avg_volume_20, input.market_cap), 0.8),
+    ]);
+    let risk = risk_control_score(input.rsi14, input.beta);
+    let components = OpportunityScores {
+        momentum,
+        estimate_growth,
+        analyst,
+        liquidity,
+        risk,
+    };
+    let weighted = [
+        (components.momentum, 0.30),
+        (components.estimate_growth, 0.25),
+        (components.analyst, 0.20),
+        (components.liquidity, 0.15),
+        (components.risk, 0.10),
+    ];
+    let total_weight: f64 = weighted.iter().map(|(_, weight)| weight).sum();
+    let effective_weight: f64 = weighted
+        .iter()
+        .map(|(component, weight)| weight * component.confidence)
+        .sum();
+    let (raw_score, confidence) = if effective_weight <= 0.0 || total_weight <= 0.0 {
+        (50.0, 0.0)
+    } else {
+        (
+            weighted
+                .iter()
+                .map(|(component, weight)| component.score * weight * component.confidence)
+                .sum::<f64>()
+                / effective_weight,
+            clamp(effective_weight / total_weight, 0.0, 1.0),
+        )
+    };
+    let mut score = clamp(raw_score * confidence + 50.0 * (1.0 - confidence), 0.0, 100.0);
+    let mut caps = Vec::new();
+    let sales_multiple = positive_or(input.ev_to_revenue, input.price_to_sales);
+    let weak_profit = input
+        .operating_margin
+        .is_some_and(|margin| margin.is_finite() && margin < 0.0);
+    let weak_cashflow = input
+        .ocf_margin
+        .is_some_and(|margin| margin.is_finite() && margin < 0.0);
+    if sales_multiple.is_some_and(|multiple| multiple >= 20.0) && (weak_profit || weak_cashflow) {
+        score = score.min(72.0);
+        caps.push("speculative_expensive_sales");
+    }
+    if positive(input.forward_pe).is_none() && input.analyst_count.unwrap_or(0.0) < 3.0 {
+        score = score.min(68.0);
+        caps.push("low_forward_coverage");
+    }
+    if input.rsi14.is_some_and(|rsi| rsi.is_finite() && rsi > 85.0) {
+        score = score.min(75.0);
+        caps.push("short_term_overheat");
+    }
+    let target_upside = match (finite(input.target_mean_price), finite(input.latest_price)) {
+        (Some(target), Some(price)) if price > 0.0 => Some((target / price) - 1.0),
+        _ => None,
+    };
+    if target_upside.is_some_and(|upside| upside < 0.0)
+        && input.revenue_growth.unwrap_or(0.0) < 0.10
+        && input.earnings_growth.unwrap_or(0.0) < 0.10
+    {
+        score = score.min(65.0);
+        caps.push("target_below_price");
+    }
+    OpportunityResult {
+        score: round1(score),
+        confidence,
+        components,
+        caps,
+    }
+}
+
+fn analyst_count_confidence(value: Option<f64>) -> f64 {
+    finite(value).map(|value| clamp(value / 8.0, 0.0, 1.0)).unwrap_or(0.0)
+}
+
+fn target_upside_score(latest_price: Option<f64>, target_mean_price: Option<f64>) -> Option<f64> {
+    match (finite(latest_price), finite(target_mean_price)) {
+        (Some(price), Some(target)) if price > 0.0 => {
+            score_positive_opt(Some((target / price) - 1.0), -0.25, 0.45)
+        }
+        _ => None,
+    }
+}
+
+fn recommendation_score(recommendation_mean: Option<f64>) -> Option<f64> {
+    positive(recommendation_mean).and_then(|value| score_negative_opt(Some(value), 1.2, 4.2))
+}
+
+fn liquidity_floor_score(
+    market: Market,
+    avg_volume_20: Option<f64>,
+    market_cap: Option<f64>,
+) -> Option<f64> {
+    let (volume_score, size_score) = match market {
+        Market::Us => (
+            score_positive_opt(avg_volume_20, 50_000.0, 10_000_000.0),
+            score_positive_opt(market_cap, 300_000_000.0, 50_000_000_000.0),
+        ),
+        Market::Kr => (
+            score_positive_opt(avg_volume_20, 20_000.0, 5_000_000.0),
+            score_positive_opt(market_cap, 50_000_000_000.0, 5_000_000_000_000.0),
+        ),
+    };
+    if volume_score.is_none() && size_score.is_none() {
+        None
+    } else {
+        Some(weighted_average(&[(volume_score, 0.55), (size_score, 0.45)]).score)
+    }
+}
+
+fn risk_control_score(rsi14: Option<f64>, beta: Option<f64>) -> ComponentScore {
+    weighted_average(&[
+        (rsi_score(rsi14), 0.8),
+        (score_negative_opt(beta, 0.8, 2.5), 0.4),
     ])
 }
 

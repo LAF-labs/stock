@@ -77,6 +77,10 @@ const RECORD_LABELS: Record<string, string> = {
   debtToEquity: "부채/자본",
   currentRatio: "유동비율",
   quickRatio: "당좌비율",
+  targetMeanPrice: "평균 목표가",
+  numberOfAnalystOpinions: "애널리스트 수",
+  recommendationMean: "투자의견 평균",
+  beta: "베타",
   income_statement: "손익계산서",
   balance_sheet: "재무상태표",
   cashflow: "현금흐름표",
@@ -86,6 +90,9 @@ const RECORD_LABELS: Record<string, string> = {
   health_score: "재무건전성 기여도",
   momentum_score: "모멘텀 기여도",
   valuation_score: "밸류에이션 기여도",
+  quality_score: "품질 점수",
+  opportunity_score: "기회 점수",
+  opportunity_confidence: "기회 신뢰도",
 };
 
 const HIDDEN_RECORD_KEYS = new Set(["source", "signal_source", "market_scope"]);
@@ -110,6 +117,9 @@ const PERCENT_RECORD_KEYS = new Set([
   "health_score",
   "momentum_score",
   "valuation_score",
+  "quality_score",
+  "opportunity_score",
+  "opportunity_confidence",
 ]);
 
 const NOTE_COPY: Record<string, string> = {
@@ -623,7 +633,10 @@ export default function StockDashboard() {
               <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
             </DetailSection>
             <DetailSection id="detail-factors">
-              <FactorStory components={data.components} />
+              <FactorStory components={data.components} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
+              {data.opportunity_components?.length ? (
+                <FactorStory components={data.opportunity_components} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" />
+              ) : null}
             </DetailSection>
             <DetailSection id="detail-key-metrics">
               <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={data.key_metrics} defaultOpen />
@@ -709,7 +722,8 @@ function StockHeader({
   judgmentState: JudgmentState;
 }) {
   const displayData = scoreDataWithQuote(data, quote);
-  const score = clampScore(data.score);
+  const qualityScore = clampScore(data.quality_score ?? data.score);
+  const opportunityScore = typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined;
   const symbol = quote?.symbol || data.symbol || data.requested_ticker || "KO";
   const current = stringFromUnknown(quote?.latest_price_label) || formatValue(data.latest_price);
   const usdPrice = stringFromUnknown(quote?.latest_price_label) || formatUsdPrice(displayData, current);
@@ -783,11 +797,16 @@ function StockHeader({
           <strong>{marketCap}</strong>
         </article>
         <article className="score-panel">
-          <span>주식 점수</span>
-          <strong>{score.toFixed(1)}점</strong>
+          <span>품질 점수</span>
+          <strong>{qualityScore.toFixed(1)}점</strong>
           <p>
             {signal} 신호 · 변동성 {risk}
           </p>
+        </article>
+        <article className="score-panel opportunity-panel">
+          <span>기회 점수</span>
+          <strong>{opportunityScore === undefined ? "-" : `${opportunityScore.toFixed(1)}점`}</strong>
+          <p>성장, 목표가, 모멘텀, 유동성을 따로 봐요</p>
         </article>
       </div>
 
@@ -1156,13 +1175,21 @@ function TradingPriceChart({
   );
 }
 
-function FactorStory({ components }: { components: ScoreComponent[] | undefined }) {
-  if (!components?.length) return <EmptyCard title="점수 이유" body="표시할 점수 데이터가 없어요." />;
+function FactorStory({
+  components,
+  eyebrow = "점수 이유",
+  title = "좋은 점과 아쉬운 점",
+}: {
+  components: ScoreComponent[] | undefined;
+  eyebrow?: string;
+  title?: string;
+}) {
+  if (!components?.length) return <EmptyCard title={eyebrow} body="표시할 점수 데이터가 없어요." />;
   return (
     <section className="factor-card">
       <div className="section-title">
-        <span>점수 이유</span>
-        <h2>좋은 점과 아쉬운 점</h2>
+        <span>{eyebrow}</span>
+        <h2>{title}</h2>
       </div>
       <div className="factor-list">
         {components.map((component) => {

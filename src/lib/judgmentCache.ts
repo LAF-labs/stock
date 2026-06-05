@@ -5,6 +5,6 @@ export function judgmentBucketStart(date = new Date(), bucketMs = SIX_HOURS_MS):
   return new Date(Math.floor(time / bucketMs) * bucketMs).toISOString();
 }
 
-export function judgmentCacheKeyFor(model: string, date = new Date(), promptVersion = "stock-rule-judge-v2"): string {
+export function judgmentCacheKeyFor(model: string, date = new Date(), promptVersion = "stock-rule-judge-v3"): string {
   return `${model}:${promptVersion}:${judgmentBucketStart(date)}`;
 }

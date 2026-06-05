@@ -31,6 +31,7 @@ export type RuleJudgmentStock = {
   name?: unknown;
   latestBarDate?: unknown;
   score?: number;
+  opportunityScore?: number;
   signal?: unknown;
   risk?: unknown;
   sector?: string;
@@ -62,7 +63,7 @@ export type BuildRuleJudgmentOptions = {
 };
 
 const RULE_MODEL = "rule-v2";
-const PROMPT_VERSION = "stock-rule-judge-v2";
+const PROMPT_VERSION = "stock-rule-judge-v3";
 const PROHIBITED_WORDS = /매수|매도|추천|목표가/g;
 
 export function compactRuleJudgmentStock(raw: Record<string, unknown>): RuleJudgmentStock {
@@ -87,7 +88,8 @@ export function compactRuleJudgmentStock(raw: Record<string, unknown>): RuleJudg
     market: raw.market,
     name: raw.name,
     latestBarDate: raw.latest_bar_date,
-    score: finiteNumber(raw.score),
+    score: finiteNumber(raw.quality_score) ?? finiteNumber(raw.score),
+    opportunityScore: finiteNumber(raw.opportunity_score),
     signal: recordFromUnknown(raw.sia_snapshot).raw_signal,
     risk: recordFromUnknown(raw.sia_snapshot).risk_level,
     sector: stringFromUnknown(raw.sector) || profile.sector,
@@ -120,7 +122,10 @@ export function buildRuleBasedJudgment(stock: RuleJudgmentStock, options: BuildR
   const body = [
     `점수는 ${formatOne(score)}점으로 ${scoreMood}.`,
     secondSentence({ strongestLabel, valuation }),
-  ].join(" ");
+    opportunitySentence(stock, score),
+  ]
+    .filter(Boolean)
+    .join(" ");
   const watch = watchSentence({ strongestLabel, valuation });
 
   return {
@@ -313,6 +318,18 @@ function secondSentence(input: { strongestLabel: string; valuation?: { body: str
 function watchSentence(input: { strongestLabel: string; valuation?: { watch: string } }): string {
   if (input.valuation) return input.valuation.watch;
   return `${input.strongestLabel} 점수와 가격 부담 지표를 함께 확인해요.`;
+}
+
+function opportunitySentence(stock: RuleJudgmentStock, qualityScore: number): string | undefined {
+  const opportunity = stock.opportunityScore;
+  if (typeof opportunity !== "number" || !Number.isFinite(opportunity)) return undefined;
+  if (opportunity >= 65 && qualityScore < 65) {
+    return `다만 기회 점수는 ${formatOne(opportunity)}점이라 성장, 목표가, 모멘텀 근거는 따로 확인할 만해요.`;
+  }
+  if (opportunity >= 75 && qualityScore >= 65) {
+    return `기회 점수도 ${formatOne(opportunity)}점으로 높아 현재 setup은 우호적으로 보여요.`;
+  }
+  return undefined;
 }
 
 function headlineFor(input: { score: number; valuation?: { headline: string; tone: "positive" | "neutral" | "cautious" }; strongestLabel: string }): string {

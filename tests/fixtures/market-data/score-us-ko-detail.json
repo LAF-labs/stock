@@ -7,13 +7,24 @@
   "name": "Coca-Cola Co",
   "exchange": "NYSE",
   "currency": "USD",
-  "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+  "score_model_version": "score-v5-dual-quality-opportunity-2026-06-05",
   "score": 72.4,
+  "quality_score": 72.4,
+  "quality_grade": {
+    "class": "good",
+    "label": "좋음"
+  },
+  "opportunity_score": 54.8,
+  "opportunity_grade": {
+    "class": "normal",
+    "label": "보통"
+  },
+  "opportunity_confidence": 0.74,
   "grade": {
     "class": "good",
     "label": "좋음"
   },
-  "summary": "KO는 종합 점수 72.4/100점이에요.",
+  "summary": "KO는 품질 점수 72.4/100점, 기회 점수 54.8/100점이에요.",
   "latest_price": 72.25,
   "latest_bar_date": "2026-06-04",
   "evaluation_label": "2026-06-05 09:00:00 조회",
@@ -32,6 +43,21 @@
         {
           "label": "EPS",
           "value": "2.41"
+        }
+      ]
+    }
+  ],
+  "opportunity_components": [
+    {
+      "key": "opportunity_momentum",
+      "label": "기회 모멘텀",
+      "short": "모",
+      "score": 49.6,
+      "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
+      "metrics": [
+        {
+          "label": "신뢰도",
+          "value": "100.0%"
         }
       ]
     }
@@ -90,14 +116,17 @@
     "price": 72.25,
     "raw_signal": "WATCH",
     "risk_level": "LOW",
-    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+    "score_model_version": "score-v5-dual-quality-opportunity-2026-06-05",
     "confidence": 1,
+    "quality_score": 0.724,
+    "opportunity_score": 0.548,
+    "opportunity_confidence": 0.74,
     "spot_score": 0.724,
     "signal_source": "market-data:overseas-stock+yfinance-fundamentals"
   },
   "fetch": {
     "source": "market_data+yfinance_fundamentals",
-    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+    "score_model_version": "score-v5-dual-quality-opportunity-2026-06-05",
     "cache": "server"
   },
   "server_cache": {

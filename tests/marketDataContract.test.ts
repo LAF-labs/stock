@@ -41,11 +41,17 @@ function assertScoreFields(payload: JsonObject) {
   assertPublicMarketDataFields(payload);
   assertRequiredString(payload, "score_model_version");
   assertRequiredNumber(payload, "score");
+  assertRequiredNumber(payload, "quality_score");
+  assertRequiredNumber(payload, "opportunity_score");
+  assertRequiredNumber(payload, "opportunity_confidence");
   assert.equal(Array.isArray(payload.components), true, "components must be an array");
+  assert.equal(Array.isArray(payload.opportunity_components), true, "opportunity_components must be an array");
   assert.equal(Array.isArray(payload.key_metrics), true, "key_metrics must be an array");
   assert.equal(Array.isArray(payload.chart_series), true, "chart_series must be an array");
   assertObject(payload.sia_snapshot, "sia_snapshot must be an object");
   assertRequiredString(payload.sia_snapshot, "score_model_version");
+  assertRequiredNumber(payload.sia_snapshot, "quality_score");
+  assertRequiredNumber(payload.sia_snapshot, "opportunity_score");
 }
 
 test("US quote response keeps public market-data contract", () => {

@@ -5,6 +5,7 @@ from scripts.fetch_yfinance_score import (
     composite_score,
     domestic_yfinance_symbol,
     guardrailed_valuation,
+    opportunity_factor_score,
     quality_adjusted_valuation,
     weighted_factor_score,
 )
@@ -72,6 +73,70 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertEqual(domestic_yfinance_symbol("005930", "KOSPI"), "005930.KS")
         self.assertEqual(domestic_yfinance_symbol("253590", "KOSDAQ"), "253590.KQ")
         self.assertEqual(domestic_yfinance_symbol("Q123456", "KONEX"), "123456.KQ")
+
+    def test_opportunity_score_lifts_speculative_growth_setup_but_caps_risk(self):
+        opportunity = opportunity_factor_score(
+            market="KR",
+            latest_price=320_500,
+            ret_1m=0.18,
+            ret_3m=0.42,
+            ret_6m=0.85,
+            ret_52w=1.35,
+            distance_52w_high=-0.03,
+            ma50=280_000,
+            ma200=155_000,
+            rsi14=72.0,
+            atr14_pct=0.055,
+            avg_volume_20=1_200_000,
+            avg_volume_60=520_000,
+            market_cap=2_100_000_000_000,
+            revenue_growth=1.0,
+            earnings_growth=0.20,
+            target_mean_price=340_000,
+            analyst_count=1,
+            recommendation_mean=1.7,
+            forward_pe=176.0,
+            operating_margin=-0.03,
+            cashflow_margin=-0.02,
+            ev_to_revenue=117.0,
+            price_to_sales=103.0,
+        )
+
+        self.assertGreaterEqual(opportunity.score, 58.0)
+        self.assertLessEqual(opportunity.score, 72.0)
+        self.assertIn("speculative_expensive_sales", opportunity.caps)
+
+    def test_opportunity_score_anchors_sparse_data_toward_neutral(self):
+        opportunity = opportunity_factor_score(
+            market="US",
+            latest_price=10.0,
+            ret_1m=0.20,
+            ret_3m=0.55,
+            ret_6m=None,
+            ret_52w=None,
+            distance_52w_high=None,
+            ma50=None,
+            ma200=None,
+            rsi14=None,
+            atr14_pct=None,
+            avg_volume_20=None,
+            avg_volume_60=None,
+            market_cap=None,
+            revenue_growth=None,
+            earnings_growth=None,
+            target_mean_price=None,
+            analyst_count=None,
+            recommendation_mean=None,
+            forward_pe=None,
+            operating_margin=None,
+            cashflow_margin=None,
+            ev_to_revenue=None,
+            price_to_sales=None,
+        )
+
+        self.assertLessEqual(opportunity.confidence, 0.45)
+        self.assertGreaterEqual(opportunity.score, 45.0)
+        self.assertLessEqual(opportunity.score, 65.0)
 
 
 if __name__ == "__main__":

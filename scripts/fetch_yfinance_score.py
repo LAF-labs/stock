@@ -29,8 +29,7 @@ US_EQUITY_EXCHANGES = {"NMS", "NGM", "NCM", "NASDAQ", "NAS", "NYQ", "NYSE", "ASE
 US_EXCHANGE_NAME_MARKERS = ("NASDAQ", "NYSE", "AMEX", "BATS", "IEX")
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,11}$")
 KR_TICKER_RE = re.compile(r"^(?:\d{6}|Q\d{6})$")
-SCORE_MODEL_VERSION = "score-v4-valuation-guardrails-2026-06-05"
-LEGACY_YFINANCE_SCORE_MODEL_VERSION = "legacy-yfinance-score-v1"
+SCORE_MODEL_VERSION = "score-v5-dual-quality-opportunity-2026-06-05"
 
 
 def clean_ticker(raw: str) -> str:
@@ -128,6 +127,14 @@ def average(values: Iterable[float | None]) -> float:
 class FactorScore:
     score: float
     confidence: float
+
+
+@dataclass(frozen=True)
+class OpportunityResult:
+    score: float
+    confidence: float
+    components: dict[str, FactorScore]
+    caps: tuple[str, ...]
 
 
 def clamp_score(value: float) -> float:
@@ -309,6 +316,155 @@ def composite_score(scores: dict[str, FactorScore]) -> tuple[float, float]:
     confidence = max(0.0, min(1.0, effective_weight / total_weight))
     anchored = raw * confidence + 50.0 * (1.0 - confidence)
     return round(clamp_score(anchored), 1), confidence
+
+
+def analyst_count_confidence(value: float | None) -> float:
+    if value is None:
+        return 0.0
+    return max(0.0, min(1.0, float(value) / 8.0))
+
+
+def target_upside_score(latest_price: float | None, target_mean_price: float | None) -> float | None:
+    if latest_price is None or target_mean_price is None:
+        return None
+    if not math.isfinite(float(latest_price)) or not math.isfinite(float(target_mean_price)) or latest_price <= 0:
+        return None
+    return score_positive_opt((float(target_mean_price) / float(latest_price)) - 1.0, -0.25, 0.45)
+
+
+def recommendation_score(recommendation_mean: float | None) -> float | None:
+    value = as_float(recommendation_mean)
+    if value is None or value <= 0:
+        return None
+    return score_negative_opt(value, 1.2, 4.2)
+
+
+def volume_acceleration_score(avg_volume_20: float | None, avg_volume_60: float | None) -> float | None:
+    if avg_volume_20 is None or avg_volume_60 is None:
+        return None
+    if not math.isfinite(float(avg_volume_20)) or not math.isfinite(float(avg_volume_60)) or avg_volume_60 <= 0:
+        return None
+    return score_positive_opt((float(avg_volume_20) / float(avg_volume_60)) - 1.0, -0.35, 0.80)
+
+
+def liquidity_floor_score(market: str, avg_volume_20: float | None, market_cap: float | None) -> float | None:
+    market = clean_ticker(market)
+    if market == "KR":
+        volume_score = score_positive_opt(avg_volume_20, 20_000.0, 5_000_000.0)
+        size_score = score_positive_opt(market_cap, 50_000_000_000.0, 5_000_000_000_000.0)
+    else:
+        volume_score = score_positive_opt(avg_volume_20, 50_000.0, 10_000_000.0)
+        size_score = score_positive_opt(market_cap, 300_000_000.0, 50_000_000_000.0)
+    return weighted_factor_score([(volume_score, 0.55), (size_score, 0.45)]).score if volume_score is not None or size_score is not None else None
+
+
+def risk_control_score(atr14_pct: float | None, rsi14: float | None, beta: float | None) -> FactorScore:
+    beta_score = score_negative_opt(beta, 0.8, 2.5)
+    return weighted_factor_score(
+        [
+            (score_negative_opt(atr14_pct, 0.025, 0.10), 1.0),
+            (rsi_factor_score(rsi14), 0.8),
+            (beta_score, 0.4),
+        ]
+    )
+
+
+def opportunity_factor_score(
+    *,
+    market: str,
+    latest_price: float | None,
+    ret_1m: float | None,
+    ret_3m: float | None,
+    ret_6m: float | None,
+    ret_52w: float | None,
+    distance_52w_high: float | None,
+    ma50: float | None,
+    ma200: float | None,
+    rsi14: float | None,
+    atr14_pct: float | None,
+    avg_volume_20: float | None,
+    avg_volume_60: float | None,
+    market_cap: float | None,
+    revenue_growth: float | None,
+    earnings_growth: float | None,
+    target_mean_price: float | None,
+    analyst_count: float | None,
+    recommendation_mean: float | None,
+    forward_pe: float | None,
+    operating_margin: float | None,
+    cashflow_margin: float | None,
+    ev_to_revenue: float | None,
+    price_to_sales: float | None,
+    beta: float | None = None,
+) -> OpportunityResult:
+    momentum = momentum_factor_score(ret_1m, ret_3m, ret_6m, distance_52w_high, latest_price, ma50, ma200, rsi14)
+    estimate_growth = weighted_factor_score(
+        [
+            (score_positive_opt(revenue_growth, -0.05, 0.60), 1.2),
+            (score_positive_opt(earnings_growth, -0.10, 0.70), 1.0),
+            (score_positive_opt(ret_52w, -0.30, 1.20), 0.4),
+        ]
+    )
+    coverage_confidence = analyst_count_confidence(analyst_count)
+    analyst = weighted_factor_score(
+        [
+            (target_upside_score(latest_price, target_mean_price), 1.2 * coverage_confidence),
+            (recommendation_score(recommendation_mean), 0.8 * coverage_confidence),
+        ]
+    )
+    liquidity = weighted_factor_score(
+        [
+            (volume_acceleration_score(avg_volume_20, avg_volume_60), 0.9),
+            (liquidity_floor_score(market, avg_volume_20, market_cap), 0.8),
+        ]
+    )
+    risk = risk_control_score(atr14_pct, rsi14, beta)
+    components = {
+        "momentum": momentum,
+        "estimate_growth": estimate_growth,
+        "analyst": analyst,
+        "liquidity": liquidity,
+        "risk": risk,
+    }
+    weights = {
+        "momentum": 0.30,
+        "estimate_growth": 0.25,
+        "analyst": 0.20,
+        "liquidity": 0.15,
+        "risk": 0.10,
+    }
+    total_weight = sum(weights.values())
+    effective_weight = sum(weights[key] * components[key].confidence for key in weights)
+    if effective_weight <= 0.0:
+        raw_score = 50.0
+        confidence = 0.0
+    else:
+        raw_score = sum(components[key].score * weights[key] * components[key].confidence for key in weights) / effective_weight
+        confidence = max(0.0, min(1.0, effective_weight / total_weight))
+
+    score = clamp_score(raw_score * confidence + 50.0 * (1.0 - confidence))
+    caps: list[str] = []
+    sales_multiple = positive_or(ev_to_revenue, price_to_sales)
+    weak_profit = operating_margin is not None and operating_margin < 0.0
+    weak_cashflow = cashflow_margin is not None and cashflow_margin < 0.0
+    if sales_multiple is not None and sales_multiple >= 20.0 and (weak_profit or weak_cashflow):
+        score = min(score, 72.0)
+        caps.append("speculative_expensive_sales")
+    if positive_value(forward_pe) is None and (analyst_count is None or analyst_count < 3):
+        score = min(score, 68.0)
+        caps.append("low_forward_coverage")
+    if (atr14_pct is not None and atr14_pct > 0.10) or (rsi14 is not None and rsi14 > 85.0):
+        score = min(score, 75.0)
+        caps.append("short_term_overheat")
+    target_upside = (target_mean_price / latest_price - 1.0) if target_mean_price and latest_price else None
+    if target_upside is not None and target_upside < 0.0 and (revenue_growth or 0.0) < 0.10 and (earnings_growth or 0.0) < 0.10:
+        score = min(score, 65.0)
+        caps.append("target_below_price")
+    if avg_volume_20 is not None and avg_volume_20 < (20_000.0 if clean_ticker(market) == "KR" else 50_000.0):
+        score = min(score, 60.0)
+        caps.append("thin_liquidity")
+
+    return OpportunityResult(score=round(clamp_score(score), 1), confidence=confidence, components=components, caps=tuple(caps))
 
 
 def pct(value: float | None) -> str:
@@ -591,6 +747,68 @@ def top_like_current(symbol: str, name: str, price: float | None, currency: str,
     ]
 
 
+def opportunity_components_for(opportunity: OpportunityResult, *, latest_price: float | None, target_mean_price: float | None, analyst_count: float | None, recommendation_mean: float | None, avg_volume_20: float | None, avg_volume_60: float | None, atr14_pct: float | None, beta: float | None) -> list[dict[str, Any]]:
+    components = opportunity.components
+    target_upside = (target_mean_price / latest_price - 1.0) if latest_price and target_mean_price else None
+    return [
+        {
+            "key": "opportunity_momentum",
+            "label": "기회 모멘텀",
+            "short": "모",
+            "score": round(components["momentum"].score, 1),
+            "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
+            "metrics": [
+                {"label": "신뢰도", "value": pct(components["momentum"].confidence)},
+            ],
+        },
+        {
+            "key": "opportunity_growth",
+            "label": "추정 성장",
+            "short": "성",
+            "score": round(components["estimate_growth"].score, 1),
+            "summary": "매출과 이익 성장률이 기회로 이어질 수 있는지 봐요.",
+            "metrics": [
+                {"label": "신뢰도", "value": pct(components["estimate_growth"].confidence)},
+            ],
+        },
+        {
+            "key": "opportunity_analyst",
+            "label": "목표가 여지",
+            "short": "목",
+            "score": round(components["analyst"].score, 1),
+            "summary": "평균 목표가, 투자의견, 커버리지 수를 보수적으로 봐요.",
+            "metrics": [
+                {"label": "목표가 여지", "value": pct(target_upside)},
+                {"label": "애널리스트 수", "value": num_label(as_int(analyst_count), "명")},
+                {"label": "투자의견 평균", "value": f"{recommendation_mean:.2f}" if recommendation_mean is not None else "-"},
+            ],
+        },
+        {
+            "key": "opportunity_liquidity",
+            "label": "유동성 관심",
+            "short": "유",
+            "score": round(components["liquidity"].score, 1),
+            "summary": "거래량 체력과 최근 거래 관심 증가를 봐요.",
+            "metrics": [
+                {"label": "20일 평균 거래량", "value": num_label(as_int(avg_volume_20), "주")},
+                {"label": "60일 평균 거래량", "value": num_label(as_int(avg_volume_60), "주")},
+            ],
+        },
+        {
+            "key": "opportunity_risk",
+            "label": "위험 제어",
+            "short": "위",
+            "score": round(components["risk"].score, 1),
+            "summary": "변동성과 과열도를 함께 봐요.",
+            "metrics": [
+                {"label": "ATR14", "value": pct(atr14_pct)},
+                {"label": "베타", "value": f"{beta:.2f}" if beta is not None else "-"},
+                {"label": "적용 상한", "value": ", ".join(opportunity.caps) if opportunity.caps else "-"},
+            ],
+        },
+    ]
+
+
 class KisApiError(Exception):
     pass
 
@@ -729,7 +947,7 @@ def one_byte_file_lock(path: Path):
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
-YFINANCE_FUNDAMENTAL_CACHE_VERSION = 1
+YFINANCE_FUNDAMENTAL_CACHE_VERSION = 2
 YFINANCE_FUNDAMENTAL_SOURCE = "yfinance"
 SUPABASE_FUNDAMENTAL_TABLE = "stock_fundamental_snapshots"
 SUPABASE_TIMEOUT_SECONDS = 8
@@ -754,6 +972,13 @@ YFINANCE_FUNDAMENTAL_FIELDS = (
     "priceToSalesTrailing12Months",
     "grossMargins",
     "ebitdaMargins",
+    "targetMeanPrice",
+    "targetMedianPrice",
+    "numberOfAnalystOpinions",
+    "recommendationMean",
+    "beta",
+    "averageVolume",
+    "averageVolume10days",
 )
 
 
@@ -1580,6 +1805,10 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     forward_pe = as_float(fundamentals.get("forwardPE"))
     ev_to_revenue = as_float(fundamentals.get("enterpriseToRevenue"))
     price_to_sales = as_float(fundamentals.get("priceToSalesTrailing12Months"))
+    target_mean_price = first_float(fundamentals.get("targetMeanPrice"), fundamentals.get("targetMedianPrice"))
+    analyst_count = as_float(fundamentals.get("numberOfAnalystOpinions"))
+    recommendation_mean = as_float(fundamentals.get("recommendationMean"))
+    beta = as_float(fundamentals.get("beta"))
     listed_shares = as_int(detail.get("shar")) or as_int(search.get("lstg_stck_num"))
     trade_enabled_raw = str(detail.get("e_ordyn") or search.get("lstg_yn") or "")
     trade_enabled = trade_enabled_raw.upper()
@@ -1643,6 +1872,44 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         "valuation": valuation,
     }
     total_score, score_confidence = composite_score(score_factors)
+    opportunity = opportunity_factor_score(
+        market="US",
+        latest_price=latest_price,
+        ret_1m=ret_1m,
+        ret_3m=ret_3m,
+        ret_6m=ret_6m,
+        ret_52w=ret_52w,
+        distance_52w_high=distance_52w_high,
+        ma50=ma50,
+        ma200=ma200,
+        rsi14=rsi14,
+        atr14_pct=atr14_pct,
+        avg_volume_20=avg_volume_20,
+        avg_volume_60=avg_volume_60,
+        market_cap=market_cap,
+        revenue_growth=revenue_growth,
+        earnings_growth=earnings_growth,
+        target_mean_price=target_mean_price,
+        analyst_count=analyst_count,
+        recommendation_mean=recommendation_mean,
+        forward_pe=forward_pe,
+        operating_margin=operating_margin,
+        cashflow_margin=fcf_margin if fcf_margin is not None else ocf_margin,
+        ev_to_revenue=ev_to_revenue,
+        price_to_sales=price_to_sales,
+        beta=beta,
+    )
+    opportunity_components = opportunity_components_for(
+        opportunity,
+        latest_price=latest_price,
+        target_mean_price=target_mean_price,
+        analyst_count=analyst_count,
+        recommendation_mean=recommendation_mean,
+        avg_volume_20=avg_volume_20,
+        avg_volume_60=avg_volume_60,
+        atr14_pct=atr14_pct,
+        beta=beta,
+    )
     profitability_score = profitability.score
     growth_score = growth.score
     health_score = health.score
@@ -1757,6 +2024,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
         {"label": "Forward PER", "value": f"{forward_pe:.2f}" if forward_pe is not None and forward_pe > 0 else "-"},
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
+        {"label": "기회 점수", "value": f"{opportunity.score:.1f}점"},
         {"label": "점수 신호", "value": signal},
     ]
 
@@ -1780,6 +2048,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
         {"label": "EV/Revenue", "value": f"{ev_to_revenue:.2f}" if ev_to_revenue is not None else "-", "note": "yfinance"},
         {"label": "Price/Sales", "value": f"{price_to_sales:.2f}" if price_to_sales is not None else "-", "note": "yfinance"},
+        {"label": "평균 목표가", "value": price_label(target_mean_price, currency), "note": "yfinance"},
         {"label": "EPS", "value": f"{eps:.2f}" if eps is not None else "-"},
         {"label": "BPS", "value": f"{bps:.2f}" if bps is not None else "-"},
         {"label": "시가총액", "value": labeled_money(market_cap, currency, usd_krw)},
@@ -1815,6 +2084,10 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         "debtToEquity": debt_to_equity,
         "currentRatio": current_ratio,
         "quickRatio": quick_ratio,
+        "targetMeanPrice": target_mean_price,
+        "numberOfAnalystOpinions": analyst_count,
+        "recommendationMean": recommendation_mean,
+        "beta": beta,
         "eps": eps,
         "bps": bps,
         "listedShares": listed_shares,
@@ -1831,7 +2104,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     chart_series = kis_chart_series(daily_rows, currency, usd_krw)
     news = [] if is_compare_view else kis_news(symbol, excd)
     summary = (
-        f"{symbol}은 종합 점수 {total_score:.1f}/100점이에요. "
+        f"{symbol}은 품질 점수 {total_score:.1f}/100점, 기회 점수 {opportunity.score:.1f}/100점이에요. "
         f"가장 강한 항목은 {strongest['label']}({strongest['score']:.1f})이고, 먼저 확인할 항목은 {weakest['label']}({weakest['score']:.1f})이에요. "
         f"{exchange} 상장 주식 기준으로 현재가, 가격 흐름, 회사정보, 뉴스를 함께 봤어요."
     )
@@ -1848,6 +2121,11 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         "currency": currency,
         "score_model_version": SCORE_MODEL_VERSION,
         "score": total_score,
+        "quality_score": total_score,
+        "quality_grade": grade,
+        "opportunity_score": opportunity.score,
+        "opportunity_grade": grade_for(opportunity.score),
+        "opportunity_confidence": round(opportunity.confidence, 3),
         "grade": grade,
         "summary": summary,
         "latest_price": latest_price,
@@ -1858,6 +2136,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         "usd_krw_rate": usd_krw,
         "usd_krw_label": f"$1 = 약 {usd_krw:,.2f}원" if usd_krw else None,
         "components": components,
+        "opportunity_components": opportunity_components,
         "key_metrics": key_metrics,
         "stock_profile": [] if is_compare_view else stock_profile,
         "valuation_rows": valuation_rows,
@@ -1877,6 +2156,9 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
             "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
             "score_model_version": SCORE_MODEL_VERSION,
             "confidence": round(score_confidence, 3),
+            "quality_score": round(total_score / 100.0, 3),
+            "opportunity_score": round(opportunity.score / 100.0, 3),
+            "opportunity_confidence": round(opportunity.confidence, 3),
             "spot_score": round(total_score / 100.0, 3),
             "chart_score": round(momentum_score / 100.0, 3),
             "trend_score": round(score_positive(ret_3m, -0.20, 0.35) / 100.0, 3),
@@ -1897,6 +2179,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
                 "health_score": round(health_score / 100.0, 3),
                 "momentum_score": round(momentum_score / 100.0, 3),
                 "valuation_score": round(valuation_score / 100.0, 3),
+                "opportunity_score": round(opportunity.score / 100.0, 3),
             },
         },
         "fetch": {
@@ -2109,6 +2392,10 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     forward_pe = as_float(fundamentals.get("forwardPE"))
     ev_to_revenue = as_float(fundamentals.get("enterpriseToRevenue"))
     price_to_sales = as_float(fundamentals.get("priceToSalesTrailing12Months"))
+    target_mean_price = first_float(fundamentals.get("targetMeanPrice"), fundamentals.get("targetMedianPrice"))
+    analyst_count = as_float(fundamentals.get("numberOfAnalystOpinions"))
+    recommendation_mean = as_float(fundamentals.get("recommendationMean"))
+    beta = as_float(fundamentals.get("beta"))
     profit_margin = as_float(fundamentals.get("profitMargins"))
     operating_margin = as_float(fundamentals.get("operatingMargins"))
     revenue_growth = as_float(fundamentals.get("revenueGrowth"))
@@ -2191,6 +2478,44 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "valuation": valuation,
     }
     total_score, score_confidence = composite_score(score_factors)
+    opportunity = opportunity_factor_score(
+        market="KR",
+        latest_price=latest_price,
+        ret_1m=ret_1m,
+        ret_3m=ret_3m,
+        ret_6m=ret_6m,
+        ret_52w=ret_52w,
+        distance_52w_high=distance_52w_high,
+        ma50=ma50,
+        ma200=ma200,
+        rsi14=rsi14,
+        atr14_pct=atr14_pct,
+        avg_volume_20=avg_volume_20,
+        avg_volume_60=avg_volume_60,
+        market_cap=market_cap,
+        revenue_growth=revenue_growth,
+        earnings_growth=earnings_growth,
+        target_mean_price=target_mean_price,
+        analyst_count=analyst_count,
+        recommendation_mean=recommendation_mean,
+        forward_pe=forward_pe,
+        operating_margin=operating_margin,
+        cashflow_margin=fcf_margin if fcf_margin is not None else ocf_margin,
+        ev_to_revenue=ev_to_revenue,
+        price_to_sales=price_to_sales,
+        beta=beta,
+    )
+    opportunity_components = opportunity_components_for(
+        opportunity,
+        latest_price=latest_price,
+        target_mean_price=target_mean_price,
+        analyst_count=analyst_count,
+        recommendation_mean=recommendation_mean,
+        avg_volume_20=avg_volume_20,
+        avg_volume_60=avg_volume_60,
+        atr14_pct=atr14_pct,
+        beta=beta,
+    )
     profitability_score = profitability.score
     growth_score = growth.score
     health_score = health.score
@@ -2310,6 +2635,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
         {"label": "순이익률", "value": pct(profit_margin)},
         {"label": "매출 성장률", "value": pct(revenue_growth)},
+        {"label": "기회 점수", "value": f"{opportunity.score:.1f}점"},
         {"label": "점수 신호", "value": signal},
     ]
 
@@ -2333,6 +2659,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
         {"label": "EV/Revenue", "value": f"{ev_to_revenue:.2f}" if ev_to_revenue is not None and ev_to_revenue > 0 else "-"},
         {"label": "P/S", "value": f"{price_to_sales:.2f}" if price_to_sales is not None and price_to_sales > 0 else "-"},
+        {"label": "평균 목표가", "value": price_label(target_mean_price, currency), "note": "yfinance"},
         {"label": "EPS", "value": f"{eps:.0f}" if eps is not None else "-"},
         {"label": "BPS", "value": f"{bps:.0f}" if bps is not None else "-"},
         {"label": "시가총액", "value": labeled_money(market_cap, currency, None)},
@@ -2374,6 +2701,10 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "forwardPE": forward_pe,
         "enterpriseToRevenue": ev_to_revenue,
         "priceToSalesTrailing12Months": price_to_sales,
+        "targetMeanPrice": target_mean_price,
+        "numberOfAnalystOpinions": analyst_count,
+        "recommendationMean": recommendation_mean,
+        "beta": beta,
         "ocfMargin": ocf_margin,
         "fcfMargin": fcf_margin,
         "eps": eps,
@@ -2394,7 +2725,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     chart_series = kis_domestic_chart_series(daily_rows)
     news = [] if is_compare_view else kis_domestic_news(symbol)
     summary = (
-        f"{name}은 종합 점수 {total_score:.1f}/100점이에요. "
+        f"{name}은 품질 점수 {total_score:.1f}/100점, 기회 점수 {opportunity.score:.1f}/100점이에요. "
         f"가장 강한 항목은 {strongest['label']}({strongest['score']:.1f})이고, 먼저 확인할 항목은 {weakest['label']}({weakest['score']:.1f})이에요. "
         f"{exchange} 상장 주식 기준으로 현재가, 가격 흐름, 회사정보, 뉴스를 함께 봤어요."
     )
@@ -2411,6 +2742,11 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "currency": currency,
         "score_model_version": SCORE_MODEL_VERSION,
         "score": total_score,
+        "quality_score": total_score,
+        "quality_grade": grade,
+        "opportunity_score": opportunity.score,
+        "opportunity_grade": grade_for(opportunity.score),
+        "opportunity_confidence": round(opportunity.confidence, 3),
         "grade": grade,
         "summary": summary,
         "latest_price": latest_price,
@@ -2421,6 +2757,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "usd_krw_rate": None,
         "usd_krw_label": None,
         "components": components,
+        "opportunity_components": opportunity_components,
         "key_metrics": key_metrics,
         "stock_profile": [] if is_compare_view else stock_profile,
         "valuation_rows": valuation_rows,
@@ -2440,6 +2777,9 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
             "score_model_version": SCORE_MODEL_VERSION,
             "confidence": round(score_confidence, 3),
+            "quality_score": round(total_score / 100.0, 3),
+            "opportunity_score": round(opportunity.score / 100.0, 3),
+            "opportunity_confidence": round(opportunity.confidence, 3),
             "spot_score": round(total_score / 100.0, 3),
             "chart_score": round(momentum_score / 100.0, 3),
             "trend_score": round(score_positive(ret_3m, -0.20, 0.35) / 100.0, 3),
@@ -2460,6 +2800,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
                 "health_score": round(health_score / 100.0, 3),
                 "momentum_score": round(momentum_score / 100.0, 3),
                 "valuation_score": round(valuation_score / 100.0, 3),
+                "opportunity_score": round(opportunity.score / 100.0, 3),
             },
         },
         "fetch": {
@@ -2562,6 +2903,10 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
     price_to_book = as_float(info.get("priceToBook"))
     ev_to_revenue = as_float(info.get("enterpriseToRevenue"))
     price_to_sales = as_float(info.get("priceToSalesTrailing12Months"))
+    target_mean_price = first_float(info.get("targetMeanPrice"), info.get("targetMedianPrice"))
+    analyst_count = as_float(info.get("numberOfAnalystOpinions"))
+    recommendation_mean = as_float(info.get("recommendationMean"))
+    beta = as_float(info.get("beta"))
 
     profitability_score = average(
         [
@@ -2676,6 +3021,44 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         + valuation_score * 0.14
     )
     total_score = round(max(0.0, min(100.0, total_score)), 1)
+    opportunity = opportunity_factor_score(
+        market="US",
+        latest_price=latest_price,
+        ret_1m=ret_1m,
+        ret_3m=ret_3m,
+        ret_6m=ret_6m,
+        ret_52w=ret_52w,
+        distance_52w_high=distance_52w_high,
+        ma50=ma50,
+        ma200=ma200,
+        rsi14=rsi14,
+        atr14_pct=atr14_pct,
+        avg_volume_20=avg_volume_20,
+        avg_volume_60=avg_volume_60,
+        market_cap=market_cap,
+        revenue_growth=revenue_growth,
+        earnings_growth=earnings_growth,
+        target_mean_price=target_mean_price,
+        analyst_count=analyst_count,
+        recommendation_mean=recommendation_mean,
+        forward_pe=forward_pe,
+        operating_margin=operating_margin,
+        cashflow_margin=ocf_margin,
+        ev_to_revenue=ev_to_revenue,
+        price_to_sales=price_to_sales,
+        beta=beta,
+    )
+    opportunity_components = opportunity_components_for(
+        opportunity,
+        latest_price=latest_price,
+        target_mean_price=target_mean_price,
+        analyst_count=analyst_count,
+        recommendation_mean=recommendation_mean,
+        avg_volume_20=avg_volume_20,
+        avg_volume_60=avg_volume_60,
+        atr14_pct=atr14_pct,
+        beta=beta,
+    )
     grade = grade_for(total_score)
     signal = signal_for(total_score, rsi14, ret_3m)
     strongest = max(components, key=lambda item: item["score"])
@@ -2715,6 +3098,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         {"label": "ATR14", "value": pct(atr14_pct)},
         {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
+        {"label": "기회 점수", "value": f"{opportunity.score:.1f}점"},
         {"label": "점수 신호", "value": signal},
     ]
 
@@ -2739,6 +3123,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-", "note": "자본 대비 시장가치"},
         {"label": "EV/Revenue", "value": f"{ev_to_revenue:.2f}" if ev_to_revenue is not None else "-", "note": "기업가치/매출"},
         {"label": "Price/Sales", "value": f"{price_to_sales:.2f}" if price_to_sales is not None else "-", "note": "시가총액/매출"},
+        {"label": "평균 목표가", "value": labeled_money(target_mean_price, currency, usd_krw), "note": "Yahoo Finance 기준"},
         {"label": "시가총액", "value": labeled_money(market_cap, currency, usd_krw), "note": "Yahoo Finance 기준"},
     ]
 
@@ -2773,6 +3158,10 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         "debtToEquity": debt_to_equity,
         "currentRatio": current_ratio,
         "quickRatio": quick_ratio,
+        "targetMeanPrice": target_mean_price,
+        "numberOfAnalystOpinions": analyst_count,
+        "recommendationMean": recommendation_mean,
+        "beta": beta,
     }
 
     financial_statement: dict[str, Any] = {}
@@ -2820,7 +3209,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
             pass
 
     summary = (
-        f"{symbol}의 yfinance 최신 데이터 기준 종합 점수는 {total_score:.1f}/100입니다. "
+        f"{symbol}의 yfinance 최신 데이터 기준 품질 점수는 {total_score:.1f}/100, 기회 점수는 {opportunity.score:.1f}/100입니다. "
         f"가장 강한 항목은 {strongest['label']}({strongest['score']:.1f})이고, "
         f"현재 점수를 가장 제한하는 항목은 {weakest['label']}({weakest['score']:.1f})입니다. "
         f"미국 거래소({full_exchange or exchange}) 상장 주식 기준으로 조회합니다."
@@ -2835,8 +3224,13 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         "name": name,
         "exchange": full_exchange or exchange,
         "currency": currency,
-        "score_model_version": LEGACY_YFINANCE_SCORE_MODEL_VERSION,
+        "score_model_version": SCORE_MODEL_VERSION,
         "score": total_score,
+        "quality_score": total_score,
+        "quality_grade": grade,
+        "opportunity_score": opportunity.score,
+        "opportunity_grade": grade_for(opportunity.score),
+        "opportunity_confidence": round(opportunity.confidence, 3),
         "grade": grade,
         "summary": summary,
         "latest_price": latest_price,
@@ -2847,6 +3241,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         "usd_krw_rate": usd_krw,
         "usd_krw_label": f"$1 = ₩{usd_krw:,.2f}" if usd_krw else None,
         "components": components,
+        "opportunity_components": opportunity_components,
         "key_metrics": key_metrics,
         "stock_profile": [] if is_compare_view else stock_profile,
         "valuation_rows": valuation_rows,
@@ -2864,8 +3259,11 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
             "price": latest_price,
             "raw_signal": signal,
             "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
-            "score_model_version": LEGACY_YFINANCE_SCORE_MODEL_VERSION,
+            "score_model_version": SCORE_MODEL_VERSION,
             "confidence": round(min(1.0, len(history) / 252.0), 3),
+            "quality_score": round(total_score / 100.0, 3),
+            "opportunity_score": round(opportunity.score / 100.0, 3),
+            "opportunity_confidence": round(opportunity.confidence, 3),
             "spot_score": round(total_score / 100.0, 3),
             "chart_score": round(momentum_score / 100.0, 3),
             "trend_score": round(score_positive(ret_3m, -0.20, 0.35) / 100.0, 3),
@@ -2886,11 +3284,12 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
                 "health_score": round(health_score / 100.0, 3),
                 "momentum_score": round(momentum_score / 100.0, 3),
                 "valuation_score": round(valuation_score / 100.0, 3),
+                "opportunity_score": round(opportunity.score / 100.0, 3),
             },
         },
         "fetch": {
             "source": "yfinance",
-            "score_model_version": LEGACY_YFINANCE_SCORE_MODEL_VERSION,
+            "score_model_version": SCORE_MODEL_VERSION,
             "yfinance_version": yf.__version__,
             "fetched_at": now.isoformat(),
             "cache": "no-store",

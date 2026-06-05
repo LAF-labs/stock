@@ -80,6 +80,9 @@ export type SiaSnapshot = {
   raw_signal?: string;
   risk_level?: string;
   confidence?: number;
+  quality_score?: number;
+  opportunity_score?: number;
+  opportunity_confidence?: number;
   spot_score?: number;
   chart_score?: number;
   trend_score?: number;
@@ -104,6 +107,11 @@ export type StockScoreResponse = {
   currency?: string;
   score_model_version?: string;
   score?: number;
+  quality_score?: number;
+  quality_grade?: Grade;
+  opportunity_score?: number;
+  opportunity_grade?: Grade;
+  opportunity_confidence?: number;
   grade?: Grade;
   summary?: string;
   period?: string;
@@ -117,6 +125,7 @@ export type StockScoreResponse = {
   evaluation_ts?: number;
   data_quality?: string;
   components?: ScoreComponent[];
+  opportunity_components?: ScoreComponent[];
   key_metrics?: LabeledValue[];
   stock_profile?: LabeledValue[];
   valuation_rows?: LabeledValue[];
