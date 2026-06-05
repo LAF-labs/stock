@@ -8,6 +8,8 @@ import {
 
 const benchmark: IndustryBenchmark = {
   market: "US",
+  scope: "OVERSEAS",
+  period: "quarter",
   metric: "per",
   sector: "Consumer Defensive",
   industry: "Beverages",
@@ -45,9 +47,9 @@ test("rule judgment flags expensive PER against industry benchmark", () => {
   assert.equal(judgment.headline, "수익성은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
-    "점수는 72.4점으로 괜찮지만 확인이 필요해요. 이익성은 강점이고 PER이 업종 중앙값 18.0배보다 높은 30.0배라 가격 부담은 함께 봐야 해요."
+    "점수는 72.4점으로 괜찮지만 확인이 필요해요. 이익성은 강점이고 PER이 해외 Beverages 업종 기준 18.0배보다 높은 30.0배라 가격 부담은 함께 봐야 해요."
   );
-  assert.equal(judgment.watch, "PER이 업종 상위권 기준 24.0배보다 높은지 먼저 확인해요.");
+  assert.equal(judgment.watch, "PER이 해외 Beverages 업종 상위권 기준 24.0배보다 높은지 먼저 확인해요.");
   assert.equal(judgment.tone, "cautious");
   assert.equal(judgment.cacheBucketStart, "2026-06-05T00:00:00.000Z");
   assert.doesNotMatch(`${judgment.headline} ${judgment.body} ${judgment.watch}`, /매수|매도|추천|목표가/);
@@ -90,9 +92,10 @@ test("rule judgment can use PBR industry benchmark when PER is missing", () => {
     benchmarks: [
       {
         market: "KR",
+        scope: "KR",
         metric: "pbr",
         sector: "Technology",
-        industry: "",
+        industry: "반도체",
         median: 1.4,
         p25: 0.9,
         p75: 2.0,
@@ -105,8 +108,8 @@ test("rule judgment can use PBR industry benchmark when PER is missing", () => {
   assert.equal(judgment.headline, "모멘텀은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
-    "점수는 67.0점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 PBR이 업종 중앙값 1.4배보다 높은 2.4배라 가격 부담은 함께 봐야 해요."
+    "점수는 67.0점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 PBR이 국내 반도체 업종 기준 1.4배보다 높은 2.4배라 가격 부담은 함께 봐야 해요."
   );
-  assert.equal(judgment.watch, "PBR이 업종 상위권 기준 2.0배보다 높은지 먼저 확인해요.");
+  assert.equal(judgment.watch, "PBR이 국내 반도체 업종 상위권 기준 2.0배보다 높은지 먼저 확인해요.");
   assert.equal(judgment.tone, "cautious");
 });

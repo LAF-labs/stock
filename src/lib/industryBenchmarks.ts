@@ -2,10 +2,12 @@ import type { IndustryBenchmark, RuleJudgmentStock } from "@/lib/ruleBasedJudgme
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 
 export type IndustryBenchmarkLookup = {
+  scope?: "KR" | "OVERSEAS";
   market?: string;
   sector?: string;
   industry?: string;
   metric: string;
+  period?: string;
 };
 
 type BenchmarkCacheEntry = {
@@ -14,14 +16,27 @@ type BenchmarkCacheEntry = {
 };
 
 type BenchmarkRow = {
+  scope?: string | null;
   market?: string;
   sector?: string;
   industry?: string;
   metric?: string;
+  period?: string | null;
   median?: number | string | null;
   p25?: number | string | null;
   p75?: number | string | null;
   sample_count?: number | string | null;
+  source?: string | null;
+  provider_group_name?: string | null;
+};
+
+type NormalizedBenchmarkLookup = {
+  scope?: "KR" | "OVERSEAS";
+  market?: string;
+  sector?: string;
+  industry?: string;
+  metric: string;
+  period?: string;
 };
 
 declare global {
@@ -30,14 +45,17 @@ declare global {
 
 const SUPABASE_TABLE = "stock_industry_benchmarks";
 const DEFAULT_CACHE_SECONDS = 6 * 60 * 60;
+const DEFAULT_PERIOD = "quarter";
 const benchmarkCache = (globalThis.__stockIndustryBenchmarkCache ??= new Map<string, BenchmarkCacheEntry>());
 
 export async function getIndustryBenchmarkForStock(stock: RuleJudgmentStock): Promise<IndustryBenchmark | undefined> {
   return getIndustryBenchmark({
     market: String(stock.market || ""),
+    scope: scopeFromMarket(String(stock.market || "")),
     sector: stock.sector,
     industry: stock.industry,
     metric: "per",
+    period: DEFAULT_PERIOD,
   });
 }
 
@@ -46,9 +64,11 @@ export async function getIndustryBenchmarksForStock(stock: RuleJudgmentStock, me
     metrics.map((metric) =>
       getIndustryBenchmark({
         market: String(stock.market || ""),
+        scope: scopeFromMarket(String(stock.market || "")),
         sector: stock.sector,
         industry: stock.industry,
         metric,
+        period: DEFAULT_PERIOD,
       })
     )
   );
@@ -57,21 +77,23 @@ export async function getIndustryBenchmarksForStock(stock: RuleJudgmentStock, me
 
 export async function getIndustryBenchmark(lookup: IndustryBenchmarkLookup): Promise<IndustryBenchmark | undefined> {
   const market = lookup.market?.trim().toUpperCase();
+  const scope = normalizeScope(lookup.scope) || scopeFromMarket(market);
   const metric = lookup.metric.trim().toLowerCase();
   const industry = lookup.industry?.trim();
   const sector = lookup.sector?.trim();
-  if (!market || !metric || (!industry && !sector)) return undefined;
+  const period = normalizePeriod(lookup.period) || DEFAULT_PERIOD;
+  if ((!scope && !market) || !metric || (!industry && !sector)) return undefined;
 
-  const exact = await getCachedOrFetch({ market, metric, industry, sector });
+  const exact = await getCachedOrFetch({ scope, market, metric, industry, sector, period });
   if (exact || !industry || !sector) return exact;
-  return getCachedOrFetch({ market, metric, sector });
+  return getCachedOrFetch({ scope, market, metric, sector, period });
 }
 
 export function clearIndustryBenchmarkCacheForTests() {
   benchmarkCache.clear();
 }
 
-async function getCachedOrFetch(lookup: Required<Pick<IndustryBenchmarkLookup, "market" | "metric">> & Pick<IndustryBenchmarkLookup, "sector" | "industry">) {
+async function getCachedOrFetch(lookup: NormalizedBenchmarkLookup) {
   const key = cacheKey(lookup);
   const now = Date.now();
   const cached = benchmarkCache.get(key);
@@ -86,14 +108,36 @@ async function getCachedOrFetch(lookup: Required<Pick<IndustryBenchmarkLookup, "
   return value;
 }
 
-async function fetchBenchmark(lookup: Required<Pick<IndustryBenchmarkLookup, "market" | "metric">> & Pick<IndustryBenchmarkLookup, "sector" | "industry">) {
+async function fetchBenchmark(lookup: NormalizedBenchmarkLookup) {
+  if (lookup.scope) {
+    const scoped = await fetchBenchmarkRows(lookup, "scope");
+    if (scoped) return scoped;
+  }
+  if (lookup.market) return fetchBenchmarkRows(lookup, "market");
+  return undefined;
+}
+
+async function fetchBenchmarkRows(lookup: NormalizedBenchmarkLookup, mode: "scope" | "market") {
   const config = supabaseReadConfig();
   if (!config) return undefined;
 
   const query = new URLSearchParams();
-  query.set("select", "market,sector,industry,metric,median,p25,p75,sample_count");
-  query.set("market", `eq.${lookup.market}`);
+  query.set(
+    "select",
+    mode === "scope"
+      ? "scope,market,sector,industry,metric,period,median,p25,p75,sample_count,source,provider_group_name"
+      : "market,sector,industry,metric,median,p25,p75,sample_count"
+  );
+  if (mode === "scope") {
+    if (!lookup.scope) return undefined;
+    query.set("scope", `eq.${lookup.scope}`);
+    if (lookup.period) query.set("period", `eq.${lookup.period}`);
+  } else {
+    if (!lookup.market) return undefined;
+    query.set("market", `eq.${lookup.market}`);
+  }
   query.set("metric", `eq.${lookup.metric}`);
+  query.set("expires_at", `gt.${new Date().toISOString()}`);
   if (lookup.industry) {
     query.set("industry", `eq.${lookup.industry}`);
     if (lookup.sector) query.set("sector", `eq.${lookup.sector}`);
@@ -101,7 +145,7 @@ async function fetchBenchmark(lookup: Required<Pick<IndustryBenchmarkLookup, "ma
     query.set("sector", `eq.${lookup.sector}`);
     query.set("industry", "eq.");
   }
-  query.set("order", "expires_at.desc,sample_count.desc");
+  query.set("order", mode === "scope" ? "expires_at.desc,sample_count.desc,updated_at.desc" : "expires_at.desc,sample_count.desc");
   query.set("limit", "1");
 
   try {
@@ -124,21 +168,27 @@ function benchmarkFromRow(row: BenchmarkRow | undefined): IndustryBenchmark | un
   const median = numberFromValue(row.median);
   if (median === undefined) return undefined;
   return {
+    scope: normalizeScope(row.scope) || scopeFromMarket(row.market),
     market: row.market?.trim().toUpperCase(),
     sector: row.sector?.trim() || undefined,
     industry: row.industry?.trim() || undefined,
     metric,
+    period: row.period?.trim() || undefined,
     median,
     p25: numberFromValue(row.p25),
     p75: numberFromValue(row.p75),
     sampleCount: numberFromValue(row.sample_count),
+    source: row.source?.trim() || undefined,
+    providerGroupName: row.provider_group_name?.trim() || undefined,
   };
 }
 
-function cacheKey(lookup: Required<Pick<IndustryBenchmarkLookup, "market" | "metric">> & Pick<IndustryBenchmarkLookup, "sector" | "industry">): string {
+function cacheKey(lookup: NormalizedBenchmarkLookup): string {
   return [
-    lookup.market.toUpperCase(),
+    lookup.scope || "",
+    (lookup.market || "").toUpperCase(),
     lookup.metric.toLowerCase(),
+    lookup.period || "",
     (lookup.industry || "").toLowerCase(),
     (lookup.sector || "").toLowerCase(),
   ].join(":");
@@ -160,4 +210,24 @@ function numberFromValue(value: number | string | null | undefined): number | un
   if (typeof value !== "string") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function scopeFromMarket(value: string | null | undefined): "KR" | "OVERSEAS" | undefined {
+  const market = value?.trim().toUpperCase();
+  if (market === "KR") return "KR";
+  if (market === "US") return "OVERSEAS";
+  return undefined;
+}
+
+function normalizeScope(value: unknown): "KR" | "OVERSEAS" | undefined {
+  const scope = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (scope === "KR" || scope === "DOMESTIC") return "KR";
+  if (scope === "OVERSEAS" || scope === "US" || scope === "GLOBAL") return "OVERSEAS";
+  return undefined;
+}
+
+function normalizePeriod(value: unknown): string | undefined {
+  const period = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["quarter", "annual", "ttm"].includes(period)) return period;
+  return undefined;
 }

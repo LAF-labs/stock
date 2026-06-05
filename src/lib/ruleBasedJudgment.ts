@@ -1,12 +1,16 @@
 export type IndustryBenchmark = {
+  scope?: "KR" | "OVERSEAS";
   market?: string;
   sector?: string;
   industry?: string;
   metric: string;
+  period?: string;
   median?: number;
   p25?: number;
   p75?: number;
   sampleCount?: number;
+  source?: string;
+  providerGroupName?: string;
 };
 
 type CompactMetric = {
@@ -236,36 +240,65 @@ function valuationMetricBenchmarkText(label: "PER" | "PBR", value: number, bench
   const median = benchmark.median ?? 0;
   const p25 = benchmark.p25;
   const p75 = benchmark.p75;
+  const benchmarkLabel = benchmarkComparisonLabel(benchmark);
+  const upperLabel = benchmarkUpperLabel(benchmark);
   if (typeof p25 === "number" && value <= p25) {
     return {
-      body: `${label}이 업종 중앙값 ${formatOne(median)}배보다 낮은 ${formatOne(value)}배라 가격 부담은 덜해 보여요.`,
-      watch: `${label}이 업종 하위권 기준 ${formatOne(p25)}배 근처인지 먼저 확인해요.`,
+      body: `${label}이 ${benchmarkLabel} ${formatOne(median)}배보다 낮은 ${formatOne(value)}배라 가격 부담은 덜해 보여요.`,
+      watch: `${label}이 ${benchmarkLowerLabel(benchmark)} ${formatOne(p25)}배 근처인지 먼저 확인해요.`,
       headline: "가격 부담은 낮아 보여요",
       tone: "positive" as const,
     };
   }
   if (value <= median) {
     return {
-      body: `${label}이 업종 중앙값 ${formatOne(median)}배와 비슷한 ${formatOne(value)}배라 가격 부담은 크지 않아 보여요.`,
-      watch: `${label}이 업종 중앙값 ${formatOne(median)}배를 계속 넘는지 확인해요.`,
+      body: `${label}이 ${benchmarkLabel} ${formatOne(median)}배와 비슷한 ${formatOne(value)}배라 가격 부담은 크지 않아 보여요.`,
+      watch: `${label}이 ${benchmarkLabel} ${formatOne(median)}배를 계속 넘는지 확인해요.`,
       headline: "가격은 무난해 보여요",
       tone: "neutral" as const,
     };
   }
   if (typeof p75 === "number" && value > p75) {
     return {
-      body: `${label}이 업종 중앙값 ${formatOne(median)}배보다 높은 ${formatOne(value)}배라 가격 부담은 함께 봐야 해요.`,
-      watch: `${label}이 업종 상위권 기준 ${formatOne(p75)}배보다 높은지 먼저 확인해요.`,
+      body: `${label}이 ${benchmarkLabel} ${formatOne(median)}배보다 높은 ${formatOne(value)}배라 가격 부담은 함께 봐야 해요.`,
+      watch: `${label}이 ${upperLabel} ${formatOne(p75)}배보다 높은지 먼저 확인해요.`,
       headline: "가격은 봐야 해요",
       tone: "cautious" as const,
     };
   }
   return {
-    body: `${label}이 업종 중앙값 ${formatOne(median)}배보다 높은 ${formatOne(value)}배라 가격 부담은 함께 봐야 해요.`,
-    watch: `${label}이 업종 중앙값 ${formatOne(median)}배보다 계속 높은지 먼저 확인해요.`,
+    body: `${label}이 ${benchmarkLabel} ${formatOne(median)}배보다 높은 ${formatOne(value)}배라 가격 부담은 함께 봐야 해요.`,
+    watch: `${label}이 ${benchmarkLabel} ${formatOne(median)}배보다 계속 높은지 먼저 확인해요.`,
     headline: "가격은 봐야 해요",
     tone: "neutral" as const,
   };
+}
+
+function benchmarkComparisonLabel(benchmark: IndustryBenchmark): string {
+  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 기준`.trim();
+}
+
+function benchmarkUpperLabel(benchmark: IndustryBenchmark): string {
+  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 상위권 기준`.trim();
+}
+
+function benchmarkLowerLabel(benchmark: IndustryBenchmark): string {
+  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 하위권 기준`.trim();
+}
+
+function benchmarkScopeText(benchmark: IndustryBenchmark): string {
+  if (benchmark.scope === "KR" || benchmark.market === "KR") return "국내 ";
+  if (benchmark.scope === "OVERSEAS" || benchmark.market === "US") return "해외 ";
+  return "";
+}
+
+function benchmarkIndustryText(benchmark: IndustryBenchmark): string {
+  return meaningfulText(benchmark.industry) || meaningfulText(benchmark.providerGroupName) || meaningfulText(benchmark.sector) || "";
+}
+
+function benchmarkIndustryPhrase(benchmark: IndustryBenchmark): string {
+  const industry = benchmarkIndustryText(benchmark);
+  return industry ? `${industry} 업종` : "업종";
 }
 
 function secondSentence(input: { strongestLabel: string; valuation?: { body: string } }): string {
@@ -343,6 +376,11 @@ function finiteNumber(value: unknown): number | undefined {
 
 function stringFromUnknown(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function meaningfulText(value: unknown): string | undefined {
+  const text = stringFromUnknown(value);
+  return text && text !== "-" ? text : undefined;
 }
 
 function recordFromUnknown(value: unknown): Record<string, unknown> {

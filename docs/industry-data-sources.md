@@ -4,7 +4,7 @@
 
 Industry classifications are seed data for rule-based valuation comparisons such as PER/PBR versus industry averages. They are not request-time data and should not be refreshed daily. Refresh the classification master on initial setup, then quarterly or when listing/delisting changes need to be absorbed.
 
-Daily jobs should refresh valuation benchmarks from cached stock detail snapshots, not the industry master.
+Daily jobs should refresh valuation benchmarks, not the industry master. External provider benchmarks are preferred for valuation comparisons; cached stock detail snapshots remain a fallback and audit signal.
 
 ## Current Baseline
 
@@ -38,7 +38,17 @@ Daily:
 
 ```bash
 python scripts/run_industry_maintenance.py --refresh-benchmarks
+python scripts/sync_external_industry_benchmarks.py
 ```
+
+The benchmark lookup key is now scope-aware:
+
+- `scope = KR` for domestic comparisons
+- `scope = OVERSEAS` for overseas comparisons
+- `period = quarter` by default, matching the current product comparison mode
+- `canonical_industry_name` remains the user-facing comparison group
+
+Application requests should read by `scope + canonical industry + metric + period` first, then fall back to legacy `market + industry + metric` rows during migrations or provider outages.
 
 Manual fallback only:
 
@@ -59,6 +69,7 @@ The application uses this map to show Korean sector/industry labels and to build
 
 ## Future Source Candidates
 
+- FnGuide/TICS: best domestic match for Toss-like category comparisons, but requires a licensed feed or approved redistribution path.
 - SEC EDGAR company tickers plus submissions bulk ZIP: legally safer US SIC foundation, but maps to SIC rather than market-friendly sectors.
 - NasdaqTrader symbol directory: authoritative active US universe, but no industry classification.
 - KRX Data Marketplace industry classification status: official trade-date data, but direct OTP access currently needs more session handling.
