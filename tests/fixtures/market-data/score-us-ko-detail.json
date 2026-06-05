@@ -1,0 +1,108 @@
+{
+  "ok": true,
+  "app": "Stock Score Reader",
+  "requested_ticker": "US:KO",
+  "market": "US",
+  "symbol": "KO",
+  "name": "Coca-Cola Co",
+  "exchange": "NYSE",
+  "currency": "USD",
+  "score": 72.4,
+  "grade": {
+    "class": "good",
+    "label": "좋음"
+  },
+  "summary": "KO는 종합 점수 72.4/100점이에요.",
+  "latest_price": 72.25,
+  "latest_bar_date": "2026-06-04",
+  "evaluation_label": "2026-06-05 09:00:00 조회",
+  "evaluation_ts": 1780617600,
+  "data_quality": "정상",
+  "usd_krw_rate": 1370.5,
+  "usd_krw_label": "$1 = 약 1,370.50원",
+  "components": [
+    {
+      "key": "profitability",
+      "label": "이익성",
+      "short": "익",
+      "score": 82.1,
+      "summary": "이익이 실제로 남는지 봐요.",
+      "metrics": [
+        {
+          "label": "EPS",
+          "value": "2.41"
+        }
+      ]
+    }
+  ],
+  "key_metrics": [
+    {
+      "label": "현재가",
+      "value": "$72.25 (약 99,019원)"
+    }
+  ],
+  "stock_profile": [
+    {
+      "label": "회사명",
+      "value": "Coca-Cola Co"
+    }
+  ],
+  "valuation_rows": [
+    {
+      "label": "PER",
+      "value": "29.98"
+    }
+  ],
+  "chart_patterns": [
+    {
+      "name": "추세 정렬",
+      "status": "우호",
+      "evidence": "가격 $72.25",
+      "interpretation": "현재가가 주요 이동평균 위에 있으면 중기 추세가 우호적으로 보여요."
+    }
+  ],
+  "chart_series": [
+    {
+      "date": "2026-06-04",
+      "close": 72.25,
+      "close_label": "$72.25",
+      "currency": "USD"
+    }
+  ],
+  "history": [],
+  "top_scores": [],
+  "news": [],
+  "price_metrics": {
+    "price": 72.25,
+    "previous_close": 71.8,
+    "latest_change": 0.0062674095
+  },
+  "financials": {
+    "eps": 2.41,
+    "bps": 10.2
+  },
+  "financial_statement": {
+    "price_detail": {}
+  },
+  "sia_snapshot": {
+    "symbol": "KO",
+    "price": 72.25,
+    "raw_signal": "WATCH",
+    "risk_level": "LOW",
+    "confidence": 1,
+    "spot_score": 0.724,
+    "signal_source": "market-data:overseas-stock+yfinance-fundamentals"
+  },
+  "fetch": {
+    "source": "market_data+yfinance_fundamentals",
+    "cache": "server"
+  },
+  "server_cache": {
+    "state": "fresh",
+    "source": "supabase",
+    "ticker": "US:KO",
+    "view": "detail",
+    "fetched_at": "2026-06-05T00:00:00.000Z",
+    "expires_at": "2026-06-05T01:00:00.000Z"
+  }
+}

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
+import { jsonError } from "@/lib/apiGuards";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { cleanView, getStockScore, normalizeTickerRef, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
 
@@ -9,6 +11,14 @@ export async function GET(request: NextRequest) {
   const ticker = normalizeTickerRef(request.nextUrl.searchParams.get("ticker"));
   const view = cleanView(request.nextUrl.searchParams.get("view"));
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
+  const rateLimit = await acquireRateLimit(
+    clientRateLimitKey(request),
+    forceRefresh ? apiLimitPolicy("stock_score_refresh", 6, 900) : apiLimitPolicy("stock_score", 180, 60)
+  );
+  if (!rateLimit.allowed) {
+    return jsonError(429, "rate_limited", "요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
+  }
+
   const cooldown = forceRefresh ? await acquireRefreshCooldown(request) : undefined;
 
   if (cooldown?.blocked) {

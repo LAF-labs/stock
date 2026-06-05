@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import ssl
 import tempfile
 import urllib.request
 import zipfile
@@ -56,12 +55,17 @@ US_COLUMNS = [
 
 
 def download_and_extract(url: str, work_dir: Path) -> Path:
-    ssl._create_default_https_context = ssl._create_unverified_context
     zip_path = work_dir / url.rsplit("/", 1)[-1]
-    urllib.request.urlretrieve(url, zip_path)
+    with urllib.request.urlopen(url, timeout=30) as response:
+        zip_path.write_bytes(response.read())
     with zipfile.ZipFile(zip_path) as archive:
-        archive.extractall(work_dir)
         names = [name for name in archive.namelist() if not name.endswith("/")]
+        for name in names:
+            member_path = Path(name)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise RuntimeError(f"Unsafe zip member in {url}: {name}")
+        for name in names:
+            archive.extract(name, work_dir)
     if not names:
         raise RuntimeError(f"{url} did not contain a file")
     return work_dir / names[0]

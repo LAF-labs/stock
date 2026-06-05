@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
+import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
+import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
 export type QuoteCacheState = "fresh" | "stale" | "miss";
 export type QuoteCacheSource = "memory" | "supabase" | "collector";
@@ -41,6 +43,7 @@ const SCRIPT_PATH = "scripts/fetch_yfinance_score.py";
 const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
 const TIMEOUT_MS = 18_000;
 const SUPABASE_TABLE = "stock_quote_snapshots";
+const COLLECTOR_OUTPUT_MAX_BYTES = 500_000;
 
 const memoryCache = (globalThis.__stockQuoteMemoryCache ??= new Map<string, StoredQuoteSnapshot>());
 const inflightRefreshes = (globalThis.__stockQuoteInflight ??= new Map<string, Promise<StoredQuoteSnapshot>>());
@@ -107,7 +110,18 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
   }
 }
 
-function runQuoteCollector(ticker: string): Promise<StockPayload> {
+async function acquireCollectorSlot() {
+  const result = await acquireRateLimit(
+    fixedRateLimitKey("stock-quote-collector-global"),
+    apiLimitPolicy("stock_quote_collector", 60, 60)
+  );
+  if (!result.allowed) {
+    throw new Error(`collector_rate_limited_until_${result.resetAt}`);
+  }
+}
+
+async function runQuoteCollector(ticker: string): Promise<StockPayload> {
+  await acquireCollectorSlot();
   return new Promise((resolve, reject) => {
     const child = spawn(PYTHON_BIN, [SCRIPT_PATH, ticker, "--view", "quote"], {
       env: {
@@ -118,8 +132,8 @@ function runQuoteCollector(ticker: string): Promise<StockPayload> {
       windowsHide: true,
     });
 
-    let stdout = "";
-    let stderr = "";
+    let stdout: BoundedOutput = { value: "", truncated: false };
+    let stderr: BoundedOutput = { value: "", truncated: false };
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`Quote lookup timed out after ${TIMEOUT_MS / 1000}s`));
@@ -128,10 +142,12 @@ function runQuoteCollector(ticker: string): Promise<StockPayload> {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      stdout += chunk;
+      const next = appendBoundedOutput(stdout.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
+      stdout = { value: next.value, truncated: stdout.truncated || next.truncated };
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk;
+      const next = appendBoundedOutput(stderr.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
+      stderr = { value: next.value, truncated: stderr.truncated || next.truncated };
     });
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -140,12 +156,12 @@ function runQuoteCollector(ticker: string): Promise<StockPayload> {
     child.on("close", (exitCode) => {
       clearTimeout(timer);
       if (exitCode !== 0) {
-        reject(new Error(stderr || `Python quote collector exited with ${exitCode}`));
+        reject(new Error(subprocessErrorMessage(stderr, `Python quote collector exited with ${exitCode}`)));
         return;
       }
 
       try {
-        resolve(JSON.parse(stdout) as StockPayload);
+        resolve(JSON.parse(stdout.value) as StockPayload);
       } catch {
         reject(new Error("Python quote collector did not return valid JSON."));
       }
@@ -175,6 +191,7 @@ async function refreshQuoteSnapshot(ticker: string): Promise<StoredQuoteSnapshot
 
     if (payload.ok !== false) {
       memoryCache.set(ticker, snapshot);
+      pruneMemoryCache(nowMs);
       await writeSupabaseSnapshot(snapshot);
     }
 
@@ -261,10 +278,24 @@ export function quoteResponseCacheHeaders(result: StockQuoteResult): HeadersInit
   }
 
   return {
-    "Cache-Control": `private, no-cache, max-age=0, s-maxage=0`,
-    Vary: "Cookie",
+    "Cache-Control": `public, max-age=5, s-maxage=${Math.max(15, Math.min(secondsUntil(result.cache.expiresAt), numericEnv("STOCK_QUOTE_HTTP_CACHE_MAX_SECONDS", 300)))}, stale-while-revalidate=60`,
     "X-Quote-Cache-Seconds": String(secondsUntil(result.cache.expiresAt)),
   };
+}
+
+function pruneMemoryCache(nowMs: number) {
+  const limit = numericEnv("STOCK_QUOTE_MEMORY_CACHE_MAX_ENTRIES", 2_000);
+  if (memoryCache.size <= limit) return;
+
+  for (const [key, snapshot] of memoryCache) {
+    if (!isServeableStale(snapshot, nowMs)) memoryCache.delete(key);
+  }
+  if (memoryCache.size <= limit) return;
+
+  const oldest = [...memoryCache.entries()].sort((left, right) => Date.parse(left[1].fetchedAt) - Date.parse(right[1].fetchedAt));
+  for (const [key] of oldest.slice(0, Math.max(0, memoryCache.size - limit))) {
+    memoryCache.delete(key);
+  }
 }
 
 export function quoteStatusFromPayload(payload: StockPayload): number {

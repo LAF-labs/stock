@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "type": "quote",
+  "requested_ticker": "US:KO",
+  "market": "US",
+  "symbol": "KO",
+  "name": "Coca-Cola Co",
+  "exchange": "NYSE",
+  "exchange_code": "NYSE",
+  "currency": "USD",
+  "usd_krw_rate": 1370.5,
+  "usd_krw_label": "$1 = 1,370.50원",
+  "latest_price": 72.25,
+  "latest_price_label": "$72.25 (약 99,019원)",
+  "latest_bar_date": "2026-06-04",
+  "previous_close": 71.8,
+  "latest_change": 0.0062674095,
+  "latest_change_label": "+0.63%",
+  "volume": 12345678,
+  "volume_label": "12,345,678",
+  "price_metrics": {
+    "price": 72.25,
+    "previous_close": 71.8,
+    "latest_change": 0.0062674095,
+    "volume": 12345678
+  },
+  "server_cache": {
+    "state": "fresh",
+    "source": "supabase",
+    "ticker": "US:KO",
+    "fetched_at": "2026-06-05T00:00:00.000Z",
+    "expires_at": "2026-06-05T00:03:00.000Z"
+  },
+  "market_session": {
+    "market": "US",
+    "is_open": true
+  }
+}

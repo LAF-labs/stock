@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "type": "quote",
+  "requested_ticker": "US:KO",
+  "market": "US",
+  "symbol": "KO",
+  "name": "Coca-Cola Co",
+  "exchange": "NYSE",
+  "currency": "USD",
+  "latest_price": 72.25,
+  "price_metrics": {
+    "price": 72.25
+  },
+  "server_cache": {
+    "state": "miss",
+    "source": "collector",
+    "ticker": "US:KO",
+    "fetched_at": "2026-06-05T00:00:00.000Z",
+    "expires_at": "2026-06-05T00:03:00.000Z"
+  },
+  "refresh_cooldown": {
+    "seconds": 900,
+    "next_allowed_at": "2026-06-05T00:15:00.000Z",
+    "remaining_seconds": 900
+  }
+}

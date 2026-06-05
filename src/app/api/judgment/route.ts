@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { NextRequest, NextResponse } from "next/server";
-import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
+import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
+import { readJsonObjectWithLimit, jsonError } from "@/lib/apiGuards";
+import { judgmentCacheKeyFor } from "@/lib/aiJudgmentCache";
+import { envValue, fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,6 +12,7 @@ const DEFAULT_MODEL = "gpt-5-mini";
 const PROMPT_VERSION = "stock-judge-v3";
 const TIMEOUT_MS = 14_000;
 const SUPABASE_TABLE = "stock_ai_judgments";
+const MAX_JUDGMENT_BODY_BYTES = 64 * 1024;
 
 type CompactMetric = {
   label?: string;
@@ -32,19 +34,6 @@ type AiJudgmentPayload = {
   promptVersion?: string;
   cached?: boolean;
 };
-
-function envValue(name: string): string | undefined {
-  try {
-    const envFile = readFileSync(join(process.cwd(), ".env.local"), "utf8");
-    const match = envFile.match(new RegExp(`^${name}=(.*)$`, "m"));
-    const value = match?.[1]?.trim();
-    if (value) return value;
-  } catch {
-    // Fall back to the process environment when .env.local is absent, such as in production.
-  }
-
-  return process.env[name];
-}
 
 function takeMetrics(value: unknown, count = 8): CompactMetric[] {
   if (!Array.isArray(value)) return [];
@@ -131,7 +120,7 @@ function todayKey(): string {
 }
 
 function cacheKeyFor(model: string): string {
-  return `${model}:${PROMPT_VERSION}`;
+  return judgmentCacheKeyFor(model, new Date(), PROMPT_VERSION);
 }
 
 const SYSTEM_PROMPT = [
@@ -314,15 +303,17 @@ async function saveCachedJudgment(ticker: string, cacheDate: string, judgment: A
 }
 
 export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "invalid_json", message: "요청 본문이 올바르지 않아요." }, { status: 400 });
+  const body = await readJsonObjectWithLimit(request, numericEnv("STOCK_AI_JUDGMENT_BODY_MAX_BYTES", MAX_JUDGMENT_BODY_BYTES));
+  if (!body.ok) {
+    return jsonError(body.status, body.error, body.message);
   }
 
-  const stock = compactPayload(body);
+  const stock = compactPayload(body.value);
   const ticker = tickerFromPayload(stock);
+  if (!validJudgmentStock(stock, ticker)) {
+    return NextResponse.json({ ok: false, error: "invalid_stock_payload", message: "판단을 만들 주식 데이터가 부족해요." }, { status: 400 });
+  }
+
   const cacheDate = todayKey();
   const model = envValue("OPENAI_MODEL") || DEFAULT_MODEL;
   const cacheKey = cacheKeyFor(model);
@@ -351,6 +342,11 @@ export async function POST(request: NextRequest) {
       },
       { status: 503 }
     );
+  }
+
+  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_ai_judgment", 30, 6 * 60 * 60));
+  if (!rateLimit.allowed) {
+    return jsonError(429, "rate_limited", "AI 판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
   }
 
   const controller = new AbortController();
@@ -445,4 +441,10 @@ export async function POST(request: NextRequest) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function validJudgmentStock(stock: ReturnType<typeof compactPayload>, ticker: string): boolean {
+  if (!ticker) return false;
+  if (typeof stock.score !== "number" || !Number.isFinite(stock.score)) return false;
+  return Array.isArray(stock.components) && stock.components.length > 0;
 }

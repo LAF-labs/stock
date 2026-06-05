@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { clampScore, formatDateTimeFromEpoch, formatPercent, formatValue, recordEntries } from "@/lib/format";
@@ -613,6 +613,7 @@ export default function StockDashboard() {
               <StockHeader
                 data={data}
                 quote={quoteState.status === "success" ? quoteState.data : undefined}
+                quoteState={quoteState}
                 quoteRefreshState={quoteRefreshState}
                 onRefreshQuote={refreshQuote}
                 judgmentState={judgmentState}
@@ -695,12 +696,14 @@ function StatusCard({ title, body, tone = "default" }: { title: string; body: st
 function StockHeader({
   data,
   quote,
+  quoteState,
   quoteRefreshState,
   onRefreshQuote,
   judgmentState,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
+  quoteState: QuoteState;
   quoteRefreshState: QuoteRefreshState;
   onRefreshQuote: () => void;
   judgmentState: JudgmentState;
@@ -720,6 +723,12 @@ function StockHeader({
       : quoteRefreshState.status === "cooldown"
       ? quoteRefreshState.message || "새로고침 대기 중"
       : "최신 현재가로 새로고침";
+  const quoteStatusMessage =
+    quoteState.status === "loading"
+      ? "현재가를 확인하는 중이에요."
+      : quoteState.status === "error"
+        ? `현재가 업데이트 실패: ${quoteState.error}`
+        : undefined;
   const marketCap = metricValue(data.key_metrics, "시가총액");
   const signal = data.sia_snapshot?.raw_signal || "-";
   const risk = data.sia_snapshot?.risk_level || "-";
@@ -753,6 +762,10 @@ function StockHeader({
       {quoteRefreshState.message ? (
         <p className={`quote-refresh-note ${quoteRefreshState.status}`} role="status" aria-live="polite">
           {quoteRefreshState.message}
+        </p>
+      ) : quoteStatusMessage ? (
+        <p className={`quote-refresh-note ${quoteState.status}`} role={quoteState.status === "error" ? "alert" : "status"} aria-live="polite">
+          {quoteStatusMessage}
         </p>
       ) : null}
 
@@ -920,10 +933,10 @@ function ChartStory({
           <h2>최근 1년은 이렇게 움직였어요</h2>
         </div>
         <div className="chart-mode-tabs" role="tablist" aria-label="차트 표시 방식">
-          <button type="button" className={chartMode === "line" ? "active" : undefined} onClick={() => setChartMode("line")}>
+          <button type="button" role="tab" aria-selected={chartMode === "line"} className={chartMode === "line" ? "active" : undefined} onClick={() => setChartMode("line")}>
             쉽게
           </button>
-          <button type="button" className={chartMode === "candle" ? "active" : undefined} onClick={() => setChartMode("candle")}>
+          <button type="button" role="tab" aria-selected={chartMode === "candle"} className={chartMode === "candle" ? "active" : undefined} onClick={() => setChartMode("candle")}>
             캔들
           </button>
         </div>
@@ -1377,12 +1390,13 @@ function TermHelp({ label }: { label: string }) {
 }
 
 function InfoTip({ label, body }: { label: string; body: string }) {
+  const id = useId();
   return (
     <span className="info-tip-wrap">
-      <button type="button" className="info-tip" aria-label={label} onClick={(event) => event.stopPropagation()}>
+      <button type="button" className="info-tip" aria-label={label} aria-describedby={id} onClick={(event) => event.stopPropagation()}>
         ?
       </button>
-      <span className="info-bubble" role="tooltip">
+      <span id={id} className="info-bubble" role="tooltip">
         {body}
       </span>
     </span>

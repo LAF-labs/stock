@@ -907,27 +907,15 @@ def kis_throttle() -> None:
     clock_path = Path.cwd() / ".kis_request_clock"
 
     try:
-        import msvcrt
-
-        with lock_path.open("a+b") as lock:
-            lock.seek(0, os.SEEK_END)
-            if lock.tell() == 0:
-                lock.write(b"0")
-                lock.flush()
-            lock.seek(0)
-            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        with one_byte_file_lock(lock_path):
             try:
-                try:
-                    last = float(clock_path.read_text(encoding="utf-8").strip() or "0")
-                except Exception:
-                    last = 0.0
-                elapsed = time.time() - last
-                if elapsed < KIS_REQUEST_INTERVAL:
-                    time.sleep(KIS_REQUEST_INTERVAL - elapsed)
-                clock_path.write_text(str(time.time()), encoding="utf-8")
-            finally:
-                lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+                last = float(clock_path.read_text(encoding="utf-8").strip() or "0")
+            except Exception:
+                last = 0.0
+            elapsed = time.time() - last
+            if elapsed < KIS_REQUEST_INTERVAL:
+                time.sleep(KIS_REQUEST_INTERVAL - elapsed)
+            clock_path.write_text(str(time.time()), encoding="utf-8")
     except Exception:
         global KIS_LAST_REQUEST_AT
         elapsed = time.time() - KIS_LAST_REQUEST_AT

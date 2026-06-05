@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
 export type ScoreView = "detail" | "compare";
 export type StockPayload = Record<string, unknown>;
@@ -46,6 +48,7 @@ const SCRIPT_PATH = "scripts/fetch_yfinance_score.py";
 const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
 const TIMEOUT_MS = 35_000;
 const SUPABASE_TABLE = "stock_score_snapshots";
+const COLLECTOR_OUTPUT_MAX_BYTES = 1_000_000;
 
 const memoryCache = (globalThis.__stockScoreMemoryCache ??= new Map<string, StoredSnapshot>());
 const inflightRefreshes = (globalThis.__stockScoreInflight ??= new Map<string, Promise<StoredSnapshot>>());
@@ -162,7 +165,18 @@ async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
   }
 }
 
-function runCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
+async function acquireCollectorSlot() {
+  const result = await acquireRateLimit(
+    fixedRateLimitKey("stock-score-collector-global"),
+    apiLimitPolicy("stock_score_collector", 30, 60)
+  );
+  if (!result.allowed) {
+    throw new Error(`collector_rate_limited_until_${result.resetAt}`);
+  }
+}
+
+async function runCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
+  await acquireCollectorSlot();
   return new Promise((resolve, reject) => {
     const child = spawn(PYTHON_BIN, [SCRIPT_PATH, ticker, "--view", view], {
       env: {
@@ -173,8 +187,8 @@ function runCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
       windowsHide: true,
     });
 
-    let stdout = "";
-    let stderr = "";
+    let stdout: BoundedOutput = { value: "", truncated: false };
+    let stderr: BoundedOutput = { value: "", truncated: false };
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`Stock lookup timed out after ${TIMEOUT_MS / 1000}s`));
@@ -183,10 +197,12 @@ function runCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      stdout += chunk;
+      const next = appendBoundedOutput(stdout.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
+      stdout = { value: next.value, truncated: stdout.truncated || next.truncated };
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk;
+      const next = appendBoundedOutput(stderr.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
+      stderr = { value: next.value, truncated: stderr.truncated || next.truncated };
     });
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -195,12 +211,12 @@ function runCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
     child.on("close", (exitCode) => {
       clearTimeout(timer);
       if (exitCode !== 0) {
-        reject(new Error(stderr || `Python collector exited with ${exitCode}`));
+        reject(new Error(subprocessErrorMessage(stderr, `Python collector exited with ${exitCode}`)));
         return;
       }
 
       try {
-        resolve(JSON.parse(stdout) as StockPayload);
+        resolve(JSON.parse(stdout.value) as StockPayload);
       } catch {
         reject(new Error("Python collector did not return valid JSON."));
       }
@@ -227,6 +243,7 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
 
     if (payload.ok !== false) {
       memoryCache.set(key, snapshot);
+      pruneMemoryCache(nowMs);
       await writeSupabaseSnapshot(snapshot);
     }
 
@@ -238,6 +255,21 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
     return await promise;
   } finally {
     inflightRefreshes.delete(key);
+  }
+}
+
+function pruneMemoryCache(nowMs: number) {
+  const limit = numericEnv("STOCK_SCORE_MEMORY_CACHE_MAX_ENTRIES", 1_000);
+  if (memoryCache.size <= limit) return;
+
+  for (const [key, snapshot] of memoryCache) {
+    if (!isServeableStale(snapshot, nowMs)) memoryCache.delete(key);
+  }
+  if (memoryCache.size <= limit) return;
+
+  const oldest = [...memoryCache.entries()].sort((left, right) => Date.parse(left[1].fetchedAt) - Date.parse(right[1].fetchedAt));
+  for (const [key] of oldest.slice(0, Math.max(0, memoryCache.size - limit))) {
+    memoryCache.delete(key);
   }
 }
 

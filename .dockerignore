@@ -1,0 +1,12 @@
+.env*
+.git
+.next
+.venv
+node_modules
+__pycache__
+*.pyc
+*.log
+.kis_*
+.stock_fundamentals_cache
+supabase/.temp
+services/market-data/target

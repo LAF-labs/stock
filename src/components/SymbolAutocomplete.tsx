@@ -43,7 +43,8 @@ export default function SymbolAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const query = value.trim();
-  const canPick = items.length > 0 && !disabled;
+  const normalizedQueryTicker = query.toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+  const canSubmit = Boolean(normalizedQueryTicker) && !disabled;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -104,6 +105,23 @@ export default function SymbolAutocomplete({
 
   const listId = `${id}-list`;
   const activeItem = useMemo(() => items[activeIndex] || items[0], [activeIndex, items]);
+  const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
+
+  function directInputItem(): SymbolSearchItem {
+    const ticker = normalizedQueryTicker;
+    return {
+      key: ticker,
+      market: /^\d{6}$/.test(ticker) ? "KR" : "US",
+      ticker,
+      displayName: ticker,
+      subtitle: ticker,
+      exchange: "",
+      exchangeName: "직접 입력",
+      koreanName: "",
+      englishName: ticker,
+      instrumentType: "STOCK",
+    };
+  }
 
   function selectItem(item: SymbolSearchItem) {
     onValueChange(displayInputValue(item));
@@ -114,7 +132,13 @@ export default function SymbolAutocomplete({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (activeItem) selectItem(activeItem);
+    if (activeItem) {
+      selectItem(activeItem);
+      return;
+    }
+    if (query) {
+      onSelect(directInputItem());
+    }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -127,7 +151,11 @@ export default function SymbolAutocomplete({
       setActiveIndex((index) => Math.max(index - 1, 0));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      if (activeItem) selectItem(activeItem);
+      if (activeItem) {
+        selectItem(activeItem);
+      } else if (query) {
+        onSelect(directInputItem());
+      }
     } else if (event.key === "Escape") {
       setIsOpen(false);
     }
@@ -153,9 +181,10 @@ export default function SymbolAutocomplete({
           role="combobox"
           aria-expanded={isOpen}
           aria-controls={listId}
+          aria-activedescendant={activeOptionId}
           aria-autocomplete="list"
         />
-        <button type="submit" disabled={disabled || !canPick}>
+        <button type="submit" disabled={!canSubmit}>
           {isLoading ? "찾는 중" : buttonLabel}
         </button>
         {isOpen ? (
@@ -163,6 +192,7 @@ export default function SymbolAutocomplete({
             {items.map((item, index) => (
               <button
                 key={item.key}
+                id={`${listId}-option-${index}`}
                 type="button"
                 className={index === activeIndex ? "active" : ""}
                 onMouseEnter={() => setActiveIndex(index)}

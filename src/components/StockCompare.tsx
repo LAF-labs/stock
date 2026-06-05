@@ -145,8 +145,8 @@ function strongestAndWeakest(data: StockScoreResponse) {
   };
 }
 
-function toCompareItem(data: StockScoreResponse): CompareItem {
-  const ticker = data.symbol || data.requested_ticker || "UNKNOWN";
+function toCompareItem(data: StockScoreResponse, requestedTicker: string): CompareItem {
+  const ticker = displayTickerRef(requestedTicker) || data.symbol || data.requested_ticker || "UNKNOWN";
   const { strongest, weakest } = strongestAndWeakest(data);
   return {
     ticker,
@@ -241,7 +241,10 @@ export default function StockCompare() {
     return () => controller.abort();
   }, [tickers]);
 
-  const items = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data)), [states]);
+  const items = useMemo(
+    () => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
+    [states]
+  );
   const isLoading = states.some((state) => state.status === "loading");
   const suggestions = (SUGGESTIONS[baseTickerLabel] || ["AAPL", "MSFT", "NVDA", "AMZN", "JPM"])
     .map(normalizeTicker)
@@ -327,8 +330,8 @@ export default function StockCompare() {
 
       {items.length ? (
         <div className="compare-feed">
-          <CompareBrief items={items} />
-          <CompareCards items={items} />
+          <CompareBrief items={items} baseTicker={baseTickerLabel} />
+          <CompareCards items={items} baseTicker={baseTickerLabel} />
           {items.length >= 2 ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
@@ -359,18 +362,18 @@ function CompareSkeleton() {
   );
 }
 
-function CompareBrief({ items }: { items: CompareItem[] }) {
+function CompareBrief({ items, baseTicker }: { items: CompareItem[]; baseTicker: string }) {
   const bestScore = bestBy(items, (item) => item.score);
   const bestMomentum = bestBy(items, (item) => item.return52w ?? item.return6m ?? item.return3m);
   const bestValue = bestBy(items, (item) => componentScore(item, "valuation"));
   const bestProfit = bestBy(items, (item) => componentScore(item, "profitability"));
   const weakestHealth = bestBy(items, (item) => componentScore(item, "health"), "low");
-  const base = items[0];
+  const base = items.find((item) => item.ticker === baseTicker) || items[0];
 
   return (
     <section className="compare-section compare-brief">
       <span>먼저 볼 차이</span>
-      <h2>{items.length === 1 ? "비교할 종목을 기다리고 있어요" : `${base.ticker} 기준으로 갈리는 부분이에요`}</h2>
+      <h2>{items.length === 1 ? "비교할 종목을 기다리고 있어요" : `${baseTicker} 기준으로 갈리는 부분이에요`}</h2>
       <p>
         {items.length === 1
           ? `${base.ticker}의 점수는 ${base.score.toFixed(1)}점이에요. 비교 종목을 붙이면 가격 흐름, 수익성, 재무 안정성이 같은 기준으로 정리돼요.`
@@ -399,17 +402,17 @@ function Insight({ label, ticker, value }: { label: string; ticker: string | und
   );
 }
 
-function CompareCards({ items }: { items: CompareItem[] }) {
+function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker: string }) {
   return (
     <section className="compare-section">
       <span>종목 카드</span>
       <h2>각 종목의 현재 인상이에요</h2>
       <div className="compare-card-grid" style={{ "--compare-count": items.length } as CSSProperties}>
-        {items.map((item, index) => (
+        {items.map((item) => (
           <article className="compare-stock-card" key={item.ticker}>
             <div className="compare-card-top">
               <div>
-                <span>{index === 0 ? "기준 종목" : "비교 종목"}</span>
+                <span>{item.ticker === baseTicker ? "기준 종목" : "비교 종목"}</span>
                 <strong>{item.ticker}</strong>
               </div>
               <em className={item.daily !== undefined && item.daily < 0 ? "price-down" : "price-up"}>{percentText(item.daily)}</em>

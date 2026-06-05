@@ -18,6 +18,7 @@ Next.js 기반 주식 티커 조회 리더입니다.
 ```bash
 npm install
 python -m pip install -r requirements.txt
+cargo test --manifest-path services/market-data/Cargo.toml
 ```
 
 `.env.example`을 기준으로 `.env.local`에 시세 조회 API 키와 Supabase 키를 설정해야 합니다.
@@ -56,9 +57,38 @@ STOCK_SCORE_CACHE_STALE_SECONDS=86400
 STOCK_QUOTE_CACHE_STALE_SECONDS=86400
 STOCK_REFRESH_COOLDOWN_SECONDS=900
 STOCK_REFRESH_COOKIE_SECRET=...
+STOCK_RATE_LIMIT_SECRET=...
+STOCK_SCORE_RATE_LIMIT=180
+STOCK_SCORE_RATE_LIMIT_WINDOW_SECONDS=60
+STOCK_SCORE_REFRESH_RATE_LIMIT=6
+STOCK_SCORE_REFRESH_RATE_LIMIT_WINDOW_SECONDS=900
+STOCK_SCORE_BATCH_RATE_LIMIT=45
+STOCK_SCORE_BATCH_RATE_LIMIT_WINDOW_SECONDS=60
+STOCK_QUOTE_RATE_LIMIT=240
+STOCK_QUOTE_RATE_LIMIT_WINDOW_SECONDS=60
+STOCK_QUOTE_REFRESH_RATE_LIMIT=8
+STOCK_QUOTE_REFRESH_RATE_LIMIT_WINDOW_SECONDS=900
+STOCK_AI_JUDGMENT_RATE_LIMIT=30
+STOCK_AI_JUDGMENT_RATE_LIMIT_WINDOW_SECONDS=21600
+STOCK_SCORE_COLLECTOR_RATE_LIMIT=30
+STOCK_SCORE_COLLECTOR_RATE_LIMIT_WINDOW_SECONDS=60
+STOCK_QUOTE_COLLECTOR_RATE_LIMIT=60
+STOCK_QUOTE_COLLECTOR_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_FUNDAMENTALS_CACHE_SECONDS=43200
 STOCK_FUNDAMENTALS_STALE_SECONDS=604800
+STOCK_COLLECTOR_OUTPUT_MAX_BYTES=1000000
+STOCK_SCORE_MEMORY_CACHE_MAX_ENTRIES=1000
+STOCK_QUOTE_MEMORY_CACHE_MAX_ENTRIES=2000
+MARKET_DATA_BACKEND=python
+MARKET_DATA_SERVICE_URL=http://127.0.0.1:8080
+MARKET_DATA_BIND_ADDR=0.0.0.0:8080
+MARKET_DATA_INTERNAL_TOKEN=...
+REDIS_URL=redis://127.0.0.1:6379
 ```
+
+AI 판단문은 모델/프롬프트/티커 기준으로 6시간 버킷에 캐시합니다. 캐시 미스에서만 OpenAI API를 호출하며, 공개 배포에서는 `STOCK_RATE_LIMIT_SECRET`과 Supabase rate limit migration을 적용해야 합니다.
+
+Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 없애기 위한 rewrite 경로입니다. 현재 public Next API는 `MARKET_DATA_BACKEND=python`을 기본 fallback으로 유지하며, Rust 서비스는 `/healthz`, `/metrics`와 내부 인증 골격부터 제공합니다. 다음 단계에서 KIS client, cache/job pipeline, score engine을 순차적으로 이관합니다.
 
 ## 실행
 
@@ -69,5 +99,31 @@ npm run dev
 ```text
 http://127.0.0.1:3000/?ticker=KO
 ```
+
+## 배포
+
+이 앱의 API는 Python collector를 subprocess로 실행하므로, 공개 배포는 Python venv가 포함된 long-lived container/VM을 기준으로 합니다.
+
+```bash
+docker build -t stock-score-reader .
+docker run --env-file .env.local -p 3000:3000 stock-score-reader
+```
+
+Rust market-data 서비스 이미지만 빌드할 때는 Docker target을 지정합니다.
+
+```bash
+scripts/docker-build-market-data.sh stock-market-data
+docker run --env-file .env.local -p 8080:8080 stock-market-data
+```
+
+macOS에서 Docker Desktop이 관리자 권한 설정에 막히면 Colima를 사용할 수 있습니다.
+
+```bash
+brew install colima
+colima start --runtime docker --cpu 4 --memory 4 --disk 30
+scripts/docker-build-market-data.sh stock-market-data
+```
+
+Supabase migration을 먼저 적용해야 API rate limit과 서버 전용 cache read 정책이 함께 동작합니다.
 
 주의: 점수는 조회값을 화면용으로 계산한 참고 지표입니다. 투자 판단이나 자동매매에 그대로 사용하면 안 됩니다.

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
+import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 
@@ -10,6 +12,10 @@ const MAX_TICKERS = 5;
 export async function GET(request: NextRequest) {
   const tickers = parseTickerList(request.nextUrl.searchParams.get("tickers"), MAX_TICKERS);
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
+  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_score_batch", 45, 60));
+  if (!rateLimit.allowed) {
+    return jsonError(429, "rate_limited", "요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
+  }
 
   if (!tickers.length) {
     return NextResponse.json({ ok: false, error: "missing_tickers", message: "비교할 티커를 입력해주세요." }, { status: 400 });
@@ -55,7 +61,7 @@ export async function GET(request: NextRequest) {
     const successfulItems = resultItems.filter((item) => item.payload.ok === true && item.cache);
     const headers = successfulItems.length === resultItems.length ? batchResponseCacheHeaders(successfulItems as Array<{ payload: StockPayload; cache: StockScoreResult["cache"] }>) : privateNoStoreHeaders();
 
-    return NextResponse.json(payload, { headers });
+    return NextResponse.json(payload, { status: batchStatusFromResults(results), headers });
   } catch (error) {
     console.warn("batch_stock_collector_unreachable", { tickers, error: error instanceof Error ? error.message : "unknown" });
     return NextResponse.json(

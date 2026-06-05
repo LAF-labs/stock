@@ -18,3 +18,4 @@ supabase/.temp/
 .kis_discovery_cache.lock
 .kis_discovery_cache.tmp
 .stock_fundamentals_cache/
+services/market-data/target/
