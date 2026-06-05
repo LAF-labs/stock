@@ -8,6 +8,14 @@ const includePythonCollector =
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
+    const isProduction = process.env.NODE_ENV === "production";
+    const scriptSrc = ["script-src", "'self'", "'unsafe-inline'"];
+    const connectSrc = ["connect-src", "'self'"];
+    if (!isProduction) {
+      scriptSrc.push("'unsafe-eval'");
+      connectSrc.push("http://localhost:*", "http://127.0.0.1:*", "ws://localhost:*", "ws://127.0.0.1:*");
+    }
+
     const securityHeaders = [
       {
         key: "Content-Security-Policy",
@@ -19,8 +27,8 @@ const nextConfig: NextConfig = {
           "img-src 'self' data:",
           "font-src 'self' data:",
           "style-src 'self' 'unsafe-inline'",
-          "script-src 'self' 'unsafe-inline'",
-          "connect-src 'self'",
+          scriptSrc.join(" "),
+          connectSrc.join(" "),
           "form-action 'self'",
         ].join("; "),
       },

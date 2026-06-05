@@ -30,6 +30,11 @@ const EXAMPLES = [
   { key: "KR:005380", label: "현대차" },
 ];
 
+const RECENT_TICKERS_STORAGE_KEY = "sia-stock-score:recent-tickers";
+const THEME_STORAGE_KEY = "sia-stock-score:theme";
+const THEME_OPTIONS = ["system", "light", "dark"] as const;
+const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
+
 const DETAIL_SECTIONS = [
   { id: "detail-summary", label: "요약" },
   { id: "detail-chart", label: "가격 흐름" },
@@ -42,6 +47,13 @@ const DETAIL_SECTIONS = [
 ] as const;
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
+type ThemeMode = (typeof THEME_OPTIONS)[number];
+
+type RecentTicker = {
+  key: string;
+  label: string;
+  subtitle?: string;
+};
 
 const RECORD_LABELS: Record<string, string> = {
   yfinance_version: "yfinance 버전",
@@ -313,6 +325,63 @@ function symbolRef(item: SymbolSearchItem): string {
   return `${item.market}:${item.ticker}`;
 }
 
+function recentTickerFromItem(item: SymbolSearchItem): RecentTicker {
+  const key = symbolRef(item);
+  return {
+    key,
+    label: item.displayName || item.koreanName || item.englishName || item.ticker,
+    subtitle: `${item.ticker}${item.exchangeName ? ` · ${item.exchangeName}` : ""}`,
+  };
+}
+
+function safeRecentTickersFromStorage(): RecentTicker[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(RECENT_TICKERS_STORAGE_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        key: typeof item?.key === "string" ? item.key : "",
+        label: typeof item?.label === "string" ? item.label : "",
+        subtitle: typeof item?.subtitle === "string" ? item.subtitle : undefined,
+      }))
+      .filter((item) => item.key && item.label)
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentTickers(items: RecentTicker[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(RECENT_TICKERS_STORAGE_KEY, JSON.stringify(items.slice(0, 8)));
+  } catch {
+    // Recent searches are a convenience only.
+  }
+}
+
+function safeThemeFromStorage(): ThemeMode {
+  if (typeof window === "undefined") return "system";
+  const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return value === "light" || value === "dark" || value === "system" ? value : "system";
+}
+
+function applyTheme(theme: ThemeMode) {
+  if (typeof document === "undefined") return;
+  if (theme === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.dataset.theme = theme;
+  }
+}
+
+function resolvedThemeKey(theme: ThemeMode): string {
+  if (typeof window === "undefined") return theme;
+  if (theme !== "system") return theme;
+  return window.matchMedia(DARK_SCHEME_QUERY).matches ? "system-dark" : "system-light";
+}
+
 function humanizeRecordKey(key: string): string {
   return RECORD_LABELS[key] || key.replaceAll("_", " ");
 }
@@ -392,9 +461,14 @@ function formatMonthLabel(date: string | undefined): string {
 export default function StockDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tickerParam = (searchParams.get("ticker") || "US:KO").trim().toUpperCase();
+  const tickerParamRaw = searchParams.get("ticker");
+  const hasTicker = Boolean(tickerParamRaw?.trim());
+  const tickerParam = hasTicker ? (tickerParamRaw || "").trim().toUpperCase() : "";
 
   const [tickerInput, setTickerInput] = useState(displayTickerInput(tickerParam));
+  const [theme, setTheme] = useState<ThemeMode>("system");
+  const [themeKey, setThemeKey] = useState("system");
+  const [recentTickers, setRecentTickers] = useState<RecentTicker[]>([]);
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
   const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
@@ -404,6 +478,59 @@ export default function StockDashboard() {
   const quoteRefreshControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    const storedTheme = safeThemeFromStorage();
+    setTheme(storedTheme);
+    applyTheme(storedTheme);
+    setRecentTickers(safeRecentTickersFromStorage());
+  }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+    setThemeKey(resolvedThemeKey(theme));
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme preference is best effort.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || theme !== "system") return;
+    const media = window.matchMedia(DARK_SCHEME_QUERY);
+    const syncSystemTheme = () => setThemeKey(resolvedThemeKey("system"));
+    syncSystemTheme();
+    media.addEventListener("change", syncSystemTheme);
+    return () => media.removeEventListener("change", syncSystemTheme);
+  }, [theme]);
+
+  function rememberRecentTicker(item: RecentTicker) {
+    setRecentTickers((current) => {
+      const next = [item, ...current.filter((ticker) => ticker.key !== item.key)].slice(0, 8);
+      persistRecentTickers(next);
+      return next;
+    });
+  }
+
+  function removeRecentTicker(key: string) {
+    setRecentTickers((current) => {
+      const next = current.filter((ticker) => ticker.key !== key);
+      persistRecentTickers(next);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!hasTicker) {
+      currentTickerRef.current = "";
+      quoteRefreshControllerRef.current?.abort();
+      setTickerInput("");
+      setState({ status: "idle" });
+      setQuoteState({ status: "idle" });
+      setQuoteRefreshState({ status: "idle" });
+      return;
+    }
+
     currentTickerRef.current = tickerParam;
     quoteRefreshControllerRef.current?.abort();
     setTickerInput(displayTickerInput(tickerParam));
@@ -438,9 +565,15 @@ export default function StockDashboard() {
       });
 
     return () => controller.abort();
-  }, [tickerParam]);
+  }, [hasTicker, tickerParam]);
 
   useEffect(() => {
+    if (!hasTicker) {
+      setQuoteState({ status: "idle" });
+      setQuoteRefreshState({ status: "idle" });
+      return;
+    }
+
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker: tickerParam || "US:KO" });
 
@@ -481,7 +614,7 @@ export default function StockDashboard() {
       });
 
     return () => controller.abort();
-  }, [tickerParam]);
+  }, [hasTicker, tickerParam]);
 
   useEffect(() => {
     const nextAllowedAt = quoteRefreshState.nextAllowedAt;
@@ -503,7 +636,7 @@ export default function StockDashboard() {
   useEffect(() => () => quoteRefreshControllerRef.current?.abort(), []);
 
   useEffect(() => {
-    if (state.status !== "success") {
+    if (!hasTicker || state.status !== "success") {
       setJudgmentState({ status: "idle" });
       return;
     }
@@ -537,13 +670,25 @@ export default function StockDashboard() {
       });
 
     return () => controller.abort();
-  }, [state]);
+  }, [hasTicker, state]);
+
+  useEffect(() => {
+    if (!hasTicker || state.status !== "success") return;
+    const symbol = state.data.symbol || displayTickerInput(tickerParam);
+    rememberRecentTicker({
+      key: tickerParam,
+      label: state.data.name || symbol,
+      subtitle: `${symbol}${state.data.exchange ? ` · ${state.data.exchange}` : ""}`,
+    });
+  }, [hasTicker, state, tickerParam]);
 
   function selectSymbol(item: SymbolSearchItem) {
-    router.push(`/?ticker=${encodeURIComponent(symbolRef(item))}`);
+    const key = symbolRef(item);
+    rememberRecentTicker(recentTickerFromItem(item));
+    router.push(`/?ticker=${encodeURIComponent(key)}`);
   }
 
-  const data = state.status === "success" ? state.data : undefined;
+  const data = hasTicker && state.status === "success" ? state.data : undefined;
   const visibleDetailSections = DETAIL_SECTIONS;
 
   useEffect(() => {
@@ -645,8 +790,19 @@ export default function StockDashboard() {
   }
 
   return (
-    <main className="stock-app stock-detail-app">
-      <section className="stock-search">
+    <main className={`stock-app ${hasTicker ? "stock-detail-app" : "stock-landing-app"}`}>
+      <section className={`stock-search ${hasTicker ? "" : "landing-search"}`}>
+        <div className="app-topbar">
+          <a className="app-brand" href="/" aria-label="SIA Stock Score 홈">
+            <strong>SIA</strong>
+            <span>Stock Score</span>
+          </a>
+          <nav className="app-nav" aria-label="주요 화면">
+            <a href="/">분석</a>
+            <a href="/compare">비교</a>
+          </nav>
+          <ThemeToggle value={theme} onChange={setTheme} />
+        </div>
         <SymbolAutocomplete
           id="ticker"
           value={tickerInput}
@@ -657,18 +813,14 @@ export default function StockDashboard() {
           label="국내·미국 주식 검색"
           className="stock-search-form"
         />
-        <div className="ticker-chips" aria-label="예시 티커">
-          {EXAMPLES.map((example) => (
-            <button key={example.key} type="button" onClick={() => router.push(`/?ticker=${encodeURIComponent(example.key)}`)}>
-              {example.label}
-            </button>
-          ))}
-        </div>
+        <RecentTickerRail items={recentTickers} onOpen={(key) => router.push(`/?ticker=${encodeURIComponent(key)}`)} onRemove={removeRecentTicker} />
       </section>
 
-      {state.status === "loading" && <StockSkeleton />}
-      {state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} />}
-      {state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" />}
+      {!hasTicker && <LandingHome onOpenTicker={(key) => router.push(`/?ticker=${encodeURIComponent(key)}`)} />}
+
+      {hasTicker && state.status === "loading" && <StockSkeleton />}
+      {hasTicker && state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} />}
+      {hasTicker && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" />}
 
       {data && (
         <>
@@ -685,7 +837,7 @@ export default function StockDashboard() {
               />
             </DetailSection>
             <DetailSection id="detail-chart">
-              <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
+              <ChartStory points={data.chart_series} patterns={data.chart_patterns} themeKey={themeKey} />
             </DetailSection>
             <DetailSection id="detail-factors">
               <FactorStory components={data.components} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
@@ -712,6 +864,88 @@ export default function StockDashboard() {
         </>
       )}
     </main>
+  );
+}
+
+function ThemeToggle({ value, onChange }: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
+  const labels: Record<ThemeMode, string> = {
+    system: "자동",
+    light: "밝게",
+    dark: "어둡게",
+  };
+
+  return (
+    <div className="theme-toggle" role="group" aria-label="화면 테마">
+      {THEME_OPTIONS.map((option) => (
+        <button key={option} type="button" className={value === option ? "active" : undefined} aria-pressed={value === option} onClick={() => onChange(option)}>
+          {labels[option]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RecentTickerRail({
+  items,
+  onOpen,
+  onRemove,
+}: {
+  items: RecentTicker[];
+  onOpen: (key: string) => void;
+  onRemove: (key: string) => void;
+}) {
+  if (!items.length) return null;
+
+  return (
+    <div className="ticker-chips recent-ticker-chips" aria-label="최근 조회 종목">
+      {items.map((item) => (
+        <span className="recent-chip" key={item.key}>
+          <button type="button" onClick={() => onOpen(item.key)}>
+            <strong>{item.label}</strong>
+            {item.subtitle ? <small>{item.subtitle}</small> : null}
+          </button>
+          <button type="button" className="recent-remove" onClick={() => onRemove(item.key)} aria-label={`${item.label} 최근 조회에서 제거`}>
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function LandingHome({ onOpenTicker }: { onOpenTicker: (key: string) => void }) {
+  return (
+    <section className="landing-home">
+      <div className="landing-copy">
+        <span className="landing-eyebrow">SIA Stock Score</span>
+        <h1>주식 점수 리더</h1>
+      </div>
+      <div className="landing-example-rail" aria-label="바로 보기 예시">
+        {EXAMPLES.slice(0, 6).map((example) => (
+          <button key={example.key} type="button" onClick={() => onOpenTicker(example.key)}>
+            <strong>{example.label}</strong>
+            <span>{displayTickerInput(example.key)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="landing-preview-grid">
+        <article>
+          <span>예시 품질</span>
+          <strong>80+</strong>
+          <p>수익성·성장·재무</p>
+        </article>
+        <article>
+          <span>예시 기회</span>
+          <strong>70+</strong>
+          <p>밸류·모멘텀·업종</p>
+        </article>
+        <article>
+          <span>현재가</span>
+          <strong>5분</strong>
+          <p>수동 갱신 쿨다운</p>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -983,9 +1217,11 @@ function StockSkeleton() {
 function ChartStory({
   points,
   patterns,
+  themeKey,
 }: {
   points: ChartSeriesPoint[] | undefined;
   patterns: ChartPattern[] | undefined;
+  themeKey: string;
 }) {
   const usable = useMemo(
     () =>
@@ -1017,7 +1253,7 @@ function ChartStory({
           </button>
         </div>
       </div>
-      <TradingPriceChart points={usable} mode={chartMode} />
+      <TradingPriceChart points={usable} mode={chartMode} themeKey={themeKey} />
       <div className="pattern-chips">
         {(patterns || []).slice(0, 3).map((pattern) => (
           <article key={pattern.name}>
@@ -1052,9 +1288,11 @@ function priceLabel(value: number | undefined, currency: string) {
 function TradingPriceChart({
   points,
   mode,
+  themeKey,
 }: {
   points: Array<ChartSeriesPoint & { close: number; date: string }>;
   mode: "line" | "candle";
+  themeKey: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; price: string } | null>(null);
@@ -1097,20 +1335,27 @@ function TradingPriceChart({
       const { createChart, LineSeries, CandlestickSeries, HistogramSeries, ColorType, CrosshairMode } = await import("lightweight-charts");
       const currentContainer = containerRef.current;
       if (disposed || !currentContainer) return;
+      const styles = getComputedStyle(document.documentElement);
+      const chartBackground = styles.getPropertyValue("--chart-bg").trim() || "#f8fafc";
+      const chartText = styles.getPropertyValue("--muted").trim() || "#8b95a1";
+      const chartGrid = styles.getPropertyValue("--chart-grid").trim() || "rgba(222, 228, 235, 0.65)";
+      const chartAccent = styles.getPropertyValue("--accent").trim() || "#3182f6";
+      const chartUp = styles.getPropertyValue("--red").trim() || "#f04452";
+      const chartDown = styles.getPropertyValue("--down").trim() || "#3182f6";
 
       currentContainer.innerHTML = "";
       const chart = createChart(currentContainer, {
         width: Math.max(1, currentContainer.clientWidth),
         height: 360,
         layout: {
-          background: { type: ColorType.Solid, color: "#f8fafc" },
-          textColor: "#8b95a1",
+          background: { type: ColorType.Solid, color: chartBackground },
+          textColor: chartText,
           fontFamily: "inherit",
           fontSize: 12,
         },
         grid: {
-          vertLines: { color: "rgba(222, 228, 235, 0.65)" },
-          horzLines: { color: "rgba(222, 228, 235, 0.65)" },
+          vertLines: { color: chartGrid },
+          horzLines: { color: chartGrid },
         },
         rightPriceScale: {
           borderVisible: false,
@@ -1124,8 +1369,8 @@ function TradingPriceChart({
         },
         crosshair: {
           mode: CrosshairMode.Normal,
-          vertLine: { color: "rgba(49, 130, 246, 0.34)", width: 1, labelVisible: false },
-          horzLine: { color: "rgba(49, 130, 246, 0.24)", width: 1, labelVisible: false },
+          vertLine: { color: chartAccent, width: 1, labelVisible: false },
+          horzLine: { color: chartAccent, width: 1, labelVisible: false },
         },
         handleScroll: {
           mouseWheel: false,
@@ -1144,15 +1389,15 @@ function TradingPriceChart({
       const priceSeries =
         mode === "candle"
           ? chart.addSeries(CandlestickSeries, {
-              upColor: "#f04452",
-              downColor: "#3182f6",
-              borderUpColor: "#f04452",
-              borderDownColor: "#3182f6",
-              wickUpColor: "#f04452",
-              wickDownColor: "#3182f6",
+              upColor: chartUp,
+              downColor: chartDown,
+              borderUpColor: chartUp,
+              borderDownColor: chartDown,
+              wickUpColor: chartUp,
+              wickDownColor: chartDown,
             })
           : chart.addSeries(LineSeries, {
-              color: "#3182f6",
+              color: chartAccent,
               lineWidth: 3,
               crosshairMarkerVisible: true,
               crosshairMarkerRadius: 5,
@@ -1211,7 +1456,7 @@ function TradingPriceChart({
       chartApi?.remove();
       setTooltip(null);
     };
-  }, [chartData, mode, points]);
+  }, [chartData, mode, points, themeKey]);
 
   return (
     <div className="chart-plot">
