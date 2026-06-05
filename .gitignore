@@ -1,10 +1,12 @@
 .next/
+.vercel/
 node_modules/
 out/
 dist/
 coverage/
 *.log
 *.tsbuildinfo
+.next-server.pid
 .env*.local
 __pycache__/
 *.pyc
@@ -19,3 +21,4 @@ supabase/.temp/
 .kis_discovery_cache.tmp
 .stock_fundamentals_cache/
 services/market-data/target/
+.vercel

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
@@ -41,6 +42,11 @@ export async function GET(request: NextRequest) {
           const payload = await enrichStockPayloadWithSymbolProfile(result.payload);
           return { payload, cache: result.cache };
         } catch (error) {
+          if (isStockDataUnavailableError(error)) {
+            console.info("batch_stock_snapshot_unavailable", { ticker, reason: error.payload.reason });
+            return { payload: error.toPayload() };
+          }
+
           console.warn("batch_stock_collector_unreachable", { ticker, error: error instanceof Error ? error.message : "unknown" });
           return {
             payload: {

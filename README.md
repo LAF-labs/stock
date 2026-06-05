@@ -151,7 +151,24 @@ http://127.0.0.1:3000/?ticker=KO
 
 ## 배포
 
-이 앱의 API는 Python collector를 subprocess로 실행하므로, 공개 배포는 Python venv가 포함된 long-lived container/VM을 기준으로 합니다.
+Vercel + Supabase 배포에서는 공개 요청 경로에서 Python collector를 실행하지 않습니다. Vercel 환경 변수에는 아래 값을 넣어 Next API가 Supabase snapshot을 읽기 전용으로 서빙하게 하세요.
+
+```text
+STOCK_DATA_RUNTIME=snapshot
+SUPABASE_URL=...
+SUPABASE_PUBLISHABLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행해 Supabase snapshot을 미리 채웁니다.
+
+```bash
+python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --json
+```
+
+GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣고, repository variable `STOCK_SNAPSHOT_TICKERS`에 prewarm할 티커 목록을 쉼표로 저장하세요. 기본 workflow는 평일 30분마다 `scripts/publish_stock_snapshots.py`를 실행합니다.
+
+Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 
 ```bash
 docker build -t stock-score-reader .

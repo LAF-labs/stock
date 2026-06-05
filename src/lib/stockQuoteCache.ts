@@ -1,10 +1,8 @@
-import { spawn } from "node:child_process";
-import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
 import { getMarketDataServiceQuote } from "@/lib/marketDataServiceClient";
+import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
-import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
 export type QuoteCacheState = "fresh" | "stale" | "miss";
 export type QuoteCacheSource = "memory" | "supabase" | "collector" | "market-data";
@@ -40,11 +38,7 @@ declare global {
   var __stockQuoteInflight: Map<string, Promise<StoredQuoteSnapshot>> | undefined;
 }
 
-const SCRIPT_PATH = "scripts/fetch_yfinance_score.py";
-const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
-const TIMEOUT_MS = 18_000;
 const SUPABASE_TABLE = "stock_quote_snapshots";
-const COLLECTOR_OUTPUT_MAX_BYTES = 500_000;
 
 const memoryCache = (globalThis.__stockQuoteMemoryCache ??= new Map<string, StoredQuoteSnapshot>());
 const inflightRefreshes = (globalThis.__stockQuoteInflight ??= new Map<string, Promise<StoredQuoteSnapshot>>());
@@ -111,70 +105,12 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
   }
 }
 
-async function acquireCollectorSlot() {
-  const result = await acquireRateLimit(
-    fixedRateLimitKey("stock-quote-collector-global"),
-    apiLimitPolicy("stock_quote_collector", 60, 60)
-  );
-  if (!result.allowed) {
-    throw new Error(`collector_rate_limited_until_${result.resetAt}`);
-  }
-}
-
-async function runQuoteCollector(ticker: string): Promise<StockPayload> {
-  await acquireCollectorSlot();
-  return new Promise((resolve, reject) => {
-    const child = spawn(PYTHON_BIN, [SCRIPT_PATH, ticker, "--view", "quote"], {
-      env: {
-        ...process.env,
-        PYTHONUTF8: "1",
-        PYTHONIOENCODING: "utf-8",
-      },
-      windowsHide: true,
-    });
-
-    let stdout: BoundedOutput = { value: "", truncated: false };
-    let stderr: BoundedOutput = { value: "", truncated: false };
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Quote lookup timed out after ${TIMEOUT_MS / 1000}s`));
-    }, TIMEOUT_MS);
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      const next = appendBoundedOutput(stdout.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
-      stdout = { value: next.value, truncated: stdout.truncated || next.truncated };
-    });
-    child.stderr.on("data", (chunk) => {
-      const next = appendBoundedOutput(stderr.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
-      stderr = { value: next.value, truncated: stderr.truncated || next.truncated };
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (exitCode) => {
-      clearTimeout(timer);
-      if (exitCode !== 0) {
-        reject(new Error(subprocessErrorMessage(stderr, `Python quote collector exited with ${exitCode}`)));
-        return;
-      }
-
-      try {
-        resolve(JSON.parse(stdout.value) as StockPayload);
-      } catch {
-        reject(new Error("Python quote collector did not return valid JSON."));
-      }
-    });
-  });
-}
-
 async function refreshQuoteSnapshot(ticker: string): Promise<StoredQuoteSnapshot> {
   const existing = inflightRefreshes.get(ticker);
   if (existing) return existing;
 
   const promise = (async () => {
+    const { runQuoteCollector } = await import("@/lib/pythonStockCollector");
     const payload = await runQuoteCollector(ticker);
     const nowMs = Date.now();
     const market = payload.market === "KR" || payload.market === "US" ? payload.market : marketFromTicker(ticker);
@@ -258,11 +194,24 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
       staleCandidate = dbSnapshot;
       staleSource = "supabase";
     }
+
+    if (staleCandidate && !pythonCollectorEnabled()) {
+      memoryCache.set(ticker, staleCandidate);
+      return decorate(staleCandidate, "stale", staleSource);
+    }
   }
 
   try {
     const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: options.forceRefresh });
     if (marketDataResult) return marketDataResult;
+
+    if (!pythonCollectorEnabled()) {
+      throw new StockDataUnavailableError({
+        kind: "quote",
+        ticker,
+        reason: options.forceRefresh ? "refresh_background_only" : "snapshot_miss",
+      });
+    }
 
     const refreshed = await refreshQuoteSnapshot(ticker);
     return decorate(refreshed, "miss", "collector");

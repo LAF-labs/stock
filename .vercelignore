@@ -1,0 +1,16 @@
+.git
+.next
+.vercel
+node_modules
+services/market-data/target
+.venv
+.stock_fundamentals_cache
+__pycache__
+tests/__pycache__
+*.pyc
+*.log
+*.tsbuildinfo
+.env*
+.kis_*
+demo_app.py
+SIA-Score-UI-Demo.command

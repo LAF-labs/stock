@@ -1,10 +1,8 @@
-import { spawn } from "node:child_process";
-import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
+import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
-import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
 export type ScoreView = "detail" | "compare";
 export type StockPayload = Record<string, unknown>;
@@ -46,11 +44,7 @@ declare global {
   var __stockScoreInflight: Map<string, Promise<StoredSnapshot>> | undefined;
 }
 
-const SCRIPT_PATH = "scripts/fetch_yfinance_score.py";
-const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
-const TIMEOUT_MS = 35_000;
 const SUPABASE_TABLE = "stock_score_snapshots";
-const COLLECTOR_OUTPUT_MAX_BYTES = 1_000_000;
 
 const memoryCache = (globalThis.__stockScoreMemoryCache ??= new Map<string, StoredSnapshot>());
 const inflightRefreshes = (globalThis.__stockScoreInflight ??= new Map<string, Promise<StoredSnapshot>>());
@@ -176,72 +170,14 @@ async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
   }
 }
 
-async function acquireCollectorSlot() {
-  const result = await acquireRateLimit(
-    fixedRateLimitKey("stock-score-collector-global"),
-    apiLimitPolicy("stock_score_collector", 30, 60)
-  );
-  if (!result.allowed) {
-    throw new Error(`collector_rate_limited_until_${result.resetAt}`);
-  }
-}
-
-async function runCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
-  await acquireCollectorSlot();
-  return new Promise((resolve, reject) => {
-    const child = spawn(PYTHON_BIN, [SCRIPT_PATH, ticker, "--view", view], {
-      env: {
-        ...process.env,
-        PYTHONUTF8: "1",
-        PYTHONIOENCODING: "utf-8",
-      },
-      windowsHide: true,
-    });
-
-    let stdout: BoundedOutput = { value: "", truncated: false };
-    let stderr: BoundedOutput = { value: "", truncated: false };
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Stock lookup timed out after ${TIMEOUT_MS / 1000}s`));
-    }, TIMEOUT_MS);
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      const next = appendBoundedOutput(stdout.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
-      stdout = { value: next.value, truncated: stdout.truncated || next.truncated };
-    });
-    child.stderr.on("data", (chunk) => {
-      const next = appendBoundedOutput(stderr.value, chunk, numericEnv("STOCK_COLLECTOR_OUTPUT_MAX_BYTES", COLLECTOR_OUTPUT_MAX_BYTES));
-      stderr = { value: next.value, truncated: stderr.truncated || next.truncated };
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (exitCode) => {
-      clearTimeout(timer);
-      if (exitCode !== 0) {
-        reject(new Error(subprocessErrorMessage(stderr, `Python collector exited with ${exitCode}`)));
-        return;
-      }
-
-      try {
-        resolve(JSON.parse(stdout.value) as StockPayload);
-      } catch {
-        reject(new Error("Python collector did not return valid JSON."));
-      }
-    });
-  });
-}
-
 async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredSnapshot> {
   const key = cacheKey(ticker, view);
   const existing = inflightRefreshes.get(key);
   if (existing) return existing;
 
   const promise = (async () => {
-    const payload = await runCollector(ticker, view);
+    const { runScoreCollector } = await import("@/lib/pythonStockCollector");
+    const payload = await runScoreCollector(ticker, view);
     const nowMs = Date.now();
     const fetchedAt = new Date(nowMs).toISOString();
     const snapshot: StoredSnapshot = {
@@ -315,6 +251,7 @@ function decorate(snapshot: StoredSnapshot, state: CacheState, source: CacheSour
 }
 
 function scheduleRefresh(ticker: string, view: ScoreView) {
+  if (!pythonCollectorEnabled()) return;
   const key = cacheKey(ticker, view);
   if (inflightRefreshes.has(key)) return;
   void refreshSnapshot(ticker, view).catch(() => undefined);
@@ -349,14 +286,26 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
 
     if (staleCandidate) {
       memoryCache.set(key, staleCandidate);
-      scheduleRefresh(ticker, view);
-      return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
+      if (pythonCollectorEnabled()) {
+        scheduleRefresh(ticker, view);
+        return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
+      }
+      return decorate(staleCandidate, "stale", staleSource, { refreshStarted: false });
     }
   }
 
   try {
     const marketDataResult = await getMarketDataServiceScore(ticker, view, { forceRefresh: options.forceRefresh });
     if (marketDataResult) return marketDataResult;
+
+    if (!pythonCollectorEnabled()) {
+      throw new StockDataUnavailableError({
+        kind: "score",
+        ticker,
+        view,
+        reason: options.forceRefresh ? "refresh_background_only" : "snapshot_miss",
+      });
+    }
 
     const refreshed = await refreshSnapshot(ticker, view);
     return decorate(refreshed, "miss", "collector");

@@ -57,6 +57,29 @@ Local venv example:
 PYTHON_BIN=.venv/bin/python npm run score:smoke
 ```
 
+For Vercel + Supabase production, set the public app runtime to snapshot-only:
+
+```text
+STOCK_DATA_RUNTIME=snapshot
+```
+
+Then publish hot quote/score snapshots from GitHub Actions, a local admin machine, or another worker that can safely run Python dependencies:
+
+```bash
+python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --json
+```
+
+The bundled GitHub Actions workflow runs on weekdays every 30 minutes. Configure these repository secrets:
+
+```text
+STOCK_API_APP_KEY
+STOCK_API_APP_SECRET
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 30 minutes.
+
 The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MVRL`, `005930`, `000660`, `253590`. It checks:
 
 - every score is finite and in `0..100`
@@ -77,12 +100,14 @@ Classification data should not be refreshed daily. Refresh classifications quart
 
 ## Efficient Serving Strategy
 
-- Serve score reads from memory first, then Supabase snapshots, then collector/Rust refresh.
+- Serve score reads from memory first, then Supabase snapshots. In Vercel snapshot mode, never invoke Python from a request handler.
+- If a Supabase snapshot is missing in snapshot mode, return `snapshot_unavailable` with HTTP 503. That is an ingestion/prewarm issue, not a public API collector outage.
+- In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.
 - Keep score detail cache hour-level during market hours and serve stale only for short recovery windows.
 - Keep rule-based judgment cache in six-hour buckets.
 - Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days; user requests should read cache first and refresh under a file lock only on miss.
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.
-- Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Do not prewarm the whole universe daily.
+- Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
 - Prefer Rust `market-data` for long-term serving. Python collector should remain a fallback until Rust owns quote, score, batch, and refresh jobs end to end.
 

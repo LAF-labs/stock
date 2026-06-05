@@ -1,0 +1,50 @@
+name: Publish stock snapshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Comma-separated ticker list. Falls back to STOCK_SNAPSHOT_TICKERS repository variable."
+        required: false
+        default: ""
+  schedule:
+    - cron: "*/30 * * * 1-5"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
+      STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
+      STOCK_API_BASE: ${{ vars.STOCK_API_BASE || 'https://openapi.koreainvestment.com:9443' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STOCK_SNAPSHOT_TICKERS: ${{ vars.STOCK_SNAPSHOT_TICKERS }}
+      STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install collector dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Publish snapshots to Supabase
+        run: |
+          TICKERS="${STOCK_SNAPSHOT_TICKERS:-NVDA,TSLA,KO,MRVL,005930,000660}"
+          if [ -n "${{ inputs.tickers }}" ]; then
+            TICKERS="${{ inputs.tickers }}"
+          fi
+          python scripts/publish_stock_snapshots.py \
+            --tickers "$TICKERS" \
+            --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS" \
+            --json

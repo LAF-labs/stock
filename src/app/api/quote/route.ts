@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { jsonError } from "@/lib/apiGuards";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { normalizeTickerRef } from "@/lib/stockSnapshotCache";
 
@@ -54,6 +55,13 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   } catch (error) {
+    if (isStockDataUnavailableError(error)) {
+      console.info("quote_snapshot_unavailable", { ticker, reason: error.payload.reason });
+      const response = NextResponse.json(error.toPayload(), { status: error.status, headers: privateNoStoreHeaders() });
+      if (cooldown) applyRefreshUserCookie(response, cooldown);
+      return response;
+    }
+
     console.warn("quote_collector_unreachable", { ticker, error: error instanceof Error ? error.message : "unknown" });
     const response = NextResponse.json(
       {
