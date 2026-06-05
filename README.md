@@ -207,6 +207,8 @@ npm run deploy:preview
 
 Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행합니다. 기본 역할은 사용자가 만든 `stock_refresh_jobs` queue를 drain하는 것이고, 필요할 때만 최근 인기 종목이나 운영자가 지정한 warm ticker를 함께 갱신합니다.
 
+GitHub Actions `schedule`은 GitHub default branch에 workflow가 올라간 뒤에만 동작합니다. 기능 브랜치 preview를 수동 배포한 상태에서는 사용자가 만든 queue가 자동으로 비워지지 않으므로, merge 전 preview 점검은 아래 수동 drain 명령이나 `workflow_dispatch`가 가능한 default-branch workflow를 사용하세요.
+
 ```bash
 python scripts/publish_stock_snapshots.py --drain-queue --queue-limit 50 --score-ttl-seconds 1800 --json
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 50 --score-ttl-seconds 1800 --json
