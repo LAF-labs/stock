@@ -544,18 +544,19 @@ def env_value(name: str) -> str | None:
     if value:
         return value.strip()
 
-    env_path = Path.cwd() / ".env.local"
-    if not env_path.exists():
-        return None
-    try:
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if not line or line.lstrip().startswith("#") or "=" not in line:
-                continue
-            key, raw_value = line.split("=", 1)
-            if key.strip() == name:
-                return raw_value.strip().strip('"').strip("'")
-    except Exception:
-        return None
+    for env_filename in (".env.local", ".env.supabase.local"):
+        env_path = Path.cwd() / env_filename
+        if not env_path.exists():
+            continue
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if not line or line.lstrip().startswith("#") or "=" not in line:
+                    continue
+                key, raw_value = line.split("=", 1)
+                if key.strip() == name:
+                    return raw_value.strip().strip('"').strip("'")
+        except Exception:
+            continue
     return None
 
 
@@ -655,6 +656,9 @@ YFINANCE_FUNDAMENTAL_CACHE_VERSION = 2
 YFINANCE_FUNDAMENTAL_SOURCE = "yfinance"
 SUPABASE_FUNDAMENTAL_TABLE = "stock_fundamental_snapshots"
 SUPABASE_TIMEOUT_SECONDS = 8
+KIS_TOKEN_CACHE_TABLE = "kis_access_tokens"
+KIS_TOKEN_LOCK_RPC = "acquire_kis_token_issue_lock"
+KIS_TOKEN_REFRESH_BUFFER_SECONDS = 300
 YFINANCE_FUNDAMENTAL_FIELDS = (
     "profitMargins",
     "operatingMargins",
@@ -856,6 +860,137 @@ def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any
         return False
 
 
+def kis_token_cache_key(config: dict[str, str]) -> str:
+    return hashlib.sha256(f"{config['base_url']}:{config['app_key']}".encode("utf-8")).hexdigest()[:16]
+
+
+def fresh_kis_token_payload(payload: dict[str, Any] | None) -> tuple[str, float] | None:
+    if not isinstance(payload, dict):
+        return None
+    token = payload.get("access_token")
+    expires_at = as_float(payload.get("expires_at"))
+    if token and expires_at and expires_at > time.time() + KIS_TOKEN_REFRESH_BUFFER_SECONDS:
+        return str(token), float(expires_at)
+    return None
+
+
+def read_local_kis_token_cache(cache_path: Path) -> tuple[str, float] | None:
+    try:
+        return fresh_kis_token_payload(json.loads(cache_path.read_text(encoding="utf-8")))
+    except Exception:
+        return None
+
+
+def write_local_kis_token_cache(cache_path: Path, token: str, expires_at: float) -> None:
+    try:
+        tmp_path = cache_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps({"access_token": token, "expires_at": expires_at}), encoding="utf-8")
+        tmp_path.replace(cache_path)
+    except Exception:
+        pass
+
+
+def read_supabase_kis_access_token(cache_key: str) -> tuple[str, float] | None:
+    config = supabase_write_config()
+    if not config:
+        return None
+
+    url, key = config
+    try:
+        response = requests.get(
+            f"{url}/rest/v1/{KIS_TOKEN_CACHE_TABLE}",
+            params={
+                "cache_key": f"eq.{cache_key}",
+                "select": "access_token,expires_at",
+                "limit": "1",
+            },
+            headers=supabase_headers(key),
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        if not response.ok:
+            return None
+        rows = response.json()
+    except Exception:
+        return None
+
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return None
+    token = rows[0].get("access_token")
+    expires_at = parse_iso_datetime(rows[0].get("expires_at"))
+    if isinstance(token, str) and expires_at and expires_at.timestamp() > time.time() + KIS_TOKEN_REFRESH_BUFFER_SECONDS:
+        return token, expires_at.timestamp()
+    return None
+
+
+def acquire_supabase_kis_token_issue_lock(cache_key: str, lock_seconds: int = 30) -> bool | None:
+    config = supabase_write_config()
+    if not config:
+        return None
+
+    url, key = config
+    try:
+        response = requests.post(
+            f"{url}/rest/v1/rpc/{KIS_TOKEN_LOCK_RPC}",
+            headers=supabase_headers(key),
+            json={
+                "p_cache_key": cache_key,
+                "p_lock_seconds": lock_seconds,
+                "p_locked_by": f"python-{os.getpid()}",
+            },
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        if not response.ok:
+            return None
+        payload = response.json()
+    except Exception:
+        return None
+
+    if isinstance(payload, bool):
+        return payload
+    row = payload[0] if isinstance(payload, list) and payload else payload
+    if isinstance(row, dict) and isinstance(row.get("acquired"), bool):
+        return bool(row["acquired"])
+    return None
+
+
+def wait_for_supabase_kis_access_token(cache_key: str, attempts: int = 3, delay_seconds: float = 0.75) -> tuple[str, float] | None:
+    for _ in range(attempts):
+        time.sleep(delay_seconds)
+        token = read_supabase_kis_access_token(cache_key)
+        if token:
+            return token
+    return None
+
+
+def write_supabase_kis_access_token(cache_key: str, token: str, expires_at: float) -> bool:
+    config = supabase_write_config()
+    if not config or not token or expires_at <= time.time():
+        return False
+
+    url, key = config
+    try:
+        response = requests.post(
+            f"{url}/rest/v1/{KIS_TOKEN_CACHE_TABLE}",
+            params={"on_conflict": "cache_key"},
+            headers={
+                **supabase_headers(key),
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            json={
+                "cache_key": cache_key,
+                "access_token": token,
+                "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+                "issued_at": datetime.now(timezone.utc).isoformat(),
+                "locked_until": None,
+                "locked_by": None,
+            },
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        return response.ok
+    except Exception:
+        return False
+
+
 def yfinance_cache_meta(store: str, state: str, **extra: Any) -> dict[str, Any]:
     return {
         "source": YFINANCE_FUNDAMENTAL_SOURCE,
@@ -982,19 +1117,26 @@ def parse_kis_token_expiry(value: Any) -> float | None:
 
 def kis_access_token() -> str:
     config = kis_config()
-    cache_key = hashlib.sha256(f"{config['base_url']}:{config['app_key']}".encode("utf-8")).hexdigest()[:16]
+    cache_key = kis_token_cache_key(config)
     cache_path = Path.cwd() / f".kis_token_cache_{cache_key}.json"
     lock_path = cache_path.with_suffix(".lock")
 
     with one_byte_file_lock(lock_path):
-        try:
-            cached = json.loads(cache_path.read_text(encoding="utf-8"))
-            token = cached.get("access_token")
-            expires_at = as_float(cached.get("expires_at"))
-            if token and expires_at and expires_at > time.time() + 300:
-                return str(token)
-        except Exception:
-            pass
+        cached = read_local_kis_token_cache(cache_path)
+        if cached:
+            return cached[0]
+
+        shared = read_supabase_kis_access_token(cache_key)
+        if shared:
+            write_local_kis_token_cache(cache_path, shared[0], shared[1])
+            return shared[0]
+
+        lock_acquired = acquire_supabase_kis_token_issue_lock(cache_key)
+        if lock_acquired is False:
+            waited = wait_for_supabase_kis_access_token(cache_key)
+            if waited:
+                write_local_kis_token_cache(cache_path, waited[0], waited[1])
+                return waited[0]
 
         response = requests.post(
             f"{config['base_url']}/oauth2/tokenP",
@@ -1018,12 +1160,8 @@ def kis_access_token() -> str:
         if expires_at is None:
             expires_at = time.time() + float(payload.get("expires_in") or 60 * 60 * 23)
         token = str(payload["access_token"])
-        try:
-            tmp_path = cache_path.with_suffix(".tmp")
-            tmp_path.write_text(json.dumps({"access_token": token, "expires_at": expires_at}), encoding="utf-8")
-            tmp_path.replace(cache_path)
-        except Exception:
-            pass
+        write_local_kis_token_cache(cache_path, token, expires_at)
+        write_supabase_kis_access_token(cache_key, token, expires_at)
         return token
 
 

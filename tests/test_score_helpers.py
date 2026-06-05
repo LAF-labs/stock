@@ -1,4 +1,7 @@
 import unittest
+import tempfile
+import os
+from pathlib import Path
 
 import scripts.fetch_yfinance_score as legacy_score_module
 import scripts.stock_score.scoring as scoring
@@ -150,6 +153,77 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertLessEqual(opportunity.confidence, 0.45)
         self.assertGreaterEqual(opportunity.score, 45.0)
         self.assertLessEqual(opportunity.score, 65.0)
+
+    def test_kis_access_token_reuses_supabase_shared_cache(self):
+        original_env = {
+            key: os.environ.get(key)
+            for key in (
+                "STOCK_API_APP_KEY",
+                "STOCK_API_APP_SECRET",
+                "STOCK_API_BASE",
+                "KIS_APP_KEY",
+                "KIS_APP_SECRET",
+                "KIS_API_BASE",
+                "SUPABASE_URL",
+                "SUPABASE_SERVICE_ROLE_KEY",
+                "SUPABASE_PUBLISHABLE_KEY",
+            )
+        }
+        original_cwd = Path.cwd()
+        original_get = legacy_score_module.requests.get
+        original_post = legacy_score_module.requests.post
+
+        class FakeResponse:
+            def __init__(self, payload, ok=True, status_code=200, text=""):
+                self._payload = payload
+                self.ok = ok
+                self.status_code = status_code
+                self.text = text
+
+            def json(self):
+                return self._payload
+
+        def fake_get(url, **kwargs):
+            self.assertIn("/rest/v1/kis_access_tokens", url)
+            self.assertEqual(kwargs["headers"]["apikey"], "service-role-key")
+            return FakeResponse(
+                [
+                    {
+                        "cache_key": "unused",
+                        "access_token": "shared-token",
+                        "expires_at": "2099-01-01T00:00:00+00:00",
+                    }
+                ]
+            )
+
+        def fake_post(url, **_kwargs):
+            if "/oauth2/tokenP" in url:
+                raise AssertionError("KIS token endpoint should not be called when shared cache is fresh")
+            raise AssertionError(f"unexpected POST {url}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                os.environ["STOCK_API_APP_KEY"] = "app-key"
+                os.environ["STOCK_API_APP_SECRET"] = "app-secret"
+                os.environ["STOCK_API_BASE"] = "https://kis.example.com"
+                os.environ["SUPABASE_URL"] = "https://example.supabase.co"
+                os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "service-role-key"
+                for key in ("KIS_APP_KEY", "KIS_APP_SECRET", "KIS_API_BASE", "SUPABASE_PUBLISHABLE_KEY"):
+                    os.environ.pop(key, None)
+                legacy_score_module.requests.get = fake_get
+                legacy_score_module.requests.post = fake_post
+
+                self.assertEqual(legacy_score_module.kis_access_token(), "shared-token")
+            finally:
+                os.chdir(original_cwd)
+                legacy_score_module.requests.get = original_get
+                legacy_score_module.requests.post = original_post
+                for key, value in original_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
 
 
 if __name__ == "__main__":

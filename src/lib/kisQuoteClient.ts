@@ -1,4 +1,13 @@
 import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
+import {
+  acquireSharedKisTokenIssueLock,
+  isFreshKisToken,
+  kisTokenCacheKey,
+  readSharedKisAccessToken,
+  waitForSharedKisAccessToken,
+  writeSharedKisAccessToken,
+  type KisTokenCacheEntry,
+} from "@/lib/kisTokenCache";
 import { envValue, fetchWithTimeout } from "@/lib/supabaseRest";
 import type { StockPayload } from "@/lib/stockSnapshotCache";
 
@@ -6,11 +15,6 @@ type KisConfig = {
   appKey: string;
   appSecret: string;
   baseUrl: string;
-};
-
-type KisTokenCacheEntry = {
-  accessToken: string;
-  expiresAtMs: number;
 };
 
 type KisMarket = {
@@ -229,10 +233,25 @@ async function kisGet(path: string, trId: string, params: Record<string, string>
 }
 
 async function kisAccessToken(config: KisConfig): Promise<string> {
-  const cacheKey = `${config.baseUrl}:${config.appKey}`;
+  const cacheKey = kisTokenCacheKey(config);
   const cached = tokenCache.get(cacheKey);
-  if (cached && cached.expiresAtMs > Date.now() + 300_000) {
+  if (isFreshKisToken(cached)) {
     return cached.accessToken;
+  }
+
+  const shared = await readSharedKisAccessToken(cacheKey);
+  if (shared) {
+    tokenCache.set(cacheKey, shared);
+    return shared.accessToken;
+  }
+
+  const lockAcquired = await acquireSharedKisTokenIssueLock(cacheKey);
+  if (lockAcquired === false) {
+    const waited = await waitForSharedKisAccessToken(cacheKey);
+    if (waited) {
+      tokenCache.set(cacheKey, waited);
+      return waited.accessToken;
+    }
   }
 
   const response = await fetchWithTimeout(
@@ -257,7 +276,9 @@ async function kisAccessToken(config: KisConfig): Promise<string> {
   }
 
   const expiresAtMs = parseTokenExpiry(payload?.access_token_token_expired) ?? Date.now() + Number(payload?.expires_in || 60 * 60 * 23) * 1000;
-  tokenCache.set(cacheKey, { accessToken: token, expiresAtMs });
+  const entry = { accessToken: token, expiresAtMs };
+  tokenCache.set(cacheKey, entry);
+  await writeSharedKisAccessToken(cacheKey, entry);
   return token;
 }
 

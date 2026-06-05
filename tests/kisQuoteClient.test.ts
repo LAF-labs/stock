@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import { fetchKisQuote } from "../src/lib/kisQuoteClient";
 
@@ -16,6 +17,7 @@ const ENV_KEYS = [
 ] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
+const globalWithKisCache = globalThis as typeof globalThis & { __kisQuoteTokenCache?: Map<string, { accessToken: string; expiresAtMs: number }> };
 
 function setupEnv() {
   process.env.STOCK_API_APP_KEY = "app-key";
@@ -27,6 +29,7 @@ function setupEnv() {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  globalWithKisCache.__kisQuoteTokenCache?.clear();
 }
 
 function restore() {
@@ -39,6 +42,7 @@ function restore() {
     }
   }
   globalThis.fetch = originalFetch;
+  globalWithKisCache.__kisQuoteTokenCache?.clear();
 }
 
 test.afterEach(restore);
@@ -130,4 +134,108 @@ test("fetchKisQuote maps US KIS quote payload into public quote shape", async ()
   assert.equal(payload.latest_change, 0.0217);
   assert.equal(payload.usd_krw_rate, 1370);
   assert.equal(payload.latest_bar_date, "2026-06-05");
+});
+
+test("fetchKisQuote reuses a valid Supabase KIS token cache entry", async () => {
+  setupEnv();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  const expectedCacheKey = createHash("sha256").update("https://kis.example.com:app-key").digest("hex").slice(0, 16);
+
+  let tokenEndpointCalls = 0;
+  let cacheReadUrl = "";
+  let quoteAuthorization = "";
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/kis_access_tokens")) {
+      cacheReadUrl = text;
+      return Response.json([
+        {
+          cache_key: expectedCacheKey,
+          access_token: "shared-token",
+          expires_at: "2099-01-01T00:00:00.000Z",
+        },
+      ]);
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      tokenEndpointCalls += 1;
+      return Response.json({ access_token: "unexpected-token", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      quoteAuthorization = String((init?.headers as Record<string, string>)?.authorization || "");
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "70000",
+          stck_sdpr: "69000",
+          prdy_ctrt: "1.45",
+          acml_vol: "123456",
+          hts_kor_isnm: "삼성전자",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const payload = await fetchKisQuote("KR:005930");
+
+  assert.equal(payload.ok, true);
+  assert.equal(tokenEndpointCalls, 0);
+  assert.match(cacheReadUrl, /\/rest\/v1\/kis_access_tokens/);
+  assert.match(cacheReadUrl, new RegExp(`cache_key=eq\\.${expectedCacheKey}`));
+  assert.equal(quoteAuthorization, "Bearer shared-token");
+});
+
+test("fetchKisQuote stores newly issued KIS tokens in the Supabase shared cache", async () => {
+  setupEnv();
+  process.env.SUPABASE_URL = "https://example.supabase.co/";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  let tokenEndpointCalls = 0;
+  let lockCalls = 0;
+  let writeCalls = 0;
+  let writtenBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/rpc/acquire_kis_token_issue_lock")) {
+      lockCalls += 1;
+      return Response.json({ acquired: true });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens") && init?.method === "POST") {
+      writeCalls += 1;
+      writtenBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return new Response(null, { status: 204 });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens")) {
+      return Response.json([]);
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      tokenEndpointCalls += 1;
+      return Response.json({ access_token: "fresh-token", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "70000",
+          stck_sdpr: "69000",
+          prdy_ctrt: "1.45",
+          acml_vol: "123456",
+          hts_kor_isnm: "삼성전자",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const payload = await fetchKisQuote("KR:005930");
+
+  assert.equal(payload.ok, true);
+  assert.equal(lockCalls, 1);
+  assert.equal(tokenEndpointCalls, 1);
+  assert.equal(writeCalls, 1);
+  assert.equal(writtenBody?.access_token, "fresh-token");
+  assert.equal(typeof writtenBody?.expires_at, "string");
 });
