@@ -327,7 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--supabase-url", help="Overrides SUPABASE_URL.")
     parser.add_argument("--supabase-key", help="Overrides SUPABASE_SERVICE_ROLE_KEY.")
     parser.add_argument("--drain-queue", "--from-queue", dest="drain_queue", action="store_true", help="Claim and publish queued stock refresh jobs.")
-    parser.add_argument("--queue-limit", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LIMIT", 10), help="Maximum queued jobs to claim in this run.")
+    parser.add_argument("--queue-limit", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LIMIT", 50), help="Maximum queued jobs to claim in this run.")
     parser.add_argument("--queue-lock-seconds", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS", 900), help="Queue job lock duration.")
     parser.add_argument("--worker-id", default=os.environ.get("STOCK_SNAPSHOT_WORKER_ID"), help="Stable worker id for queued job claims.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")

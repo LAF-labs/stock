@@ -187,12 +187,12 @@ npm run deploy:preview
 Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행합니다. 기본 역할은 사용자가 만든 `stock_refresh_jobs` queue를 drain하는 것이고, 필요할 때만 최근 인기 종목이나 운영자가 지정한 warm ticker를 함께 갱신합니다.
 
 ```bash
-python scripts/publish_stock_snapshots.py --drain-queue --queue-limit 10 --json
-python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 10 --json
-PYTHON_BIN=.venv/bin/python npm run snapshots:drain -- --queue-limit 10
+python scripts/publish_stock_snapshots.py --drain-queue --queue-limit 50 --json
+python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 50 --json
+PYTHON_BIN=.venv/bin/python npm run snapshots:drain -- --queue-limit 50
 ```
 
-GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`와 `STOCK_SNAPSHOT_SLEEP_SECONDS`로 처리량과 provider 간격을 조정합니다.
+GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. 기본 queue drain은 30분마다 최대 50개입니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`와 `STOCK_SNAPSHOT_SLEEP_SECONDS`로 처리량과 provider 간격을 조정합니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 

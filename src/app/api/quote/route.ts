@@ -3,6 +3,7 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { jsonError } from "@/lib/apiGuards";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
+import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { normalizeTickerRef } from "@/lib/stockSnapshotCache";
@@ -42,15 +43,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getStockQuote(ticker, { forceRefresh });
+    const payload = quoteNeedsSymbolProfile(result.payload) ? await enrichStockPayloadWithSymbolProfile(result.payload) : result.payload;
 
     const response = NextResponse.json(
       {
-        ...result.payload,
+        ...payload,
         ...(cooldown ? { refresh_cooldown: cooldownPayload(cooldown.nextAllowedAt) } : {}),
       },
       {
-        status: quoteStatusFromPayload(result.payload),
-        headers: forceRefresh ? privateNoStoreHeaders() : quoteResponseCacheHeaders(result),
+        status: quoteStatusFromPayload(payload),
+        headers: forceRefresh ? privateNoStoreHeaders() : quoteResponseCacheHeaders({ ...result, payload }),
       }
     );
     if (cooldown) applyRefreshUserCookie(response, cooldown);
@@ -102,4 +104,16 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   }
+}
+
+function quoteNeedsSymbolProfile(payload: Record<string, unknown>): boolean {
+  const name = comparableText(payload.name);
+  const symbol = comparableText(payload.symbol);
+  const requestedTicker = comparableText(payload.requested_ticker);
+  if (!name) return true;
+  return name === symbol || name === requestedTicker;
+}
+
+function comparableText(value: unknown): string {
+  return typeof value === "string" ? value.trim().toUpperCase().replace(/[^A-Z0-9가-힣]/g, "") : "";
 }

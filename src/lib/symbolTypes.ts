@@ -1,4 +1,5 @@
 export type SymbolMarket = "US" | "KR";
+export type SymbolListingStatus = "listed" | "delisted" | "newly_listed" | "pending_data";
 
 export type SymbolMasterItem = {
   market: SymbolMarket;
@@ -11,6 +12,9 @@ export type SymbolMasterItem = {
   currency?: string;
   standardCode?: string;
   providerSectorCode?: string;
+  listingStatus?: SymbolListingStatus;
+  listedAt?: string;
+  delistedAt?: string;
 };
 
 export type SymbolSearchItem = SymbolMasterItem & {

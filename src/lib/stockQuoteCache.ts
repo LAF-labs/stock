@@ -231,6 +231,17 @@ function scheduleQueuedRefresh(ticker: string, priority: number, reason: "snapsh
   void enqueueStockRefreshJob({ kind: "quote", ticker, priority, reason }).catch(() => undefined);
 }
 
+function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredQuoteSnapshot) {
+  void (async () => {
+    const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: true });
+    if (marketDataResult) return;
+    await refreshQuoteSnapshot(ticker, {
+      fallbackSnapshot,
+      unavailableReason: "snapshot_miss",
+    });
+  })().catch(() => undefined);
+}
+
 function inlineQuoteRefreshAvailable(): boolean {
   return kisQuoteConfigured() || pythonCollectorEnabled() || !!marketDataServiceConfig();
 }
@@ -271,10 +282,14 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
   }
 
   if (!options.forceRefresh) {
-    if (staleCandidate && !inlineQuoteRefreshAvailable()) {
+    if (staleCandidate) {
       memoryCache.set(ticker, staleCandidate);
-      scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
-      return decorate(staleCandidate, "stale", staleSource);
+      if (inlineQuoteRefreshAvailable()) {
+        scheduleInlineRefresh(ticker, staleCandidate);
+      } else {
+        scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
+      }
+      return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
     }
   }
 

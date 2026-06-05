@@ -4,6 +4,7 @@ import {
   sourceKeyForProfile,
   type IndustryTaxonomyMapping,
 } from "@/lib/industryTaxonomy";
+import type { SymbolListingStatus } from "@/lib/symbolTypes";
 
 export type SymbolProfileTarget = {
   market: "US" | "KR";
@@ -23,6 +24,9 @@ export type SymbolIndustryProfile = {
   classificationStatus?: string;
   source?: string;
   sourcePriority?: number;
+  listingStatus?: SymbolListingStatus;
+  listedAt?: string;
+  delistedAt?: string;
   metadata?: Record<string, unknown>;
   updatedAt?: string;
 };
@@ -40,6 +44,9 @@ type SymbolIndustryProfileRow = {
   classification_status?: string | null;
   source?: string | null;
   source_priority?: number | string | null;
+  listing_status?: string | null;
+  listed_at?: string | null;
+  delisted_at?: string | null;
   metadata?: Record<string, unknown> | null;
   updated_at?: string | null;
 };
@@ -119,6 +126,7 @@ export function mergeSymbolProfileIntoPayload<T extends Record<string, unknown>>
   if (industry) result.industry = industry;
   if (rawSector) result.raw_sector = rawSector;
   if (rawIndustry) result.raw_industry = rawIndustry;
+  if (shouldReplacePayloadName(payload, profile)) result.name = profile.name;
 
   const rows = Array.isArray(payload.stock_profile)
     ? payload.stock_profile.map((item) => ({ ...recordFromUnknown(item) }))
@@ -148,6 +156,9 @@ export function mergeSymbolProfileIntoPayload<T extends Record<string, unknown>>
     taxonomy_source_key: sourceKeyForProfile(profile),
     taxonomy_confidence: mapping?.confidence,
     classification_status: profile.classificationStatus,
+    listing_status: profile.listingStatus,
+    listed_at: profile.listedAt,
+    delisted_at: profile.delistedAt,
     source: profile.source,
     source_priority: profile.sourcePriority,
     metadata: profile.metadata,
@@ -181,6 +192,9 @@ async function fetchSymbolIndustryProfile(target: SymbolProfileTarget): Promise<
       "classification_status",
       "source",
       "source_priority",
+      "listing_status",
+      "listed_at",
+      "delisted_at",
       "metadata",
       "updated_at",
     ].join(",")
@@ -227,6 +241,9 @@ function profileFromRow(row: SymbolIndustryProfileRow | undefined): SymbolIndust
     classificationStatus: meaningfulText(row.classification_status),
     source: meaningfulText(row.source),
     sourcePriority: numberFromValue(row.source_priority),
+    listingStatus: listingStatusFromValue(row.listing_status),
+    listedAt: meaningfulText(row.listed_at),
+    delistedAt: meaningfulText(row.delisted_at),
     metadata: recordOrUndefined(row.metadata),
     updatedAt: meaningfulText(row.updated_at),
   };
@@ -313,6 +330,31 @@ function labelsEqual(left: string, right: string): boolean {
 function meaningfulText(value: unknown): string | undefined {
   const text = cleanString(value);
   return text && text !== "-" ? text : undefined;
+}
+
+function shouldReplacePayloadName(payload: Record<string, unknown>, profile: SymbolIndustryProfile): boolean {
+  const profileName = meaningfulText(profile.name);
+  if (!profileName) return false;
+  const currentName = cleanString(payload.name);
+  if (!currentName) return true;
+  const current = comparableName(currentName);
+  if (!current) return true;
+  const candidates = [profile.symbol, `${profile.market}:${profile.symbol}`, cleanString(payload.symbol), cleanString(payload.requested_ticker)]
+    .filter(Boolean)
+    .map(comparableName);
+  return candidates.includes(current);
+}
+
+function comparableName(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9가-힣]/g, "");
+}
+
+function listingStatusFromValue(value: unknown): SymbolListingStatus | undefined {
+  const text = cleanString(value);
+  return text === "listed" || text === "delisted" || text === "newly_listed" || text === "pending_data" ? text : undefined;
 }
 
 function cleanString(value: unknown): string {

@@ -136,3 +136,24 @@ test("symbol industry profile enriches top-level and display profile fields", ()
   assert.equal(industryProfile.canonical_industry_name, "반도체");
   assert.equal(industryProfile.classification_status, "verified");
 });
+
+test("symbol profile replaces quote ticker-name placeholders but keeps meaningful provider names", () => {
+  const profile: SymbolIndustryProfile = {
+    market: "KR",
+    symbol: "005930",
+    name: "삼성전자",
+    exchange: "KOSPI",
+    assetClass: "stock",
+    classificationStatus: "verified",
+    listingStatus: "listed",
+    listedAt: "1975-06-11",
+  };
+
+  const placeholder = mergeSymbolProfileIntoPayload({ market: "KR", symbol: "005930", name: "005930" }, profile);
+  const meaningful = mergeSymbolProfileIntoPayload({ market: "KR", symbol: "005930", name: "삼성전자우" }, profile);
+
+  assert.equal(placeholder.name, "삼성전자");
+  assert.equal(meaningful.name, "삼성전자우");
+  assert.equal((placeholder.industry_profile as Record<string, unknown>).listing_status, "listed");
+  assert.equal((placeholder.industry_profile as Record<string, unknown>).listed_at, "1975-06-11");
+});

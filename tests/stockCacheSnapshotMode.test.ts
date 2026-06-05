@@ -17,6 +17,8 @@ const ENV_KEYS = [
   "MARKET_DATA_INTERNAL_TOKEN",
   "STOCK_API_APP_KEY",
   "STOCK_API_APP_SECRET",
+  "STOCK_API_BASE",
+  "STOCK_QUOTE_CACHE_STALE_SECONDS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -164,3 +166,75 @@ test("quote force refresh can use Node KIS quote client in Vercel snapshot mode"
   assert.equal(result.payload.latest_price, 70000);
   assert.equal(result.cache.source, "market-data");
 });
+
+test("quote stale snapshot returns immediately while inline provider refresh continues in background", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.STOCK_API_APP_KEY = "delayed-app-key";
+  process.env.STOCK_API_APP_SECRET = "delayed-app-secret";
+  process.env.STOCK_API_BASE = "https://kis-delayed.example.com";
+  process.env.STOCK_QUOTE_CACHE_STALE_SECONDS = "86400";
+
+  const ticker = "KR:009999";
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker,
+    payload: {
+      ok: true,
+      type: "quote",
+      requested_ticker: ticker,
+      market: "KR",
+      symbol: "009999",
+      latest_price: 1000,
+    },
+    fetched_at: new Date(nowMs - 10 * 60_000).toISOString(),
+    expires_at: new Date(nowMs - 5 * 60_000).toISOString(),
+  };
+  let providerCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_quote_snapshots")) {
+      return new Response(JSON.stringify([snapshot]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      providerCalls += 1;
+      await sleep(100);
+      return Response.json({ access_token: "delayed-token", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      providerCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "1200",
+          stck_sdpr: "1000",
+          prdy_ctrt: "20.0",
+          acml_vol: "100",
+          hts_kor_isnm: "느린공급자",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const raced = await Promise.race([getStockQuote(ticker), sleep(40).then(() => "timeout" as const)]);
+
+  assert.notEqual(raced, "timeout");
+  if (raced === "timeout") return;
+  assert.equal(raced.cache.state, "stale");
+  assert.equal(raced.cache.source, "supabase");
+  assert.equal(raced.payload.latest_price, 1000);
+
+  await sleep(140);
+  assert.equal(providerCalls > 0, true);
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

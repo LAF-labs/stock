@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 import unittest
 
 import scripts.publish_stock_snapshots as publisher
@@ -90,6 +91,19 @@ class PublishStockSnapshotsTests(unittest.TestCase):
             calls[0]["data"],
             '{"p_worker_id": "worker-1", "p_limit": 5, "p_lock_seconds": 600}',
         )
+
+    def test_queue_limit_default_is_high_enough_for_demand_driven_backlog(self):
+        original = os.environ.get("STOCK_SNAPSHOT_QUEUE_LIMIT")
+        os.environ.pop("STOCK_SNAPSHOT_QUEUE_LIMIT", None)
+        try:
+            args = publisher.build_parser().parse_args(["--drain-queue"])
+        finally:
+            if original is None:
+                os.environ.pop("STOCK_SNAPSHOT_QUEUE_LIMIT", None)
+            else:
+                os.environ["STOCK_SNAPSHOT_QUEUE_LIMIT"] = original
+
+        self.assertEqual(args.queue_limit, 50)
 
 
 if __name__ == "__main__":
