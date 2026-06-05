@@ -99,22 +99,34 @@ REDIS_URL=redis://127.0.0.1:6379
 판단문은 LLM 호출 없이 서버 룰 엔진에서 생성합니다. 결과는 `stock_rule_judgments`에 6시간 버킷으로 캐시하고, 프로세스 메모리 캐시를 먼저 확인해 인기 종목 반복 조회 비용을 줄입니다. PER/PBR 업종 비교는 `stock_industry_benchmarks`를 읽으며, 이 테이블은 요청 경로에서 집계하지 않습니다.
 
 종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
+업종 원천과 운영 주기는 [docs/industry-data-sources.md](docs/industry-data-sources.md)에 정리되어 있습니다.
 
 운영 초기화 순서는 아래와 같습니다.
 
 ```bash
 python scripts/sync_symbol_master.py
 python scripts/backfill_symbol_profiles.py --source master --batch-size 1000
-python scripts/backfill_symbol_profiles.py --source yfinance --market US --exchange NAS --limit 1000 --batch-size 1000
-python scripts/backfill_symbol_profiles.py --source yfinance --market KR --exchange KOSPI --limit 1000 --batch-size 1000
+python scripts/backfill_symbol_profiles.py --source kind --market KR --batch-size 1000
+python scripts/backfill_symbol_profiles.py --source nasdaq --market US --batch-size 1000
 ```
 
-`master`는 전체 종목을 pending profile로 빠르게 채우고, `yfinance`는 sector/industry가 확인된 종목만 verified/partial profile로 승격합니다. `SUPABASE_SERVICE_ROLE_KEY`가 있으면 REST upsert를 쓰고, service role key가 없으면 `.env.supabase.local`의 `SUPABASE_ACCESS_TOKEN`으로 `supabase db query`를 실행합니다. 국내 종목은 KOSPI `.KS`, KOSDAQ `.KQ` 심볼을 사용하며 KONEX처럼 yfinance 매핑이 불확실한 시장은 master seed 상태로 둡니다. 전체 백필은 limit/offset을 나눠 cron 또는 배치 작업에서 점진 실행하세요.
+`master`는 전체 종목을 pending profile로 빠르게 채웁니다. 국내 종목은 KIND 상장법인목록 bulk download를 1차 업종 소스로 사용합니다. 이 파일은 한 번의 요청으로 회사명, 시장구분, 종목코드, 업종, 주요제품, 상장일을 내려주므로 KOSPI/KOSDAQ/KONEX를 종목별 외부 호출 없이 채울 수 있습니다. 미국 종목은 Nasdaq screener bulk source를 1차 업종 소스로 사용하고, `yfinance`는 bulk source 구멍을 메우는 수동 fallback으로만 사용합니다. `SUPABASE_SERVICE_ROLE_KEY`가 있으면 REST upsert를 쓰고, service role key가 없으면 `.env.supabase.local`의 `SUPABASE_ACCESS_TOKEN`으로 `supabase db query`를 실행합니다.
 
-배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 주기적으로 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
+업종 마스터는 매일 갱신하지 않습니다. 초기 백필 후에는 분기별 또는 상장/상폐 반영 시점에만 아래처럼 전체 classification을 다시 채웁니다. KIND/Nasdaq bulk source에 없는 종목만 보강할 때 `--run-yfinance-fallback` 또는 `--lane KR:KOSPI:50`처럼 명시적으로 켭니다.
+
+```bash
+python scripts/run_industry_maintenance.py --seed-master --refresh-classifications
+python scripts/run_industry_maintenance.py --run-yfinance-fallback --lane KR:KOSPI:50 --lane KR:KOSDAQ:50
+```
+
+매일 갱신할 대상은 업종 자체가 아니라 업종별 valuation benchmark입니다. 배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 하루 1회 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
 
 ```sql
 select public.refresh_stock_industry_benchmarks(current_date, 8);
+```
+
+```bash
+python scripts/run_industry_maintenance.py --refresh-benchmarks
 ```
 
 Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 없애기 위한 rewrite 경로입니다. 현재 public Next API는 `MARKET_DATA_BACKEND=python`을 기본 fallback으로 유지하며, Rust 서비스는 `/healthz`, `/metrics`와 내부 인증 골격부터 제공합니다. 다음 단계에서 KIS client, cache/job pipeline, score engine을 순차적으로 이관합니다.
