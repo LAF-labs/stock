@@ -7,6 +7,8 @@ from scripts.publish_stock_snapshots import (
     build_quote_snapshot_row,
     build_score_snapshot_row,
     claim_refresh_jobs,
+    fail_refresh_job,
+    permanent_refresh_failure,
     job_retry_after_seconds,
     job_ticker_ref,
     normalize_ticker_ref,
@@ -104,6 +106,39 @@ class PublishStockSnapshotsTests(unittest.TestCase):
                 os.environ["STOCK_SNAPSHOT_QUEUE_LIMIT"] = original
 
         self.assertEqual(args.queue_limit, 50)
+
+    def test_permanent_refresh_failure_classifies_invalid_symbols(self):
+        self.assertEqual(permanent_refresh_failure("kis_not_found"), True)
+        self.assertEqual(permanent_refresh_failure("invalid_ticker"), True)
+        self.assertEqual(permanent_refresh_failure("temporary rate limited"), False)
+
+    def test_fail_refresh_job_marks_permanent_failures(self):
+        calls = []
+
+        class FakeResponse:
+            status_code = 200
+            text = "{}"
+
+            def json(self):
+                return {}
+
+        def fake_post(url, headers=None, data=None, timeout=None):
+            calls.append({"url": url, "headers": headers, "data": data, "timeout": timeout})
+            return FakeResponse()
+
+        original_post = publisher.requests.post
+        publisher.requests.post = fake_post
+        try:
+            config = SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7)
+            fail_refresh_job(config, "worker-1", "00000000-0000-0000-0000-000000000001", "kis_not_found", 120, permanent=True)
+        finally:
+            publisher.requests.post = original_post
+
+        self.assertEqual(calls[0]["url"], "https://example.supabase.co/rest/v1/rpc/fail_stock_refresh_job")
+        self.assertEqual(
+            calls[0]["data"],
+            '{"p_job_id": "00000000-0000-0000-0000-000000000001", "p_worker_id": "worker-1", "p_error": "kis_not_found", "p_retry_after_seconds": 120, "p_permanent": true}',
+        )
 
 
 if __name__ == "__main__":

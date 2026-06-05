@@ -57,6 +57,15 @@ Local venv example:
 PYTHON_BIN=.venv/bin/python npm run score:smoke
 ```
 
+Run the operations report before and after material score/worker changes:
+
+```bash
+PYTHON_BIN=.venv/bin/python npm run ops:report
+PYTHON_BIN=.venv/bin/python scripts/stock_operations_report.py --sample-limit 500 --json
+```
+
+The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, low-confidence high scores, and rounded score duplicate buckets. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
+
 For Vercel + Supabase production, set the public app runtime to snapshot-only:
 
 ```text

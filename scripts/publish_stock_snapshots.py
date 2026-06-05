@@ -177,7 +177,14 @@ def complete_refresh_job(config: SupabasePublishConfig, worker_id: str, job_id: 
     )
 
 
-def fail_refresh_job(config: SupabasePublishConfig, worker_id: str, job_id: str, error: str, retry_after_seconds: int) -> None:
+def fail_refresh_job(
+    config: SupabasePublishConfig,
+    worker_id: str,
+    job_id: str,
+    error: str,
+    retry_after_seconds: int,
+    permanent: bool = False,
+) -> None:
     post_supabase_rpc(
         config,
         "fail_stock_refresh_job",
@@ -186,6 +193,7 @@ def fail_refresh_job(config: SupabasePublishConfig, worker_id: str, job_id: str,
             "p_worker_id": worker_id,
             "p_error": error[:1000],
             "p_retry_after_seconds": retry_after_seconds,
+            "p_permanent": permanent,
         },
     )
 
@@ -202,6 +210,19 @@ def job_retry_after_seconds(job: dict[str, Any]) -> int:
     except (TypeError, ValueError):
         attempts = 1
     return min(3600, max(120, 60 * (2 ** max(1, attempts))))
+
+
+def permanent_refresh_failure(error: str) -> bool:
+    normalized = error.strip().lower()
+    permanent_markers = (
+        "invalid_ticker",
+        "kis_not_found",
+        "not_found",
+        "unsupported refresh job kind",
+        "unsupported score view",
+        "404",
+    )
+    return any(marker in normalized for marker in permanent_markers)
 
 
 def ok_payload(payload: dict[str, Any]) -> bool:
@@ -294,7 +315,7 @@ def publish_queue_job(
         summary["status"] = "failed"
         summary["errors"].append({"error": message})
         if job_id:
-            fail_refresh_job(config, worker_id, job_id, message, job_retry_after_seconds(job))
+            fail_refresh_job(config, worker_id, job_id, message, job_retry_after_seconds(job), permanent=permanent_refresh_failure(message))
 
     return summary
 

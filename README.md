@@ -106,6 +106,12 @@ REDIS_URL=redis://127.0.0.1:6379
 종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
 업종 원천과 운영 주기는 [docs/industry-data-sources.md](docs/industry-data-sources.md)에, 점수 모델 버전/캐시/스모크 운영은 [docs/score-system-operations.md](docs/score-system-operations.md)에 정리되어 있습니다. 점수 정확도 개선을 위한 데이터 보강 검토는 [docs/score-data-enrichment-review.md](docs/score-data-enrichment-review.md)를 보세요.
 
+운영 리포트는 refresh queue backlog, stale/dead job, score snapshot 모델 분포, 점수 동점률, 결측/저신뢰 고득점 위험을 한 번에 확인합니다.
+
+```bash
+PYTHON_BIN=.venv/bin/python npm run ops:report
+```
+
 운영 초기화 순서는 아래와 같습니다.
 
 ```bash
