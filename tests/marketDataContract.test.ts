@@ -65,7 +65,7 @@ test("manual refresh payload keeps cooldown contract", () => {
   assertRequiredString(payload.refresh_cooldown, "next_allowed_at");
 });
 
-test("AI judgment payload keeps six-hour cache metadata", () => {
+test("rule judgment payload keeps six-hour cache metadata", () => {
   const payload = loadFixture("judgment-us-ko.json");
   assertRequiredString(payload, "headline");
   assertRequiredString(payload, "body");

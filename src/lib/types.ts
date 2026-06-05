@@ -65,7 +65,7 @@ export type TopScore = {
   ts?: number;
 };
 
-export type AiJudgment = {
+export type StockJudgment = {
   headline: string;
   body: string;
   watch: string;

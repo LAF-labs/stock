@@ -12,6 +12,7 @@ Next.js 기반 주식 티커 조회 리더입니다.
 - 한 번에 최대 5개 종목 비교
 - 조회 결과를 서버 메모리와 Supabase `stock_score_snapshots`에 저장해 반복 조회 시 API 호출 축소
 - yfinance 펀더멘털 보강값을 Supabase `stock_fundamental_snapshots`에 저장하고 로컬 파일 캐시는 fallback으로 사용
+- 룰 기반 판단문을 6시간 버킷에 캐시하고, PER/PBR은 업종/섹터 벤치마크와 비교
 
 ## 설치
 
@@ -68,8 +69,13 @@ STOCK_QUOTE_RATE_LIMIT=240
 STOCK_QUOTE_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_QUOTE_REFRESH_RATE_LIMIT=8
 STOCK_QUOTE_REFRESH_RATE_LIMIT_WINDOW_SECONDS=900
-STOCK_AI_JUDGMENT_RATE_LIMIT=30
-STOCK_AI_JUDGMENT_RATE_LIMIT_WINDOW_SECONDS=21600
+STOCK_RULE_JUDGMENT_RATE_LIMIT=600
+STOCK_RULE_JUDGMENT_RATE_LIMIT_WINDOW_SECONDS=60
+STOCK_RULE_JUDGMENT_MEMORY_CACHE_MAX_ENTRIES=5000
+STOCK_JUDGMENT_BODY_MAX_BYTES=65536
+STOCK_INDUSTRY_BENCHMARK_CACHE_SECONDS=21600
+STOCK_INDUSTRY_BENCHMARK_CACHE_MAX_ENTRIES=5000
+STOCK_INDUSTRY_BENCHMARK_TIMEOUT_MS=1500
 STOCK_SCORE_COLLECTOR_RATE_LIMIT=30
 STOCK_SCORE_COLLECTOR_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_QUOTE_COLLECTOR_RATE_LIMIT=60
@@ -86,7 +92,13 @@ MARKET_DATA_INTERNAL_TOKEN=...
 REDIS_URL=redis://127.0.0.1:6379
 ```
 
-AI 판단문은 모델/프롬프트/티커 기준으로 6시간 버킷에 캐시합니다. 캐시 미스에서만 OpenAI API를 호출하며, 공개 배포에서는 `STOCK_RATE_LIMIT_SECRET`과 Supabase rate limit migration을 적용해야 합니다.
+판단문은 LLM 호출 없이 서버 룰 엔진에서 생성합니다. 결과는 `stock_rule_judgments`에 6시간 버킷으로 캐시하고, 프로세스 메모리 캐시를 먼저 확인해 인기 종목 반복 조회 비용을 줄입니다. PER/PBR 업종 비교는 `stock_industry_benchmarks`를 읽으며, 이 테이블은 요청 경로에서 집계하지 않습니다.
+
+배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 주기적으로 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
+
+```sql
+select public.refresh_stock_industry_benchmarks(current_date, 8);
+```
 
 Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 없애기 위한 rewrite 경로입니다. 현재 public Next API는 `MARKET_DATA_BACKEND=python`을 기본 fallback으로 유지하며, Rust 서비스는 `/healthz`, `/metrics`와 내부 인증 골격부터 제공합니다. 다음 단계에서 KIS client, cache/job pipeline, score engine을 순차적으로 이관합니다.
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { judgmentCacheKeyFor, judgmentBucketStart } from "../src/lib/aiJudgmentCache";
+import { judgmentCacheKeyFor, judgmentBucketStart } from "../src/lib/judgmentCache";
 import { batchStatusFromResults } from "../src/lib/apiGuards";
 import { appendBoundedOutput } from "../src/lib/subprocessGuards";
 
@@ -9,14 +9,14 @@ test("judgment cache key stays stable inside a six-hour bucket", () => {
   const second = new Date("2026-06-05T05:59:59.000Z");
 
   assert.equal(judgmentBucketStart(first), "2026-06-05T00:00:00.000Z");
-  assert.equal(judgmentCacheKeyFor("gpt-5-mini", first), judgmentCacheKeyFor("gpt-5-mini", second));
+  assert.equal(judgmentCacheKeyFor("rule-v1", first), judgmentCacheKeyFor("rule-v1", second));
 });
 
 test("judgment cache key changes on the next six-hour bucket", () => {
   const before = new Date("2026-06-05T05:59:59.000Z");
   const after = new Date("2026-06-05T06:00:00.000Z");
 
-  assert.notEqual(judgmentCacheKeyFor("gpt-5-mini", before), judgmentCacheKeyFor("gpt-5-mini", after));
+  assert.notEqual(judgmentCacheKeyFor("rule-v1", before), judgmentCacheKeyFor("rule-v1", after));
 });
 
 test("batch status reports total collector outage as 502", () => {

@@ -8,7 +8,7 @@ import { clampScore, formatDateTimeFromEpoch, formatPercent, formatValue, record
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { CandlestickData, HistogramData, LineData, Time } from "lightweight-charts";
 import type {
-  AiJudgment,
+  StockJudgment,
   ChartPattern,
   ChartSeriesPoint,
   JsonValue,
@@ -162,7 +162,7 @@ type QuoteRefreshState = {
 
 type JudgmentState =
   | { status: "idle" | "loading"; judgment?: undefined; error?: undefined }
-  | { status: "success"; judgment: AiJudgment; error?: undefined }
+  | { status: "success"; judgment: StockJudgment; error?: undefined }
   | { status: "error"; judgment?: undefined; error: string };
 
 function metricValue(items: LabeledValue[] | undefined, label: string): string {
@@ -465,16 +465,16 @@ export default function StockDashboard() {
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok || !payload?.ok) {
-          throw new Error(payload?.message || "AI 판단을 불러오지 못했어요.");
+          throw new Error(payload?.message || "판단을 불러오지 못했어요.");
         }
-        return payload.judgment as AiJudgment;
+        return payload.judgment as StockJudgment;
       })
       .then((judgment) => setJudgmentState({ status: "success", judgment }))
       .catch((error) => {
         if (controller.signal.aborted) return;
         setJudgmentState({
           status: "error",
-          error: error instanceof Error ? error.message : "AI 판단을 불러오지 못했어요.",
+          error: error instanceof Error ? error.message : "판단을 불러오지 못했어요.",
         });
       });
 
@@ -733,7 +733,7 @@ function StockHeader({
   const signal = data.sia_snapshot?.raw_signal || "-";
   const risk = data.sia_snapshot?.risk_level || "-";
   const { strongest, weakest } = strongestAndWeakest(data);
-  const aiJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
+  const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
 
   return (
     <section className="stock-title-card">
@@ -791,11 +791,11 @@ function StockHeader({
         </article>
       </div>
 
-      <div className={`hero-verdict ${aiJudgment?.tone || "neutral"}`}>
+      <div className={`hero-verdict ${stockJudgment?.tone || "neutral"}`}>
         <span>오늘의 판단</span>
         <strong>
-          {aiJudgment?.headline ||
-            (judgmentState.status === "loading" ? "AI가 읽고 있어요" : judgmentState.status === "error" ? "AI 판단을 불러오지 못했어요" : "판단을 준비하고 있어요")}
+          {stockJudgment?.headline ||
+            (judgmentState.status === "loading" ? "숫자를 읽고 있어요" : judgmentState.status === "error" ? "판단을 불러오지 못했어요" : "판단을 준비하고 있어요")}
         </strong>
         {judgmentState.status === "loading" ? (
           <div className="verdict-mini-skeleton" aria-hidden="true">
@@ -803,9 +803,9 @@ function StockHeader({
             <SkeletonBlock className="medium" />
           </div>
         ) : (
-          <p>{aiJudgment?.body || (judgmentState.status === "error" ? "잠시 후 다시 검색해보세요." : "가격, 점수, 재무 지표를 묶어서 해석하는 중이에요.")}</p>
+          <p>{stockJudgment?.body || (judgmentState.status === "error" ? "잠시 후 다시 검색해보세요." : "가격, 점수, 재무 지표를 묶어서 해석하는 중이에요.")}</p>
         )}
-        {aiJudgment?.watch ? <p className="verdict-watch">{aiJudgment.watch}</p> : null}
+        {stockJudgment?.watch ? <p className="verdict-watch">{stockJudgment.watch}</p> : null}
       </div>
 
       <a className="compare-entry" href={`/compare?tickers=${encodeURIComponent(`${data.market === "KR" ? "KR" : "US"}:${symbol}`)}`}>
