@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
 import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
+import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
 export type ScoreView = "detail" | "compare";
 export type StockPayload = Record<string, unknown>;
 export type CacheState = "fresh" | "stale" | "miss";
-export type CacheSource = "memory" | "supabase" | "collector";
+export type CacheSource = "memory" | "supabase" | "collector" | "market-data";
 
 export type StockScoreResult = {
   payload: StockPayload;
@@ -344,6 +345,9 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
   }
 
   try {
+    const marketDataResult = await getMarketDataServiceScore(ticker, view, { forceRefresh: options.forceRefresh });
+    if (marketDataResult) return marketDataResult;
+
     const refreshed = await refreshSnapshot(ticker, view);
     return decorate(refreshed, "miss", "collector");
   } catch (error) {

@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
+import { getMarketDataServiceQuote } from "@/lib/marketDataServiceClient";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
 import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
 export type QuoteCacheState = "fresh" | "stale" | "miss";
-export type QuoteCacheSource = "memory" | "supabase" | "collector";
+export type QuoteCacheSource = "memory" | "supabase" | "collector" | "market-data";
 
 export type StockQuoteResult = {
   payload: StockPayload;
@@ -260,6 +261,9 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
   }
 
   try {
+    const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: options.forceRefresh });
+    if (marketDataResult) return marketDataResult;
+
     const refreshed = await refreshQuoteSnapshot(ticker);
     return decorate(refreshed, "miss", "collector");
   } catch (error) {
