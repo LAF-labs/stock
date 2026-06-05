@@ -3,6 +3,7 @@
 import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AppTopbar, useThemePreference } from "@/components/AppChrome";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { clampScore, formatDateTimeFromEpoch, formatPercent, formatValue, recordEntries } from "@/lib/format";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -31,9 +32,6 @@ const EXAMPLES = [
 ];
 
 const RECENT_TICKERS_STORAGE_KEY = "sia-stock-score:recent-tickers";
-const THEME_STORAGE_KEY = "sia-stock-score:theme";
-const THEME_OPTIONS = ["system", "light", "dark"] as const;
-const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
 const DETAIL_SECTIONS = [
   { id: "detail-summary", label: "요약" },
@@ -47,7 +45,6 @@ const DETAIL_SECTIONS = [
 ] as const;
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
-type ThemeMode = (typeof THEME_OPTIONS)[number];
 
 type RecentTicker = {
   key: string;
@@ -361,27 +358,6 @@ function persistRecentTickers(items: RecentTicker[]) {
   }
 }
 
-function safeThemeFromStorage(): ThemeMode {
-  if (typeof window === "undefined") return "system";
-  const value = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return value === "light" || value === "dark" || value === "system" ? value : "system";
-}
-
-function applyTheme(theme: ThemeMode) {
-  if (typeof document === "undefined") return;
-  if (theme === "system") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.dataset.theme = theme;
-  }
-}
-
-function resolvedThemeKey(theme: ThemeMode): string {
-  if (typeof window === "undefined") return theme;
-  if (theme !== "system") return theme;
-  return window.matchMedia(DARK_SCHEME_QUERY).matches ? "system-dark" : "system-light";
-}
-
 function humanizeRecordKey(key: string): string {
   return RECORD_LABELS[key] || key.replaceAll("_", " ");
 }
@@ -466,8 +442,7 @@ export default function StockDashboard() {
   const tickerParam = hasTicker ? (tickerParamRaw || "").trim().toUpperCase() : "";
 
   const [tickerInput, setTickerInput] = useState(displayTickerInput(tickerParam));
-  const [theme, setTheme] = useState<ThemeMode>("system");
-  const [themeKey, setThemeKey] = useState("system");
+  const { theme, setTheme, themeKey } = useThemePreference();
   const [recentTickers, setRecentTickers] = useState<RecentTicker[]>([]);
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
@@ -478,31 +453,8 @@ export default function StockDashboard() {
   const quoteRefreshControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const storedTheme = safeThemeFromStorage();
-    setTheme(storedTheme);
-    applyTheme(storedTheme);
     setRecentTickers(safeRecentTickersFromStorage());
   }, []);
-
-  useEffect(() => {
-    applyTheme(theme);
-    setThemeKey(resolvedThemeKey(theme));
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Theme preference is best effort.
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || theme !== "system") return;
-    const media = window.matchMedia(DARK_SCHEME_QUERY);
-    const syncSystemTheme = () => setThemeKey(resolvedThemeKey("system"));
-    syncSystemTheme();
-    media.addEventListener("change", syncSystemTheme);
-    return () => media.removeEventListener("change", syncSystemTheme);
-  }, [theme]);
 
   function rememberRecentTicker(item: RecentTicker) {
     setRecentTickers((current) => {
@@ -792,17 +744,7 @@ export default function StockDashboard() {
   return (
     <main className={`stock-app ${hasTicker ? "stock-detail-app" : "stock-landing-app"}`}>
       <section className={`stock-search ${hasTicker ? "" : "landing-search"}`}>
-        <div className="app-topbar">
-          <a className="app-brand" href="/" aria-label="SIA Stock Score 홈">
-            <strong>SIA</strong>
-            <span>Stock Score</span>
-          </a>
-          <nav className="app-nav" aria-label="주요 화면">
-            <a href="/">분석</a>
-            <a href="/compare">비교</a>
-          </nav>
-          <ThemeToggle value={theme} onChange={setTheme} />
-        </div>
+        <AppTopbar active="analysis" theme={theme} onThemeChange={setTheme} />
         <SymbolAutocomplete
           id="ticker"
           value={tickerInput}
@@ -864,24 +806,6 @@ export default function StockDashboard() {
         </>
       )}
     </main>
-  );
-}
-
-function ThemeToggle({ value, onChange }: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
-  const labels: Record<ThemeMode, string> = {
-    system: "자동",
-    light: "밝게",
-    dark: "어둡게",
-  };
-
-  return (
-    <div className="theme-toggle" role="group" aria-label="화면 테마">
-      {THEME_OPTIONS.map((option) => (
-        <button key={option} type="button" className={value === option ? "active" : undefined} aria-pressed={value === option} onClick={() => onChange(option)}>
-          {labels[option]}
-        </button>
-      ))}
-    </div>
   );
 }
 
