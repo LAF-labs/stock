@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const VERCEL_REQUIRED = [
-  "STOCK_DATA_RUNTIME",
   "SUPABASE_URL",
   "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -14,7 +13,6 @@ const VERCEL_REQUIRED = [
   "STOCK_RATE_LIMIT_SECRET",
   "STOCK_API_APP_KEY",
   "STOCK_API_APP_SECRET",
-  "STOCK_API_BASE",
 ] as const;
 
 export async function GET(request: Request) {

@@ -179,7 +179,7 @@ http://127.0.0.1:3000/?ticker=KO
 
 Vercel + Supabase 배포에서는 공개 요청 경로에서 무거운 Python score collector를 실행하지 않습니다. Next API는 Supabase snapshot을 먼저 읽고, quote는 KIS 키가 있으면 Vercel Node 런타임에서 종목별 lease 아래 즉시 갱신합니다. score/analysis가 없거나 너무 오래되었고 즉시 만들 수 없는 경우에는 `stock_refresh_jobs`에 수집 작업을 넣은 뒤 pending 응답을 반환합니다.
 
-Vercel preview/runtime env:
+Vercel preview/runtime env. 수동 preview 배포는 branch-specific preview env를 받지 않으므로, 최소한 preview 공통 env에 아래 값을 등록하세요:
 
 ```text
 STOCK_DATA_RUNTIME=snapshot
@@ -199,7 +199,7 @@ STOCK_API_BASE=https://openapi.koreainvestment.com:9443
 curl https://<preview-url>/api/health/stock-data
 ```
 
-Preview 수동 배포는 branch preview env를 검증하고 명시 주입하는 스크립트를 사용합니다. `--prod`는 사용하지 않습니다.
+Preview 수동 배포는 branch preview env 이름을 검증한 뒤 Vercel 프로젝트 env로 배포하는 스크립트를 사용합니다. secret 값은 CLI 인자로 넘기지 않습니다. `--prod`는 사용하지 않습니다.
 
 ```bash
 npm run deploy:preview

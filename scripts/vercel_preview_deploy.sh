@@ -6,12 +6,12 @@ cd "$ROOT_DIR"
 
 BRANCH="$(git branch --show-current)"
 COMMIT_SHA="$(git rev-parse HEAD)"
-ENV_FILE="${TMPDIR:-/tmp}/stock-vercel-preview-${BRANCH//\//-}.env"
+ENV_LIST_FILE="${TMPDIR:-/tmp}/stock-vercel-preview-${BRANCH//\//-}.env-list.json"
 DEPLOY_DIR="${TMPDIR:-/tmp}/stock-vercel-manual-preview"
 umask 077
 
 cleanup() {
-  rm -f "$ENV_FILE"
+  rm -f "$ENV_LIST_FILE"
 }
 trap cleanup EXIT
 
@@ -20,20 +20,10 @@ if [[ -z "$BRANCH" ]]; then
   exit 1
 fi
 
-echo "Pulling Vercel preview env for branch: $BRANCH"
-npx vercel env pull "$ENV_FILE" --environment=preview --git-branch "$BRANCH" >/dev/null
+echo "Checking Vercel global preview env names"
+npx vercel env list preview --format json > "$ENV_LIST_FILE"
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-export STOCK_DATA_RUNTIME="${STOCK_DATA_RUNTIME:-snapshot}"
-export STOCK_API_APP_KEY="${STOCK_API_APP_KEY:-${KIS_APP_KEY:-}}"
-export STOCK_API_APP_SECRET="${STOCK_API_APP_SECRET:-${KIS_APP_SECRET:-}}"
-export STOCK_API_BASE="${STOCK_API_BASE:-${KIS_API_BASE:-https://openapi.koreainvestment.com:9443}}"
-set +a
-
-required_env=(
-  STOCK_DATA_RUNTIME
+required_vercel_env=(
   SUPABASE_URL
   SUPABASE_PUBLISHABLE_KEY
   SUPABASE_SERVICE_ROLE_KEY
@@ -41,20 +31,33 @@ required_env=(
   STOCK_RATE_LIMIT_SECRET
   STOCK_API_APP_KEY
   STOCK_API_APP_SECRET
-  STOCK_API_BASE
 )
 
-missing=()
-for name in "${required_env[@]}"; do
-  if [[ -z "${!name:-}" ]]; then
-    missing+=("$name")
-  fi
-done
+missing="$(
+  node - "$ENV_LIST_FILE" "${required_vercel_env[@]}" <<'NODE'
+const fs = require("node:fs");
 
-if (( ${#missing[@]} )); then
-  printf 'Missing Vercel preview env for branch %s:\n' "$BRANCH" >&2
-  printf ' - %s\n' "${missing[@]}" >&2
-  printf 'Add these to Vercel preview env first. Secrets are no longer passed via deploy CLI arguments.\n' >&2
+const file = process.argv[2];
+const required = process.argv.slice(3);
+const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+const rows = Array.isArray(payload) ? payload : payload.envs || payload.environmentVariables || payload.items || [];
+const globalPreviewRows = rows.filter((row) => row && !row.gitBranch);
+const names = new Set(globalPreviewRows.map((row) => row && (row.key || row.name)).filter(Boolean));
+
+for (const name of required) {
+  if (!names.has(name)) {
+    console.log(name);
+  }
+}
+NODE
+)"
+
+if [[ -n "$missing" ]]; then
+  printf 'Missing Vercel global preview env for manual deployments:\n' >&2
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && printf ' - %s\n' "$name" >&2
+  done <<< "$missing"
+  printf 'Add these to all Preview branches first. Manual archive deploys do not receive branch-specific preview envs.\n' >&2
   exit 2
 fi
 
@@ -63,7 +66,12 @@ export STOCK_API_APP_KEY="${STOCK_API_APP_KEY:-${KIS_APP_KEY:-}}"
 export STOCK_API_APP_SECRET="${STOCK_API_APP_SECRET:-${KIS_APP_SECRET:-}}"
 export STOCK_API_BASE="${STOCK_API_BASE:-${KIS_API_BASE:-https://openapi.koreainvestment.com:9443}}"
 
-"${PYTHON_BIN:-python}" scripts/supabase_runtime_readiness.py
+PYTHON_CMD="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_CMD" && -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  PYTHON_CMD="$ROOT_DIR/.venv/bin/python"
+fi
+PYTHON_CMD="${PYTHON_CMD:-python3}"
+"$PYTHON_CMD" scripts/supabase_runtime_readiness.py
 
 rm -rf "$DEPLOY_DIR"
 mkdir -p "$DEPLOY_DIR/.vercel"
