@@ -50,15 +50,15 @@ Supabase CLI는 아래 래퍼로 실행하면 `.env.supabase.local`을 자동으
 powershell -ExecutionPolicy Bypass -File scripts/supabase-cli.ps1 db push --linked --yes
 ```
 
-캐시는 현재가와 전체 점수를 분리합니다. 장중 현재가는 짧게, 전체 점수는 1시간 캐시하고, 폐장/휴장 중에는 `market_calendar.next_open_at`까지 캐시합니다. 휴장일 판단은 런타임 API가 아니라 Supabase `market_calendar` 테이블을 사용합니다.
+캐시는 demand-driven read-through 방식입니다. 사용자가 조회한 종목만 Supabase snapshot으로 살아남고, 장중 현재가/등락률은 5분, 점수/판정/분석은 30분 동안 공유됩니다. 현재가 새로고침 버튼은 quote만 즉시 갱신하며 사용자별 5분 cooldown과 종목별 refresh lease로 외부 API 폭주를 막습니다. 폐장/휴장 중에는 `market_calendar.next_open_at`까지 캐시하되, 장마감 이후 확정된 snapshot만 다음 개장까지 연장합니다.
 
 ```text
-STOCK_QUOTE_CACHE_OPEN_SECONDS=180
-STOCK_SCORE_DETAIL_CACHE_SECONDS=3600
-STOCK_SCORE_COMPARE_CACHE_SECONDS=3600
+STOCK_QUOTE_CACHE_OPEN_SECONDS=300
+STOCK_SCORE_DETAIL_CACHE_SECONDS=1800
+STOCK_SCORE_COMPARE_CACHE_SECONDS=1800
 STOCK_SCORE_CACHE_STALE_SECONDS=86400
 STOCK_QUOTE_CACHE_STALE_SECONDS=86400
-STOCK_REFRESH_COOLDOWN_SECONDS=900
+STOCK_REFRESH_COOLDOWN_SECONDS=300
 STOCK_REFRESH_COOKIE_SECRET=...
 STOCK_RATE_LIMIT_SECRET=...
 STOCK_SCORE_RATE_LIMIT=180
@@ -71,6 +71,10 @@ STOCK_QUOTE_RATE_LIMIT=240
 STOCK_QUOTE_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_QUOTE_REFRESH_RATE_LIMIT=8
 STOCK_QUOTE_REFRESH_RATE_LIMIT_WINDOW_SECONDS=900
+STOCK_REFRESH_LEASE_SECONDS=30
+STOCK_QUOTE_REFRESH_LEASE_SECONDS=30
+STOCK_KIS_QUOTE_PROVIDER_RATE_LIMIT=120
+STOCK_KIS_QUOTE_PROVIDER_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_RULE_JUDGMENT_RATE_LIMIT=600
 STOCK_RULE_JUDGMENT_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_RULE_JUDGMENT_MEMORY_CACHE_MAX_ENTRIES=5000
@@ -152,7 +156,7 @@ http://127.0.0.1:3000/?ticker=KO
 
 ## 배포
 
-Vercel + Supabase 배포에서는 공개 요청 경로에서 Python collector를 실행하지 않습니다. Next API는 Supabase snapshot을 읽고, snapshot이 없는 종목은 `stock_refresh_jobs`에 수집 작업을 넣은 뒤 pending 응답을 반환합니다.
+Vercel + Supabase 배포에서는 공개 요청 경로에서 무거운 Python score collector를 실행하지 않습니다. Next API는 Supabase snapshot을 먼저 읽고, quote는 KIS 키가 있으면 Vercel Node 런타임에서 종목별 lease 아래 즉시 갱신합니다. score/analysis가 없거나 너무 오래되었고 즉시 만들 수 없는 경우에는 `stock_refresh_jobs`에 수집 작업을 넣은 뒤 pending 응답을 반환합니다.
 
 Vercel preview/runtime env:
 
@@ -168,7 +172,7 @@ STOCK_API_APP_SECRET=...
 STOCK_API_BASE=https://openapi.koreainvestment.com:9443
 ```
 
-`STOCK_API_*` 값은 Vercel 런타임에도 등록하지만, 운영 기본 구조는 요청마다 KIS/yfinance를 직접 호출하지 않는 snapshot/queue 방식입니다. 배포 후에는 값을 노출하지 않는 진단 엔드포인트로 env 연결 상태를 확인할 수 있습니다.
+`STOCK_API_*` 값은 quote 수동 새로고침과 만료 quote의 요청 주도 갱신에 사용합니다. GitHub Actions는 모든 종목을 계속 만드는 주 데이터 경로가 아니라 queue drain, hot ticker optional warm-up, 업종 benchmark, 상장/상폐 delta 같은 유지보수 역할입니다. 배포 후에는 값을 노출하지 않는 진단 엔드포인트로 env 연결 상태를 확인할 수 있습니다.
 
 ```bash
 curl https://<preview-url>/api/health/stock-data
@@ -180,14 +184,15 @@ Preview 수동 배포는 branch preview env를 검증하고 명시 주입하는 
 npm run deploy:preview
 ```
 
-Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행해 Supabase snapshot을 미리 채웁니다. 명시 티커 발행과 큐 drain을 같은 실행에서 처리할 수 있습니다.
+Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행합니다. 기본 역할은 사용자가 만든 `stock_refresh_jobs` queue를 drain하는 것이고, 필요할 때만 최근 인기 종목이나 운영자가 지정한 warm ticker를 함께 갱신합니다.
 
 ```bash
+python scripts/publish_stock_snapshots.py --drain-queue --queue-limit 10 --json
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 10 --json
 PYTHON_BIN=.venv/bin/python npm run snapshots:drain -- --queue-limit 10
 ```
 
-GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣고, repository variable `STOCK_SNAPSHOT_TICKERS`에 prewarm할 티커 목록을 쉼표로 저장하세요. 선택적으로 `STOCK_SNAPSHOT_QUEUE_LIMIT`와 `STOCK_SNAPSHOT_SLEEP_SECONDS`를 조정합니다. 기본 workflow는 평일 30분마다 prewarm과 queued miss drain을 함께 실행합니다.
+GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`와 `STOCK_SNAPSHOT_SLEEP_SECONDS`로 처리량과 provider 간격을 조정합니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 

@@ -1,6 +1,8 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
-import { getMarketDataServiceQuote } from "@/lib/marketDataServiceClient";
+import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
+import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
@@ -16,6 +18,7 @@ export type StockQuoteResult = {
     ticker: string;
     fetchedAt?: string;
     expiresAt?: string;
+    refreshStarted?: boolean;
     refreshError?: string;
   };
 };
@@ -106,13 +109,57 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
   }
 }
 
-async function refreshQuoteSnapshot(ticker: string): Promise<StoredQuoteSnapshot> {
+async function collectLiveQuotePayload(ticker: string): Promise<StockPayload> {
+  if (kisQuoteConfigured()) {
+    return fetchKisQuote(ticker);
+  }
+
+  if (!pythonCollectorEnabled()) {
+    throw new StockDataUnavailableError({
+      kind: "quote",
+      ticker,
+      reason: "refresh_background_only",
+    });
+  }
+
+  const { runQuoteCollector } = await import("@/lib/pythonStockCollector");
+  return runQuoteCollector(ticker);
+}
+
+async function refreshQuoteSnapshot(
+  ticker: string,
+  options: { fallbackSnapshot?: StoredQuoteSnapshot; unavailableReason?: "snapshot_miss" | "refresh_background_only" } = {}
+): Promise<{ snapshot: StoredQuoteSnapshot; refreshed: boolean; lease?: StockRefreshLeaseResult }> {
   const existing = inflightRefreshes.get(ticker);
-  if (existing) return existing;
+  if (existing) return { snapshot: await existing, refreshed: true };
 
   const promise = (async () => {
-    const { runQuoteCollector } = await import("@/lib/pythonStockCollector");
-    const payload = await runQuoteCollector(ticker);
+    const lease = await acquireStockRefreshLease({
+      kind: "quote",
+      ticker,
+      lockSeconds: numericEnv("STOCK_QUOTE_REFRESH_LEASE_SECONDS", 30),
+    });
+
+    if (!lease.acquired) {
+      if (options.fallbackSnapshot) {
+        return { snapshot: options.fallbackSnapshot, refreshed: false, lease };
+      }
+      throw new StockDataUnavailableError({
+        kind: "quote",
+        ticker,
+        reason: options.unavailableReason || "snapshot_miss",
+      });
+    }
+
+    if (!kisQuoteConfigured() && !pythonCollectorEnabled()) {
+      throw new StockDataUnavailableError({
+        kind: "quote",
+        ticker,
+        reason: options.unavailableReason || "snapshot_miss",
+      });
+    }
+
+    const payload = await collectLiveQuotePayload(ticker);
     const nowMs = Date.now();
     const market = payload.market === "KR" || payload.market === "US" ? payload.market : marketFromTicker(ticker);
     const { expiresAt, session } = await cacheExpiresAtForMarket(market, "quote", nowMs);
@@ -133,10 +180,13 @@ async function refreshQuoteSnapshot(ticker: string): Promise<StoredQuoteSnapshot
       await writeSupabaseSnapshot(snapshot);
     }
 
-    return snapshot;
+    return { snapshot, refreshed: true, lease };
   })();
 
-  inflightRefreshes.set(ticker, promise);
+  inflightRefreshes.set(
+    ticker,
+    promise.then((result) => result.snapshot)
+  );
   try {
     return await promise;
   } finally {
@@ -144,13 +194,19 @@ async function refreshQuoteSnapshot(ticker: string): Promise<StoredQuoteSnapshot
   }
 }
 
-function decorate(snapshot: StoredQuoteSnapshot, state: QuoteCacheState, source: QuoteCacheSource, extra?: { refreshError?: string }): StockQuoteResult {
+function decorate(
+  snapshot: StoredQuoteSnapshot,
+  state: QuoteCacheState,
+  source: QuoteCacheSource,
+  extra?: { refreshStarted?: boolean; refreshError?: string }
+): StockQuoteResult {
   const serverCache = {
     state,
     source,
     ticker: snapshot.ticker,
     fetched_at: snapshot.fetchedAt,
     expires_at: snapshot.expiresAt,
+    refresh_started: extra?.refreshStarted,
     refresh_error: extra?.refreshError,
   };
 
@@ -165,6 +221,7 @@ function decorate(snapshot: StoredQuoteSnapshot, state: QuoteCacheState, source:
       ticker: snapshot.ticker,
       fetchedAt: snapshot.fetchedAt,
       expiresAt: snapshot.expiresAt,
+      refreshStarted: extra?.refreshStarted,
       refreshError: extra?.refreshError,
     },
   };
@@ -174,33 +231,47 @@ function scheduleQueuedRefresh(ticker: string, priority: number, reason: "snapsh
   void enqueueStockRefreshJob({ kind: "quote", ticker, priority, reason }).catch(() => undefined);
 }
 
+function inlineQuoteRefreshAvailable(): boolean {
+  return kisQuoteConfigured() || pythonCollectorEnabled() || !!marketDataServiceConfig();
+}
+
 export async function getStockQuote(tickerRef: string, options: { forceRefresh?: boolean } = {}): Promise<StockQuoteResult> {
   const ticker = normalizeTickerRef(tickerRef);
   const nowMs = Date.now();
+  let freshCandidate: StoredQuoteSnapshot | undefined;
+  let freshSource: QuoteCacheSource = "memory";
   let staleCandidate: StoredQuoteSnapshot | undefined;
   let staleSource: QuoteCacheSource = "memory";
 
-  if (!options.forceRefresh) {
-    const memorySnapshot = memoryCache.get(ticker);
-    if (memorySnapshot && isFresh(memorySnapshot, nowMs)) {
-      return decorate(memorySnapshot, "fresh", "memory");
-    }
-    if (memorySnapshot && isServeableStale(memorySnapshot, nowMs)) {
-      staleCandidate = memorySnapshot;
-      staleSource = "memory";
-    }
+  const memorySnapshot = memoryCache.get(ticker);
+  if (memorySnapshot && isFresh(memorySnapshot, nowMs)) {
+    freshCandidate = memorySnapshot;
+    freshSource = "memory";
+  }
+  if (memorySnapshot && isServeableStale(memorySnapshot, nowMs)) {
+    staleCandidate = memorySnapshot;
+    staleSource = "memory";
+  }
 
+  if (!freshCandidate) {
     const dbSnapshot = await readSupabaseSnapshot(ticker);
     if (dbSnapshot && isFresh(dbSnapshot, nowMs)) {
       memoryCache.set(ticker, dbSnapshot);
-      return decorate(dbSnapshot, "fresh", "supabase");
+      freshCandidate = dbSnapshot;
+      freshSource = "supabase";
     }
     if (dbSnapshot && isServeableStale(dbSnapshot, nowMs)) {
       staleCandidate = dbSnapshot;
       staleSource = "supabase";
     }
+  }
 
-    if (staleCandidate && !pythonCollectorEnabled()) {
+  if (!options.forceRefresh && freshCandidate) {
+    return decorate(freshCandidate, "fresh", freshSource);
+  }
+
+  if (!options.forceRefresh) {
+    if (staleCandidate && !inlineQuoteRefreshAvailable()) {
       memoryCache.set(ticker, staleCandidate);
       scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
       return decorate(staleCandidate, "stale", staleSource);
@@ -211,7 +282,7 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
     const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: options.forceRefresh });
     if (marketDataResult) return marketDataResult;
 
-    if (!pythonCollectorEnabled()) {
+    if (!inlineQuoteRefreshAvailable()) {
       throw new StockDataUnavailableError({
         kind: "quote",
         ticker,
@@ -219,9 +290,25 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
       });
     }
 
-    const refreshed = await refreshQuoteSnapshot(ticker);
-    return decorate(refreshed, "miss", "collector");
+    const fallbackSnapshot = freshCandidate || staleCandidate;
+    const refreshed = await refreshQuoteSnapshot(ticker, {
+      fallbackSnapshot,
+      unavailableReason: options.forceRefresh ? "refresh_background_only" : "snapshot_miss",
+    });
+
+    if (!refreshed.refreshed) {
+      const state = freshCandidate && refreshed.snapshot === freshCandidate ? "fresh" : "stale";
+      const source = freshCandidate && refreshed.snapshot === freshCandidate ? freshSource : staleSource;
+      return decorate(refreshed.snapshot, state, source, { refreshStarted: true });
+    }
+
+    return decorate(refreshed.snapshot, "miss", "market-data");
   } catch (error) {
+    if (freshCandidate) {
+      return decorate(freshCandidate, "fresh", freshSource, {
+        refreshError: error instanceof Error ? error.message : "refresh_failed",
+      });
+    }
     if (staleCandidate) {
       return decorate(staleCandidate, "stale", staleSource, {
         refreshError: error instanceof Error ? error.message : "refresh_failed",

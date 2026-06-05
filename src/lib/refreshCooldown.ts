@@ -35,7 +35,7 @@ const FALLBACK_COOKIE_SECRET = randomUUID();
 const memoryCooldowns = (globalThis.__stockRefreshCooldowns ??= new Map<string, string>());
 
 export function refreshCooldownSeconds(): number {
-  return numericEnv("STOCK_REFRESH_COOLDOWN_SECONDS", 900);
+  return numericEnv("STOCK_REFRESH_COOLDOWN_SECONDS", 300);
 }
 
 export async function refreshCooldownStatus(request: NextRequest, nowMs = Date.now()): Promise<RefreshCooldownStatus> {

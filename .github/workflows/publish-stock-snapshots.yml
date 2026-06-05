@@ -1,17 +1,17 @@
-name: Publish stock snapshots
+name: Maintain stock data cache
 
 on:
   workflow_dispatch:
     inputs:
       tickers:
-        description: "Comma-separated ticker list. Falls back to STOCK_SNAPSHOT_TICKERS repository variable."
+        description: "Optional warm ticker list. Demand-driven requests remain the source of truth."
         required: false
         default: ""
   schedule:
     - cron: "*/30 * * * 1-5"
 
 jobs:
-  publish:
+  maintain:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -20,7 +20,8 @@ jobs:
       STOCK_API_BASE: ${{ vars.STOCK_API_BASE || 'https://openapi.koreainvestment.com:9443' }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      STOCK_SNAPSHOT_TICKERS: ${{ vars.STOCK_SNAPSHOT_TICKERS }}
+      MANUAL_WARM_TICKERS: ${{ github.event.inputs.tickers || '' }}
+      STOCK_WARM_TICKERS: ${{ vars.STOCK_WARM_TICKERS || vars.STOCK_SNAPSHOT_TICKERS }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '10' }}
 
@@ -39,16 +40,21 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Publish snapshots to Supabase
+      - name: Drain refresh queue and optionally warm hot tickers
         run: |
-          TICKERS="${STOCK_SNAPSHOT_TICKERS:-NVDA,TSLA,KO,MRVL,POET,LITE,IONQ,RMBS,005930,000660,253590,108490}"
-          if [ -n "${{ inputs.tickers }}" ]; then
-            TICKERS="${{ inputs.tickers }}"
+          TICKERS="${STOCK_WARM_TICKERS:-}"
+          if [ -n "$MANUAL_WARM_TICKERS" ]; then
+            TICKERS="$MANUAL_WARM_TICKERS"
+          fi
+          ARGS=(
+            --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS"
+            --drain-queue
+            --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT"
+            --worker-id "github-${{ github.run_id }}-${{ github.run_attempt }}"
+            --json
+          )
+          if [ -n "$TICKERS" ]; then
+            ARGS+=(--tickers "$TICKERS")
           fi
           python scripts/publish_stock_snapshots.py \
-            --tickers "$TICKERS" \
-            --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS" \
-            --drain-queue \
-            --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT" \
-            --worker-id "github-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --json
+            "${ARGS[@]}"

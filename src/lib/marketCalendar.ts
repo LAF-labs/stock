@@ -49,12 +49,12 @@ export function secondsUntil(iso: string | undefined, nowMs = Date.now(), fallba
 }
 
 export function quoteOpenTtlSeconds(market: MarketCode): number {
-  const base = numericEnv("STOCK_QUOTE_CACHE_OPEN_SECONDS", 180);
+  const base = numericEnv("STOCK_QUOTE_CACHE_OPEN_SECONDS", 300);
   return numericEnv(`STOCK_QUOTE_${market}_CACHE_OPEN_SECONDS`, base);
 }
 
 export function scoreOpenTtlSeconds(view: "detail" | "compare"): number {
-  const base = numericEnv("STOCK_SCORE_CACHE_FRESH_SECONDS", 3_600);
+  const base = numericEnv("STOCK_SCORE_CACHE_FRESH_SECONDS", 1_800);
   const name = view === "compare" ? "STOCK_SCORE_COMPARE_CACHE_SECONDS" : "STOCK_SCORE_DETAIL_CACHE_SECONDS";
   return numericEnv(name, base);
 }
