@@ -38,3 +38,17 @@ test("shared chrome keeps copy-link and disclaimer contracts", () => {
   assert.match(compare, /AppDisclaimerFooter/);
   assert.match(styles, /\.app-disclaimer-footer/);
 });
+
+test("mobile landing search prevents autocomplete from overlapping content", () => {
+  const autocomplete = readFileSync("src/components/SymbolAutocomplete.tsx", "utf8");
+  const dashboard = readFileSync("src/components/StockDashboard.tsx", "utf8");
+  const styles = readFileSync("src/app/globals.css", "utf8");
+
+  assert.match(autocomplete, /onOpenChange/);
+  assert.match(dashboard, /searchSuggestionsOpen/);
+  assert.match(dashboard, /search-suggestions-open/);
+  assert.match(styles, /\.stock-landing-app\.search-suggestions-open\s+\.landing-home/);
+  assert.match(styles, /\.stock-landing-app\.search-suggestions-open\s+\.recent-ticker-chips/);
+  assert.match(styles, /100dvh/);
+  assert.match(styles, /background:\s*var\(--panel-solid\)/);
+});

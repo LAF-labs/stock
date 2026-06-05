@@ -19,6 +19,7 @@ type SymbolAutocompleteProps = {
   label: string;
   disabled?: boolean;
   className?: string;
+  onOpenChange?: (open: boolean) => void;
 };
 
 function displayInputValue(item: SymbolSearchItem): string {
@@ -35,6 +36,7 @@ export default function SymbolAutocomplete({
   label,
   disabled = false,
   className = "",
+  onOpenChange,
 }: SymbolAutocompleteProps) {
   const [items, setItems] = useState<SymbolSearchItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -103,6 +105,10 @@ export default function SymbolAutocomplete({
     return () => document.removeEventListener("mousedown", closeOnOutside);
   }, []);
 
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
+
   const listId = `${id}-list`;
   const activeItem = useMemo(() => items[activeIndex] || items[0], [activeIndex, items]);
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
@@ -162,7 +168,7 @@ export default function SymbolAutocomplete({
   }
 
   return (
-    <form onSubmit={submit} className={className}>
+    <form onSubmit={submit} className={`${className} ${isOpen ? "symbol-search-open" : ""}`.trim()}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>

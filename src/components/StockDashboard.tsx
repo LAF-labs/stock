@@ -449,6 +449,7 @@ export default function StockDashboard() {
   const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
   const [judgmentState, setJudgmentState] = useState<JudgmentState>({ status: "idle" });
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
+  const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
   const currentTickerRef = useRef(tickerParam);
   const quoteRefreshControllerRef = useRef<AbortController | null>(null);
 
@@ -477,6 +478,7 @@ export default function StockDashboard() {
       currentTickerRef.current = "";
       quoteRefreshControllerRef.current?.abort();
       setTickerInput("");
+      setSearchSuggestionsOpen(false);
       setState({ status: "idle" });
       setQuoteState({ status: "idle" });
       setQuoteRefreshState({ status: "idle" });
@@ -749,7 +751,7 @@ export default function StockDashboard() {
   }
 
   return (
-    <main className={`stock-app ${hasTicker ? "stock-detail-app" : "stock-landing-app"}`}>
+    <main className={`stock-app ${hasTicker ? "stock-detail-app" : "stock-landing-app"} ${!hasTicker && searchSuggestionsOpen ? "search-suggestions-open" : ""}`}>
       <section className={`stock-search ${hasTicker ? "" : "landing-search"}`}>
         <AppTopbar active="analysis" theme={theme} onThemeChange={setTheme} />
         <SymbolAutocomplete
@@ -761,6 +763,7 @@ export default function StockDashboard() {
           buttonLabel="검색"
           label="국내·미국 주식 검색"
           className="stock-search-form"
+          onOpenChange={setSearchSuggestionsOpen}
         />
         <RecentTickerRail items={recentTickers} onOpen={(key) => router.push(`/?ticker=${encodeURIComponent(key)}`)} onRemove={removeRecentTicker} />
       </section>
