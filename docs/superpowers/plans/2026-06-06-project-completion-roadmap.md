@@ -45,11 +45,22 @@ Phase 1 verification:
 - Modify: `scripts/fetch_yfinance_score.py`
 - Modify: `tests/test_score_helpers.py`
 
-- [ ] Extract pure scoring helpers and factor dataclasses into focused modules while preserving imports used by existing tests.
-- [ ] Extract symbol parsing/provider normalization helpers.
-- [ ] Keep the public CLI and `fetch_score`/`fetch_quote` contracts stable.
-- [ ] Add import-compatibility tests before each extraction.
-- [ ] Run smoke checks against representative tickers after each split.
+- [x] Extract pure scoring helpers and factor dataclasses into focused modules while preserving imports used by existing tests.
+- [x] Extract symbol parsing/provider normalization helpers.
+- [x] Keep the public CLI and `fetch_score`/`fetch_quote` contracts stable.
+- [x] Add import-compatibility tests before each extraction.
+- [x] Run smoke checks against representative tickers after each split.
+
+Phase 2 evidence so far:
+- `scripts/stock_score/scoring.py` now owns `FactorScore`, `OpportunityResult`, weighted/composite score helpers, valuation guardrails, momentum and opportunity scoring helpers.
+- `scripts/stock_score/symbols.py` now owns ticker regexes, `clean_ticker`, `parse_symbol_ref`, and `domestic_yfinance_symbol`.
+- `scripts/fetch_yfinance_score.py` re-exports those names for legacy callers and dropped about 330 lines from the monolith.
+- `tests/test_score_helpers.py` proves legacy imports and extracted module exports are the same objects.
+- NVDA compare smoke passed with score 83.1/83.1 across extraction checks. Domestic smoke reached the KIS request path but failed once due to a provider connection close, so that is recorded as external provider instability rather than extraction failure.
+- Python unittest subset: 24 tests passed.
+- `npm test`: 54 tests passed.
+- `npm run typecheck`: passed.
+- `npm run build`: passed.
 
 ### Phase 3: Data Quality Lifecycle
 

@@ -1,0 +1,1 @@
+"""Stock score collector modules."""

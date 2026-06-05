@@ -1,5 +1,8 @@
 import unittest
 
+import scripts.fetch_yfinance_score as legacy_score_module
+import scripts.stock_score.scoring as scoring
+import scripts.stock_score.symbols as symbols
 from scripts.fetch_yfinance_score import (
     FactorScore,
     composite_score,
@@ -12,6 +15,16 @@ from scripts.fetch_yfinance_score import (
 
 
 class ScoreHelperTests(unittest.TestCase):
+    def test_scoring_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.FactorScore, scoring.FactorScore)
+        self.assertIs(legacy_score_module.weighted_factor_score, scoring.weighted_factor_score)
+        self.assertIs(legacy_score_module.opportunity_factor_score, scoring.opportunity_factor_score)
+
+    def test_symbol_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.clean_ticker, symbols.clean_ticker)
+        self.assertIs(legacy_score_module.parse_symbol_ref, symbols.parse_symbol_ref)
+        self.assertIs(legacy_score_module.domestic_yfinance_symbol, symbols.domestic_yfinance_symbol)
+
     def test_quality_adjusted_valuation_moderates_premium_growth_leaders(self):
         valuation = quality_adjusted_valuation(
             FactorScore(score=12.0, confidence=1.0),
