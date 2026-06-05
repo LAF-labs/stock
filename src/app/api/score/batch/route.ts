@@ -3,6 +3,7 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
+import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,7 +38,8 @@ export async function GET(request: NextRequest) {
       tickers.map(async (ticker): Promise<{ payload: StockPayload; cache?: StockScoreResult["cache"] }> => {
         try {
           const result = await getStockScore(ticker, "compare");
-          return { payload: result.payload, cache: result.cache };
+          const payload = await enrichStockPayloadWithSymbolProfile(result.payload);
+          return { payload, cache: result.cache };
         } catch (error) {
           console.warn("batch_stock_collector_unreachable", { ticker, error: error instanceof Error ? error.message : "unknown" });
           return {

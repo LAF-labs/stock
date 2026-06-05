@@ -10,6 +10,7 @@ export type SymbolMasterItem = {
   instrumentType: "STOCK" | "ETF";
   currency?: string;
   standardCode?: string;
+  providerSectorCode?: string;
 };
 
 export type SymbolSearchItem = SymbolMasterItem & {

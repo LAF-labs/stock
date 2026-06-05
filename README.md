@@ -13,6 +13,7 @@ Next.js 기반 주식 티커 조회 리더입니다.
 - 조회 결과를 서버 메모리와 Supabase `stock_score_snapshots`에 저장해 반복 조회 시 API 호출 축소
 - yfinance 펀더멘털 보강값을 Supabase `stock_fundamental_snapshots`에 저장하고 로컬 파일 캐시는 fallback으로 사용
 - 룰 기반 판단문을 6시간 버킷에 캐시하고, PER/PBR은 업종/섹터 벤치마크와 비교
+- 종목별 업종 profile/tag를 Supabase에 미리 백필하고, 요청 경로에서는 24시간 캐시된 profile만 조회
 
 ## 설치
 
@@ -76,6 +77,9 @@ STOCK_JUDGMENT_BODY_MAX_BYTES=65536
 STOCK_INDUSTRY_BENCHMARK_CACHE_SECONDS=21600
 STOCK_INDUSTRY_BENCHMARK_CACHE_MAX_ENTRIES=5000
 STOCK_INDUSTRY_BENCHMARK_TIMEOUT_MS=1500
+STOCK_SYMBOL_PROFILE_CACHE_SECONDS=86400
+STOCK_SYMBOL_PROFILE_CACHE_MAX_ENTRIES=20000
+STOCK_SYMBOL_PROFILE_TIMEOUT_MS=1500
 STOCK_SCORE_COLLECTOR_RATE_LIMIT=30
 STOCK_SCORE_COLLECTOR_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_QUOTE_COLLECTOR_RATE_LIMIT=60
@@ -93,6 +97,19 @@ REDIS_URL=redis://127.0.0.1:6379
 ```
 
 판단문은 LLM 호출 없이 서버 룰 엔진에서 생성합니다. 결과는 `stock_rule_judgments`에 6시간 버킷으로 캐시하고, 프로세스 메모리 캐시를 먼저 확인해 인기 종목 반복 조회 비용을 줄입니다. PER/PBR 업종 비교는 `stock_industry_benchmarks`를 읽으며, 이 테이블은 요청 경로에서 집계하지 않습니다.
+
+종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
+
+운영 초기화 순서는 아래와 같습니다.
+
+```bash
+python scripts/sync_symbol_master.py
+python scripts/backfill_symbol_profiles.py --source master
+python scripts/backfill_symbol_profiles.py --source yfinance --market US --limit 1000
+python scripts/backfill_symbol_profiles.py --source yfinance --market KR --limit 1000
+```
+
+`master`는 전체 종목을 pending profile로 빠르게 채우고, `yfinance`는 sector/industry가 확인된 종목만 verified/partial profile로 승격합니다. 국내 종목은 KOSPI `.KS`, KOSDAQ `.KQ` 심볼을 사용하며 KONEX처럼 yfinance 매핑이 불확실한 시장은 master seed 상태로 둡니다. 전체 백필은 limit/offset을 나눠 cron 또는 배치 작업에서 점진 실행하세요.
 
 배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 주기적으로 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
 

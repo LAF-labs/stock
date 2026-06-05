@@ -3,6 +3,7 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { jsonError } from "@/lib/apiGuards";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { cleanView, getStockScore, normalizeTickerRef, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
+import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,12 +38,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getStockScore(ticker, view, { forceRefresh });
+    const enrichedPayload = await enrichStockPayloadWithSymbolProfile(result.payload);
     const payload = forceRefresh
       ? {
-          ...result.payload,
+          ...enrichedPayload,
           refresh_cooldown: cooldownPayload(cooldown?.nextAllowedAt),
         }
-      : result.payload;
+      : enrichedPayload;
     const response = NextResponse.json(
       payload,
       {

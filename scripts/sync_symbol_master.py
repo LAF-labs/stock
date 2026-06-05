@@ -108,6 +108,7 @@ def parse_us_market(code: str, work_dir: Path) -> list[dict[str, Any]]:
                     "englishName": english_name,
                     "instrumentType": "ETF" if is_us_etf(row) else "STOCK",
                     "currency": row.get("currency") or "USD",
+                    "providerSectorCode": row.get("sectorCode") or "",
                 }
             )
     return items

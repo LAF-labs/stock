@@ -3,6 +3,7 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { readJsonObjectWithLimit, jsonError } from "@/lib/apiGuards";
 import { judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
 import { getIndustryBenchmarksForStock } from "@/lib/industryBenchmarks";
+import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import {
   buildRuleBasedJudgment,
   cachedRuleBasedJudgment,
@@ -121,7 +122,8 @@ export async function POST(request: NextRequest) {
     return jsonError(body.status, body.error, body.message);
   }
 
-  const stock = compactRuleJudgmentStock(body.value);
+  const enrichedPayload = await enrichStockPayloadWithSymbolProfile(body.value);
+  const stock = compactRuleJudgmentStock(enrichedPayload);
   const ticker = tickerFromRuleJudgmentStock(stock);
   if (!validRuleJudgmentStock(stock, ticker)) {
     return NextResponse.json({ ok: false, error: "invalid_stock_payload", message: "판단을 만들 주식 데이터가 부족해요." }, { status: 400 });
