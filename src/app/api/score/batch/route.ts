@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
-import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
+import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
@@ -44,7 +45,31 @@ export async function GET(request: NextRequest) {
         } catch (error) {
           if (isStockDataUnavailableError(error)) {
             console.info("batch_stock_snapshot_unavailable", { ticker, reason: error.payload.reason });
-            return { payload: error.toPayload() };
+            const refreshRequest = await enqueueStockRefreshJob({
+              kind: "score",
+              ticker,
+              view: "compare",
+              priority: 30,
+              reason: error.payload.reason,
+            });
+            return {
+              payload: stockDataPendingPayload({
+                kind: "score",
+                ticker,
+                view: "compare",
+                reason: error.payload.reason,
+                refreshRequest: refreshRequest.queued
+                  ? {
+                      queued: true,
+                      job_id: refreshRequest.job?.id,
+                      status: refreshRequest.job?.status,
+                    }
+                  : {
+                      queued: false,
+                      reason: refreshRequest.reason,
+                    },
+              }),
+            };
           }
 
           console.warn("batch_stock_collector_unreachable", { ticker, error: error instanceof Error ? error.message : "unknown" });

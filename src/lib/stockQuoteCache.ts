@@ -1,6 +1,7 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
 import { getMarketDataServiceQuote } from "@/lib/marketDataServiceClient";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
 
@@ -169,6 +170,10 @@ function decorate(snapshot: StoredQuoteSnapshot, state: QuoteCacheState, source:
   };
 }
 
+function scheduleQueuedRefresh(ticker: string, priority: number, reason: "snapshot_miss" | "refresh_background_only") {
+  void enqueueStockRefreshJob({ kind: "quote", ticker, priority, reason }).catch(() => undefined);
+}
+
 export async function getStockQuote(tickerRef: string, options: { forceRefresh?: boolean } = {}): Promise<StockQuoteResult> {
   const ticker = normalizeTickerRef(tickerRef);
   const nowMs = Date.now();
@@ -197,6 +202,7 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
 
     if (staleCandidate && !pythonCollectorEnabled()) {
       memoryCache.set(ticker, staleCandidate);
+      scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
       return decorate(staleCandidate, "stale", staleSource);
     }
   }

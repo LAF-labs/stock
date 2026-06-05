@@ -2,6 +2,7 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSe
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 
 export type ScoreView = "detail" | "compare";
@@ -257,6 +258,10 @@ function scheduleRefresh(ticker: string, view: ScoreView) {
   void refreshSnapshot(ticker, view).catch(() => undefined);
 }
 
+function scheduleQueuedRefresh(ticker: string, view: ScoreView, priority: number, reason: "snapshot_miss" | "refresh_background_only") {
+  void enqueueStockRefreshJob({ kind: "score", ticker, view, priority, reason }).catch(() => undefined);
+}
+
 export async function getStockScore(tickerRef: string, view: ScoreView, options: { forceRefresh?: boolean } = {}): Promise<StockScoreResult> {
   const ticker = normalizeTickerRef(tickerRef);
   const key = cacheKey(ticker, view);
@@ -290,6 +295,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
         scheduleRefresh(ticker, view);
         return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
       }
+      scheduleQueuedRefresh(ticker, view, 60, options.forceRefresh ? "refresh_background_only" : "snapshot_miss");
       return decorate(staleCandidate, "stale", staleSource, { refreshStarted: false });
     }
   }

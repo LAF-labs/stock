@@ -25,6 +25,17 @@ test("batch status reports total collector outage as 502", () => {
   assert.equal(batchStatusFromResults([]), 400);
 });
 
+test("batch status reports snapshot pending as accepted work", () => {
+  assert.equal(
+    batchStatusFromResults([
+      { ok: false, error: "snapshot_pending" },
+      { ok: false, error: "snapshot_pending" },
+    ]),
+    202
+  );
+  assert.equal(batchStatusFromResults([{ ok: false, error: "snapshot_pending" }, { ok: true }]), 200);
+});
+
 test("subprocess output is bounded and marked when truncated", () => {
   const result = appendBoundedOutput("abc", "defgh", 6);
 

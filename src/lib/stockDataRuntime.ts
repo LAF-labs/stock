@@ -21,6 +21,23 @@ export type StockDataUnavailablePayload = {
   reason: StockDataUnavailableReason;
 };
 
+export type StockDataPendingPayload = {
+  ok: false;
+  error: "snapshot_pending";
+  message: string;
+  kind: StockDataKind;
+  ticker: string;
+  view?: "detail" | "compare";
+  reason: StockDataUnavailableReason;
+  retry_after_seconds: number;
+  refresh_request: {
+    queued: boolean;
+    job_id?: string;
+    status?: string;
+    reason?: string;
+  };
+};
+
 const SNAPSHOT_ALIASES = new Set(["snapshot", "supabase", "cache", "cache-only", "readonly", "read-only"]);
 const PYTHON_ALIASES = new Set(["python", "collector", "subprocess"]);
 
@@ -45,6 +62,25 @@ export function stockDataUnavailablePayload(input: StockDataUnavailableInput): S
     ticker: input.ticker,
     ...(input.view ? { view: input.view } : {}),
     reason: input.reason,
+  };
+}
+
+export function stockDataPendingPayload(
+  input: StockDataUnavailableInput & {
+    refreshRequest: StockDataPendingPayload["refresh_request"];
+    retryAfterSeconds?: number;
+  }
+): StockDataPendingPayload {
+  return {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: input.kind,
+    ticker: input.ticker,
+    ...(input.view ? { view: input.view } : {}),
+    reason: input.reason,
+    retry_after_seconds: input.retryAfterSeconds ?? 60,
+    refresh_request: input.refreshRequest,
   };
 }
 

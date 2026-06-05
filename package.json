@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "check": "npm run typecheck && npm run build",
+    "deploy:preview": "bash scripts/vercel_preview_deploy.sh",
     "start": "next start",
     "lint": "tsc --noEmit",
     "score:smoke": "${PYTHON_BIN:-python} scripts/score_smoke_check.py",
+    "snapshots:drain": "${PYTHON_BIN:-python} scripts/publish_stock_snapshots.py --drain-queue --json",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { jsonError } from "@/lib/apiGuards";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
-import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
+import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { normalizeTickerRef } from "@/lib/stockSnapshotCache";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,34 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("quote_snapshot_unavailable", { ticker, reason: error.payload.reason });
-      const response = NextResponse.json(error.toPayload(), { status: error.status, headers: privateNoStoreHeaders() });
+      const refreshRequest = await enqueueStockRefreshJob({
+        kind: "quote",
+        ticker,
+        priority: forceRefresh ? 10 : 40,
+        reason: error.payload.reason,
+      });
+      const pendingPayload = stockDataPendingPayload({
+        kind: "quote",
+        ticker,
+        reason: error.payload.reason,
+        refreshRequest: refreshRequest.queued
+          ? {
+              queued: true,
+              job_id: refreshRequest.job?.id,
+              status: refreshRequest.job?.status,
+            }
+          : {
+              queued: false,
+              reason: refreshRequest.reason,
+            },
+      });
+      const response = NextResponse.json(pendingPayload, {
+        status: 202,
+        headers: {
+          ...privateNoStoreHeaders(),
+          "Retry-After": String(pendingPayload.retry_after_seconds),
+        },
+      });
       if (cooldown) applyRefreshUserCookie(response, cooldown);
       return response;
     }

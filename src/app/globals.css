@@ -546,6 +546,10 @@ a:focus-visible {
   color: var(--red);
 }
 
+.quote-refresh-note.pending {
+  color: var(--accent);
+}
+
 .price-block strong {
   display: block;
   margin-top: 0;
@@ -1410,6 +1414,11 @@ a:focus-visible {
 .compare-errors p {
   margin: 0;
   line-height: 1.55;
+}
+
+.compare-pending {
+  background: var(--surface-accent);
+  color: var(--accent);
 }
 
 .compare-feed {

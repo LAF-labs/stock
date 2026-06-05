@@ -134,6 +134,76 @@ def upsert_snapshot(config: SupabasePublishConfig, table: str, row: dict[str, An
         raise RuntimeError(f"Supabase upsert failed for {table}: HTTP {response.status_code} {response.text[:500]}")
 
 
+def post_supabase_rpc(config: SupabasePublishConfig, name: str, body: dict[str, Any]) -> Any:
+    response = requests.post(
+        f"{config.url}/rest/v1/rpc/{name}",
+        headers=supabase_headers(config.key),
+        data=json.dumps(body, ensure_ascii=False, allow_nan=False),
+        timeout=config.timeout_seconds,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Supabase RPC {name} failed: HTTP {response.status_code} {response.text[:500]}")
+    if not response.text:
+        return None
+    return response.json()
+
+
+def claim_refresh_jobs(
+    config: SupabasePublishConfig,
+    worker_id: str,
+    limit: int,
+    lock_seconds: int,
+) -> list[dict[str, Any]]:
+    payload = post_supabase_rpc(
+        config,
+        "claim_stock_refresh_jobs",
+        {
+            "p_worker_id": worker_id,
+            "p_limit": limit,
+            "p_lock_seconds": lock_seconds,
+        },
+    )
+    return payload if isinstance(payload, list) else []
+
+
+def complete_refresh_job(config: SupabasePublishConfig, worker_id: str, job_id: str) -> None:
+    post_supabase_rpc(
+        config,
+        "complete_stock_refresh_job",
+        {
+            "p_job_id": job_id,
+            "p_worker_id": worker_id,
+        },
+    )
+
+
+def fail_refresh_job(config: SupabasePublishConfig, worker_id: str, job_id: str, error: str, retry_after_seconds: int) -> None:
+    post_supabase_rpc(
+        config,
+        "fail_stock_refresh_job",
+        {
+            "p_job_id": job_id,
+            "p_worker_id": worker_id,
+            "p_error": error[:1000],
+            "p_retry_after_seconds": retry_after_seconds,
+        },
+    )
+
+
+def job_ticker_ref(job: dict[str, Any]) -> str:
+    market = str(job.get("market") or "US").strip().upper()
+    symbol = str(job.get("symbol") or "").strip().upper()
+    return normalize_ticker_ref(f"{market}:{symbol}")
+
+
+def job_retry_after_seconds(job: dict[str, Any]) -> int:
+    try:
+        attempts = int(job.get("attempts") or 1)
+    except (TypeError, ValueError):
+        attempts = 1
+    return min(3600, max(120, 60 * (2 ** max(1, attempts))))
+
+
 def ok_payload(payload: dict[str, Any]) -> bool:
     return payload.get("ok") is True
 
@@ -184,6 +254,62 @@ def publish_ticker(
     return summary
 
 
+def publish_queue_job(
+    job: dict[str, Any],
+    config: SupabasePublishConfig,
+    args: argparse.Namespace,
+    worker_id: str,
+) -> dict[str, Any]:
+    job_id = str(job.get("id") or "")
+    kind = str(job.get("kind") or "").strip().lower()
+    view = str(job.get("view_mode") or "detail").strip().lower()
+    ticker = job_ticker_ref(job)
+    summary: dict[str, Any] = {"job_id": job_id, "kind": kind, "ticker": ticker, "view": view if kind == "score" else None, "status": None, "errors": []}
+    fetched_at = datetime.now(timezone.utc)
+
+    try:
+        if not job_id:
+            raise RuntimeError("claimed job is missing id")
+        if kind == "quote":
+            quote = fetch_quote(ticker)
+            if not ok_payload(quote):
+                raise RuntimeError(str(quote.get("error") or "quote_fetch_failed"))
+            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds)
+            upsert_snapshot(config, "stock_quote_snapshots", row, "ticker")
+        elif kind == "score":
+            if view not in {"detail", "compare"}:
+                view = "detail"
+            score = fetch_score(ticker, view=view)
+            if not ok_payload(score):
+                raise RuntimeError(str(score.get("error") or "score_fetch_failed"))
+            row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds)
+            upsert_snapshot(config, "stock_score_snapshots", row, "ticker,view_mode")
+        else:
+            raise RuntimeError(f"unsupported refresh job kind: {kind}")
+
+        complete_refresh_job(config, worker_id, job_id)
+        summary["status"] = "succeeded"
+    except Exception as exc:
+        message = str(exc)
+        summary["status"] = "failed"
+        summary["errors"].append({"error": message})
+        if job_id:
+            fail_refresh_job(config, worker_id, job_id, message, job_retry_after_seconds(job))
+
+    return summary
+
+
+def drain_refresh_queue(config: SupabasePublishConfig, args: argparse.Namespace) -> list[dict[str, Any]]:
+    worker_id = args.worker_id or f"stock-snapshot-publisher-{os.getpid()}"
+    jobs = claim_refresh_jobs(config, worker_id, args.queue_limit, args.queue_lock_seconds)
+    rows: list[dict[str, Any]] = []
+    for index, job in enumerate(jobs):
+        if index and args.sleep_seconds > 0:
+            time.sleep(args.sleep_seconds)
+        rows.append(publish_queue_job(job, config, args, worker_id))
+    return rows
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Publish stock quote and score snapshots into Supabase.")
     parser.add_argument("--ticker", action="append", help="Ticker to publish. Can be repeated or comma-separated.")
@@ -200,6 +326,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quote-stale-ttl-seconds", type=int, default=numeric_env("STOCK_QUOTE_SNAPSHOT_STALE_SECONDS", 86_400))
     parser.add_argument("--supabase-url", help="Overrides SUPABASE_URL.")
     parser.add_argument("--supabase-key", help="Overrides SUPABASE_SERVICE_ROLE_KEY.")
+    parser.add_argument("--drain-queue", "--from-queue", dest="drain_queue", action="store_true", help="Claim and publish queued stock refresh jobs.")
+    parser.add_argument("--queue-limit", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LIMIT", 10), help="Maximum queued jobs to claim in this run.")
+    parser.add_argument("--queue-lock-seconds", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS", 900), help="Queue job lock duration.")
+    parser.add_argument("--worker-id", default=os.environ.get("STOCK_SNAPSHOT_WORKER_ID"), help="Stable worker id for queued job claims.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser
 
@@ -211,8 +341,8 @@ def main() -> int:
     tickers = parse_ticker_args([args.tickers] if args.tickers else [])
     tickers.extend(ticker for ticker in parse_ticker_args(args.ticker) if ticker not in tickers)
     tickers.extend(ticker for ticker in parse_ticker_file(args.tickers_file) if ticker not in tickers)
-    if not tickers:
-        parser.error("At least one ticker is required.")
+    if not tickers and not args.drain_queue:
+        parser.error("At least one ticker is required unless --drain-queue is used.")
     if args.skip_quote and args.skip_score:
         parser.error("At least one of quote or score publishing must be enabled.")
 
@@ -232,11 +362,17 @@ def main() -> int:
         except Exception as exc:
             rows.append({"ticker": ticker, "quote": "error", "scores": {}, "errors": [{"error": str(exc)}]})
 
+    queue_rows: list[dict[str, Any]] = []
+    if args.drain_queue and config:
+        queue_rows = drain_refresh_queue(config, args)
+
     payload = {
-        "ok": not any(row["errors"] for row in rows),
+        "ok": not any(row["errors"] for row in rows) and not any(row["errors"] for row in queue_rows),
         "dry_run": args.dry_run,
         "tickers": len(tickers),
         "rows": rows,
+        "queue_jobs": len(queue_rows),
+        "queue_rows": queue_rows,
     }
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

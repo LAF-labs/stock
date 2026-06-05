@@ -4,9 +4,11 @@ export type JsonReadResult =
   | { ok: true; value: Record<string, unknown> }
   | { ok: false; status: number; error: string; message: string };
 
-export function batchStatusFromResults(results: Array<{ ok?: unknown }>): number {
+export function batchStatusFromResults(results: Array<{ ok?: unknown; error?: unknown }>): number {
   if (!results.length) return 400;
-  return results.some((result) => result.ok === true) ? 200 : 502;
+  if (results.some((result) => result.ok === true)) return 200;
+  if (results.every((result) => result.error === "snapshot_pending" || result.error === "snapshot_unavailable")) return 202;
+  return 502;
 }
 
 export async function readJsonObjectWithLimit(request: Request, maxBytes: number): Promise<JsonReadResult> {

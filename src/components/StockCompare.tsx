@@ -27,6 +27,7 @@ const SUGGESTIONS: Record<string, string[]> = {
 type LoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
   | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined }
+  | { status: "pending"; ticker: string; data?: undefined; error?: undefined; message: string }
   | { status: "error"; ticker: string; data?: undefined; error: string };
 
 type BatchScoreResult = StockScoreResponse & {
@@ -34,6 +35,7 @@ type BatchScoreResult = StockScoreResponse & {
   status?: number;
   error?: string;
   message?: string;
+  retry_after_seconds?: number;
 };
 
 type BatchScorePayload = {
@@ -190,6 +192,16 @@ function displayName(data: StockScoreResponse): string {
   return data.name || data.symbol || data.requested_ticker || "-";
 }
 
+function isSnapshotPending(result: BatchScoreResult | undefined): boolean {
+  return result?.error === "snapshot_pending" || result?.error === "snapshot_unavailable";
+}
+
+function pendingMessage(result: BatchScoreResult | undefined): string {
+  const retryAfter = typeof result?.retry_after_seconds === "number" && Number.isFinite(result.retry_after_seconds) ? result.retry_after_seconds : undefined;
+  const message = "데이터를 준비하고 있어요. 수집이 끝나면 비교 점수가 표시됩니다.";
+  return retryAfter ? `${message} 보통 ${retryAfter}초 안에 다시 확인할 수 있어요.` : message;
+}
+
 export default function StockCompare() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -218,6 +230,13 @@ export default function StockCompare() {
         setStates(
           tickers.map((ticker, index) => {
             const result = results[index];
+            if (isSnapshotPending(result)) {
+              return {
+                status: "pending" as const,
+                ticker,
+                message: pendingMessage(result),
+              };
+            }
             if (!result || result.ok === false) {
               return {
                 status: "error" as const,
@@ -248,6 +267,7 @@ export default function StockCompare() {
     [states]
   );
   const isLoading = states.some((state) => state.status === "loading");
+  const pendingStates = states.filter((state): state is Extract<LoadState, { status: "pending" }> => state.status === "pending");
   const suggestions = (SUGGESTIONS[baseTickerLabel] || ["AAPL", "MSFT", "NVDA", "AMZN", "JPM"])
     .map(normalizeTicker)
     .filter((ticker) => !tickers.includes(ticker))
@@ -325,6 +345,16 @@ export default function StockCompare() {
                 <strong>{state.ticker}</strong> {state.error}
               </p>
             ))}
+        </section>
+      ) : null}
+
+      {pendingStates.length ? (
+        <section className="compare-errors compare-pending">
+          {pendingStates.map((state) => (
+            <p key={state.ticker}>
+              <strong>{state.ticker}</strong> {state.message}
+            </p>
+          ))}
         </section>
       ) : null}
 

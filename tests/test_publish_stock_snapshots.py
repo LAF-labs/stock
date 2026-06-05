@@ -1,11 +1,16 @@
 from datetime import datetime, timezone
 import unittest
 
+import scripts.publish_stock_snapshots as publisher
 from scripts.publish_stock_snapshots import (
     build_quote_snapshot_row,
     build_score_snapshot_row,
+    claim_refresh_jobs,
+    job_retry_after_seconds,
+    job_ticker_ref,
     normalize_ticker_ref,
     parse_ticker_args,
+    SupabasePublishConfig,
     ttl_expires_at,
 )
 
@@ -45,6 +50,46 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         self.assertNotIn("view_mode", quote_row)
         self.assertEqual(quote_row["expires_at"], "2026-06-05T12:03:00+00:00")
         self.assertEqual(quote_row["stale_expires_at"], "2026-06-06T12:00:00+00:00")
+
+    def test_job_ticker_ref_uses_market_and_symbol(self):
+        self.assertEqual(job_ticker_ref({"market": "US", "symbol": "nvda"}), "US:NVDA")
+        self.assertEqual(job_ticker_ref({"market": "KR", "symbol": "005930"}), "KR:005930")
+
+    def test_job_retry_after_seconds_uses_capped_backoff(self):
+        self.assertEqual(job_retry_after_seconds({"attempts": 1}), 120)
+        self.assertEqual(job_retry_after_seconds({"attempts": 4}), 960)
+        self.assertEqual(job_retry_after_seconds({"attempts": 20}), 3600)
+
+    def test_claim_refresh_jobs_posts_worker_rpc(self):
+        calls = []
+
+        class FakeResponse:
+            status_code = 200
+            text = "[]"
+
+            def json(self):
+                return [{"id": "job-1", "kind": "score", "market": "US", "symbol": "NVDA", "view_mode": "compare"}]
+
+        def fake_post(url, headers=None, data=None, timeout=None):
+            calls.append({"url": url, "headers": headers, "data": data, "timeout": timeout})
+            return FakeResponse()
+
+        original_post = publisher.requests.post
+        publisher.requests.post = fake_post
+        try:
+            config = SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7)
+            jobs = claim_refresh_jobs(config, "worker-1", 5, 600)
+        finally:
+            publisher.requests.post = original_post
+
+        self.assertEqual(jobs[0]["id"], "job-1")
+        self.assertEqual(calls[0]["url"], "https://example.supabase.co/rest/v1/rpc/claim_stock_refresh_jobs")
+        self.assertEqual(calls[0]["timeout"], 7)
+        self.assertIn("service-role-key", calls[0]["headers"]["Authorization"])
+        self.assertEqual(
+            calls[0]["data"],
+            '{"p_worker_id": "worker-1", "p_limit": 5, "p_lock_seconds": 600}',
+        )
 
 
 if __name__ == "__main__":

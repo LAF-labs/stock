@@ -157,15 +157,17 @@ const TERM_TIPS = [
 type LoadState =
   | { status: "idle" | "loading"; data?: undefined; error?: undefined }
   | { status: "success"; data: StockScoreResponse; error?: undefined }
+  | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; data?: undefined; error: string };
 
 type QuoteState =
   | { status: "idle" | "loading"; data?: undefined; error?: undefined }
   | { status: "success"; data: StockQuoteResponse; error?: undefined }
+  | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; data?: undefined; error: string };
 
 type QuoteRefreshState = {
-  status: "idle" | "refreshing" | "success" | "cooldown" | "error";
+  status: "idle" | "refreshing" | "success" | "cooldown" | "pending" | "error";
   message?: string;
   nextAllowedAt?: string;
 };
@@ -174,6 +176,13 @@ type JudgmentState =
   | { status: "idle" | "loading"; judgment?: undefined; error?: undefined }
   | { status: "success"; judgment: StockJudgment; error?: undefined }
   | { status: "error"; judgment?: undefined; error: string };
+
+type SnapshotPendingState = {
+  message: string;
+  ticker?: string;
+  queued: boolean;
+  retryAfterSeconds?: number;
+};
 
 function metricValue(items: LabeledValue[] | undefined, label: string): string {
   return formatValue(items?.find((item) => item.label === label)?.value);
@@ -216,6 +225,31 @@ function numberFromUnknown(value: unknown): number | undefined {
 
 function stringFromUnknown(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function snapshotPendingFromPayload(payload: unknown, fallbackTicker: string): SnapshotPendingState | undefined {
+  const record = recordFromUnknown(payload);
+  const error = stringFromUnknown(record?.error);
+  if (error !== "snapshot_pending" && error !== "snapshot_unavailable") return undefined;
+
+  const refreshRequest = recordFromUnknown(record?.refresh_request);
+  const queued = refreshRequest?.queued === true;
+  const retryAfterSeconds = numberFromUnknown(record?.retry_after_seconds);
+  const ticker = stringFromUnknown(record?.ticker) || fallbackTicker;
+  const message = queued
+    ? "처음 조회하는 종목이라 데이터를 준비하고 있어요. 수집이 끝나면 점수와 현재가가 표시됩니다."
+    : "이 종목 데이터가 아직 준비되지 않았어요. 잠시 후 다시 조회해주세요.";
+
+  return {
+    message: retryAfterSeconds ? `${message} 보통 ${retryAfterSeconds}초 안에 다시 확인할 수 있어요.` : message,
+    ticker,
+    queued,
+    retryAfterSeconds,
+  };
 }
 
 function numberFromJsonRecord(record: Record<string, JsonValue> | undefined, key: string): number | undefined {
@@ -382,12 +416,19 @@ export default function StockDashboard() {
     })
       .then(async (response) => {
         const payload = await response.json();
+        const pending = snapshotPendingFromPayload(payload, tickerParam);
+        if (pending) {
+          setState({ status: "pending", pending });
+          return undefined;
+        }
         if (!response.ok) {
           throw new Error(payload?.message || payload?.error || `HTTP ${response.status}`);
         }
         return payload as StockScoreResponse;
       })
-      .then((data) => setState({ status: "success", data }))
+      .then((data) => {
+        if (data) setState({ status: "success", data });
+      })
       .catch((error) => {
         if (controller.signal.aborted) return;
         setState({
@@ -411,12 +452,19 @@ export default function StockDashboard() {
     })
       .then(async (response) => {
         const payload = await response.json();
+        const pending = snapshotPendingFromPayload(payload, tickerParam);
+        if (pending) {
+          setQuoteState({ status: "pending", pending });
+          setQuoteRefreshState({ status: "pending", message: pending.message });
+          return undefined;
+        }
         if (!response.ok) {
           throw new Error(payload?.message || payload?.error || `HTTP ${response.status}`);
         }
         return payload as StockQuoteResponse;
       })
       .then((data) => {
+        if (!data) return;
         setQuoteState({ status: "success", data });
         const nextAllowedAt = stringFromUnknown(data.refresh_cooldown?.next_allowed_at);
         const message = refreshCooldownMessage(nextAllowedAt);
@@ -540,7 +588,7 @@ export default function StockDashboard() {
   }
 
   function refreshQuote() {
-    if (quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown") return;
+    if (quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending") return;
 
     const requestedTicker = tickerParam || "US:KO";
     const controller = new AbortController();
@@ -554,6 +602,12 @@ export default function StockDashboard() {
       .then(async (response) => {
         const payload = await response.json();
         if (controller.signal.aborted || currentTickerRef.current !== requestedTicker) return undefined;
+        const pending = snapshotPendingFromPayload(payload, requestedTicker);
+        if (pending) {
+          setQuoteState({ status: "pending", pending });
+          setQuoteRefreshState({ status: "pending", message: pending.message });
+          return undefined;
+        }
         if (response.status === 429) {
           const nextAllowedAt = stringFromUnknown(payload?.refresh_cooldown?.next_allowed_at);
           const message = refreshCooldownMessage(nextAllowedAt);
@@ -613,6 +667,7 @@ export default function StockDashboard() {
       </section>
 
       {state.status === "loading" && <StockSkeleton />}
+      {state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} />}
       {state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" />}
 
       {data && (
@@ -730,7 +785,7 @@ function StockHeader({
   const krwPrice = formatKrwPrice(displayData);
   const daily = dailyChangeText(data, quote);
   const latestBarDate = stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date;
-  const refreshDisabled = quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown";
+  const refreshDisabled = quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending";
   const refreshTitle =
     quoteRefreshState.status === "refreshing"
       ? "현재가 새로고침 중"
@@ -740,6 +795,8 @@ function StockHeader({
   const quoteStatusMessage =
     quoteState.status === "loading"
       ? "현재가를 확인하는 중이에요."
+      : quoteState.status === "pending"
+        ? quoteState.pending.message
       : quoteState.status === "error"
         ? `현재가 업데이트 실패: ${quoteState.error}`
         : undefined;

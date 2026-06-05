@@ -33,6 +33,7 @@ SUPABASE_URL=...
 SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 STOCK_REFRESH_COOKIE_SECRET=...
+STOCK_RATE_LIMIT_SECRET=...
 ```
 
 `SUPABASE_PUBLISHABLE_KEY`는 공개 캐시 조회용입니다. `SUPABASE_SERVICE_ROLE_KEY`가 있어야 서버가 점수/현재가/펀더멘털 캐시와 새로고침 쿨다운을 Supabase에 기록합니다. service role key는 브라우저 번들에 노출하지 마세요.
@@ -151,22 +152,42 @@ http://127.0.0.1:3000/?ticker=KO
 
 ## 배포
 
-Vercel + Supabase 배포에서는 공개 요청 경로에서 Python collector를 실행하지 않습니다. Vercel 환경 변수에는 아래 값을 넣어 Next API가 Supabase snapshot을 읽기 전용으로 서빙하게 하세요.
+Vercel + Supabase 배포에서는 공개 요청 경로에서 Python collector를 실행하지 않습니다. Next API는 Supabase snapshot을 읽고, snapshot이 없는 종목은 `stock_refresh_jobs`에 수집 작업을 넣은 뒤 pending 응답을 반환합니다.
+
+Vercel preview/runtime env:
 
 ```text
 STOCK_DATA_RUNTIME=snapshot
 SUPABASE_URL=...
 SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+STOCK_REFRESH_COOKIE_SECRET=...
+STOCK_RATE_LIMIT_SECRET=...
+STOCK_API_APP_KEY=...
+STOCK_API_APP_SECRET=...
+STOCK_API_BASE=https://openapi.koreainvestment.com:9443
 ```
 
-Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행해 Supabase snapshot을 미리 채웁니다.
+`STOCK_API_*` 값은 Vercel 런타임에도 등록하지만, 운영 기본 구조는 요청마다 KIS/yfinance를 직접 호출하지 않는 snapshot/queue 방식입니다. 배포 후에는 값을 노출하지 않는 진단 엔드포인트로 env 연결 상태를 확인할 수 있습니다.
 
 ```bash
-python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --json
+curl https://<preview-url>/api/health/stock-data
 ```
 
-GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣고, repository variable `STOCK_SNAPSHOT_TICKERS`에 prewarm할 티커 목록을 쉼표로 저장하세요. 기본 workflow는 평일 30분마다 `scripts/publish_stock_snapshots.py`를 실행합니다.
+Preview 수동 배포는 branch preview env를 검증하고 명시 주입하는 스크립트를 사용합니다. `--prod`는 사용하지 않습니다.
+
+```bash
+npm run deploy:preview
+```
+
+Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행해 Supabase snapshot을 미리 채웁니다. 명시 티커 발행과 큐 drain을 같은 실행에서 처리할 수 있습니다.
+
+```bash
+python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 10 --json
+PYTHON_BIN=.venv/bin/python npm run snapshots:drain -- --queue-limit 10
+```
+
+GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣고, repository variable `STOCK_SNAPSHOT_TICKERS`에 prewarm할 티커 목록을 쉼표로 저장하세요. 선택적으로 `STOCK_SNAPSHOT_QUEUE_LIMIT`와 `STOCK_SNAPSHOT_SLEEP_SECONDS`를 조정합니다. 기본 workflow는 평일 30분마다 prewarm과 queued miss drain을 함께 실행합니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 

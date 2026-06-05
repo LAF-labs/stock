@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   pythonCollectorEnabled,
+  stockDataPendingPayload,
   stockDataRuntimeMode,
   stockDataUnavailablePayload,
   StockDataUnavailableError,
@@ -56,5 +57,32 @@ test("StockDataUnavailableError carries status and JSON payload", () => {
     kind: "quote",
     ticker: "KR:005930",
     reason: "refresh_background_only",
+  });
+});
+
+test("snapshot pending payload exposes queued refresh metadata", () => {
+  const payload = stockDataPendingPayload({
+    kind: "score",
+    ticker: "US:NVDA",
+    view: "compare",
+    reason: "snapshot_miss",
+    retryAfterSeconds: 45,
+    refreshRequest: { queued: true, job_id: "job-1", status: "queued" },
+  });
+
+  assert.deepEqual(payload, {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "score",
+    ticker: "US:NVDA",
+    view: "compare",
+    reason: "snapshot_miss",
+    retry_after_seconds: 45,
+    refresh_request: {
+      queued: true,
+      job_id: "job-1",
+      status: "queued",
+    },
   });
 });

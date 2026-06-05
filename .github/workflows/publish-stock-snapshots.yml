@@ -22,6 +22,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       STOCK_SNAPSHOT_TICKERS: ${{ vars.STOCK_SNAPSHOT_TICKERS }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
+      STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '10' }}
 
     steps:
       - name: Check out repository
@@ -47,4 +48,7 @@ jobs:
           python scripts/publish_stock_snapshots.py \
             --tickers "$TICKERS" \
             --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS" \
+            --drain-queue \
+            --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT" \
+            --worker-id "github-${{ github.run_id }}-${{ github.run_attempt }}" \
             --json
