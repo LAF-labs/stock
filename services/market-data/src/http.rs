@@ -1,19 +1,31 @@
 use axum::{
     Json, Router,
     body::Body,
-    extract::State,
+    extract::{Path, Query, State},
     http::{HeaderMap, Response, StatusCode, header},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tower_http::trace::TraceLayer;
 
-use crate::{auth::has_internal_bearer, config::AppConfig};
+use std::sync::Arc;
+
+use crate::{
+    auth::has_internal_bearer,
+    cache::{CacheSource, CacheTtls, MemoryMarketDataCache},
+    config::AppConfig,
+    jobs::MemoryRefreshQueue,
+    market::{Market, ScoreView},
+    provider::kis::KisQuoteProvider,
+    service::{MarketDataError, MarketDataErrorKind, MarketDataService, QuoteProvider},
+};
 
 #[derive(Clone)]
-struct AppState {
+struct AppState<P> {
     config: AppConfig,
+    service: MarketDataService<P>,
 }
 
 #[derive(Serialize)]
@@ -30,15 +42,54 @@ struct DependencyStatus {
     redis_configured: bool,
 }
 
+#[derive(Deserialize)]
+struct QuoteQuery {
+    refresh: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct ScoreQuery {
+    refresh: Option<bool>,
+    view: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RefreshPayload {
+    kind: Option<String>,
+    market: String,
+    symbol: String,
+    view: Option<String>,
+}
+
 pub fn router(config: AppConfig) -> Router {
+    let provider = KisQuoteProvider::from_config(&config);
+    let service = MarketDataService::new(
+        Arc::new(MemoryMarketDataCache::default()),
+        Arc::new(MemoryRefreshQueue::default()),
+        provider,
+        CacheTtls::default(),
+    );
+    router_with_service(config, service)
+}
+
+pub fn router_with_service<P>(config: AppConfig, service: MarketDataService<P>) -> Router
+where
+    P: QuoteProvider,
+{
     Router::new()
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
+        .route("/v1/quote/{market}/{symbol}", get(quote::<P>))
+        .route("/v1/score/{market}/{symbol}", get(score::<P>))
+        .route("/v1/refresh", post(refresh::<P>))
         .layer(TraceLayer::new_for_http())
-        .with_state(AppState { config })
+        .with_state(AppState { config, service })
 }
 
-async fn healthz(State(state): State<AppState>) -> Json<HealthPayload> {
+async fn healthz<P>(State(state): State<AppState<P>>) -> Json<HealthPayload>
+where
+    P: QuoteProvider,
+{
     Json(HealthPayload {
         ok: true,
         service: "market-data",
@@ -52,7 +103,10 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthPayload> {
     })
 }
 
-async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> Response<Body> {
+async fn metrics<P>(State(state): State<AppState<P>>, headers: HeaderMap) -> Response<Body>
+where
+    P: QuoteProvider,
+{
     if !has_internal_bearer(&headers, &state.config.internal_token) {
         return unauthorized_response();
     }
@@ -72,6 +126,144 @@ async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> Response<
         .expect("valid metrics response")
 }
 
+async fn quote<P>(
+    State(state): State<AppState<P>>,
+    Path((market, symbol)): Path<(String, String)>,
+    Query(query): Query<QuoteQuery>,
+    headers: HeaderMap,
+) -> Response<Body>
+where
+    P: QuoteProvider,
+{
+    if !has_internal_bearer(&headers, &state.config.internal_token) {
+        return unauthorized_response();
+    }
+
+    let market = match parse_market(&market) {
+        Ok(market) => market,
+        Err(error) => return service_error_response(error),
+    };
+    match state
+        .service
+        .quote(market, &symbol, query.refresh.unwrap_or(false))
+        .await
+    {
+        Ok(response) => json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "data": response.payload,
+                "server_cache": response.cache,
+                "job": response.job
+            }),
+        ),
+        Err(error) => service_error_response(error),
+    }
+}
+
+async fn score<P>(
+    State(state): State<AppState<P>>,
+    Path((market, symbol)): Path<(String, String)>,
+    Query(query): Query<ScoreQuery>,
+    headers: HeaderMap,
+) -> Response<Body>
+where
+    P: QuoteProvider,
+{
+    if !has_internal_bearer(&headers, &state.config.internal_token) {
+        return unauthorized_response();
+    }
+
+    let market = match parse_market(&market) {
+        Ok(market) => market,
+        Err(error) => return service_error_response(error),
+    };
+    let view = match ScoreView::parse(query.view.as_deref()) {
+        Ok(view) => view,
+        Err(error) => {
+            return service_error_response(MarketDataError::new(
+                MarketDataErrorKind::InvalidRequest,
+                error.to_string(),
+            ));
+        }
+    };
+
+    match state
+        .service
+        .score(market, &symbol, view, query.refresh.unwrap_or(false))
+        .await
+    {
+        Ok(response) => {
+            let status = if response.cache.source == CacheSource::Queue {
+                StatusCode::ACCEPTED
+            } else {
+                StatusCode::OK
+            };
+            json_response(
+                status,
+                json!({
+                    "ok": true,
+                    "data": response.payload,
+                    "server_cache": response.cache,
+                    "job": response.job
+                }),
+            )
+        }
+        Err(error) => service_error_response(error),
+    }
+}
+
+async fn refresh<P>(
+    State(state): State<AppState<P>>,
+    headers: HeaderMap,
+    Json(payload): Json<RefreshPayload>,
+) -> Response<Body>
+where
+    P: QuoteProvider,
+{
+    if !has_internal_bearer(&headers, &state.config.internal_token) {
+        return unauthorized_response();
+    }
+
+    let market = match parse_market(&payload.market) {
+        Ok(market) => market,
+        Err(error) => return service_error_response(error),
+    };
+    let kind = payload
+        .kind
+        .as_deref()
+        .unwrap_or("quote")
+        .trim()
+        .to_ascii_lowercase();
+
+    let job = match kind.as_str() {
+        "quote" => state.service.enqueue_quote_refresh(market, &payload.symbol),
+        "score" => {
+            let view = match ScoreView::parse(payload.view.as_deref()) {
+                Ok(view) => view,
+                Err(error) => {
+                    return service_error_response(MarketDataError::new(
+                        MarketDataErrorKind::InvalidRequest,
+                        error.to_string(),
+                    ));
+                }
+            };
+            state
+                .service
+                .enqueue_score_refresh(market, &payload.symbol, view)
+        }
+        _ => Err(MarketDataError::new(
+            MarketDataErrorKind::InvalidRequest,
+            "unsupported refresh kind",
+        )),
+    };
+
+    match job {
+        Ok(job) => json_response(StatusCode::ACCEPTED, json!({ "ok": true, "job": job })),
+        Err(error) => service_error_response(error),
+    }
+}
+
 fn unauthorized_response() -> Response<Body> {
     (
         StatusCode::UNAUTHORIZED,
@@ -79,4 +271,34 @@ fn unauthorized_response() -> Response<Body> {
         "unauthorized\n",
     )
         .into_response()
+}
+
+fn parse_market(value: &str) -> Result<Market, MarketDataError> {
+    Market::parse(value).map_err(|error| {
+        MarketDataError::new(MarketDataErrorKind::InvalidRequest, error.to_string())
+    })
+}
+
+fn service_error_response(error: MarketDataError) -> Response<Body> {
+    let status = match error.kind() {
+        MarketDataErrorKind::InvalidRequest => StatusCode::BAD_REQUEST,
+        MarketDataErrorKind::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+        MarketDataErrorKind::AuthFailed
+        | MarketDataErrorKind::ProviderUnavailable
+        | MarketDataErrorKind::InvalidProviderResponse => StatusCode::BAD_GATEWAY,
+    };
+    json_response(
+        status,
+        json!({
+            "ok": false,
+            "error": {
+                "kind": format!("{:?}", error.kind()),
+                "message": error.public_message()
+            }
+        }),
+    )
+}
+
+fn json_response(status: StatusCode, payload: serde_json::Value) -> Response<Body> {
+    (status, Json(payload)).into_response()
 }

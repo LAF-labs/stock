@@ -1,18 +1,23 @@
 use std::{
     collections::HashMap,
+    future::Future,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use reqwest::header;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::{
+    config::AppConfig,
+    market::Market,
     provider::models::{
         KisEnvelope, KisError, KisErrorKind, OverseasPriceDetail, RawOverseasPriceDetail,
         classify_http_error, classify_reqwest_error,
     },
     rate_limit::ProviderThrottle,
+    service::{MarketDataError, MarketDataErrorKind, QuoteProvider, QuoteRequest},
 };
 
 #[derive(Clone, Debug)]
@@ -35,6 +40,12 @@ pub struct KisClient<C = MemoryTokenCache> {
 #[derive(Clone, Debug)]
 pub struct MemoryTokenCache {
     tokens: Arc<Mutex<HashMap<String, CachedToken>>>,
+}
+
+#[derive(Clone)]
+pub struct KisQuoteProvider {
+    client: Option<KisClient>,
+    disabled_reason: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -83,6 +94,67 @@ impl MemoryTokenCache {
                 expires_at: Instant::now() + ttl,
             },
         );
+    }
+}
+
+impl KisQuoteProvider {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let Some(app_key) = config.stock_api_app_key.clone() else {
+            return Self::disabled("KIS app key is not configured");
+        };
+        let Some(app_secret) = config.stock_api_app_secret.clone() else {
+            return Self::disabled("KIS app secret is not configured");
+        };
+
+        let client = KisClient::new(
+            KisClientConfig {
+                base_url: config.stock_api_base.clone(),
+                app_key,
+                app_secret,
+                request_timeout: Duration::from_secs(3),
+                min_request_interval: Duration::from_millis(250),
+            },
+            MemoryTokenCache::default(),
+        );
+
+        match client {
+            Ok(client) => Self {
+                client: Some(client),
+                disabled_reason: None,
+            },
+            Err(error) => Self::disabled(error.to_string()),
+        }
+    }
+
+    fn disabled(reason: impl Into<String>) -> Self {
+        Self {
+            client: None,
+            disabled_reason: Some(reason.into()),
+        }
+    }
+}
+
+impl QuoteProvider for KisQuoteProvider {
+    fn fetch_quote(
+        &self,
+        request: QuoteRequest,
+    ) -> impl Future<Output = Result<Value, MarketDataError>> + Send {
+        let this = self.clone();
+        async move {
+            let client = this.client.as_ref().ok_or_else(|| {
+                MarketDataError::new(
+                    MarketDataErrorKind::ProviderUnavailable,
+                    this.disabled_reason
+                        .clone()
+                        .unwrap_or_else(|| "KIS provider is not configured".to_string()),
+                )
+            })?;
+
+            match request.market {
+                Market::Us => fetch_overseas_quote(client, &request.symbol).await,
+                Market::Kr => fetch_domestic_quote(client, &request.symbol).await,
+            }
+        }
     }
 }
 
@@ -394,4 +466,56 @@ fn validate_domestic_symbol(symbol: &str) -> Result<(), KisError> {
 
 fn token_ttl(_provider_expiry: Option<&str>) -> Duration {
     Duration::from_secs(23 * 60 * 60)
+}
+
+async fn fetch_overseas_quote(client: &KisClient, symbol: &str) -> Result<Value, MarketDataError> {
+    let quote = client
+        .overseas_price_detail("NAS", symbol)
+        .await
+        .map_err(map_kis_error)?;
+    Ok(json!({
+        "market": Market::Us.as_str(),
+        "symbol": symbol,
+        "exchange": "NAS",
+        "last": quote.last,
+        "currency": quote.currency,
+        "previous_close": quote.previous_close,
+        "volume": quote.volume
+    }))
+}
+
+async fn fetch_domestic_quote(client: &KisClient, symbol: &str) -> Result<Value, MarketDataError> {
+    let raw = client
+        .domestic_price(symbol, "J")
+        .await
+        .map_err(map_kis_error)?;
+    Ok(json!({
+        "market": Market::Kr.as_str(),
+        "symbol": symbol,
+        "exchange": "KRX",
+        "last": parse_number_field(&raw, "stck_prpr"),
+        "currency": "KRW",
+        "previous_close": parse_number_field(&raw, "stck_sdpr"),
+        "volume": parse_number_field(&raw, "acml_vol"),
+        "raw": raw
+    }))
+}
+
+fn map_kis_error(error: KisError) -> MarketDataError {
+    let kind = match error.kind() {
+        KisErrorKind::InvalidTicker => MarketDataErrorKind::InvalidRequest,
+        KisErrorKind::RateLimited => MarketDataErrorKind::RateLimited,
+        KisErrorKind::AuthFailed => MarketDataErrorKind::AuthFailed,
+        KisErrorKind::ProviderUnavailable => MarketDataErrorKind::ProviderUnavailable,
+        KisErrorKind::InvalidProviderResponse => MarketDataErrorKind::InvalidProviderResponse,
+    };
+    MarketDataError::new(kind, error.to_string())
+}
+
+fn parse_number_field(payload: &Value, key: &str) -> Option<f64> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .and_then(|value| value.replace(',', "").parse::<f64>().ok())
+        .filter(|value| value.is_finite())
 }
