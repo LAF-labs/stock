@@ -3,11 +3,22 @@ import assert from "node:assert/strict";
 
 import {
   pythonCollectorEnabled,
+  stockDataPendingRetryAfterSeconds,
   stockDataPendingPayload,
   stockDataRuntimeMode,
   stockDataUnavailablePayload,
   StockDataUnavailableError,
 } from "../src/lib/stockDataRuntime";
+
+const ORIGINAL_RETRY_AFTER = process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+
+test.afterEach(() => {
+  if (ORIGINAL_RETRY_AFTER === undefined) {
+    delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+  } else {
+    process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS = ORIGINAL_RETRY_AFTER;
+  }
+});
 
 test("Vercel runtime defaults to snapshot mode and disables Python collector", () => {
   const env = { VERCEL: "1" };
@@ -85,4 +96,26 @@ test("snapshot pending payload exposes queued refresh metadata", () => {
       status: "queued",
     },
   });
+});
+
+test("snapshot pending payload defaults to the queue worker cadence", () => {
+  delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+
+  assert.equal(stockDataPendingRetryAfterSeconds(), 300);
+
+  const payload = stockDataPendingPayload({
+    kind: "score",
+    ticker: "US:POET",
+    view: "detail",
+    reason: "snapshot_miss",
+    refreshRequest: { queued: true, job_id: "job-2", status: "queued" },
+  });
+
+  assert.equal(payload.retry_after_seconds, 300);
+});
+
+test("snapshot pending retry hint can be tuned by environment", () => {
+  process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS = "120";
+
+  assert.equal(stockDataPendingRetryAfterSeconds(), 120);
 });

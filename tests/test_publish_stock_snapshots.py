@@ -107,6 +107,19 @@ class PublishStockSnapshotsTests(unittest.TestCase):
 
         self.assertEqual(args.queue_limit, 50)
 
+    def test_score_snapshot_ttl_default_matches_thirty_minute_score_policy(self):
+        original = os.environ.get("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS")
+        os.environ.pop("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS", None)
+        try:
+            args = publisher.build_parser().parse_args(["--drain-queue"])
+        finally:
+            if original is None:
+                os.environ.pop("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS", None)
+            else:
+                os.environ["STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS"] = original
+
+        self.assertEqual(args.score_ttl_seconds, 1800)
+
     def test_permanent_refresh_failure_classifies_invalid_symbols(self):
         self.assertEqual(permanent_refresh_failure("kis_not_found"), True)
         self.assertEqual(permanent_refresh_failure("invalid_ticker"), True)

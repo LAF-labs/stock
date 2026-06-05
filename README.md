@@ -79,6 +79,9 @@ STOCK_RULE_JUDGMENT_RATE_LIMIT=600
 STOCK_RULE_JUDGMENT_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_RULE_JUDGMENT_MEMORY_CACHE_MAX_ENTRIES=5000
 STOCK_JUDGMENT_BODY_MAX_BYTES=65536
+STOCK_SYMBOL_SEARCH_RATE_LIMIT=120
+STOCK_SYMBOL_SEARCH_RATE_LIMIT_WINDOW_SECONDS=60
+STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS=300
 STOCK_INDUSTRY_BENCHMARK_CACHE_SECONDS=21600
 STOCK_INDUSTRY_BENCHMARK_CACHE_MAX_ENTRIES=5000
 STOCK_INDUSTRY_BENCHMARK_TIMEOUT_MS=1500
@@ -110,6 +113,12 @@ REDIS_URL=redis://127.0.0.1:6379
 
 ```bash
 PYTHON_BIN=.venv/bin/python npm run ops:report
+```
+
+업종 리포트는 canonical 업종 mapping 누락, 표본 수가 작은 업종, 이름만 다른 유사 업종을 점검합니다. 업종이 비어 있는 행은 실제 보강 대상인 `asset_class=stock`과 ETF/ETN/스팩/우선주 등 없어도 되는 비단일주식 대상으로 나눠 보여줍니다.
+
+```bash
+PYTHON_BIN=.venv/bin/python npm run industry:audit
 ```
 
 운영 초기화 순서는 아래와 같습니다.
@@ -193,12 +202,12 @@ npm run deploy:preview
 Python/yfinance collector는 GitHub Actions, 로컬 관리 머신, 또는 별도 worker에서만 실행합니다. 기본 역할은 사용자가 만든 `stock_refresh_jobs` queue를 drain하는 것이고, 필요할 때만 최근 인기 종목이나 운영자가 지정한 warm ticker를 함께 갱신합니다.
 
 ```bash
-python scripts/publish_stock_snapshots.py --drain-queue --queue-limit 50 --json
-python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 50 --json
+python scripts/publish_stock_snapshots.py --drain-queue --queue-limit 50 --score-ttl-seconds 1800 --json
+python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,005930,000660 --drain-queue --queue-limit 50 --score-ttl-seconds 1800 --json
 PYTHON_BIN=.venv/bin/python npm run snapshots:drain -- --queue-limit 50
 ```
 
-GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. 기본 queue drain은 30분마다 최대 50개입니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`와 `STOCK_SNAPSHOT_SLEEP_SECONDS`로 처리량과 provider 간격을 조정합니다.
+GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. 기본 queue drain은 평일 5분마다 최대 50개이고, workflow concurrency로 provider 호출이 겹치지 않게 합니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`, `STOCK_SNAPSHOT_SLEEP_SECONDS`, `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS`로 처리량, provider 간격, 사용자 pending 재시도 안내를 조정합니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 

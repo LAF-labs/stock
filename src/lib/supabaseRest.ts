@@ -1,6 +1,7 @@
 export type SupabaseConfig = {
   url: string;
   key: string;
+  keySource?: "publishable" | "service_role";
 };
 
 export function envValue(name: string): string | undefined {
@@ -18,16 +19,18 @@ export function supabaseConfig(): SupabaseConfig | undefined {
 
 export function supabaseReadConfig(): SupabaseConfig | undefined {
   const url = envValue("SUPABASE_URL")?.replace(/\/$/, "");
-  const key = envValue("SUPABASE_SERVICE_ROLE_KEY") || envValue("SUPABASE_PUBLISHABLE_KEY");
+  const publishableKey = envValue("SUPABASE_PUBLISHABLE_KEY");
+  const serviceRoleKey = envValue("SUPABASE_SERVICE_ROLE_KEY");
+  const key = publishableKey || serviceRoleKey;
   if (!url || !key) return undefined;
-  return { url, key };
+  return { url, key, keySource: publishableKey ? "publishable" : "service_role" };
 }
 
 export function supabaseAdminConfig(): SupabaseConfig | undefined {
   const url = envValue("SUPABASE_URL")?.replace(/\/$/, "");
   const key = envValue("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) return undefined;
-  return { url, key };
+  return { url, key, keySource: "service_role" };
 }
 
 export function supabaseHeaders(key: string) {

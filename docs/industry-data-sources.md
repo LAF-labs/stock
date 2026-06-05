@@ -39,6 +39,7 @@ Daily:
 ```bash
 python scripts/run_industry_maintenance.py --refresh-benchmarks
 python scripts/sync_external_industry_benchmarks.py
+python scripts/industry_quality_audit.py --json
 ```
 
 The benchmark lookup key is now scope-aware:
@@ -49,6 +50,23 @@ The benchmark lookup key is now scope-aware:
 - `canonical_industry_name` remains the user-facing comparison group
 
 Application requests should read by `scope + canonical industry + metric + period` first, then fall back to legacy `market + industry + metric` rows during migrations or provider outages.
+
+Run the audit report after taxonomy or profile updates. Treat these as review queues:
+
+- `missing_primary_actionable_count`: listed `asset_class = stock` rows that still need a primary sector/industry.
+- `missing_primary_exempt_count`: ETF/ETN/preferred/SPAC/REIT/other rows without a primary industry. These are excluded from single-stock industry PER/PBR comparison work.
+- `unmapped_source_keys`: add or correct `industry_taxonomy_map` rows.
+- `small_groups`: decide whether the group is genuinely narrow or should be merged into a broader canonical industry before using it for PER/PBR judgment.
+- `similar_groups`: inspect names that normalize to the same key, such as manufacturing suffix variants.
+
+Latest preview audit after pagination and taxonomy cleanup:
+
+- active profiles: 16,861
+- missing primary industry: 8,384 total, 7 actionable stock rows, 8,377 exempt non-stock rows
+- unmapped source keys: 1 (`US:energy:energy`)
+- canonical groups: 317
+- small groups below 8 samples: 163
+- similar groups: 0
 
 Manual fallback only:
 

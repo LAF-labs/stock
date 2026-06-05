@@ -69,10 +69,16 @@ Phase 2 evidence so far:
 - Modify Supabase migrations only when schema changes are required.
 - Modify docs under `docs/`.
 
-- [ ] Add conservative canonical industry audit reports for over-split or suspicious industries.
+- [x] Add conservative canonical industry audit reports for over-split or suspicious industries.
 - [ ] Add earnings metadata fields and a next-day financial refresh queue strategy.
 - [ ] Add listing delta workflow for newly listed and delisted symbols without refreshing the entire universe daily.
 - [ ] Document data-source ownership and refresh cadence.
+
+Phase 3 evidence so far:
+- `scripts/industry_quality_audit.py` now paginates Supabase REST results instead of silently auditing only the first 1000 rows.
+- The audit separates missing industry rows into actionable `asset_class = stock` rows and exempt ETF/ETN/preferred/SPAC/REIT/other rows.
+- Preview audit after taxonomy cleanup: active profiles 16,861; missing primary 8,384 total; actionable stock missing 7; exempt non-stock missing 8,377; unmapped source keys 1; canonical groups 317; small groups 163; similar groups 0.
+- `20260606023000_merge_similar_industry_taxonomy_labels.sql` merged domestic `반도체 제조업` into `반도체` and `보험업` into `보험`; migration was applied to the linked preview Supabase project.
 
 ### Phase 4: Supabase/Vercel Cost And Runtime Hardening
 
@@ -81,8 +87,18 @@ Phase 2 evidence so far:
 
 - [ ] Remove tracked local symbol fallback JSON from the Vercel hot package or move fallback to Supabase/blob storage.
 - [ ] Add slow-query and API miss operational checks.
-- [ ] Revisit queue worker strategy: GitHub Actions as backstop, optional separate worker for sustained backlog.
+- [x] Revisit queue worker strategy: GitHub Actions as backstop, optional separate worker for sustained backlog.
+- [x] Align public rate limits, pending retry hints, and publisher TTLs with the demand-driven cache policy.
 - [ ] Verify Vercel preview using deployment-protected `npx vercel curl`.
+
+Phase 4 evidence so far:
+- Supabase read config now prefers `SUPABASE_PUBLISHABLE_KEY` for read paths and reserves `SUPABASE_SERVICE_ROLE_KEY` for writes/RPCs.
+- `/api/symbols` now uses the shared API rate limiter with `STOCK_SYMBOL_SEARCH_RATE_LIMIT`.
+- Missing score/quote snapshots return `snapshot_pending` with a default 300-second `Retry-After`, matching the 5-minute queue worker backstop.
+- The stock snapshot publisher now defaults score snapshot TTL to 1800 seconds, matching the product rule that score/analysis is fresh for 30 minutes during market hours.
+- The GitHub Actions queue worker now runs every 5 minutes on weekdays and has workflow-level concurrency to avoid overlapping provider calls.
+- Preview queue was drained after the worker/TTL changes: queued 0, running 0, dead 0, succeeded 10; score snapshots 35, current model 35, stale 0.
+- Tests added: `tests/supabaseRest.test.ts`, `tests/symbolsRoute.test.ts`, `tests/test_publish_workflow.py`, plus new assertions in `tests/stockDataRuntime.test.ts` and `tests/test_publish_stock_snapshots.py`.
 
 ### Phase 5: DESIGN.md Reconciliation And Redesign
 

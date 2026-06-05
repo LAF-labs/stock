@@ -7,6 +7,7 @@
     "build": "next build",
     "check": "npm run typecheck && npm run build",
     "deploy:preview": "bash scripts/vercel_preview_deploy.sh",
+    "industry:audit": "${PYTHON_BIN:-python} scripts/industry_quality_audit.py --json",
     "start": "next start",
     "lint": "tsc --noEmit",
     "ops:report": "${PYTHON_BIN:-python} scripts/stock_operations_report.py --json",

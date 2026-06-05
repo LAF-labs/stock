@@ -78,7 +78,7 @@ Then publish hot quote/score snapshots from GitHub Actions, a local admin machin
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --json
 ```
 
-The bundled GitHub Actions workflow runs on weekdays every 30 minutes. Configure these repository secrets:
+The bundled GitHub Actions workflow runs on weekdays every 5 minutes and uses workflow concurrency to avoid overlapping provider bursts. Configure these repository secrets:
 
 ```text
 STOCK_API_APP_KEY
@@ -87,7 +87,7 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ```
 
-Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 30 minutes.
+Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 5 minutes.
 
 The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MVRL`, `005930`, `000660`, `253590`. It checks:
 
@@ -110,9 +110,9 @@ Classification data should not be refreshed daily. Refresh classifications quart
 ## Efficient Serving Strategy
 
 - Serve score reads from memory first, then Supabase snapshots. In Vercel snapshot mode, never invoke Python from a request handler.
-- If a Supabase snapshot is missing in snapshot mode, return `snapshot_unavailable` with HTTP 503. That is an ingestion/prewarm issue, not a public API collector outage.
+- If a Supabase snapshot is missing in snapshot mode, enqueue `stock_refresh_jobs` and return `snapshot_pending` with `Retry-After`. The default retry hint is 300 seconds, matching the 5-minute GitHub Actions backstop. Tune it with `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS` if a faster external worker is configured.
 - In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.
-- Keep score detail cache hour-level during market hours and serve stale only for short recovery windows.
+- Keep score detail/compare snapshots fresh for 30 minutes during market hours. The publisher default `STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS` is 1800.
 - Keep rule-based judgment cache in six-hour buckets.
 - Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days; user requests should read cache first and refresh under a file lock only on miss.
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.

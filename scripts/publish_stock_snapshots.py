@@ -342,7 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Fetch and build rows without writing to Supabase.")
     parser.add_argument("--sleep-seconds", type=float, default=0.0, help="Delay between tickers to avoid provider bursts.")
     parser.add_argument("--timeout-seconds", type=float, default=15.0, help="Supabase REST timeout.")
-    parser.add_argument("--score-ttl-seconds", type=int, default=numeric_env("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS", 21_600))
+    parser.add_argument("--score-ttl-seconds", type=int, default=numeric_env("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS", 1_800))
     parser.add_argument("--quote-ttl-seconds", type=int, default=numeric_env("STOCK_QUOTE_SNAPSHOT_EXPIRES_SECONDS", 300))
     parser.add_argument("--quote-stale-ttl-seconds", type=int, default=numeric_env("STOCK_QUOTE_SNAPSHOT_STALE_SECONDS", 86_400))
     parser.add_argument("--supabase-url", help="Overrides SUPABASE_URL.")

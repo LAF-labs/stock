@@ -65,6 +65,11 @@ export function stockDataUnavailablePayload(input: StockDataUnavailableInput): S
   };
 }
 
+export function stockDataPendingRetryAfterSeconds(env: StockDataRuntimeEnv = process.env): number {
+  const parsed = Number(env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 300;
+}
+
 export function stockDataPendingPayload(
   input: StockDataUnavailableInput & {
     refreshRequest: StockDataPendingPayload["refresh_request"];
@@ -79,7 +84,7 @@ export function stockDataPendingPayload(
     ticker: input.ticker,
     ...(input.view ? { view: input.view } : {}),
     reason: input.reason,
-    retry_after_seconds: input.retryAfterSeconds ?? 60,
+    retry_after_seconds: input.retryAfterSeconds ?? stockDataPendingRetryAfterSeconds(),
     refresh_request: input.refreshRequest,
   };
 }
