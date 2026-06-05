@@ -17,8 +17,8 @@ import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, sup
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const RULE_MODEL = "rule-v1";
-const PROMPT_VERSION = "stock-rule-judge-v1";
+const RULE_MODEL = "rule-v2";
+const PROMPT_VERSION = "stock-rule-judge-v2";
 const SUPABASE_TABLE = "stock_rule_judgments";
 const MAX_JUDGMENT_BODY_BYTES = 64 * 1024;
 

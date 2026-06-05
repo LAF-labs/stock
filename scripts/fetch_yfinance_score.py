@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -28,6 +29,8 @@ US_EQUITY_EXCHANGES = {"NMS", "NGM", "NCM", "NASDAQ", "NAS", "NYQ", "NYSE", "ASE
 US_EXCHANGE_NAME_MARKERS = ("NASDAQ", "NYSE", "AMEX", "BATS", "IEX")
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,11}$")
 KR_TICKER_RE = re.compile(r"^(?:\d{6}|Q\d{6})$")
+SCORE_MODEL_VERSION = "score-v4-valuation-guardrails-2026-06-05"
+LEGACY_YFINANCE_SCORE_MODEL_VERSION = "legacy-yfinance-score-v1"
 
 
 def clean_ticker(raw: str) -> str:
@@ -119,6 +122,193 @@ def average(values: Iterable[float | None]) -> float:
     if not usable:
         return 45.0
     return sum(usable) / len(usable)
+
+
+@dataclass(frozen=True)
+class FactorScore:
+    score: float
+    confidence: float
+
+
+def clamp_score(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def score_positive_opt(value: float | None, low: float, high: float) -> float | None:
+    if value is None or not math.isfinite(float(value)):
+        return None
+    if high == low:
+        return 50.0
+    return clamp_score(((float(value) - low) / (high - low)) * 100.0)
+
+
+def score_negative_opt(value: float | None, good: float, bad: float) -> float | None:
+    if value is None or not math.isfinite(float(value)):
+        return None
+    if bad == good:
+        return 50.0
+    return clamp_score((1.0 - ((float(value) - good) / (bad - good))) * 100.0)
+
+
+def eps_factor_score(eps: float | None) -> float | None:
+    if eps is None or not math.isfinite(float(eps)):
+        return None
+    if eps > 0:
+        return 72.0
+    if eps < 0:
+        return 25.0
+    return 45.0
+
+
+def positive_value(value: float | None) -> float | None:
+    if value is None or not math.isfinite(float(value)) or value <= 0:
+        return None
+    return float(value)
+
+
+def positive_or(primary: float | None, fallback: float | None) -> float | None:
+    return positive_value(primary) or positive_value(fallback)
+
+
+def moving_average_spread_score(price: float | None, moving_average: float | None) -> float | None:
+    if price is None or moving_average is None:
+        return None
+    if not math.isfinite(float(price)) or not math.isfinite(float(moving_average)) or moving_average <= 0:
+        return None
+    return score_positive_opt((float(price) / float(moving_average)) - 1.0, -0.08, 0.12)
+
+
+def rsi_factor_score(rsi: float | None) -> float | None:
+    if rsi is None or not math.isfinite(float(rsi)):
+        return None
+    value = float(rsi)
+    if value < 30.0:
+        return score_positive(value, 15.0, 30.0, 35.0) * 0.5
+    if value <= 55.0:
+        return 50.0 + ((value - 30.0) / 25.0) * 25.0
+    if value <= 70.0:
+        return 82.0 - ((value - 55.0) / 15.0) * 4.0
+    if value <= 85.0:
+        return 78.0 - ((value - 70.0) / 15.0) * 23.0
+    return 40.0
+
+
+def weighted_factor_score(values: Iterable[tuple[float | None, float]]) -> FactorScore:
+    items = list(values)
+    total_weight = sum(max(0.0, float(weight)) for _, weight in items)
+    if total_weight <= 0.0:
+        return FactorScore(score=50.0, confidence=0.0)
+
+    score_sum = 0.0
+    usable_weight = 0.0
+    for score, weight in items:
+        weight = max(0.0, float(weight))
+        if score is None or not math.isfinite(float(score)) or weight <= 0.0:
+            continue
+        score_sum += clamp_score(float(score)) * weight
+        usable_weight += weight
+
+    if usable_weight <= 0.0:
+        return FactorScore(score=50.0, confidence=0.0)
+    return FactorScore(score=score_sum / usable_weight, confidence=max(0.0, min(1.0, usable_weight / total_weight)))
+
+
+def momentum_factor_score(
+    ret_1m: float | None,
+    ret_3m: float | None,
+    ret_6m: float | None,
+    distance_52w_high: float | None,
+    latest_price: float | None,
+    ma50: float | None,
+    ma200: float | None,
+    rsi14: float | None,
+) -> FactorScore:
+    return weighted_factor_score(
+        [
+            (score_positive_opt(ret_1m, -0.10, 0.15), 0.8),
+            (score_positive_opt(ret_3m, -0.20, 0.35), 1.0),
+            (score_positive_opt(ret_6m, -0.25, 0.50), 1.0),
+            (score_positive_opt(distance_52w_high, -0.45, 0.0), 1.0),
+            (moving_average_spread_score(latest_price, ma50), 0.8),
+            (moving_average_spread_score(latest_price, ma200), 0.8),
+            (rsi_factor_score(rsi14), 0.6),
+        ]
+    )
+
+
+def quality_adjusted_valuation(base: FactorScore, profitability: FactorScore, growth: FactorScore) -> FactorScore:
+    if base.confidence <= 0.0:
+        return base
+    quality = weighted_factor_score(
+        [
+            (profitability.score, profitability.confidence * 0.55),
+            (growth.score, growth.confidence * 0.45),
+        ]
+    )
+    if quality.confidence <= 0.0 or quality.score <= base.score:
+        return base
+
+    tolerance = max(0.0, min(1.0, (quality.score - 62.0) / 25.0)) * quality.confidence
+    adjusted = base.score + (quality.score - base.score) * 0.72 * tolerance
+    return FactorScore(score=clamp_score(adjusted), confidence=base.confidence)
+
+
+def guardrailed_valuation(
+    valuation: FactorScore,
+    *,
+    profitability: FactorScore,
+    growth: FactorScore,
+    forward_pe: float | None,
+    trailing_pe: float | None,
+    ev_to_revenue: float | None,
+    price_to_sales: float | None,
+    operating_margin: float | None = None,
+    fcf_margin: float | None = None,
+) -> FactorScore:
+    has_forward = positive_value(forward_pe) is not None
+    sales_multiple = positive_or(ev_to_revenue, price_to_sales)
+    capped_score = valuation.score
+    confidence = valuation.confidence
+
+    if not has_forward:
+        confidence *= 0.92
+        weak_profitability = profitability.score < 50.0 or (
+            operating_margin is not None and operating_margin < 0.08
+        )
+        weak_cashflow = fcf_margin is not None and fcf_margin < 0.0
+        expensive_sales = sales_multiple is not None and sales_multiple >= 8.0
+        expensive_earnings = trailing_pe is not None and trailing_pe >= 80.0
+
+        if expensive_sales and (weak_profitability or weak_cashflow):
+            capped_score = min(capped_score, 45.0)
+            confidence *= 0.88
+        elif expensive_earnings and profitability.score < 65.0:
+            capped_score = min(capped_score, 50.0)
+            confidence *= 0.90
+        elif growth.score >= 85.0 and profitability.score < 50.0:
+            capped_score = min(capped_score, 58.0)
+            confidence *= 0.94
+
+    return FactorScore(score=clamp_score(capped_score), confidence=max(0.0, min(1.0, confidence)))
+
+
+def composite_score(scores: dict[str, FactorScore]) -> tuple[float, float]:
+    weights = {
+        "profitability": 0.24,
+        "growth": 0.22,
+        "health": 0.18,
+        "momentum": 0.14,
+        "valuation": 0.22,
+    }
+    total_weight = sum(weights.values())
+    effective_weight = sum(weights[key] * scores[key].confidence for key in weights)
+    if effective_weight <= 0.0 or total_weight <= 0.0:
+        return 50.0, 0.0
+
+    raw = sum(scores[key].score * weights[key] * scores[key].confidence for key in weights) / effective_weight
+    confidence = max(0.0, min(1.0, effective_weight / total_weight))
+    anchored = raw * confidence + 50.0 * (1.0 - confidence)
+    return round(clamp_score(anchored), 1), confidence
 
 
 def pct(value: float | None) -> str:
@@ -551,6 +741,9 @@ YFINANCE_FUNDAMENTAL_FIELDS = (
     "earningsGrowth",
     "totalRevenue",
     "operatingCashflow",
+    "freeCashflow",
+    "totalCash",
+    "totalDebt",
     "debtToEquity",
     "currentRatio",
     "quickRatio",
@@ -559,6 +752,8 @@ YFINANCE_FUNDAMENTAL_FIELDS = (
     "priceToBook",
     "enterpriseToRevenue",
     "priceToSalesTrailing12Months",
+    "grossMargins",
+    "ebitdaMargins",
 )
 
 
@@ -643,7 +838,7 @@ def fundamental_cache_payload(symbol: str, values: dict[str, Any], now: float | 
     }
 
 
-def read_supabase_yfinance_fundamental_cache(symbol: str) -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None]:
+def read_supabase_yfinance_fundamental_cache(symbol: str, market: str = "US") -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None]:
     config = supabase_read_config()
     if not config:
         return None, None, None
@@ -654,7 +849,7 @@ def read_supabase_yfinance_fundamental_cache(symbol: str) -> tuple[dict[str, Any
         response = requests.get(
             f"{url}/rest/v1/{SUPABASE_FUNDAMENTAL_TABLE}",
             params={
-                "market": "eq.US",
+                "market": f"eq.{clean_ticker(market) or 'US'}",
                 "symbol": f"eq.{clean_symbol}",
                 "source": f"eq.{YFINANCE_FUNDAMENTAL_SOURCE}",
                 "select": "payload,fetched_at,expires_at,stale_expires_at",
@@ -699,7 +894,7 @@ def read_supabase_yfinance_fundamental_cache(symbol: str) -> tuple[dict[str, Any
     }
 
 
-def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any]) -> bool:
+def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any], market: str = "US") -> bool:
     config = supabase_write_config()
     if not config:
         return False
@@ -708,7 +903,7 @@ def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any
     timestamp = time.time()
     payload = fundamental_cache_payload(symbol, values, timestamp)
     row = {
-        "market": "US",
+        "market": clean_ticker(market) or "US",
         "symbol": clean_ticker(symbol),
         "source": YFINANCE_FUNDAMENTAL_SOURCE,
         "payload": payload,
@@ -778,15 +973,16 @@ def write_yfinance_fundamental_cache(symbol: str, values: dict[str, Any]) -> Non
     temp_path.replace(path)
 
 
-def yfinance_fundamentals(symbol: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    supabase_values, supabase_state, supabase_meta = read_supabase_yfinance_fundamental_cache(symbol)
+def yfinance_fundamentals(symbol: str, market: str = "US") -> tuple[dict[str, Any], dict[str, Any]]:
+    market = clean_ticker(market) or "US"
+    supabase_values, supabase_state, supabase_meta = read_supabase_yfinance_fundamental_cache(symbol, market)
     if supabase_values and supabase_state == "fresh":
         return supabase_values, supabase_meta or yfinance_cache_meta("supabase", "fresh")
 
     local_values, local_state = read_yfinance_fundamental_cache(symbol)
     if local_values and local_state == "fresh":
         if not supabase_values:
-            write_supabase_yfinance_fundamental_cache(symbol, local_values)
+            write_supabase_yfinance_fundamental_cache(symbol, local_values, market)
         return local_values, yfinance_cache_meta("file", "fresh")
 
     stale_values = supabase_values if supabase_values and supabase_state == "stale" else local_values if local_values and local_state == "stale" else None
@@ -800,14 +996,14 @@ def yfinance_fundamentals(symbol: str) -> tuple[dict[str, Any], dict[str, Any]]:
 
     lock_path = yfinance_fundamental_cache_path(symbol).with_suffix(".lock")
     with one_byte_file_lock(lock_path):
-        supabase_values, supabase_state, supabase_meta = read_supabase_yfinance_fundamental_cache(symbol)
+        supabase_values, supabase_state, supabase_meta = read_supabase_yfinance_fundamental_cache(symbol, market)
         if supabase_values and supabase_state == "fresh":
             return supabase_values, supabase_meta or yfinance_cache_meta("supabase", "fresh")
 
         local_values, local_state = read_yfinance_fundamental_cache(symbol)
         if local_values and local_state == "fresh":
             if not supabase_values:
-                write_supabase_yfinance_fundamental_cache(symbol, local_values)
+                write_supabase_yfinance_fundamental_cache(symbol, local_values, market)
             return local_values, yfinance_cache_meta("file", "fresh")
 
         if supabase_values and supabase_state == "stale":
@@ -822,7 +1018,7 @@ def yfinance_fundamentals(symbol: str) -> tuple[dict[str, Any], dict[str, Any]]:
             values = {field: finite_or_none(info.get(field)) for field in YFINANCE_FUNDAMENTAL_FIELDS if info.get(field) is not None}
             if values:
                 write_yfinance_fundamental_cache(symbol, values)
-                supabase_written = write_supabase_yfinance_fundamental_cache(symbol, values)
+                supabase_written = write_supabase_yfinance_fundamental_cache(symbol, values, market)
                 return values, yfinance_cache_meta("provider", "refreshed", persisted="supabase" if supabase_written else "file")
         except Exception as exc:
             if stale_values:
@@ -1298,6 +1494,19 @@ def domestic_exchange_name(stock_info: dict[str, Any]) -> str:
     return market_id or "KRX"
 
 
+def domestic_yfinance_symbol(symbol: str, exchange: str) -> str:
+    clean = clean_ticker(symbol)
+    if clean.startswith("Q") and re.fullmatch(r"Q\d{6}", clean):
+        clean = clean[1:]
+    if not re.fullmatch(r"\d{6}", clean):
+        return clean
+
+    exchange_upper = clean_ticker(exchange)
+    if exchange_upper in {"KOSDAQ", "KONEX"} or "KOSDAQ" in exchange_upper or "KONEX" in exchange_upper:
+        return f"{clean}.KQ"
+    return f"{clean}.KS"
+
+
 def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: float | None = None, use_rate_override: bool = False) -> dict[str, Any]:
     symbol = clean_ticker(raw_ticker)
     if not symbol or not TICKER_RE.match(symbol):
@@ -1364,8 +1573,10 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     current_ratio = as_float(fundamentals.get("currentRatio"))
     quick_ratio = as_float(fundamentals.get("quickRatio"))
     operating_cashflow = as_float(fundamentals.get("operatingCashflow"))
+    free_cashflow = as_float(fundamentals.get("freeCashflow"))
     total_revenue = as_float(fundamentals.get("totalRevenue"))
     ocf_margin = (operating_cashflow / total_revenue) if operating_cashflow is not None and total_revenue else None
+    fcf_margin = (free_cashflow / total_revenue) if free_cashflow is not None and total_revenue else None
     forward_pe = as_float(fundamentals.get("forwardPE"))
     ev_to_revenue = as_float(fundamentals.get("enterpriseToRevenue"))
     price_to_sales = as_float(fundamentals.get("priceToSalesTrailing12Months"))
@@ -1375,53 +1586,68 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     is_trade_enabled = trade_enabled in {"Y", "YES", "1"} or "가능" in trade_enabled_raw
     roe = (eps / bps) if eps is not None and bps not in (None, 0) else None
 
-    profitability_score = average(
+    profitability = weighted_factor_score(
         [
-            75.0 if eps is not None and eps > 0 else 25.0 if eps is not None and eps < 0 else None,
-            score_positive(roe, -0.10, 0.25),
-            score_positive(profit_margin, -0.05, 0.25),
-            score_positive(operating_margin, -0.05, 0.25),
-            score_positive(ocf_margin, -0.05, 0.25),
+            (eps_factor_score(eps), 0.6),
+            (score_positive_opt(roe, -0.10, 0.25), 1.2),
+            (score_positive_opt(profit_margin, -0.05, 0.25), 1.2),
+            (score_positive_opt(operating_margin, -0.05, 0.25), 1.0),
+            (score_positive_opt(ocf_margin, -0.05, 0.25), 1.0),
         ]
     )
-    growth_score = average(
+    growth = weighted_factor_score(
         [
-            score_positive(revenue_growth, -0.10, 0.35),
-            score_positive(earnings_growth, -0.20, 0.50),
-            score_positive(ret_1m, -0.10, 0.15),
-            score_positive(ret_6m, -0.25, 0.50),
-            score_positive(ret_52w, -0.35, 0.80),
+            (score_positive_opt(revenue_growth, -0.10, 0.35), 1.3),
+            (score_positive_opt(earnings_growth, -0.20, 0.50), 1.2),
+            (score_positive_opt(ret_1m, -0.10, 0.15), 0.4),
+            (score_positive_opt(ret_6m, -0.25, 0.50), 0.7),
+            (score_positive_opt(ret_52w, -0.35, 0.80), 0.7),
         ]
     )
-    health_score = average(
+    health = weighted_factor_score(
         [
-            70.0 if is_trade_enabled else 45.0 if not trade_enabled else 25.0,
-            score_positive(avg_volume_20, 50_000, 5_000_000),
-            score_positive(market_cap, 1_000_000_000, 200_000_000_000),
-            score_negative(debt_to_equity, 25.0, 220.0),
-            score_positive(current_ratio, 0.8, 2.0),
-            score_positive(quick_ratio, 0.7, 1.6),
-            score_positive(ocf_margin, -0.05, 0.18),
+            (70.0 if is_trade_enabled else 45.0 if not trade_enabled else 25.0, 0.8),
+            (score_positive_opt(avg_volume_20, 50_000, 5_000_000), 0.8),
+            (score_positive_opt(market_cap, 1_000_000_000, 200_000_000_000), 1.0),
+            (score_negative_opt(debt_to_equity, 25.0, 220.0), 0.9),
+            (score_positive_opt(current_ratio, 0.8, 2.0), 0.7),
+            (score_positive_opt(quick_ratio, 0.7, 1.6), 0.5),
+            (score_positive_opt(ocf_margin, -0.05, 0.18), 0.6),
         ]
     )
-    momentum_score = average(
+    momentum = momentum_factor_score(ret_1m, ret_3m, ret_6m, distance_52w_high, latest_price, ma50, ma200, rsi14)
+    valuation_base = weighted_factor_score(
         [
-            score_positive(ret_1m, -0.10, 0.15),
-            score_positive(ret_3m, -0.20, 0.35),
-            score_positive(ret_6m, -0.25, 0.50),
-            score_positive(distance_52w_high, -0.45, 0.0),
-            80.0 if latest_price and ma50 and latest_price > ma50 else 35.0,
-            80.0 if latest_price and ma200 and latest_price > ma200 else 35.0,
+            (score_negative_opt(positive_value(trailing_pe), 12.0, 85.0), 0.9),
+            (score_negative_opt(positive_value(forward_pe), 10.0, 70.0), 1.2),
+            (score_negative_opt(positive_value(price_to_book), 1.5, 25.0), 0.6),
+            (score_negative_opt(positive_or(ev_to_revenue, price_to_sales), 2.0, 25.0), 0.8),
         ]
     )
-    valuation_score = average(
-        [
-            score_negative(trailing_pe if trailing_pe and trailing_pe > 0 else None, 12.0, 85.0),
-            score_negative(forward_pe if forward_pe and forward_pe > 0 else None, 10.0, 70.0),
-            score_negative(price_to_book if price_to_book and price_to_book > 0 else None, 1.5, 25.0),
-            score_negative(ev_to_revenue if ev_to_revenue and ev_to_revenue > 0 else price_to_sales, 2.0, 25.0),
-        ]
+    valuation = guardrailed_valuation(
+        quality_adjusted_valuation(valuation_base, profitability, growth),
+        profitability=profitability,
+        growth=growth,
+        forward_pe=forward_pe,
+        trailing_pe=trailing_pe,
+        ev_to_revenue=ev_to_revenue,
+        price_to_sales=price_to_sales,
+        operating_margin=operating_margin,
+        fcf_margin=fcf_margin,
     )
+    score_factors = {
+        "profitability": profitability,
+        "growth": growth,
+        "health": health,
+        "momentum": momentum,
+        "valuation": valuation,
+    }
+    total_score, score_confidence = composite_score(score_factors)
+    profitability_score = profitability.score
+    growth_score = growth.score
+    health_score = health.score
+    momentum_score = momentum.score
+    valuation_score = valuation.score
 
     components = [
         {
@@ -1491,20 +1717,6 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         },
     ]
 
-    total_score = round(
-        max(
-            0.0,
-            min(
-                100.0,
-                profitability_score * 0.18
-                + growth_score * 0.22
-                + health_score * 0.16
-                + momentum_score * 0.26
-                + valuation_score * 0.18,
-            ),
-        ),
-        1,
-    )
     grade = grade_for(total_score)
     signal = signal_for(total_score, rsi14, ret_3m)
     strongest = max(components, key=lambda item: item["score"])
@@ -1634,6 +1846,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         "name": name,
         "exchange": exchange,
         "currency": currency,
+        "score_model_version": SCORE_MODEL_VERSION,
         "score": total_score,
         "grade": grade,
         "summary": summary,
@@ -1662,7 +1875,8 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
             "price": latest_price,
             "raw_signal": signal,
             "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
-            "confidence": round(min(1.0, len(daily_rows) / 180.0), 3),
+            "score_model_version": SCORE_MODEL_VERSION,
+            "confidence": round(score_confidence, 3),
             "spot_score": round(total_score / 100.0, 3),
             "chart_score": round(momentum_score / 100.0, 3),
             "trend_score": round(score_positive(ret_3m, -0.20, 0.35) / 100.0, 3),
@@ -1687,6 +1901,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         },
         "fetch": {
             "source": "market_data+yfinance_fundamentals",
+            "score_model_version": SCORE_MODEL_VERSION,
             "price_endpoint": "/uapi/overseas-price/v1/quotations/price",
             "price_detail_endpoint": "/uapi/overseas-price/v1/quotations/price-detail",
             "dailyprice_endpoint": "/uapi/overseas-price/v1/quotations/dailyprice",
@@ -1863,6 +2078,8 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     )
     english_name = str(stock_info.get("prdt_eng_name") or search.get("prdt_eng_name") or "")
     exchange = domestic_exchange_name(stock_info)
+    yahoo_symbol = domestic_yfinance_symbol(symbol, exchange)
+    fundamentals, fundamentals_cache = yfinance_fundamentals(yahoo_symbol, market="KR")
     latest_date = kis_date(daily_rows[-1].get("stck_bsop_date")) if daily_rows else datetime.now(timezone.utc).date().isoformat()
     listed_shares = as_int(price.get("lstn_stcn")) or as_int(stock_info.get("lstg_stqt"))
     market_cap_raw = as_float(price.get("hts_avls"))
@@ -1887,52 +2104,98 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
 
     eps = as_float(price.get("eps"))
     bps = as_float(price.get("bps"))
-    trailing_pe = as_float(price.get("per"))
-    price_to_book = as_float(price.get("pbr"))
+    trailing_pe = first_float(price.get("per"), fundamentals.get("trailingPE"))
+    price_to_book = first_float(price.get("pbr"), fundamentals.get("priceToBook"))
+    forward_pe = as_float(fundamentals.get("forwardPE"))
+    ev_to_revenue = as_float(fundamentals.get("enterpriseToRevenue"))
+    price_to_sales = as_float(fundamentals.get("priceToSalesTrailing12Months"))
+    profit_margin = as_float(fundamentals.get("profitMargins"))
+    operating_margin = as_float(fundamentals.get("operatingMargins"))
+    revenue_growth = as_float(fundamentals.get("revenueGrowth"))
+    earnings_growth = as_float(fundamentals.get("earningsGrowth"))
+    total_revenue = as_float(fundamentals.get("totalRevenue"))
+    operating_cashflow = as_float(fundamentals.get("operatingCashflow"))
+    free_cashflow = as_float(fundamentals.get("freeCashflow"))
+    total_cash = as_float(fundamentals.get("totalCash"))
+    total_debt = as_float(fundamentals.get("totalDebt"))
+    debt_to_equity = as_float(fundamentals.get("debtToEquity"))
+    current_ratio = as_float(fundamentals.get("currentRatio"))
+    quick_ratio = as_float(fundamentals.get("quickRatio"))
+    ocf_margin = operating_cashflow / total_revenue if operating_cashflow is not None and total_revenue else None
+    fcf_margin = free_cashflow / total_revenue if free_cashflow is not None and total_revenue else None
     roe_raw = as_float(stock_info.get("roe"))
     if roe_raw is not None and abs(roe_raw) > 1:
         roe_raw = roe_raw / 100.0
-    roe = (eps / bps) if eps is not None and bps not in (None, 0) else roe_raw
+    yfinance_roe = as_float(fundamentals.get("returnOnEquity"))
+    roe = (eps / bps) if eps is not None and bps not in (None, 0) else roe_raw if roe_raw is not None else yfinance_roe
+    ev_or_sales = positive_or(ev_to_revenue, price_to_sales)
     halted = str(price.get("temp_stop_yn") or stock_info.get("tr_stop_yn") or "").upper() == "Y"
     managed = str(price.get("mang_issu_cls_code") or stock_info.get("admn_item_yn") or "").upper() == "Y"
     is_trade_enabled = not halted and not managed
 
-    profitability_score = average(
+    profitability = weighted_factor_score(
         [
-            75.0 if eps is not None and eps > 0 else 25.0 if eps is not None and eps < 0 else None,
-            score_positive(roe, -0.10, 0.25),
+            (eps_factor_score(eps), 0.6),
+            (score_positive_opt(roe, -0.10, 0.25), 1.2),
+            (score_positive_opt(profit_margin, -0.05, 0.25), 0.9),
+            (score_positive_opt(operating_margin, -0.05, 0.25), 0.8),
+            (score_positive_opt(ocf_margin, -0.05, 0.25), 0.8),
         ]
     )
-    growth_score = average(
+    growth = weighted_factor_score(
         [
-            score_positive(ret_1m, -0.10, 0.15),
-            score_positive(ret_6m, -0.25, 0.50),
-            score_positive(ret_52w, -0.35, 0.80),
+            (score_positive_opt(revenue_growth, -0.10, 0.35), 1.1),
+            (score_positive_opt(earnings_growth, -0.20, 0.50), 1.0),
+            (score_positive_opt(ret_1m, -0.10, 0.15), 0.5),
+            (score_positive_opt(ret_6m, -0.25, 0.50), 0.8),
+            (score_positive_opt(ret_52w, -0.35, 0.80), 0.8),
         ]
     )
-    health_score = average(
+    health = weighted_factor_score(
         [
-            72.0 if is_trade_enabled else 25.0,
-            score_positive(avg_volume_20, 20_000, 5_000_000),
-            score_positive(market_cap, 50_000_000_000, 50_000_000_000_000),
+            (72.0 if is_trade_enabled else 25.0, 0.8),
+            (score_positive_opt(avg_volume_20, 20_000, 5_000_000), 0.8),
+            (score_positive_opt(market_cap, 50_000_000_000, 50_000_000_000_000), 1.0),
+            (score_negative_opt(debt_to_equity, 25.0, 220.0), 0.7),
+            (score_positive_opt(current_ratio, 0.8, 2.0), 0.5),
+            (score_positive_opt(quick_ratio, 0.7, 1.6), 0.4),
+            (score_positive_opt(ocf_margin, -0.05, 0.18), 0.5),
+            (score_positive_opt(fcf_margin, -0.08, 0.12), 0.4),
         ]
     )
-    momentum_score = average(
+    momentum = momentum_factor_score(ret_1m, ret_3m, ret_6m, distance_52w_high, latest_price, ma50, ma200, rsi14)
+    valuation_base = weighted_factor_score(
         [
-            score_positive(ret_1m, -0.10, 0.15),
-            score_positive(ret_3m, -0.20, 0.35),
-            score_positive(ret_6m, -0.25, 0.50),
-            score_positive(distance_52w_high, -0.45, 0.0),
-            80.0 if latest_price and ma50 and latest_price > ma50 else 35.0,
-            80.0 if latest_price and ma200 and latest_price > ma200 else 35.0,
+            (score_negative_opt(positive_value(trailing_pe), 8.0, 60.0), 1.0),
+            (score_negative_opt(positive_value(forward_pe), 8.0, 50.0), 0.9),
+            (score_negative_opt(positive_value(price_to_book), 0.8, 8.0), 0.8),
+            (score_negative_opt(positive_value(ev_or_sales), 1.5, 15.0), 0.6),
         ]
     )
-    valuation_score = average(
-        [
-            score_negative(trailing_pe if trailing_pe and trailing_pe > 0 else None, 8.0, 60.0),
-            score_negative(price_to_book if price_to_book and price_to_book > 0 else None, 0.8, 8.0),
-        ]
+    valuation = guardrailed_valuation(
+        quality_adjusted_valuation(valuation_base, profitability, growth),
+        profitability=profitability,
+        growth=growth,
+        forward_pe=forward_pe,
+        trailing_pe=trailing_pe,
+        ev_to_revenue=ev_to_revenue,
+        price_to_sales=price_to_sales,
+        operating_margin=operating_margin,
+        fcf_margin=fcf_margin,
     )
+    score_factors = {
+        "profitability": profitability,
+        "growth": growth,
+        "health": health,
+        "momentum": momentum,
+        "valuation": valuation,
+    }
+    total_score, score_confidence = composite_score(score_factors)
+    profitability_score = profitability.score
+    growth_score = growth.score
+    health_score = health.score
+    momentum_score = momentum.score
+    valuation_score = valuation.score
 
     components = [
         {
@@ -1940,11 +2203,13 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "label": "이익성",
             "short": "익",
             "score": round(profitability_score, 1),
-            "summary": "EPS와 BPS 기준으로 이익이 실제로 남는지 봐요.",
+            "summary": "EPS, ROE, 이익률, 영업현금흐름으로 이익의 질을 봐요.",
             "metrics": [
                 {"label": "EPS", "value": f"{eps:.0f}" if eps is not None else "-"},
-                {"label": "BPS", "value": f"{bps:.0f}" if bps is not None else "-"},
                 {"label": "ROE 추정", "value": pct(roe)},
+                {"label": "순이익률", "value": pct(profit_margin)},
+                {"label": "영업이익률", "value": pct(operating_margin)},
+                {"label": "OCF 마진", "value": pct(ocf_margin)},
             ],
         },
         {
@@ -1952,9 +2217,10 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "label": "성장 흐름",
             "short": "성",
             "score": round(growth_score, 1),
-            "summary": "최근 가격 흐름이 얼마나 좋아졌는지 봐요.",
+            "summary": "매출·이익 성장과 중기 가격 흐름을 함께 봐요.",
             "metrics": [
-                {"label": "1개월 수익률", "value": pct(ret_1m)},
+                {"label": "매출 성장률", "value": pct(revenue_growth)},
+                {"label": "이익 성장률", "value": pct(earnings_growth)},
                 {"label": "6개월 수익률", "value": pct(ret_6m)},
                 {"label": "52주 수익률", "value": pct(ret_52w)},
             ],
@@ -1964,11 +2230,14 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "label": "거래 안정성",
             "short": "안",
             "score": round(health_score, 1),
-            "summary": "거래정지·관리종목 여부, 거래량, 시가총액으로 거래 체력을 봐요.",
+            "summary": "거래 상태, 유동성, 규모, 부채와 현금흐름 체력을 봐요.",
             "metrics": [
                 {"label": "거래상태", "value": "정상" if is_trade_enabled else "확인 필요"},
                 {"label": "20일 평균 거래량", "value": num_label(as_int(avg_volume_20), "주")},
                 {"label": "시가총액", "value": labeled_money(market_cap, currency, None)},
+                {"label": "부채/자본", "value": f"{debt_to_equity:.1f}" if debt_to_equity is not None else "-"},
+                {"label": "유동비율", "value": f"{current_ratio:.2f}" if current_ratio is not None else "-"},
+                {"label": "FCF 마진", "value": pct(fcf_margin)},
             ],
         },
         {
@@ -1988,29 +2257,17 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "label": "밸류에이션",
             "short": "밸",
             "score": round(valuation_score, 1),
-            "summary": "PER과 PBR로 가격 부담을 보수적으로 봐요.",
+            "summary": "PER, Forward PER, PBR, 매출 대비 기업가치로 가격 부담을 봐요.",
             "metrics": [
                 {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
+                {"label": "Forward PER", "value": f"{forward_pe:.2f}" if forward_pe is not None and forward_pe > 0 else "-"},
                 {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
-                {"label": "시가총액", "value": labeled_money(market_cap, currency, None)},
+                {"label": "EV/Revenue", "value": f"{ev_to_revenue:.2f}" if ev_to_revenue is not None and ev_to_revenue > 0 else "-"},
+                {"label": "P/S", "value": f"{price_to_sales:.2f}" if price_to_sales is not None and price_to_sales > 0 else "-"},
             ],
         },
     ]
 
-    total_score = round(
-        max(
-            0.0,
-            min(
-                100.0,
-                profitability_score * 0.18
-                + growth_score * 0.22
-                + health_score * 0.16
-                + momentum_score * 0.26
-                + valuation_score * 0.18,
-            ),
-        ),
-        1,
-    )
     grade = grade_for(total_score)
     signal = signal_for(total_score, rsi14, ret_3m)
     strongest = max(components, key=lambda item: item["score"])
@@ -2049,7 +2306,10 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         {"label": "52주 수익률", "value": pct(ret_52w)},
         {"label": "ATR14", "value": pct(atr14_pct)},
         {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
+        {"label": "Forward PER", "value": f"{forward_pe:.2f}" if forward_pe is not None and forward_pe > 0 else "-"},
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
+        {"label": "순이익률", "value": pct(profit_margin)},
+        {"label": "매출 성장률", "value": pct(revenue_growth)},
         {"label": "점수 신호", "value": signal},
     ]
 
@@ -2069,7 +2329,10 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
 
     valuation_rows = [
         {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
+        {"label": "Forward PER", "value": f"{forward_pe:.2f}" if forward_pe is not None and forward_pe > 0 else "-"},
         {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
+        {"label": "EV/Revenue", "value": f"{ev_to_revenue:.2f}" if ev_to_revenue is not None and ev_to_revenue > 0 else "-"},
+        {"label": "P/S", "value": f"{price_to_sales:.2f}" if price_to_sales is not None and price_to_sales > 0 else "-"},
         {"label": "EPS", "value": f"{eps:.0f}" if eps is not None else "-"},
         {"label": "BPS", "value": f"{bps:.0f}" if bps is not None else "-"},
         {"label": "시가총액", "value": labeled_money(market_cap, currency, None)},
@@ -2095,16 +2358,24 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "avg_volume_60": avg_volume_60,
     }
     financials = {
-        "profitMargins": None,
-        "operatingMargins": None,
+        "profitMargins": profit_margin,
+        "operatingMargins": operating_margin,
         "returnOnEquity": roe,
-        "revenueGrowth": None,
-        "earningsGrowth": None,
-        "totalRevenue": None,
-        "operatingCashflow": None,
-        "debtToEquity": None,
-        "currentRatio": None,
-        "quickRatio": None,
+        "revenueGrowth": revenue_growth,
+        "earningsGrowth": earnings_growth,
+        "totalRevenue": total_revenue,
+        "operatingCashflow": operating_cashflow,
+        "freeCashflow": free_cashflow,
+        "totalCash": total_cash,
+        "totalDebt": total_debt,
+        "debtToEquity": debt_to_equity,
+        "currentRatio": current_ratio,
+        "quickRatio": quick_ratio,
+        "forwardPE": forward_pe,
+        "enterpriseToRevenue": ev_to_revenue,
+        "priceToSalesTrailing12Months": price_to_sales,
+        "ocfMargin": ocf_margin,
+        "fcfMargin": fcf_margin,
         "eps": eps,
         "bps": bps,
         "listedShares": listed_shares,
@@ -2113,6 +2384,11 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "domestic_price": {key: finite_or_none(value) for key, value in price.items()},
         "product_info": {key: finite_or_none(value) for key, value in search.items()},
         "stock_info": {key: finite_or_none(value) for key, value in stock_info.items()},
+        "yfinance_fundamentals": {
+            "symbol": yahoo_symbol,
+            "cache": fundamentals_cache,
+            "fields": {key: finite_or_none(value) for key, value in fundamentals.items()},
+        },
     }
 
     chart_series = kis_domestic_chart_series(daily_rows)
@@ -2133,6 +2409,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "name": name,
         "exchange": exchange,
         "currency": currency,
+        "score_model_version": SCORE_MODEL_VERSION,
         "score": total_score,
         "grade": grade,
         "summary": summary,
@@ -2161,7 +2438,8 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "price": latest_price,
             "raw_signal": signal,
             "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
-            "confidence": round(min(1.0, len(daily_rows) / 180.0), 3),
+            "score_model_version": SCORE_MODEL_VERSION,
+            "confidence": round(score_confidence, 3),
             "spot_score": round(total_score / 100.0, 3),
             "chart_score": round(momentum_score / 100.0, 3),
             "trend_score": round(score_positive(ret_3m, -0.20, 0.35) / 100.0, 3),
@@ -2185,7 +2463,8 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             },
         },
         "fetch": {
-            "source": "market_data",
+            "source": "market_data+yfinance_fundamentals",
+            "score_model_version": SCORE_MODEL_VERSION,
             "price_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-price",
             "price_market_div_code": KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
             "dailyprice_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
@@ -2194,6 +2473,8 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "news_endpoint": "/uapi/domestic-stock/v1/quotations/news-title",
             "fetched_at": now.isoformat(),
             "cache": "no-store",
+            "fundamentals_cache": fundamentals_cache,
+            "fundamentals_symbol": yahoo_symbol,
             "input_mode": "symbol_master_selection",
             "market_scope": "KR listed equity",
             "exchange_code": exchange,
@@ -2554,6 +2835,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         "name": name,
         "exchange": full_exchange or exchange,
         "currency": currency,
+        "score_model_version": LEGACY_YFINANCE_SCORE_MODEL_VERSION,
         "score": total_score,
         "grade": grade,
         "summary": summary,
@@ -2582,6 +2864,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
             "price": latest_price,
             "raw_signal": signal,
             "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
+            "score_model_version": LEGACY_YFINANCE_SCORE_MODEL_VERSION,
             "confidence": round(min(1.0, len(history) / 252.0), 3),
             "spot_score": round(total_score / 100.0, 3),
             "chart_score": round(momentum_score / 100.0, 3),
@@ -2607,6 +2890,7 @@ def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_o
         },
         "fetch": {
             "source": "yfinance",
+            "score_model_version": LEGACY_YFINANCE_SCORE_MODEL_VERSION,
             "yfinance_version": yf.__version__,
             "fetched_at": now.isoformat(),
             "cache": "no-store",

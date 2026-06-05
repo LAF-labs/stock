@@ -6,6 +6,8 @@ use crate::{
     service::{MarketDataError, MarketDataErrorKind},
 };
 
+const SCORE_MODEL_VERSION: &str = "score-v4-valuation-guardrails-2026-06-05";
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ScoreEngineInput {
     pub market: Market,
@@ -74,12 +76,18 @@ pub struct ScoreMetric {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct ComponentScore {
+    score: f64,
+    confidence: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct ComponentScores {
-    profitability: f64,
-    growth: f64,
-    health: f64,
-    momentum: f64,
-    valuation: f64,
+    profitability: ComponentScore,
+    growth: ComponentScore,
+    health: ComponentScore,
+    momentum: ComponentScore,
+    valuation: ComponentScore,
 }
 
 pub fn compute_score(
@@ -132,56 +140,57 @@ fn compute_us_score(
         None => 45.0,
     };
 
-    let profitability = average(&[
-        eps_score(input.eps),
-        Some(score_positive(roe, -0.10, 0.25, 45.0)),
-        Some(score_positive(input.profit_margin, -0.05, 0.25, 45.0)),
-        Some(score_positive(input.operating_margin, -0.05, 0.25, 45.0)),
-        Some(score_positive(input.ocf_margin, -0.05, 0.25, 45.0)),
+    let profitability = weighted_average(&[
+        (eps_score(input.eps), 0.6),
+        (score_positive_opt(roe, -0.10, 0.25), 1.2),
+        (score_positive_opt(input.profit_margin, -0.05, 0.25), 1.2),
+        (score_positive_opt(input.operating_margin, -0.05, 0.25), 1.0),
+        (score_positive_opt(input.ocf_margin, -0.05, 0.25), 1.0),
     ]);
-    let growth = average(&[
-        Some(score_positive(input.revenue_growth, -0.10, 0.35, 45.0)),
-        Some(score_positive(input.earnings_growth, -0.20, 0.50, 45.0)),
-        Some(score_positive(input.return_1m, -0.10, 0.15, 45.0)),
-        Some(score_positive(input.return_6m, -0.25, 0.50, 45.0)),
-        Some(score_positive(input.return_52w, -0.35, 0.80, 45.0)),
+    let growth = weighted_average(&[
+        (score_positive_opt(input.revenue_growth, -0.10, 0.35), 1.3),
+        (score_positive_opt(input.earnings_growth, -0.20, 0.50), 1.2),
+        (score_positive_opt(input.return_1m, -0.10, 0.15), 0.4),
+        (score_positive_opt(input.return_6m, -0.25, 0.50), 0.7),
+        (score_positive_opt(input.return_52w, -0.35, 0.80), 0.7),
     ]);
-    let health = average(&[
-        Some(trade_score),
-        Some(score_positive(
-            input.avg_volume_20,
-            50_000.0,
-            5_000_000.0,
-            45.0,
-        )),
-        Some(score_positive(
-            input.market_cap,
-            1_000_000_000.0,
-            200_000_000_000.0,
-            45.0,
-        )),
-        Some(score_negative(input.debt_to_equity, 25.0, 220.0, 45.0)),
-        Some(score_positive(input.current_ratio, 0.8, 2.0, 45.0)),
-        Some(score_positive(input.quick_ratio, 0.7, 1.6, 45.0)),
-        Some(score_positive(input.ocf_margin, -0.05, 0.18, 45.0)),
+    let health = weighted_average(&[
+        (Some(trade_score), 0.8),
+        (
+            score_positive_opt(input.avg_volume_20, 50_000.0, 5_000_000.0),
+            0.8,
+        ),
+        (
+            score_positive_opt(input.market_cap, 1_000_000_000.0, 200_000_000_000.0),
+            1.0,
+        ),
+        (score_negative_opt(input.debt_to_equity, 25.0, 220.0), 0.9),
+        (score_positive_opt(input.current_ratio, 0.8, 2.0), 0.7),
+        (score_positive_opt(input.quick_ratio, 0.7, 1.6), 0.5),
+        (score_positive_opt(input.ocf_margin, -0.05, 0.18), 0.6),
     ]);
     let momentum = momentum_score(&input);
-    let valuation = average(&[
-        Some(score_negative(
-            positive(input.trailing_pe),
-            12.0,
-            85.0,
-            45.0,
-        )),
-        Some(score_negative(positive(input.forward_pe), 10.0, 70.0, 45.0)),
-        Some(score_negative(
-            positive(input.price_to_book),
-            1.5,
-            25.0,
-            45.0,
-        )),
-        Some(score_negative(positive(ev_or_sales), 2.0, 25.0, 45.0)),
+    let valuation_base = weighted_average(&[
+        (
+            score_negative_opt(positive(input.trailing_pe), 12.0, 85.0),
+            0.9,
+        ),
+        (
+            score_negative_opt(positive(input.forward_pe), 10.0, 70.0),
+            1.2,
+        ),
+        (
+            score_negative_opt(positive(input.price_to_book), 1.5, 25.0),
+            0.6,
+        ),
+        (score_negative_opt(positive(ev_or_sales), 2.0, 25.0), 0.8),
     ]);
+    let valuation = guardrailed_valuation(
+        quality_adjusted_valuation(valuation_base, profitability, growth),
+        profitability,
+        growth,
+        &input,
+    );
 
     build_output(
         input,
@@ -203,46 +212,67 @@ fn compute_kr_score(
     view: ScoreView,
 ) -> Result<ScoreEngineOutput, MarketDataError> {
     let roe = ratio(input.eps, input.bps);
+    let ev_or_sales = positive_or(input.ev_to_revenue, input.price_to_sales);
     let trade_score = if input.trade_enabled.unwrap_or(false) {
         72.0
     } else {
         25.0
     };
 
-    let profitability = average(&[
-        eps_score(input.eps),
-        Some(score_positive(roe, -0.10, 0.25, 45.0)),
+    let profitability = weighted_average(&[
+        (eps_score(input.eps), 0.6),
+        (score_positive_opt(roe, -0.10, 0.25), 1.2),
+        (score_positive_opt(input.profit_margin, -0.05, 0.25), 0.9),
+        (
+            score_positive_opt(input.operating_margin, -0.05, 0.25),
+            0.8,
+        ),
+        (score_positive_opt(input.ocf_margin, -0.05, 0.25), 0.8),
     ]);
-    let growth = average(&[
-        Some(score_positive(input.return_1m, -0.10, 0.15, 45.0)),
-        Some(score_positive(input.return_6m, -0.25, 0.50, 45.0)),
-        Some(score_positive(input.return_52w, -0.35, 0.80, 45.0)),
+    let growth = weighted_average(&[
+        (score_positive_opt(input.revenue_growth, -0.10, 0.35), 1.1),
+        (score_positive_opt(input.earnings_growth, -0.20, 0.50), 1.0),
+        (score_positive_opt(input.return_1m, -0.10, 0.15), 0.5),
+        (score_positive_opt(input.return_6m, -0.25, 0.50), 0.8),
+        (score_positive_opt(input.return_52w, -0.35, 0.80), 0.8),
     ]);
-    let health = average(&[
-        Some(trade_score),
-        Some(score_positive(
-            input.avg_volume_20,
-            20_000.0,
-            5_000_000.0,
-            45.0,
-        )),
-        Some(score_positive(
-            input.market_cap,
-            50_000_000_000.0,
-            50_000_000_000_000.0,
-            45.0,
-        )),
+    let health = weighted_average(&[
+        (Some(trade_score), 0.8),
+        (
+            score_positive_opt(input.avg_volume_20, 20_000.0, 5_000_000.0),
+            0.8,
+        ),
+        (
+            score_positive_opt(input.market_cap, 50_000_000_000.0, 50_000_000_000_000.0),
+            1.0,
+        ),
+        (score_negative_opt(input.debt_to_equity, 25.0, 220.0), 0.7),
+        (score_positive_opt(input.current_ratio, 0.8, 2.0), 0.5),
+        (score_positive_opt(input.quick_ratio, 0.7, 1.6), 0.4),
+        (score_positive_opt(input.ocf_margin, -0.05, 0.18), 0.5),
     ]);
     let momentum = momentum_score(&input);
-    let valuation = average(&[
-        Some(score_negative(positive(input.trailing_pe), 8.0, 60.0, 45.0)),
-        Some(score_negative(
-            positive(input.price_to_book),
+    let valuation_base = weighted_average(&[
+        (
+            score_negative_opt(positive(input.trailing_pe), 8.0, 60.0),
+            1.0,
+        ),
+        (
+            score_negative_opt(positive(input.forward_pe), 8.0, 50.0),
+            0.9,
+        ),
+        (
+            score_negative_opt(positive(input.price_to_book), 0.8, 8.0),
             0.8,
-            8.0,
-            45.0,
-        )),
+        ),
+        (score_negative_opt(positive(ev_or_sales), 1.5, 15.0), 0.6),
     ]);
+    let valuation = guardrailed_valuation(
+        quality_adjusted_valuation(valuation_base, profitability, growth),
+        profitability,
+        growth,
+        &input,
+    );
 
     build_output(
         input,
@@ -264,15 +294,7 @@ fn build_output(
     view: ScoreView,
     scores: ComponentScores,
 ) -> Result<ScoreEngineOutput, MarketDataError> {
-    let score = round1(clamp(
-        scores.profitability * 0.18
-            + scores.growth * 0.22
-            + scores.health * 0.16
-            + scores.momentum * 0.26
-            + scores.valuation * 0.18,
-        0.0,
-        100.0,
-    ));
+    let (score, confidence) = composite_score(scores);
     let grade = grade_for(score);
     let signal = signal_for(score, input.rsi14, input.return_3m);
     let components = components_for(scores);
@@ -290,6 +312,7 @@ fn build_output(
         "symbol": payload_symbol,
         "name": input.name,
         "currency": input.currency,
+        "score_model_version": SCORE_MODEL_VERSION,
         "score": score,
         "grade": grade.clone(),
         "summary": format!("{} score {:.1}/100.", market_code(input.market), score),
@@ -309,17 +332,19 @@ fn build_output(
             "price": input.latest_price,
             "raw_signal": signal.clone(),
             "risk_level": risk_level(score),
-            "confidence": 1.0,
+            "score_model_version": SCORE_MODEL_VERSION,
+            "confidence": round3(confidence),
             "spot_score": round3(score / 100.0),
-            "profitability_score": round3(scores.profitability / 100.0),
-            "growth_score": round3(scores.growth / 100.0),
-            "health_score": round3(scores.health / 100.0),
-            "momentum_score": round3(scores.momentum / 100.0),
-            "valuation_score": round3(scores.valuation / 100.0),
+            "profitability_score": round3(scores.profitability.score / 100.0),
+            "growth_score": round3(scores.growth.score / 100.0),
+            "health_score": round3(scores.health.score / 100.0),
+            "momentum_score": round3(scores.momentum.score / 100.0),
+            "valuation_score": round3(scores.valuation.score / 100.0),
             "signal_source": "market-data:rust-score-engine"
         },
         "fetch": {
             "source": "rust_score_engine",
+            "score_model_version": SCORE_MODEL_VERSION,
             "cache": "server"
         },
         "view": view.as_str()
@@ -344,40 +369,33 @@ fn components_for(scores: ComponentScores) -> Vec<ScoreComponent> {
     ]
 }
 
-fn component(key: &str, label: &str, short: &str, score: f64) -> ScoreComponent {
+fn component(key: &str, label: &str, short: &str, score: ComponentScore) -> ScoreComponent {
     ScoreComponent {
         key: key.to_string(),
         label: label.to_string(),
         short: short.to_string(),
-        score: round1(score),
+        score: round1(score.score),
         summary: format!("{label} score"),
         metrics: Vec::new(),
     }
 }
 
-fn momentum_score(input: &ScoreEngineInput) -> f64 {
-    average(&[
-        Some(score_positive(input.return_1m, -0.10, 0.15, 45.0)),
-        Some(score_positive(input.return_3m, -0.20, 0.35, 45.0)),
-        Some(score_positive(input.return_6m, -0.25, 0.50, 45.0)),
-        Some(score_positive(input.distance_52w_high, -0.45, 0.0, 45.0)),
-        Some(if above(input.latest_price, input.ma50) {
-            80.0
-        } else {
-            35.0
-        }),
-        Some(if above(input.latest_price, input.ma200) {
-            80.0
-        } else {
-            35.0
-        }),
+fn momentum_score(input: &ScoreEngineInput) -> ComponentScore {
+    weighted_average(&[
+        (score_positive_opt(input.return_1m, -0.10, 0.15), 0.8),
+        (score_positive_opt(input.return_3m, -0.20, 0.35), 1.0),
+        (score_positive_opt(input.return_6m, -0.25, 0.50), 1.0),
+        (score_positive_opt(input.distance_52w_high, -0.45, 0.0), 1.0),
+        (ma_spread_score(input.latest_price, input.ma50), 0.8),
+        (ma_spread_score(input.latest_price, input.ma200), 0.8),
+        (rsi_score(input.rsi14), 0.6),
     ])
 }
 
 fn eps_score(eps: Option<f64>) -> Option<f64> {
     finite(eps).map(|value| {
         if value > 0.0 {
-            75.0
+            72.0
         } else if value < 0.0 {
             25.0
         } else {
@@ -386,12 +404,172 @@ fn eps_score(eps: Option<f64>) -> Option<f64> {
     })
 }
 
-fn average(values: &[Option<f64>]) -> f64 {
-    let usable: Vec<f64> = values.iter().filter_map(|value| finite(*value)).collect();
-    if usable.is_empty() {
-        return 45.0;
+fn score_positive_opt(value: Option<f64>, low: f64, high: f64) -> Option<f64> {
+    finite(value).map(|value| {
+        if high == low {
+            50.0
+        } else {
+            clamp(((value - low) / (high - low)) * 100.0, 0.0, 100.0)
+        }
+    })
+}
+
+fn score_negative_opt(value: Option<f64>, good: f64, bad: f64) -> Option<f64> {
+    finite(value).map(|value| {
+        if bad == good {
+            50.0
+        } else {
+            clamp((1.0 - ((value - good) / (bad - good))) * 100.0, 0.0, 100.0)
+        }
+    })
+}
+
+fn ma_spread_score(price: Option<f64>, moving_average: Option<f64>) -> Option<f64> {
+    match (finite(price), finite(moving_average)) {
+        (Some(price), Some(moving_average)) if moving_average > 0.0 => {
+            score_positive_opt(Some((price / moving_average) - 1.0), -0.08, 0.12)
+        }
+        _ => None,
     }
-    usable.iter().sum::<f64>() / usable.len() as f64
+}
+
+fn rsi_score(rsi: Option<f64>) -> Option<f64> {
+    finite(rsi).map(|value| {
+        if value < 30.0 {
+            score_positive(Some(value), 15.0, 30.0, 35.0) * 0.5
+        } else if value <= 55.0 {
+            50.0 + ((value - 30.0) / 25.0) * 25.0
+        } else if value <= 70.0 {
+            82.0 - ((value - 55.0) / 15.0) * 4.0
+        } else if value <= 85.0 {
+            78.0 - ((value - 70.0) / 15.0) * 23.0
+        } else {
+            40.0
+        }
+    })
+}
+
+fn weighted_average(values: &[(Option<f64>, f64)]) -> ComponentScore {
+    let total_weight: f64 = values.iter().map(|(_, weight)| weight.max(0.0)).sum();
+    if total_weight <= 0.0 {
+        return ComponentScore {
+            score: 50.0,
+            confidence: 0.0,
+        };
+    }
+
+    let mut score_sum = 0.0;
+    let mut usable_weight = 0.0;
+    for (score, weight) in values {
+        let weight = weight.max(0.0);
+        if let Some(score) = finite(*score) {
+            score_sum += clamp(score, 0.0, 100.0) * weight;
+            usable_weight += weight;
+        }
+    }
+
+    if usable_weight <= 0.0 {
+        return ComponentScore {
+            score: 50.0,
+            confidence: 0.0,
+        };
+    }
+
+    ComponentScore {
+        score: score_sum / usable_weight,
+        confidence: clamp(usable_weight / total_weight, 0.0, 1.0),
+    }
+}
+
+fn quality_adjusted_valuation(
+    base: ComponentScore,
+    profitability: ComponentScore,
+    growth: ComponentScore,
+) -> ComponentScore {
+    if base.confidence <= 0.0 {
+        return base;
+    }
+    let quality = weighted_average(&[
+        (Some(profitability.score), profitability.confidence * 0.55),
+        (Some(growth.score), growth.confidence * 0.45),
+    ]);
+    if quality.confidence <= 0.0 || quality.score <= base.score {
+        return base;
+    }
+
+    let tolerance = clamp((quality.score - 62.0) / 25.0, 0.0, 1.0) * quality.confidence;
+    let adjusted = base.score + (quality.score - base.score) * 0.72 * tolerance;
+    ComponentScore {
+        score: clamp(adjusted, 0.0, 100.0),
+        confidence: base.confidence,
+    }
+}
+
+fn guardrailed_valuation(
+    valuation: ComponentScore,
+    profitability: ComponentScore,
+    growth: ComponentScore,
+    input: &ScoreEngineInput,
+) -> ComponentScore {
+    if positive(input.forward_pe).is_some() {
+        return valuation;
+    }
+
+    let sales_multiple = positive_or(input.ev_to_revenue, input.price_to_sales);
+    let weak_profitability = profitability.score < 50.0
+        || input
+            .operating_margin
+            .is_some_and(|margin| margin.is_finite() && margin < 0.08);
+    let weak_cashflow = input
+        .ocf_margin
+        .is_some_and(|margin| margin.is_finite() && margin < 0.0);
+    let expensive_sales = sales_multiple.is_some_and(|multiple| multiple >= 8.0);
+    let expensive_earnings = positive(input.trailing_pe).is_some_and(|multiple| multiple >= 80.0);
+
+    let mut score = valuation.score;
+    let mut confidence = valuation.confidence * 0.92;
+    if expensive_sales && (weak_profitability || weak_cashflow) {
+        score = score.min(45.0);
+        confidence *= 0.88;
+    } else if expensive_earnings && profitability.score < 65.0 {
+        score = score.min(50.0);
+        confidence *= 0.90;
+    } else if growth.score >= 85.0 && profitability.score < 50.0 {
+        score = score.min(58.0);
+        confidence *= 0.94;
+    }
+
+    ComponentScore {
+        score: clamp(score, 0.0, 100.0),
+        confidence: clamp(confidence, 0.0, 1.0),
+    }
+}
+
+fn composite_score(scores: ComponentScores) -> (f64, f64) {
+    let components = [
+        (scores.profitability, 0.24),
+        (scores.growth, 0.22),
+        (scores.health, 0.18),
+        (scores.momentum, 0.14),
+        (scores.valuation, 0.22),
+    ];
+    let total_weight: f64 = components.iter().map(|(_, weight)| weight).sum();
+    let effective_weight: f64 = components
+        .iter()
+        .map(|(component, weight)| weight * component.confidence)
+        .sum();
+    if effective_weight <= 0.0 || total_weight <= 0.0 {
+        return (50.0, 0.0);
+    }
+
+    let raw = components
+        .iter()
+        .map(|(component, weight)| component.score * weight * component.confidence)
+        .sum::<f64>()
+        / effective_weight;
+    let confidence = clamp(effective_weight / total_weight, 0.0, 1.0);
+    let anchored = raw * confidence + 50.0 * (1.0 - confidence);
+    (round1(clamp(anchored, 0.0, 100.0)), confidence)
 }
 
 fn grade_for(score: f64) -> ScoreGrade {
@@ -442,13 +620,6 @@ fn ratio(left: Option<f64>, right: Option<f64>) -> Option<f64> {
     match (finite(left), finite(right)) {
         (Some(left), Some(right)) if right != 0.0 => Some(left / right),
         _ => None,
-    }
-}
-
-fn above(left: Option<f64>, right: Option<f64>) -> bool {
-    match (finite(left), finite(right)) {
-        (Some(left), Some(right)) => left > right,
-        _ => false,
     }
 }
 

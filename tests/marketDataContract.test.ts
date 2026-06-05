@@ -39,11 +39,13 @@ function assertPublicMarketDataFields(payload: JsonObject) {
 
 function assertScoreFields(payload: JsonObject) {
   assertPublicMarketDataFields(payload);
+  assertRequiredString(payload, "score_model_version");
   assertRequiredNumber(payload, "score");
   assert.equal(Array.isArray(payload.components), true, "components must be an array");
   assert.equal(Array.isArray(payload.key_metrics), true, "key_metrics must be an array");
   assert.equal(Array.isArray(payload.chart_series), true, "chart_series must be an array");
   assertObject(payload.sia_snapshot, "sia_snapshot must be an object");
+  assertRequiredString(payload.sia_snapshot, "score_model_version");
 }
 
 test("US quote response keeps public market-data contract", () => {
@@ -56,6 +58,18 @@ test("US detail score response keeps public score contract", () => {
 
 test("KR detail score response keeps public score contract", () => {
   assertScoreFields(loadFixture("score-kr-005930-detail.json"));
+});
+
+test("KR detail score response exposes cached fundamental enrichment metadata", () => {
+  const payload = loadFixture("score-kr-005930-detail.json");
+  assertObject(payload.financial_statement, "financial_statement must be an object");
+  const statement = payload.financial_statement as JsonObject;
+  assertObject(statement.yfinance_fundamentals, "yfinance_fundamentals must be present");
+  const fundamentals = statement.yfinance_fundamentals as JsonObject;
+  assertRequiredString(fundamentals, "symbol");
+  assertObject(fundamentals.cache, "fundamental cache metadata must be present");
+  assertObject(payload.fetch, "fetch must be an object");
+  assert.equal((payload.fetch as JsonObject).source, "market_data+yfinance_fundamentals");
 });
 
 test("manual refresh payload keeps cooldown contract", () => {

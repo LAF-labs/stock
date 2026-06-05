@@ -3,8 +3,8 @@
   "body": "점수는 72.4점으로 안정적인 편이에요. 이익성은 좋지만 가격 부담은 함께 봐야 해요.",
   "watch": "PER과 최근 가격 흐름을 먼저 확인해요.",
   "tone": "neutral",
-  "model": "rule-v1",
-  "promptVersion": "stock-rule-judge-v1",
+  "model": "rule-v2",
+  "promptVersion": "stock-rule-judge-v2",
   "cached": true,
   "cacheBucketStart": "2026-06-05T00:00:00.000Z"
 }

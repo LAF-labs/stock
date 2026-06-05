@@ -8,6 +8,7 @@
     "check": "npm run typecheck && npm run build",
     "start": "next start",
     "lint": "tsc --noEmit",
+    "score:smoke": "${PYTHON_BIN:-python} scripts/score_smoke_check.py",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },

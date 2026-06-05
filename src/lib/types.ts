@@ -87,6 +87,7 @@ export type SiaSnapshot = {
   inverse_score?: number;
   momentum_label?: string;
   signal_source?: string;
+  score_model_version?: string;
   bar_ts?: string;
   indicators?: Record<string, number>;
   reasons?: Record<string, number>;
@@ -101,6 +102,7 @@ export type StockScoreResponse = {
   name?: string;
   exchange?: string;
   currency?: string;
+  score_model_version?: string;
   score?: number;
   grade?: Grade;
   summary?: string;

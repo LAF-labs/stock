@@ -1,4 +1,5 @@
 import { fetchWithTimeout, numericEnv } from "@/lib/supabaseRest";
+import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
 import type { StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
 
@@ -68,6 +69,7 @@ export async function getMarketDataServiceScore(
   );
   if (!response || response.ok !== true || !isRecord(response.data)) return undefined;
   if (typeof response.data.score !== "number" || !Number.isFinite(response.data.score)) return undefined;
+  if (!isCurrentScoreModelPayload(response.data)) return undefined;
   return adaptScoreResponse(ticker, view, response.data as StockPayload, response.server_cache);
 }
 

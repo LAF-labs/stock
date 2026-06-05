@@ -7,6 +7,7 @@
   "name": "삼성전자",
   "exchange": "KOSPI",
   "currency": "KRW",
+  "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
   "score": 68.7,
   "grade": {
     "class": "watch",
@@ -69,24 +70,53 @@
     "latest_change": 0.0069930069
   },
   "financials": {
+    "profitMargins": 0.16,
+    "operatingMargins": 0.18,
+    "returnOnEquity": 0.10,
+    "revenueGrowth": 0.12,
+    "earningsGrowth": 0.22,
+    "totalRevenue": 300000000000000,
+    "operatingCashflow": 74000000000000,
+    "freeCashflow": 42000000000000,
+    "debtToEquity": 26.5,
+    "currentRatio": 2.1,
+    "quickRatio": 1.7,
+    "forwardPE": 13.4,
+    "enterpriseToRevenue": 2.8,
     "eps": 5800,
     "bps": 57500
   },
   "financial_statement": {
-    "domestic_price": {}
+    "domestic_price": {},
+    "yfinance_fundamentals": {
+      "symbol": "005930.KS",
+      "cache": {
+        "source": "yfinance",
+        "store": "supabase",
+        "cache": "fresh"
+      },
+      "fields": {
+        "profitMargins": 0.16,
+        "revenueGrowth": 0.12,
+        "forwardPE": 13.4
+      }
+    }
   },
   "sia_snapshot": {
     "symbol": "005930",
     "price": 72000,
     "raw_signal": "WATCH",
     "risk_level": "LOW",
+    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
     "confidence": 1,
     "spot_score": 0.687,
     "signal_source": "market-data:domestic-stock"
   },
   "fetch": {
-    "source": "market_data",
-    "cache": "server"
+    "source": "market_data+yfinance_fundamentals",
+    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
+    "cache": "server",
+    "fundamentals_symbol": "005930.KS"
   },
   "server_cache": {
     "state": "fresh",

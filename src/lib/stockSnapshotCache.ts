@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
+import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 
@@ -107,12 +108,21 @@ async function expiresAtFrom(nowMs: number, ticker: string, view: ScoreView): Pr
 }
 
 function isFresh(snapshot: StoredSnapshot, nowMs: number): boolean {
-  return Date.parse(snapshot.expiresAt) > nowMs;
+  return isCurrentScoreSnapshot(snapshot) && Date.parse(snapshot.expiresAt) > nowMs;
 }
 
 function isServeableStale(snapshot: StoredSnapshot, nowMs: number): boolean {
+  if (!isCurrentScoreSnapshot(snapshot)) return false;
   const fetchedAt = Date.parse(snapshot.fetchedAt);
   return Number.isFinite(fetchedAt) && fetchedAt + staleTtlSeconds() * 1000 > nowMs;
+}
+
+function isCurrentScoreSnapshot(snapshot: StoredSnapshot): boolean {
+  return isCurrentScorePayload(snapshot.payload);
+}
+
+export function isCurrentScorePayload(payload: StockPayload): boolean {
+  return isCurrentScoreModelPayload(payload);
 }
 
 async function readSupabaseSnapshot(ticker: string, view: ScoreView): Promise<StoredSnapshot | undefined> {

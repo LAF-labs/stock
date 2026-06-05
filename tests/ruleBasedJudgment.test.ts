@@ -42,8 +42,8 @@ test("rule judgment flags expensive PER against industry benchmark", () => {
     cacheBucketStart: "2026-06-05T00:00:00.000Z",
   });
 
-  assert.equal(judgment.model, "rule-v1");
-  assert.equal(judgment.promptVersion, "stock-rule-judge-v1");
+  assert.equal(judgment.model, "rule-v2");
+  assert.equal(judgment.promptVersion, "stock-rule-judge-v2");
   assert.equal(judgment.headline, "수익성은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
@@ -53,6 +53,62 @@ test("rule judgment flags expensive PER against industry benchmark", () => {
   assert.equal(judgment.tone, "cautious");
   assert.equal(judgment.cacheBucketStart, "2026-06-05T00:00:00.000Z");
   assert.doesNotMatch(`${judgment.headline} ${judgment.body} ${judgment.watch}`, /매수|매도|추천|목표가/);
+});
+
+test("rule judgment prefers Forward PER benchmark before trailing PER", () => {
+  const stock = compactRuleJudgmentStock({
+    market: "US",
+    symbol: "NVDA",
+    name: "NVIDIA Corp",
+    score: 82.9,
+    sia_snapshot: { risk_level: "LOW" },
+    components: [
+      { label: "이익성", score: 96.6 },
+      { label: "밸류에이션", score: 80.7 },
+    ],
+    stock_profile: [
+      { label: "산업", value: "Semiconductors" },
+      { label: "섹터", value: "Technology" },
+    ],
+    valuation_rows: [
+      { label: "PER", value: "33.0" },
+      { label: "Forward PER", value: "17.3" },
+      { label: "PBR", value: "26.7" },
+    ],
+  });
+
+  const judgment = buildRuleBasedJudgment(stock, {
+    benchmarks: [
+      {
+        market: "US",
+        scope: "OVERSEAS",
+        metric: "per",
+        sector: "Technology",
+        industry: "Semiconductors",
+        median: 22,
+        p25: 16,
+        p75: 35,
+        sampleCount: 20,
+      },
+      {
+        market: "US",
+        scope: "OVERSEAS",
+        metric: "forward_per",
+        sector: "Technology",
+        industry: "Semiconductors",
+        median: 24,
+        p25: 18,
+        p75: 38,
+        sampleCount: 20,
+      },
+    ],
+    cacheBucketStart: "2026-06-05T00:00:00.000Z",
+  });
+
+  assert.equal(judgment.headline, "이익성과 가격이 좋아요");
+  assert.match(judgment.body, /Forward PER이 해외 Semiconductors 업종 기준 24\.0배/);
+  assert.doesNotMatch(judgment.body, /PER이 해외 Semiconductors 업종 기준 22\.0배/);
+  assert.equal(judgment.tone, "positive");
 });
 
 test("rule judgment stays useful without industry benchmark", () => {

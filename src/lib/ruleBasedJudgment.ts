@@ -61,8 +61,8 @@ export type BuildRuleJudgmentOptions = {
   cacheBucketStart?: string;
 };
 
-const RULE_MODEL = "rule-v1";
-const PROMPT_VERSION = "stock-rule-judge-v1";
+const RULE_MODEL = "rule-v2";
+const PROMPT_VERSION = "stock-rule-judge-v2";
 const PROHIBITED_WORDS = /매수|매도|추천|목표가/g;
 
 export function compactRuleJudgmentStock(raw: Record<string, unknown>): RuleJudgmentStock {
@@ -215,7 +215,7 @@ function profileValues(value: unknown): { sector?: string; industry?: string } {
 
 function usableBenchmark(benchmark: IndustryBenchmark | undefined): IndustryBenchmark | undefined {
   if (!benchmark) return undefined;
-  if (!["per", "pbr"].includes(benchmark.metric.toLowerCase())) return undefined;
+  if (!["forward_per", "per", "ev_revenue", "psr", "pbr"].includes(benchmark.metric.toLowerCase())) return undefined;
   if ((benchmark.sampleCount ?? 0) < 8) return undefined;
   if (typeof benchmark.median !== "number" || !Number.isFinite(benchmark.median) || benchmark.median <= 0) return undefined;
   return benchmark;
@@ -225,10 +225,14 @@ function valuationBenchmarkText(stock: RuleJudgmentStock, options: BuildRuleJudg
   const benchmarks = [options.benchmark, ...(options.benchmarks || [])]
     .map(usableBenchmark)
     .filter((item): item is IndustryBenchmark => Boolean(item));
-  for (const candidate of [
+  const candidates = [
+    { label: "Forward PER", metric: "forward_per" },
     { label: "PER", metric: "per" },
+    { label: "EV/Revenue", metric: "ev_revenue" },
+    { label: "Price/Sales", metric: "psr" },
     { label: "PBR", metric: "pbr" },
-  ] as const) {
+  ] as const;
+  for (const candidate of candidates) {
     const value = valuationNumber(stock, candidate.label);
     const benchmark = benchmarks.find((item) => item.metric.toLowerCase() === candidate.metric);
     if (typeof value === "number" && benchmark) return valuationMetricBenchmarkText(candidate.label, value, benchmark);
@@ -236,7 +240,7 @@ function valuationBenchmarkText(stock: RuleJudgmentStock, options: BuildRuleJudg
   return undefined;
 }
 
-function valuationMetricBenchmarkText(label: "PER" | "PBR", value: number, benchmark: IndustryBenchmark) {
+function valuationMetricBenchmarkText(label: "Forward PER" | "PER" | "EV/Revenue" | "Price/Sales" | "PBR", value: number, benchmark: IndustryBenchmark) {
   const median = benchmark.median ?? 0;
   const p25 = benchmark.p25;
   const p75 = benchmark.p75;

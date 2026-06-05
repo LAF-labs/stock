@@ -7,6 +7,7 @@
   "name": "Coca-Cola Co",
   "exchange": "NYSE",
   "currency": "USD",
+  "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
   "score": 72.4,
   "grade": {
     "class": "good",
@@ -89,12 +90,14 @@
     "price": 72.25,
     "raw_signal": "WATCH",
     "risk_level": "LOW",
+    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
     "confidence": 1,
     "spot_score": 0.724,
     "signal_source": "market-data:overseas-stock+yfinance-fundamentals"
   },
   "fetch": {
     "source": "market_data+yfinance_fundamentals",
+    "score_model_version": "score-v4-valuation-guardrails-2026-06-05",
     "cache": "server"
   },
   "server_cache": {

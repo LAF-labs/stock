@@ -99,7 +99,7 @@ REDIS_URL=redis://127.0.0.1:6379
 판단문은 LLM 호출 없이 서버 룰 엔진에서 생성합니다. 결과는 `stock_rule_judgments`에 6시간 버킷으로 캐시하고, 프로세스 메모리 캐시를 먼저 확인해 인기 종목 반복 조회 비용을 줄입니다. PER/PBR 업종 비교는 `stock_industry_benchmarks`를 읽으며, 이 테이블은 요청 경로에서 집계하지 않습니다.
 
 종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
-업종 원천과 운영 주기는 [docs/industry-data-sources.md](docs/industry-data-sources.md)에 정리되어 있습니다.
+업종 원천과 운영 주기는 [docs/industry-data-sources.md](docs/industry-data-sources.md)에, 점수 모델 버전/캐시/스모크 운영은 [docs/score-system-operations.md](docs/score-system-operations.md)에 정리되어 있습니다. 점수 정확도 개선을 위한 데이터 보강 검토는 [docs/score-data-enrichment-review.md](docs/score-data-enrichment-review.md)를 보세요.
 
 운영 초기화 순서는 아래와 같습니다.
 
@@ -129,6 +129,12 @@ select public.refresh_stock_industry_benchmarks(current_date, 8);
 
 ```bash
 python scripts/run_industry_maintenance.py --refresh-benchmarks
+```
+
+점수 모델 변경 배포 후에는 새 모델 버전 캐시만 사용되는지 확인하고, 대표 종목 가드레일을 통과하는지 스모크 체크를 실행합니다.
+
+```bash
+PYTHON_BIN=.venv/bin/python npm run score:smoke
 ```
 
 Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 없애기 위한 rewrite 경로입니다. 현재 public Next API는 `MARKET_DATA_BACKEND=python`을 기본 fallback으로 유지하며, Rust 서비스는 `/healthz`, `/metrics`와 내부 인증 골격부터 제공합니다. 다음 단계에서 KIS client, cache/job pipeline, score engine을 순차적으로 이관합니다.

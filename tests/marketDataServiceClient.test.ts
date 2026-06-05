@@ -98,3 +98,28 @@ test("score client falls back when Rust score is only queued", async () => {
 
   assert.equal(result, undefined);
 });
+
+test("score client falls back when Rust score model version is stale", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        data: {
+          ok: true,
+          market: "US",
+          symbol: "KO",
+          score: 72.4,
+          score_model_version: "legacy-score-v1",
+        },
+        server_cache: { state: "fresh", source: "cache" },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )) as typeof fetch;
+
+  const result = await getMarketDataServiceScore("US:KO", "detail");
+
+  assert.equal(result, undefined);
+});

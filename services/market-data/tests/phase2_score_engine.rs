@@ -100,6 +100,117 @@ fn strong_input(market: Market) -> ScoreEngineInput {
     }
 }
 
+fn nvda_like_input() -> ScoreEngineInput {
+    ScoreEngineInput {
+        market: Market::Us,
+        symbol: "NVDA".to_string(),
+        name: "NVIDIA Corp".to_string(),
+        currency: "USD".to_string(),
+        latest_price: Some(150.0),
+        previous_close: Some(148.0),
+        eps: Some(3.0),
+        bps: Some(12.0),
+        profit_margin: Some(0.55),
+        operating_margin: Some(0.60),
+        ocf_margin: Some(0.45),
+        revenue_growth: Some(0.65),
+        earnings_growth: Some(0.55),
+        return_1m: Some(0.02),
+        return_3m: Some(0.12),
+        return_6m: Some(0.25),
+        return_52w: Some(0.65),
+        distance_52w_high: Some(-0.08),
+        ma50: Some(142.0),
+        ma200: Some(118.0),
+        avg_volume_20: Some(170_000_000.0),
+        market_cap: Some(3_600_000_000_000.0),
+        debt_to_equity: Some(18.0),
+        current_ratio: Some(4.0),
+        quick_ratio: Some(3.4),
+        trailing_pe: Some(65.0),
+        forward_pe: Some(38.0),
+        price_to_book: Some(55.0),
+        ev_to_revenue: Some(35.0),
+        price_to_sales: None,
+        rsi14: Some(63.0),
+        trade_enabled: Some(true),
+    }
+}
+
+fn speculative_no_forward_input() -> ScoreEngineInput {
+    ScoreEngineInput {
+        market: Market::Us,
+        symbol: "SPEC".to_string(),
+        name: "Speculative Growth Co".to_string(),
+        currency: "USD".to_string(),
+        latest_price: Some(10.0),
+        previous_close: Some(8.0),
+        eps: Some(0.10),
+        bps: Some(2.0),
+        profit_margin: Some(0.0),
+        operating_margin: Some(-0.20),
+        ocf_margin: Some(-0.18),
+        revenue_growth: Some(1.20),
+        earnings_growth: None,
+        return_1m: Some(0.40),
+        return_3m: Some(1.20),
+        return_6m: Some(1.60),
+        return_52w: Some(1.80),
+        distance_52w_high: Some(-0.05),
+        ma50: Some(8.0),
+        ma200: Some(5.0),
+        avg_volume_20: Some(8_000_000.0),
+        market_cap: Some(1_500_000_000.0),
+        debt_to_equity: Some(5.0),
+        current_ratio: Some(2.2),
+        quick_ratio: Some(1.8),
+        trailing_pe: Some(24.0),
+        forward_pe: None,
+        price_to_book: Some(5.0),
+        ev_to_revenue: Some(13.5),
+        price_to_sales: Some(14.2),
+        rsi14: Some(68.0),
+        trade_enabled: Some(true),
+    }
+}
+
+fn sparse_input() -> ScoreEngineInput {
+    ScoreEngineInput {
+        market: Market::Us,
+        symbol: "SPRS".to_string(),
+        name: "Sparse Disclosure Co".to_string(),
+        currency: "USD".to_string(),
+        latest_price: Some(10.0),
+        previous_close: Some(10.1),
+        eps: None,
+        bps: None,
+        profit_margin: None,
+        operating_margin: None,
+        ocf_margin: None,
+        revenue_growth: None,
+        earnings_growth: None,
+        return_1m: Some(-0.01),
+        return_3m: None,
+        return_6m: None,
+        return_52w: None,
+        distance_52w_high: None,
+        ma50: None,
+        ma200: None,
+        avg_volume_20: None,
+        market_cap: None,
+        debt_to_equity: None,
+        current_ratio: None,
+        quick_ratio: None,
+        trailing_pe: None,
+        forward_pe: None,
+        price_to_book: None,
+        ev_to_revenue: None,
+        price_to_sales: None,
+        rsi14: None,
+        trade_enabled: None,
+    }
+}
+
 #[test]
 fn score_helpers_match_python_collector_boundaries() {
     assert_eq!(score_positive(None, -0.10, 0.25, 45.0), 45.0);
@@ -114,13 +225,17 @@ fn score_helpers_match_python_collector_boundaries() {
 fn computes_us_score_with_rust_ported_weights() {
     let output = compute_score(strong_input(Market::Us), ScoreView::Detail).expect("score");
 
-    assert_eq!(output.score, 96.2);
+    assert_eq!(output.score, 97.2);
     assert_eq!(output.grade.class, "excellent");
     assert_eq!(output.signal, "BUY");
     assert_eq!(output.components.len(), 5);
     assert_eq!(output.components[0].key, "profitability");
-    assert_eq!(output.components[0].score, 92.1);
-    assert_eq!(output.payload["score"], 96.2);
+    assert_eq!(output.components[0].score, 93.2);
+    assert_eq!(output.payload["score"], 97.2);
+    assert_eq!(
+        output.payload["score_model_version"],
+        "score-v4-valuation-guardrails-2026-06-05"
+    );
     assert_eq!(
         output.payload["sia_snapshot"]["signal_source"],
         "market-data:rust-score-engine"
@@ -131,12 +246,121 @@ fn computes_us_score_with_rust_ported_weights() {
 fn computes_kr_score_with_domestic_thresholds() {
     let output = compute_score(strong_input(Market::Kr), ScoreView::Detail).expect("score");
 
-    assert_eq!(output.score, 93.2);
+    assert_eq!(output.score, 96.5);
     assert_eq!(output.grade.class, "excellent");
     assert_eq!(output.signal, "BUY");
     assert_eq!(output.components[2].key, "health");
-    assert_eq!(output.components[2].score, 90.7);
+    assert_eq!(output.components[2].score, 95.2);
     assert_eq!(output.payload["requested_ticker"], "KR:005930");
+}
+
+#[test]
+fn kr_score_uses_enriched_fundamentals_when_available() {
+    let mut sparse = strong_input(Market::Kr);
+    sparse.eps = None;
+    sparse.bps = None;
+    sparse.profit_margin = None;
+    sparse.operating_margin = None;
+    sparse.ocf_margin = None;
+    sparse.revenue_growth = None;
+    sparse.earnings_growth = None;
+    sparse.debt_to_equity = None;
+    sparse.current_ratio = None;
+    sparse.quick_ratio = None;
+    sparse.forward_pe = None;
+    sparse.ev_to_revenue = None;
+
+    let mut enriched = sparse.clone();
+    enriched.profit_margin = Some(0.24);
+    enriched.operating_margin = Some(0.22);
+    enriched.ocf_margin = Some(0.20);
+    enriched.revenue_growth = Some(0.25);
+    enriched.earnings_growth = Some(0.35);
+    enriched.debt_to_equity = Some(35.0);
+    enriched.current_ratio = Some(2.1);
+    enriched.quick_ratio = Some(1.7);
+    enriched.forward_pe = Some(14.0);
+    enriched.ev_to_revenue = Some(3.5);
+
+    let sparse_output = compute_score(sparse, ScoreView::Detail).expect("sparse score");
+    let enriched_output = compute_score(enriched, ScoreView::Detail).expect("enriched score");
+
+    assert!(
+        enriched_output.score >= sparse_output.score + 5.0,
+        "KR enriched fundamentals should materially improve score: sparse={} enriched={}",
+        sparse_output.score,
+        enriched_output.score
+    );
+    assert!(
+        enriched_output.payload["sia_snapshot"]["confidence"]
+            .as_f64()
+            .expect("enriched confidence")
+            > sparse_output.payload["sia_snapshot"]["confidence"]
+                .as_f64()
+                .expect("sparse confidence"),
+        "fundamental enrichment should increase confidence"
+    );
+}
+
+#[test]
+fn premium_growth_leader_stays_excellent_despite_expensive_multiples() {
+    let output = compute_score(nvda_like_input(), ScoreView::Detail).expect("score");
+    let valuation = output
+        .components
+        .iter()
+        .find(|component| component.key == "valuation")
+        .expect("valuation component");
+
+    assert!(
+        output.score >= 82.0,
+        "NVDA-like growth leader should not score below excellent range: {}",
+        output.score
+    );
+    assert!(
+        valuation.score >= 45.0,
+        "premium valuation should be moderated by quality and growth, not collapse to {}",
+        valuation.score
+    );
+    assert_eq!(output.grade.class, "excellent");
+}
+
+#[test]
+fn no_forward_weak_quality_growth_story_stays_below_good_range() {
+    let output = compute_score(speculative_no_forward_input(), ScoreView::Detail).expect("score");
+    let valuation = output
+        .components
+        .iter()
+        .find(|component| component.key == "valuation")
+        .expect("valuation component");
+
+    assert!(
+        output.score < 65.0,
+        "speculative no-forward growth story should not reach good range: {}",
+        output.score
+    );
+    assert!(
+        valuation.score <= 45.0,
+        "valuation should be capped for weak quality without forward coverage: {}",
+        valuation.score
+    );
+}
+
+#[test]
+fn sparse_input_lowers_confidence_instead_of_claiming_full_certainty() {
+    let output = compute_score(sparse_input(), ScoreView::Detail).expect("score");
+    let confidence = output.payload["sia_snapshot"]["confidence"]
+        .as_f64()
+        .expect("confidence");
+
+    assert!(
+        confidence <= 0.65,
+        "sparse input should carry visibly lower confidence, got {confidence}"
+    );
+    assert!(
+        (35.0..=60.0).contains(&output.score),
+        "sparse input should stay neutral-to-cautious, got {}",
+        output.score
+    );
 }
 
 #[tokio::test]
@@ -181,6 +405,6 @@ async fn score_compute_endpoint_requires_auth_and_returns_payload() {
         .expect("body");
     let payload: Value = serde_json::from_slice(&body).expect("json body");
     assert_eq!(payload["ok"], true);
-    assert_eq!(payload["data"]["score"], 96.2);
+    assert_eq!(payload["data"]["score"], 97.2);
     assert_eq!(payload["data"]["fetch"]["source"], "rust_score_engine");
 }
