@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { readJsonObjectWithLimit, jsonError } from "@/lib/apiGuards";
-import { judgmentCacheKeyFor } from "@/lib/aiJudgmentCache";
+import { judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/aiJudgmentCache";
+import { enqueueJudgmentJob, judgmentJobsEnabled } from "@/lib/judgmentJobQueue";
 import { envValue, fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ type AiJudgmentPayload = {
   model?: string;
   promptVersion?: string;
   cached?: boolean;
+  cacheBucketStart?: string;
 };
 
 function takeMetrics(value: unknown, count = 8): CompactMetric[] {
@@ -79,6 +81,7 @@ function compactPayload(raw: Record<string, unknown>) {
 
   return {
     symbol: raw.symbol || raw.requested_ticker,
+    market: raw.market,
     name: raw.name,
     latest_bar_date: raw.latest_bar_date,
     score: raw.score,
@@ -119,8 +122,8 @@ function todayKey(): string {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
-function cacheKeyFor(model: string): string {
-  return judgmentCacheKeyFor(model, new Date(), PROMPT_VERSION);
+function cacheKeyFor(model: string, date: Date): string {
+  return judgmentCacheKeyFor(model, date, PROMPT_VERSION);
 }
 
 const SYSTEM_PROMPT = [
@@ -226,7 +229,7 @@ function cleanHeadline(value: unknown): string {
     .trim();
 }
 
-function normalizeJudgment(judgment: Record<string, unknown>, model: string, cached = false): AiJudgmentPayload {
+function normalizeJudgment(judgment: Record<string, unknown>, model: string, cached = false, cacheBucketStart?: string): AiJudgmentPayload {
   const tone = judgment.tone === "positive" || judgment.tone === "cautious" ? judgment.tone : "neutral";
   const headline = cleanHeadline(judgment.headline);
   const safeHeadline =
@@ -245,10 +248,17 @@ function normalizeJudgment(judgment: Record<string, unknown>, model: string, cac
     model,
     promptVersion: PROMPT_VERSION,
     cached,
+    cacheBucketStart,
   };
 }
 
-async function getCachedJudgment(ticker: string, cacheDate: string, cacheKey: string, model: string): Promise<AiJudgmentPayload | undefined> {
+async function getCachedJudgment(
+  ticker: string,
+  cacheDate: string,
+  cacheKey: string,
+  model: string,
+  cacheBucketStart: string
+): Promise<AiJudgmentPayload | undefined> {
   const config = supabaseReadConfig();
   if (!config || !ticker) return undefined;
 
@@ -262,7 +272,7 @@ async function getCachedJudgment(ticker: string, cacheDate: string, cacheKey: st
     const rows = (await response.json()) as Array<{ judgment?: Record<string, unknown> }>;
     const row = rows[0];
     if (!row?.judgment) return undefined;
-    return normalizeJudgment(row.judgment, model, true);
+    return normalizeJudgment(row.judgment, model, true, cacheBucketStart);
   } catch {
     return undefined;
   }
@@ -293,6 +303,7 @@ async function saveCachedJudgment(ticker: string, cacheDate: string, judgment: A
           watch: judgment.watch,
           tone: judgment.tone,
           promptVersion: PROMPT_VERSION,
+          cacheBucketStart: judgment.cacheBucketStart,
         },
         model: cacheKey,
       }),
@@ -316,8 +327,10 @@ export async function POST(request: NextRequest) {
 
   const cacheDate = todayKey();
   const model = envValue("OPENAI_MODEL") || DEFAULT_MODEL;
-  const cacheKey = cacheKeyFor(model);
-  const cached = await getCachedJudgment(ticker, cacheDate, cacheKey, model);
+  const now = new Date();
+  const cacheBucketStart = judgmentBucketStart(now);
+  const cacheKey = cacheKeyFor(model, now);
+  const cached = await getCachedJudgment(ticker, cacheDate, cacheKey, model, cacheBucketStart);
   if (cached) {
     return NextResponse.json(
       {
@@ -332,6 +345,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_ai_judgment", 30, 6 * 60 * 60));
+  if (!rateLimit.allowed) {
+    return jsonError(429, "rate_limited", "AI 판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
+  }
+
+  if (judgmentJobsEnabled()) {
+    const job = await enqueueJudgmentJob({
+      ticker,
+      stock,
+      cacheDate,
+      cacheKey,
+      cacheBucketStart,
+      model,
+      promptVersion: PROMPT_VERSION,
+    });
+
+    if (job) {
+      return NextResponse.json(
+        {
+          ok: false,
+          status: "queued",
+          error: "judgment_queued",
+          message: "AI 판단을 준비하고 있어요.",
+          job,
+          cacheBucketStart,
+        },
+        {
+          status: 202,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
+  }
+
   const apiKey = envValue("OPENAI_API_KEY");
   if (!apiKey) {
     return NextResponse.json(
@@ -342,11 +391,6 @@ export async function POST(request: NextRequest) {
       },
       { status: 503 }
     );
-  }
-
-  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_ai_judgment", 30, 6 * 60 * 60));
-  if (!rateLimit.allowed) {
-    return jsonError(429, "rate_limited", "AI 판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
   }
 
   const controller = new AbortController();
@@ -416,7 +460,7 @@ export async function POST(request: NextRequest) {
     }
 
     const text = outputText(payload);
-    const judgment = normalizeJudgment(JSON.parse(text) as Record<string, unknown>, model);
+    const judgment = normalizeJudgment(JSON.parse(text) as Record<string, unknown>, model, false, cacheBucketStart);
     await saveCachedJudgment(ticker, cacheDate, judgment, cacheKey);
     return NextResponse.json(
       {
