@@ -40,10 +40,12 @@ export type StockDataPendingPayload = {
 
 const SNAPSHOT_ALIASES = new Set(["snapshot", "supabase", "cache", "cache-only", "readonly", "read-only"]);
 const PYTHON_ALIASES = new Set(["python", "collector", "subprocess"]);
+const TRUTHY = new Set(["1", "true", "yes", "on"]);
 
 export function stockDataRuntimeMode(env: StockDataRuntimeEnv = process.env): StockDataRuntimeMode {
   const raw = (env.STOCK_DATA_RUNTIME || env.STOCK_DATA_BACKEND || "").trim().toLowerCase();
   if (SNAPSHOT_ALIASES.has(raw)) return "snapshot";
+  if (env.VERCEL === "1" && PYTHON_ALIASES.has(raw) && !allowVercelPythonRuntime(env)) return "snapshot";
   if (PYTHON_ALIASES.has(raw)) return "python";
 
   return env.VERCEL === "1" ? "snapshot" : "python";
@@ -51,6 +53,11 @@ export function stockDataRuntimeMode(env: StockDataRuntimeEnv = process.env): St
 
 export function pythonCollectorEnabled(env: StockDataRuntimeEnv = process.env): boolean {
   return stockDataRuntimeMode(env) === "python";
+}
+
+export function allowVercelPythonRuntime(env: StockDataRuntimeEnv = process.env): boolean {
+  const raw = (env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME || "").trim().toLowerCase();
+  return TRUTHY.has(raw);
 }
 
 export function stockDataUnavailablePayload(input: StockDataUnavailableInput): StockDataUnavailablePayload {

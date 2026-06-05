@@ -10,6 +10,9 @@ const originalFetch = globalThis.fetch;
 const originalEnv = {
   MARKET_DATA_SERVICE_URL: process.env.MARKET_DATA_SERVICE_URL,
   MARKET_DATA_INTERNAL_TOKEN: process.env.MARKET_DATA_INTERNAL_TOKEN,
+  MARKET_DATA_SERVICE_ENABLED: process.env.MARKET_DATA_SERVICE_ENABLED,
+  MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL: process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL,
+  VERCEL: process.env.VERCEL,
 };
 
 function restore() {
@@ -24,6 +27,21 @@ function restore() {
   } else {
     process.env.MARKET_DATA_INTERNAL_TOKEN = originalEnv.MARKET_DATA_INTERNAL_TOKEN;
   }
+  if (originalEnv.MARKET_DATA_SERVICE_ENABLED === undefined) {
+    delete process.env.MARKET_DATA_SERVICE_ENABLED;
+  } else {
+    process.env.MARKET_DATA_SERVICE_ENABLED = originalEnv.MARKET_DATA_SERVICE_ENABLED;
+  }
+  if (originalEnv.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL === undefined) {
+    delete process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL;
+  } else {
+    process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL = originalEnv.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL;
+  }
+  if (originalEnv.VERCEL === undefined) {
+    delete process.env.VERCEL;
+  } else {
+    process.env.VERCEL = originalEnv.VERCEL;
+  }
 }
 
 test.afterEach(restore);
@@ -31,6 +49,14 @@ test.afterEach(restore);
 test("market-data service client is disabled without URL and token", () => {
   delete process.env.MARKET_DATA_SERVICE_URL;
   delete process.env.MARKET_DATA_INTERNAL_TOKEN;
+
+  assert.equal(marketDataServiceConfig(), undefined);
+});
+
+test("market-data service client ignores localhost URLs on Vercel", () => {
+  process.env.VERCEL = "1";
+  process.env.MARKET_DATA_SERVICE_URL = "http://127.0.0.1:8080";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
 
   assert.equal(marketDataServiceConfig(), undefined);
 });

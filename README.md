@@ -34,9 +34,13 @@ SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 STOCK_REFRESH_COOKIE_SECRET=...
 STOCK_RATE_LIMIT_SECRET=...
+# 선택: /api/health/stock-data?verbose=1 상세 점검용
+STOCK_HEALTH_CHECK_TOKEN=...
 ```
 
-`SUPABASE_PUBLISHABLE_KEY`는 공개 캐시 조회용입니다. `SUPABASE_SERVICE_ROLE_KEY`가 있어야 서버가 점수/현재가/펀더멘털 캐시와 새로고침 쿨다운을 Supabase에 기록합니다. service role key는 브라우저 번들에 노출하지 마세요.
+`SUPABASE_PUBLISHABLE_KEY`는 공개 캐시 조회용입니다. `SUPABASE_SERVICE_ROLE_KEY`가 있어야 서버가 점수/현재가/펀더멘털 캐시와 새로고침 쿨다운을 Supabase에 기록합니다. service role key는 브라우저 번들에 노출하지 마세요. `/api/health/stock-data`는 기본 응답에서 환경변수 이름과 커밋 정보를 숨기고, `STOCK_HEALTH_CHECK_TOKEN` 또는 `MARKET_DATA_INTERNAL_TOKEN` Bearer 토큰이 있을 때만 `?verbose=1` 상세 정보를 보여줍니다.
+
+Vercel에서는 `STOCK_DATA_RUNTIME=python`을 실수로 넣어도 기본적으로 `snapshot` 모드로 닫힙니다. 정말로 Vercel에서 Python subprocess fallback을 켜야 하는 특수 상황이 아니라면 `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1`을 쓰지 마세요.
 
 Supabase CLI용 access token은 앱 런타임 env와 분리해 `.env.supabase.local`에 저장합니다. 이 파일은 `.gitignore`의 `.env*.local` 규칙으로 커밋되지 않습니다.
 
@@ -159,6 +163,8 @@ PYTHON_BIN=.venv/bin/python npm run score:smoke
 
 Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 없애기 위한 rewrite 경로입니다. 현재 public Next API는 `MARKET_DATA_BACKEND=python`을 기본 fallback으로 유지하며, Rust 서비스는 `/healthz`, `/metrics`와 내부 인증 골격부터 제공합니다. 다음 단계에서 KIS client, cache/job pipeline, score engine을 순차적으로 이관합니다.
 
+Vercel preview/prod 빌드는 기본적으로 Python collector 파일을 함수 번들에 포함하지 않습니다. Docker나 자체 Node 서버에서 요청 중 Python collector fallback을 유지해야 하면 `INCLUDE_PYTHON_COLLECTOR=1` 또는 `STOCK_DATA_RUNTIME=python`/`STOCK_DATA_BACKEND=python`을 빌드 환경에 명시하세요.
+
 ## 실행
 
 ```bash
@@ -208,6 +214,8 @@ PYTHON_BIN=.venv/bin/python npm run snapshots:drain -- --queue-limit 50
 ```
 
 GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. 기본 queue drain은 평일 5분마다 최대 50개이고, workflow concurrency로 provider 호출이 겹치지 않게 합니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`, `STOCK_SNAPSHOT_SLEEP_SECONDS`, `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS`로 처리량, provider 간격, 사용자 pending 재시도 안내를 조정합니다.
+
+업종 평균과 외부 업종 PER은 `.github/workflows/maintain-industry-benchmarks.yml`에서 미국 정규/애프터마켓 종료 후 하루 1번 갱신합니다. 이 workflow는 `scripts/sync_market_calendar.py`로 US/KR 시장 달력도 550일치 유지합니다. 배포 전에는 `npm run supabase:readiness`로 필수 테이블/RPC가 적용됐는지 확인하고, 운영 중에는 `npm run ops:report`로 큐, 점수 snapshot, 현재가 freshness, 업종 benchmark 만료, 시장 달력 커버리지를 함께 점검합니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 

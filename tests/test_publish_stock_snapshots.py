@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 import unittest
 
 import scripts.publish_stock_snapshots as publisher
@@ -13,9 +14,12 @@ from scripts.publish_stock_snapshots import (
     job_ticker_ref,
     normalize_ticker_ref,
     parse_ticker_args,
+    quote_snapshot_expires_at,
     SupabasePublishConfig,
     ttl_expires_at,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class PublishStockSnapshotsTests(unittest.TestCase):
@@ -39,13 +43,30 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         payload = {"ok": True, "requested_ticker": "KO", "score": 70.3}
 
         score_row = build_score_snapshot_row("US:KO", "detail", payload, now, 3600)
+        holiday_score_row = build_score_snapshot_row(
+            "US:KO",
+            "detail",
+            payload,
+            now,
+            3600,
+            expires_at="2026-06-08T13:30:00+00:00",
+        )
         quote_row = build_quote_snapshot_row("US:KO", payload, now, 180, 86400)
+        holiday_quote_row = build_quote_snapshot_row(
+            "US:KO",
+            payload,
+            now,
+            180,
+            300,
+            expires_at="2026-06-08T13:30:00+00:00",
+        )
 
         self.assertEqual(score_row["ticker"], "US:KO")
         self.assertEqual(score_row["view_mode"], "detail")
         self.assertEqual(score_row["payload"], payload)
         self.assertEqual(score_row["fetched_at"], "2026-06-05T12:00:00+00:00")
         self.assertEqual(score_row["expires_at"], "2026-06-05T13:00:00+00:00")
+        self.assertEqual(holiday_score_row["expires_at"], "2026-06-08T13:30:00+00:00")
         self.assertEqual(quote_row["ticker"], "US:KO")
         self.assertEqual(quote_row["market"], "US")
         self.assertEqual(quote_row["symbol"], "KO")
@@ -53,6 +74,70 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         self.assertNotIn("view_mode", quote_row)
         self.assertEqual(quote_row["expires_at"], "2026-06-05T12:03:00+00:00")
         self.assertEqual(quote_row["stale_expires_at"], "2026-06-06T12:00:00+00:00")
+        self.assertEqual(holiday_quote_row["expires_at"], "2026-06-08T13:30:00+00:00")
+        self.assertEqual(holiday_quote_row["stale_expires_at"], "2026-06-08T13:30:00+00:00")
+
+    def test_quote_snapshot_expiry_extends_to_next_open_when_market_is_closed(self):
+        calls = []
+
+        class FakeResponse:
+            status_code = 200
+            text = "[]"
+
+            def json(self):
+                return [
+                    {
+                        "market": "US",
+                        "trade_date": "2026-06-06",
+                        "is_open": False,
+                        "next_open_at": "2026-06-08T13:30:00+00:00",
+                    }
+                ]
+
+        def fake_get(url, headers=None, timeout=None):
+            calls.append(url)
+            return FakeResponse()
+
+        original_get = publisher.requests.get
+        publisher.requests.get = fake_get
+        try:
+            config = SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7)
+            fetched_at = datetime(2026, 6, 6, 16, 0, 0, tzinfo=timezone.utc)
+            expires_at = quote_snapshot_expires_at(config, "US:KO", fetched_at, 300)
+        finally:
+            publisher.requests.get = original_get
+
+        self.assertEqual(expires_at, "2026-06-08T13:30:00+00:00")
+        self.assertIn("market=eq.US", calls[0])
+        self.assertIn("trade_date=eq.2026-06-06", calls[0])
+
+    def test_quote_snapshot_expiry_uses_short_ttl_during_open_session(self):
+        class FakeResponse:
+            status_code = 200
+            text = "[]"
+
+            def json(self):
+                return [
+                    {
+                        "market": "US",
+                        "trade_date": "2026-06-05",
+                        "is_open": True,
+                        "open_at": "2026-06-05T13:30:00+00:00",
+                        "close_at": "2026-06-05T20:00:00+00:00",
+                        "next_open_at": "2026-06-08T13:30:00+00:00",
+                    }
+                ]
+
+        original_get = publisher.requests.get
+        publisher.requests.get = lambda *args, **kwargs: FakeResponse()
+        try:
+            config = SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7)
+            fetched_at = datetime(2026, 6, 5, 16, 0, 0, tzinfo=timezone.utc)
+            expires_at = quote_snapshot_expires_at(config, "US:KO", fetched_at, 300)
+        finally:
+            publisher.requests.get = original_get
+
+        self.assertEqual(expires_at, "2026-06-05T16:05:00+00:00")
 
     def test_job_ticker_ref_uses_market_and_symbol(self):
         self.assertEqual(job_ticker_ref({"market": "US", "symbol": "nvda"}), "US:NVDA")
@@ -106,6 +191,14 @@ class PublishStockSnapshotsTests(unittest.TestCase):
                 os.environ["STOCK_SNAPSHOT_QUEUE_LIMIT"] = original
 
         self.assertEqual(args.queue_limit, 50)
+
+    def test_demand_queue_is_drained_before_optional_warm_tickers(self):
+        source = (ROOT / "scripts" / "publish_stock_snapshots.py").read_text(encoding="utf-8")
+
+        self.assertLess(
+            source.index("queue_rows = drain_refresh_queue(config, args)"),
+            source.index("for index, ticker in enumerate(tickers):"),
+        )
 
     def test_score_snapshot_ttl_default_matches_thirty_minute_score_policy(self):
         original = os.environ.get("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS")

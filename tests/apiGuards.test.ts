@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { judgmentCacheKeyFor, judgmentBucketStart } from "../src/lib/judgmentCache";
 import { batchStatusFromResults } from "../src/lib/apiGuards";
+import { safeErrorMessage } from "../src/lib/errorSafety";
 import { appendBoundedOutput } from "../src/lib/subprocessGuards";
 
 test("judgment cache key stays stable inside a six-hour bucket", () => {
@@ -41,4 +42,22 @@ test("subprocess output is bounded and marked when truncated", () => {
 
   assert.equal(result.value, "abcdef");
   assert.equal(result.truncated, true);
+});
+
+test("safe error message redacts configured secret values", () => {
+  const original = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "secret-service-role-value";
+  try {
+    const message = safeErrorMessage(new Error("failed with secret-service-role-value and Bearer abcdefghijklmnopqrstuvwxyz"));
+
+    assert.doesNotMatch(message, /secret-service-role-value/);
+    assert.doesNotMatch(message, /abcdefghijklmnopqrstuvwxyz/);
+    assert.match(message, /\[redacted\]/);
+  } finally {
+    if (original === undefined) {
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    } else {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = original;
+    }
+  }
 });

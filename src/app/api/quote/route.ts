@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { jsonError } from "@/lib/apiGuards";
+import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    console.warn("quote_collector_unreachable", { ticker, error: error instanceof Error ? error.message : "unknown" });
+    console.warn("quote_collector_unreachable", { ticker, error: safeErrorMessage(error) });
     const response = NextResponse.json(
       {
         ok: false,

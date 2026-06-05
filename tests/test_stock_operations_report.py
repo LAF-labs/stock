@@ -45,6 +45,36 @@ class StockOperationsReportTests(unittest.TestCase):
         self.assertGreater(summary["duplicate_score_rate"], 0.0)
         self.assertEqual(summary["top_duplicate_scores"][0]["score"], 87.1)
 
+    def test_summarize_quote_snapshots_reports_stale_and_missing_prices(self):
+        now = datetime(2026, 6, 6, 0, 0, 0, tzinfo=timezone.utc)
+        rows = [
+            quote_row("US:NVDA", 120.0, "2026-06-05T23:59:00+00:00", "2026-06-06T00:04:00+00:00"),
+            quote_row("KR:005930", None, "2026-06-05T20:00:00+00:00", "2026-06-05T20:05:00+00:00"),
+        ]
+
+        summary = report.summarize_quote_snapshots(rows, now=now, stale_after_hours=2)
+
+        self.assertEqual(summary["total_snapshots"], 2)
+        self.assertEqual(summary["stale_snapshots"], 1)
+        self.assertEqual(summary["missing_price_count"], 1)
+        self.assertEqual(summary["by_market"]["US"], 1)
+        self.assertEqual(summary["by_market"]["KR"], 1)
+
+    def test_summarize_industry_benchmarks_reports_expired_and_low_sample_rows(self):
+        now = datetime(2026, 6, 6, 0, 0, 0, tzinfo=timezone.utc)
+        rows = [
+            {"metric": "forward_per", "source": "finviz_industry", "sample_count": 8, "as_of_date": "2026-06-05", "expires_at": "2026-06-07T00:00:00+00:00"},
+            {"metric": "per", "source": "score_snapshot", "sample_count": 3, "as_of_date": "2026-06-04", "expires_at": "2026-06-05T00:00:00+00:00"},
+        ]
+
+        summary = report.summarize_industry_benchmarks(rows, now=now)
+
+        self.assertEqual(summary["total_rows"], 2)
+        self.assertEqual(summary["expired_rows"], 1)
+        self.assertEqual(summary["low_sample_rows"], 1)
+        self.assertEqual(summary["oldest_as_of_date"], "2026-06-04")
+        self.assertEqual(summary["newest_as_of_date"], "2026-06-05")
+
     def test_fetch_supabase_report_calls_rpc_and_snapshot_query(self):
         calls = []
 
@@ -63,7 +93,15 @@ class StockOperationsReportTests(unittest.TestCase):
 
         def fake_get(url, headers=None, timeout=None):
             calls.append(("get", url, None, timeout))
-            return FakeResponse(200, [score_row("US:NVDA", 88, 88, 70, 0.9, "2026-06-05T23:00:00+00:00")])
+            if "/rest/v1/stock_score_snapshots?" in url:
+                return FakeResponse(200, [score_row("US:NVDA", 88, 88, 70, 0.9, "2026-06-05T23:00:00+00:00")])
+            if "/rest/v1/stock_quote_snapshots?" in url:
+                return FakeResponse(200, [quote_row("US:NVDA", 120.0, "2026-06-05T23:58:00+00:00", "2026-06-06T00:03:00+00:00")])
+            if "/rest/v1/stock_industry_benchmarks?" in url:
+                return FakeResponse(200, [{"metric": "forward_per", "source": "finviz_industry", "sample_count": 8, "as_of_date": "2026-06-05", "expires_at": "2026-06-07T00:00:00+00:00"}])
+            if "/rest/v1/market_calendar?" in url:
+                return FakeResponse(200, [{"market": "US", "trade_date": "2026-06-08", "is_open": True}])
+            return FakeResponse(404, {"error": "unexpected"})
 
         original_post = report.requests.post
         original_get = report.requests.get
@@ -78,6 +116,9 @@ class StockOperationsReportTests(unittest.TestCase):
 
         self.assertEqual(payload["refresh_queue"]["queued_jobs"], 2)
         self.assertEqual(payload["score_calibration"]["total_snapshots"], 1)
+        self.assertEqual(payload["quote_freshness"]["total_snapshots"], 1)
+        self.assertEqual(payload["industry_benchmarks"]["total_rows"], 1)
+        self.assertEqual(payload["market_calendar"]["total_rows"], 1)
         self.assertEqual(calls[0][0], "post")
         self.assertEqual(calls[0][1], "https://example.supabase.co/rest/v1/rpc/stock_operations_report")
         self.assertIn('"p_score_stale_hours": 24', calls[0][2])
@@ -85,6 +126,9 @@ class StockOperationsReportTests(unittest.TestCase):
         self.assertIn("/rest/v1/stock_score_snapshots?", calls[1][1])
         self.assertIn("limit=50", calls[1][1])
         self.assertEqual(calls[1][3], 9)
+        self.assertIn("/rest/v1/stock_quote_snapshots?", calls[2][1])
+        self.assertIn("/rest/v1/stock_industry_benchmarks?", calls[3][1])
+        self.assertIn("/rest/v1/market_calendar?", calls[4][1])
 
 
 def score_row(ticker, score, quality, opportunity, confidence, fetched_at, version=None):
@@ -107,6 +151,19 @@ def score_row(ticker, score, quality, opportunity, confidence, fetched_at, versi
                 "opportunity_score": opportunity,
                 "score_model_version": model,
             },
+        },
+    }
+
+
+def quote_row(ticker, latest_price, fetched_at, expires_at):
+    return {
+        "ticker": ticker,
+        "fetched_at": fetched_at,
+        "expires_at": expires_at,
+        "payload": {
+            "market": "KR" if ticker.startswith("KR:") else "US",
+            "latest_price": latest_price,
+            "server_cache": {"state": "fresh"},
         },
     }
 

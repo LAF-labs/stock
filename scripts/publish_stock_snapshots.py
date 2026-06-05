@@ -9,6 +9,8 @@ from pathlib import Path
 import sys
 import time
 from typing import Any, Iterable
+from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -19,6 +21,8 @@ except ModuleNotFoundError:
 
 
 ScoreView = str
+ROOT = Path(__file__).resolve().parents[1]
+LOCAL_ENV_FILES = (".env.local", ".env.supabase.local", ".env.vercel.local")
 
 
 @dataclass(frozen=True)
@@ -67,13 +71,14 @@ def build_score_snapshot_row(
     payload: dict[str, Any],
     fetched_at: datetime,
     ttl_seconds: int,
+    expires_at: str | None = None,
 ) -> dict[str, Any]:
     return {
         "ticker": ticker,
         "view_mode": view,
         "payload": payload,
         "fetched_at": fetched_at.replace(microsecond=0).isoformat(),
-        "expires_at": ttl_expires_at(fetched_at, ttl_seconds),
+        "expires_at": expires_at or ttl_expires_at(fetched_at, ttl_seconds),
     }
 
 
@@ -83,9 +88,12 @@ def build_quote_snapshot_row(
     fetched_at: datetime,
     ttl_seconds: int,
     stale_ttl_seconds: int | None = None,
+    expires_at: str | None = None,
 ) -> dict[str, Any]:
     market, symbol = parse_symbol_ref(ticker)
     stale_seconds = stale_ttl_seconds or numeric_env("STOCK_QUOTE_SNAPSHOT_STALE_SECONDS", 86_400)
+    fresh_expires_at = expires_at or ttl_expires_at(fetched_at, ttl_seconds)
+    stale_expires_at = max_iso_datetime(ttl_expires_at(fetched_at, stale_seconds), fresh_expires_at)
     return {
         "ticker": ticker,
         "market": market,
@@ -93,9 +101,17 @@ def build_quote_snapshot_row(
         "source": "kis",
         "payload": payload,
         "fetched_at": fetched_at.replace(microsecond=0).isoformat(),
-        "expires_at": ttl_expires_at(fetched_at, ttl_seconds),
-        "stale_expires_at": ttl_expires_at(fetched_at, stale_seconds),
+        "expires_at": fresh_expires_at,
+        "stale_expires_at": stale_expires_at,
     }
+
+
+def max_iso_datetime(left: str, right: str) -> str:
+    left_dt = parse_iso_datetime(left)
+    right_dt = parse_iso_datetime(right)
+    if left_dt and right_dt and right_dt > left_dt:
+        return right
+    return left
 
 
 def numeric_env(name: str, fallback: int) -> int:
@@ -107,11 +123,28 @@ def numeric_env(name: str, fallback: int) -> int:
 
 
 def supabase_publish_config(args: argparse.Namespace) -> SupabasePublishConfig:
+    load_local_env_files()
     url = (args.supabase_url or os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
     key = (args.supabase_key or os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required unless --dry-run is used.")
     return SupabasePublishConfig(url=url, key=key, timeout_seconds=args.timeout_seconds)
+
+
+def load_local_env_files() -> None:
+    for name in LOCAL_ENV_FILES:
+        path = ROOT / name
+        if not path.exists():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = value
 
 
 def supabase_headers(key: str) -> dict[str, str]:
@@ -132,6 +165,76 @@ def upsert_snapshot(config: SupabasePublishConfig, table: str, row: dict[str, An
     )
     if response.status_code >= 400:
         raise RuntimeError(f"Supabase upsert failed for {table}: HTTP {response.status_code} {response.text[:500]}")
+
+
+def quote_snapshot_expires_at(
+    config: SupabasePublishConfig | None,
+    ticker: str,
+    fetched_at: datetime,
+    ttl_seconds: int,
+) -> str:
+    return market_aware_snapshot_expires_at(config, ticker, fetched_at, ttl_seconds)
+
+
+def market_aware_snapshot_expires_at(
+    config: SupabasePublishConfig | None,
+    ticker: str,
+    fetched_at: datetime,
+    ttl_seconds: int,
+) -> str:
+    market, _symbol = parse_symbol_ref(ticker)
+    if not config:
+        return ttl_expires_at(fetched_at, ttl_seconds)
+    row = fetch_market_calendar_row(config, market, market_trade_date(market, fetched_at))
+    if not row:
+        return ttl_expires_at(fetched_at, ttl_seconds)
+
+    open_at = parse_iso_datetime(row.get("open_at"))
+    close_at = parse_iso_datetime(row.get("close_at"))
+    next_open_at = str(row.get("next_open_at") or "") or None
+    is_open = row.get("is_open") is True
+    if not is_open:
+        return next_open_at or ttl_expires_at(fetched_at, ttl_seconds)
+    if open_at and fetched_at < open_at:
+        return open_at.replace(microsecond=0).isoformat()
+    if close_at and fetched_at > close_at:
+        return next_open_at or ttl_expires_at(fetched_at, ttl_seconds)
+    return ttl_expires_at(fetched_at, ttl_seconds)
+
+
+def fetch_market_calendar_row(config: SupabasePublishConfig, market: str, trade_date: str) -> dict[str, Any] | None:
+    query = urlencode(
+        {
+            "market": f"eq.{market}",
+            "trade_date": f"eq.{trade_date}",
+            "select": "market,trade_date,is_open,open_at,close_at,next_open_at",
+            "limit": "1",
+        }
+    )
+    response = requests.get(
+        f"{config.url}/rest/v1/market_calendar?{query}",
+        headers=supabase_headers(config.key),
+        timeout=config.timeout_seconds,
+    )
+    if response.status_code >= 400:
+        return None
+    rows = response.json()
+    return rows[0] if isinstance(rows, list) and rows else None
+
+
+def market_trade_date(market: str, fetched_at: datetime) -> str:
+    zone = ZoneInfo("Asia/Seoul" if market == "KR" else "America/New_York")
+    return fetched_at.astimezone(zone).date().isoformat()
+
+
+def parse_iso_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def post_supabase_rpc(config: SupabasePublishConfig, name: str, body: dict[str, Any]) -> Any:
@@ -252,7 +355,8 @@ def publish_ticker(
     if not args.skip_quote:
         quote = fetch_quote(ticker)
         if ok_payload(quote):
-            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds)
+            expires_at = quote_snapshot_expires_at(config, ticker, fetched_at, args.quote_ttl_seconds)
+            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds, expires_at)
             if config:
                 upsert_snapshot(config, "stock_quote_snapshots", row, "ticker")
             summary["quote"] = "published" if config else "dry_run"
@@ -264,7 +368,8 @@ def publish_ticker(
         for view in views:
             score = fetch_score(ticker, view=view)
             if ok_payload(score):
-                row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds)
+                expires_at = market_aware_snapshot_expires_at(config, ticker, fetched_at, args.score_ttl_seconds)
+                row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds, expires_at)
                 if config:
                     upsert_snapshot(config, "stock_score_snapshots", row, "ticker,view_mode")
                 summary["scores"][view] = "published" if config else "dry_run"
@@ -295,7 +400,8 @@ def publish_queue_job(
             quote = fetch_quote(ticker)
             if not ok_payload(quote):
                 raise RuntimeError(str(quote.get("error") or "quote_fetch_failed"))
-            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds)
+            expires_at = quote_snapshot_expires_at(config, ticker, fetched_at, args.quote_ttl_seconds)
+            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds, expires_at)
             upsert_snapshot(config, "stock_quote_snapshots", row, "ticker")
         elif kind == "score":
             if view not in {"detail", "compare"}:
@@ -303,7 +409,8 @@ def publish_queue_job(
             score = fetch_score(ticker, view=view)
             if not ok_payload(score):
                 raise RuntimeError(str(score.get("error") or "score_fetch_failed"))
-            row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds)
+            expires_at = market_aware_snapshot_expires_at(config, ticker, fetched_at, args.score_ttl_seconds)
+            row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds, expires_at)
             upsert_snapshot(config, "stock_score_snapshots", row, "ticker,view_mode")
         else:
             raise RuntimeError(f"unsupported refresh job kind: {kind}")
@@ -374,6 +481,10 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    queue_rows: list[dict[str, Any]] = []
+    if args.drain_queue and config:
+        queue_rows = drain_refresh_queue(config, args)
+
     rows: list[dict[str, Any]] = []
     for index, ticker in enumerate(tickers):
         if index and args.sleep_seconds > 0:
@@ -382,10 +493,6 @@ def main() -> int:
             rows.append(publish_ticker(ticker, views, config, args))
         except Exception as exc:
             rows.append({"ticker": ticker, "quote": "error", "scores": {}, "errors": [{"error": str(exc)}]})
-
-    queue_rows: list[dict[str, Any]] = []
-    if args.drain_queue and config:
-        queue_rows = drain_refresh_queue(config, args)
 
     payload = {
         "ok": not any(row["errors"] for row in rows) and not any(row["errors"] for row in queue_rows),

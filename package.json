@@ -2,6 +2,9 @@
   "name": "sia-stock-score-next",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,9 +13,11 @@
     "industry:audit": "${PYTHON_BIN:-python} scripts/industry_quality_audit.py --json",
     "start": "next start",
     "lint": "tsc --noEmit",
+    "market-calendar:sync": "${PYTHON_BIN:-python} scripts/sync_market_calendar.py",
     "ops:report": "${PYTHON_BIN:-python} scripts/stock_operations_report.py --json",
     "score:smoke": "${PYTHON_BIN:-python} scripts/score_smoke_check.py",
     "snapshots:drain": "${PYTHON_BIN:-python} scripts/publish_stock_snapshots.py --drain-queue --json",
+    "supabase:readiness": "${PYTHON_BIN:-python} scripts/supabase_runtime_readiness.py --json",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },

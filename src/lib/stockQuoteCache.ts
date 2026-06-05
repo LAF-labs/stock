@@ -1,4 +1,5 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
+import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
@@ -232,6 +233,7 @@ function scheduleQueuedRefresh(ticker: string, priority: number, reason: "snapsh
 }
 
 function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredQuoteSnapshot) {
+  scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
   void (async () => {
     const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: true });
     if (marketDataResult) return;
@@ -321,12 +323,12 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
   } catch (error) {
     if (freshCandidate) {
       return decorate(freshCandidate, "fresh", freshSource, {
-        refreshError: error instanceof Error ? error.message : "refresh_failed",
+        refreshError: publicRefreshErrorCode(error),
       });
     }
     if (staleCandidate) {
       return decorate(staleCandidate, "stale", staleSource, {
-        refreshError: error instanceof Error ? error.message : "refresh_failed",
+        refreshError: publicRefreshErrorCode(error),
       });
     }
     throw error;

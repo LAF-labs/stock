@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
+import { clientNetworkRateLimitKey } from "@/lib/apiRateLimit";
 import { envValue, fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 
 export type RefreshCooldownStatus = {
@@ -207,7 +208,7 @@ function secondsRemaining(nextAllowedAt: string | undefined, nowMs: number): num
 function refreshUserIdentity(request: NextRequest) {
   const rawCookie = request.cookies.get(COOKIE_NAME)?.value;
   const parsedUserId = parseRefreshCookie(rawCookie);
-  const userId = parsedUserId || randomUUID();
+  const userId = parsedUserId || networkBoundRefreshUserId(request);
   const cookieValue = signRefreshUserId(userId);
   return {
     userId,
@@ -246,9 +247,24 @@ function verifySignature(userId: string, signature: string): boolean {
 }
 
 function cookieSecret(): string {
-  return envValue("STOCK_REFRESH_COOKIE_SECRET") || envValue("NEXTAUTH_SECRET") || envValue("STOCK_API_APP_SECRET") || FALLBACK_COOKIE_SECRET;
+  const secret = envValue("STOCK_REFRESH_COOKIE_SECRET");
+  if (strictSecretRuntime()) {
+    if (!secret || secret.length < 32) {
+      throw new Error("STOCK_REFRESH_COOKIE_SECRET must be at least 32 characters in production.");
+    }
+    return secret;
+  }
+  return secret || envValue("NEXTAUTH_SECRET") || FALLBACK_COOKIE_SECRET;
 }
 
 function validUserId(value: string | undefined): value is string {
   return !!value && /^[a-zA-Z0-9-]{20,80}$/.test(value);
+}
+
+function networkBoundRefreshUserId(request: NextRequest): string {
+  return `ip-${clientNetworkRateLimitKey(request).slice(0, 64)}`;
+}
+
+function strictSecretRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || Boolean(envValue("VERCEL_ENV"));
 }

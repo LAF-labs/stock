@@ -122,6 +122,11 @@ export async function POST(request: NextRequest) {
     return jsonError(body.status, body.error, body.message);
   }
 
+  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_rule_judgment", 600, 60));
+  if (!rateLimit.allowed) {
+    return jsonError(429, "rate_limited", "판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
+  }
+
   const enrichedPayload = await enrichStockPayloadWithSymbolProfile(body.value);
   const stock = compactRuleJudgmentStock(enrichedPayload);
   const ticker = tickerFromRuleJudgmentStock(stock);
@@ -137,11 +142,6 @@ export async function POST(request: NextRequest) {
   const cached = await getCachedJudgment(ticker, cacheDate, cacheKey, model, cacheBucketStart);
   if (cached) {
     return judgmentResponse(cached);
-  }
-
-  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_rule_judgment", 600, 60));
-  if (!rateLimit.allowed) {
-    return jsonError(429, "rate_limited", "판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
   }
 
   const benchmarks = await getIndustryBenchmarksForStock(stock);
@@ -184,9 +184,14 @@ function setMemoryJudgment(key: string, judgment: RuleBasedJudgment) {
 
 function pruneMemoryJudgments() {
   const limit = numericEnv("STOCK_RULE_JUDGMENT_MEMORY_CACHE_MAX_ENTRIES", 5_000);
-  if (memoryJudgments.size < limit) return;
+  if (memoryJudgments.size <= limit) return;
   const now = Date.now();
   for (const [key, item] of memoryJudgments) {
     if (item.expiresAt <= now) memoryJudgments.delete(key);
+  }
+  while (memoryJudgments.size > limit) {
+    const oldestKey = memoryJudgments.keys().next().value;
+    if (!oldestKey) break;
+    memoryJudgments.delete(oldestKey);
   }
 }

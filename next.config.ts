@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+const includePythonCollector =
+  process.env.INCLUDE_PYTHON_COLLECTOR === "1"
+  || process.env.STOCK_DATA_RUNTIME === "python"
+  || process.env.STOCK_DATA_BACKEND === "python";
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
@@ -32,11 +37,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  outputFileTracingIncludes: {
-    "/api/quote": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
-    "/api/score": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
-    "/api/score/batch": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
-  },
+  ...(includePythonCollector
+    ? {
+        outputFileTracingIncludes: {
+          "/api/quote": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
+          "/api/score": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
+          "/api/score/batch": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
+        },
+      }
+    : {}),
   outputFileTracingExcludes: {
     "/api/quote": ["./next.config.ts"],
     "/api/score": ["./next.config.ts"],

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   clearIndustryBenchmarkCacheForTests,
   getIndustryBenchmark,
+  getIndustryBenchmarksForStock,
 } from "../src/lib/industryBenchmarks";
 
 const originalFetch = globalThis.fetch;
@@ -190,4 +191,46 @@ test("industry benchmark lookup falls back to legacy market rows when scoped row
   assert.match(requestedUrls[1], /market=eq\.US/);
   assert.equal(benchmark?.scope, "OVERSEAS");
   assert.equal(benchmark?.median, 46.6);
+});
+
+test("stock benchmark lookup includes forward valuation metrics by default", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+
+  const requestedMetrics: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    const metric = url.searchParams.get("metric")?.replace(/^eq\./, "") || "";
+    requestedMetrics.push(metric);
+    return new Response(
+      JSON.stringify([
+        {
+          scope: "OVERSEAS",
+          market: "US",
+          sector: "Technology",
+          industry: "Semiconductors",
+          metric,
+          period: "quarter",
+          median: 20,
+          p25: 15,
+          p75: 30,
+          sample_count: 12,
+        },
+      ]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }) as typeof fetch;
+
+  const benchmarks = await getIndustryBenchmarksForStock({
+    market: "US",
+    sector: "Technology",
+    industry: "Semiconductors",
+    score: 80,
+    keyMetrics: [],
+    valuation: [],
+    components: [{ label: "이익성", score: 90 }],
+  });
+
+  assert.deepEqual(requestedMetrics, ["forward_per", "per", "ev_revenue", "psr", "pbr"]);
+  assert.deepEqual(benchmarks.map((item) => item.metric), requestedMetrics);
 });

@@ -28,11 +28,23 @@ export function marketDataServiceConfig(): MarketDataServiceConfig | undefined {
   const url = process.env.MARKET_DATA_SERVICE_URL?.trim().replace(/\/$/, "");
   const token = process.env.MARKET_DATA_INTERNAL_TOKEN?.trim();
   if (!url || !token) return undefined;
+  if (process.env.VERCEL === "1" && isLocalServiceUrl(url) && process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL !== "1") {
+    return undefined;
+  }
   return {
     url,
     token,
     timeoutMs: numericEnv("MARKET_DATA_SERVICE_TIMEOUT_MS", 1_500),
   };
+}
+
+function isLocalServiceUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
 }
 
 export async function getMarketDataServiceQuote(

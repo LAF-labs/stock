@@ -11,12 +11,18 @@ import {
 } from "../src/lib/stockDataRuntime";
 
 const ORIGINAL_RETRY_AFTER = process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+const ORIGINAL_ALLOW_VERCEL_PYTHON = process.env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME;
 
 test.afterEach(() => {
   if (ORIGINAL_RETRY_AFTER === undefined) {
     delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
   } else {
     process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS = ORIGINAL_RETRY_AFTER;
+  }
+  if (ORIGINAL_ALLOW_VERCEL_PYTHON === undefined) {
+    delete process.env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME;
+  } else {
+    process.env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME = ORIGINAL_ALLOW_VERCEL_PYTHON;
   }
 });
 
@@ -25,6 +31,24 @@ test("Vercel runtime defaults to snapshot mode and disables Python collector", (
 
   assert.equal(stockDataRuntimeMode(env), "snapshot");
   assert.equal(pythonCollectorEnabled(env), false);
+});
+
+test("Vercel runtime fails closed to snapshot even when python mode is copied into env", () => {
+  const env = { VERCEL: "1", STOCK_DATA_RUNTIME: "python" };
+
+  assert.equal(stockDataRuntimeMode(env), "snapshot");
+  assert.equal(pythonCollectorEnabled(env), false);
+});
+
+test("Vercel python runtime requires an explicit dangerous override", () => {
+  const env = {
+    VERCEL: "1",
+    STOCK_DATA_RUNTIME: "python",
+    STOCK_ALLOW_VERCEL_PYTHON_RUNTIME: "1",
+  };
+
+  assert.equal(stockDataRuntimeMode(env), "python");
+  assert.equal(pythonCollectorEnabled(env), true);
 });
 
 test("local runtime keeps Python collector available unless snapshot mode is requested", () => {

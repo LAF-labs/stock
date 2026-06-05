@@ -103,7 +103,7 @@ test("quote force refresh serves existing snapshot when a provider refresh lease
     expires_at: new Date(nowMs + 270_000).toISOString(),
   };
 
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const text = String(url);
     if (text.includes("/rest/v1/stock_quote_snapshots")) {
       return new Response(JSON.stringify([snapshot]), {
@@ -138,7 +138,7 @@ test("quote force refresh can use Node KIS quote client in Vercel snapshot mode"
   process.env.STOCK_API_APP_SECRET = "app-secret";
   process.env.STOCK_API_BASE = "https://kis.example.com";
 
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const text = String(url);
     if (text.includes("/oauth2/tokenP")) {
       return Response.json({ access_token: "token-quote-cache", expires_in: 3600 });
@@ -193,7 +193,7 @@ test("quote stale snapshot returns immediately while inline provider refresh con
   };
   let providerCalls = 0;
 
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const text = String(url);
     if (text.includes("/rest/v1/stock_quote_snapshots")) {
       return new Response(JSON.stringify([snapshot]), {
@@ -233,6 +233,72 @@ test("quote stale snapshot returns immediately while inline provider refresh con
 
   await sleep(140);
   assert.equal(providerCalls > 0, true);
+});
+
+test("quote stale snapshot also enqueues a refresh backstop when Supabase admin is configured", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_API_APP_KEY = "queued-app-key";
+  process.env.STOCK_API_APP_SECRET = "queued-app-secret";
+  process.env.STOCK_API_BASE = "https://kis-queued.example.com";
+  process.env.STOCK_QUOTE_CACHE_STALE_SECONDS = "86400";
+
+  const ticker = "KR:008888";
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker,
+    payload: {
+      ok: true,
+      type: "quote",
+      requested_ticker: ticker,
+      market: "KR",
+      symbol: "008888",
+      latest_price: 900,
+    },
+    fetched_at: new Date(nowMs - 10 * 60_000).toISOString(),
+    expires_at: new Date(nowMs - 5 * 60_000).toISOString(),
+  };
+  let enqueueBody: Record<string, unknown> | undefined;
+
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_quote_snapshots")) {
+      return new Response(JSON.stringify([snapshot]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (text.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      enqueueBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({ id: "job-stale-quote", status: "queued" });
+    }
+    if (text.includes("/rest/v1/rpc/acquire_stock_refresh_lease")) {
+      return Response.json({
+        acquired: false,
+        lease_until: new Date(nowMs + 20_000).toISOString(),
+        locked_by: "other-worker",
+      });
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "queued-token", expires_in: 3600 });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockQuote(ticker);
+  await sleep(20);
+
+  assert.equal(result.cache.state, "stale");
+  assert.deepEqual(enqueueBody, {
+    p_kind: "quote",
+    p_market: "KR",
+    p_symbol: "008888",
+    p_view_mode: null,
+    p_priority: 70,
+    p_payload: { reason: "snapshot_miss", requested_ticker: ticker },
+  });
 });
 
 function sleep(ms: number): Promise<void> {

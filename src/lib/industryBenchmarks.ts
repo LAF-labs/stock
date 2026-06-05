@@ -46,6 +46,7 @@ declare global {
 const SUPABASE_TABLE = "stock_industry_benchmarks";
 const DEFAULT_CACHE_SECONDS = 6 * 60 * 60;
 const DEFAULT_PERIOD = "quarter";
+const DEFAULT_BENCHMARK_METRICS = ["forward_per", "per", "ev_revenue", "psr", "pbr"];
 const benchmarkCache = (globalThis.__stockIndustryBenchmarkCache ??= new Map<string, BenchmarkCacheEntry>());
 
 export async function getIndustryBenchmarkForStock(stock: RuleJudgmentStock): Promise<IndustryBenchmark | undefined> {
@@ -59,7 +60,7 @@ export async function getIndustryBenchmarkForStock(stock: RuleJudgmentStock): Pr
   });
 }
 
-export async function getIndustryBenchmarksForStock(stock: RuleJudgmentStock, metrics = ["per", "pbr"]): Promise<IndustryBenchmark[]> {
+export async function getIndustryBenchmarksForStock(stock: RuleJudgmentStock, metrics = DEFAULT_BENCHMARK_METRICS): Promise<IndustryBenchmark[]> {
   const results = await Promise.all(
     metrics.map((metric) =>
       getIndustryBenchmark({

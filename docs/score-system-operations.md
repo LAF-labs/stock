@@ -64,7 +64,13 @@ PYTHON_BIN=.venv/bin/python npm run ops:report
 PYTHON_BIN=.venv/bin/python scripts/stock_operations_report.py --sample-limit 500 --json
 ```
 
-The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, low-confidence high scores, and rounded score duplicate buckets. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
+The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, quote freshness, industry benchmark expiry, market-calendar coverage, low-confidence high scores, and rounded score duplicate buckets. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
+
+Before a manual Vercel preview deployment, run the Supabase readiness check. The deploy script also runs it before uploading:
+
+```bash
+PYTHON_BIN=.venv/bin/python npm run supabase:readiness
+```
 
 For Vercel + Supabase production, set the public app runtime to snapshot-only:
 
@@ -99,10 +105,13 @@ The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MVRL`, `005930`, `000660`, `25
 - low-confidence names do not get aggressive high scores
 - NVDA-like premium growth leaders stay above the configured minimum, default `80`
 
-Run industry valuation benchmark refresh once per day, not on every user request:
+Industry valuation benchmark refresh runs once per day through `.github/workflows/maintain-industry-benchmarks.yml`, after the US regular/after-hours window. Run it manually only when validating a migration or recovering data:
 
 ```bash
+python scripts/sync_market_calendar.py --days 550
+python scripts/sync_external_industry_benchmarks.py
 python scripts/run_industry_maintenance.py --refresh-benchmarks
+python scripts/industry_quality_audit.py --json
 ```
 
 Classification data should not be refreshed daily. Refresh classifications quarterly, or when a listing/delisting/data-source change makes it necessary.
@@ -110,9 +119,11 @@ Classification data should not be refreshed daily. Refresh classifications quart
 ## Efficient Serving Strategy
 
 - Serve score reads from memory first, then Supabase snapshots. In Vercel snapshot mode, never invoke Python from a request handler.
+- Vercel fails closed to snapshot mode. `STOCK_DATA_RUNTIME=python` is ignored on Vercel unless `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1` is explicitly set for a one-off emergency.
 - If a Supabase snapshot is missing in snapshot mode, enqueue `stock_refresh_jobs` and return `snapshot_pending` with `Retry-After`. The default retry hint is 300 seconds, matching the 5-minute GitHub Actions backstop. Tune it with `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS` if a faster external worker is configured.
 - In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.
 - Keep score detail/compare snapshots fresh for 30 minutes during market hours. The publisher default `STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS` is 1800.
+- Keep `market_calendar` seeded ahead for both `US` and `KR`. The publisher extends quote and score expiry to the next open when the market is closed, so stale/off-hours behavior depends on this table.
 - Keep rule-based judgment cache in six-hour buckets.
 - Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days; user requests should read cache first and refresh under a file lock only on miss.
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
+import { safeErrorMessage } from "@/lib/errorSafety";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
             };
           }
 
-          console.warn("batch_stock_collector_unreachable", { ticker, error: error instanceof Error ? error.message : "unknown" });
+          console.warn("batch_stock_collector_unreachable", { ticker, error: safeErrorMessage(error) });
           return {
             payload: {
               ok: false,
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(payload, { status: batchStatusFromResults(results), headers });
   } catch (error) {
-    console.warn("batch_stock_collector_unreachable", { tickers, error: error instanceof Error ? error.message : "unknown" });
+    console.warn("batch_stock_collector_unreachable", { tickers, error: safeErrorMessage(error) });
     return NextResponse.json(
       {
         ok: false,

@@ -1,6 +1,7 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
+import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
@@ -319,7 +320,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
     if (staleCandidate) {
       return decorate(staleCandidate, "stale", staleSource, {
         refreshStarted: false,
-        refreshError: error instanceof Error ? error.message : "refresh_failed",
+        refreshError: publicRefreshErrorCode(error),
       });
     }
     throw error;

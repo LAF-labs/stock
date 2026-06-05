@@ -42,17 +42,17 @@ export function rateLimitHeaders(result: RateLimitResult): HeadersInit {
 }
 
 export function clientRateLimitKey(request: NextRequest, salt = rateLimitSecret()): string {
-  const ip = firstHeaderValue(request.headers.get("cf-connecting-ip"))
-    || firstHeaderValue(request.headers.get("x-real-ip"))
-    || firstHeaderValue(request.headers.get("x-forwarded-for"))
-    || "unknown-ip";
-  const ua = request.headers.get("user-agent")?.slice(0, 160) || "unknown-ua";
+  const ip = trustedClientIp(request) || "unknown-ip";
   const cookie = request.cookies.get("stock_refresh_user")?.value?.slice(0, 160) || "no-cookie";
-  return hashIdentity(`${ip}:${ua}:${cookie}`, salt);
+  return hashIdentity(`${ip}:${cookie}`, salt);
 }
 
 export function fixedRateLimitKey(value: string, salt = rateLimitSecret()): string {
   return hashIdentity(value, salt);
+}
+
+export function clientNetworkRateLimitKey(request: NextRequest, salt = rateLimitSecret()): string {
+  return hashIdentity(`ip:${trustedClientIp(request) || "unknown-ip"}`, salt);
 }
 
 export async function acquireRateLimit(identityKey: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
@@ -136,10 +136,26 @@ function firstHeaderValue(value: string | null): string | undefined {
   return value?.split(",")[0]?.trim() || undefined;
 }
 
+export function trustedClientIp(request: Pick<NextRequest, "headers">): string | undefined {
+  return firstHeaderValue(request.headers.get("cf-connecting-ip"))
+    || firstHeaderValue(request.headers.get("x-real-ip"))
+    || firstHeaderValue(request.headers.get("x-forwarded-for"));
+}
+
 function rateLimitSecret(): string {
-  return envValue("STOCK_RATE_LIMIT_SECRET")
+  const secret = envValue("STOCK_RATE_LIMIT_SECRET");
+  if (strictSecretRuntime()) {
+    if (!secret || secret.length < 32) {
+      throw new Error("STOCK_RATE_LIMIT_SECRET must be at least 32 characters in production.");
+    }
+    return secret;
+  }
+  return secret
     || envValue("STOCK_REFRESH_COOKIE_SECRET")
     || envValue("NEXTAUTH_SECRET")
-    || envValue("STOCK_API_APP_SECRET")
     || FALLBACK_RATE_LIMIT_SECRET;
+}
+
+function strictSecretRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || Boolean(envValue("VERCEL_ENV"));
 }
