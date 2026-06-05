@@ -642,6 +642,9 @@ export default function StockDashboard() {
 
   const data = hasTicker && state.status === "success" ? state.data : undefined;
   const visibleDetailSections = DETAIL_SECTIONS;
+  const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
+  const compareHref = `/compare?tickers=${encodeURIComponent(tickerParam)}`;
+  const showMiniDecisionBar = Boolean(data && activeSection !== "detail-summary");
 
   useEffect(() => {
     if (!data || !visibleDetailSections.length) return;
@@ -766,12 +769,12 @@ export default function StockDashboard() {
 
       {data && (
         <>
-          <DetailIndex sections={visibleDetailSections} activeSection={activeSection} onSelect={scrollToDetailSection} compareHref={`/compare?tickers=${encodeURIComponent(tickerParam)}`} />
+          <DetailIndex sections={visibleDetailSections} activeSection={activeSection} onSelect={scrollToDetailSection} compareHref={compareHref} />
           <div className="stock-feed">
             <DetailSection id="detail-summary">
               <StockHeader
                 data={data}
-                quote={quoteState.status === "success" ? quoteState.data : undefined}
+                quote={quoteData}
                 quoteState={quoteState}
                 quoteRefreshState={quoteRefreshState}
                 onRefreshQuote={refreshQuote}
@@ -803,6 +806,7 @@ export default function StockDashboard() {
               <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} desktopOpen />
             </DetailSection>
           </div>
+          <DetailMiniDecisionBar data={data} quote={quoteData} visible={showMiniDecisionBar} compareHref={compareHref} />
         </>
       )}
     </main>
@@ -921,6 +925,49 @@ function StatusCard({ title, body, tone = "default" }: { title: string; body: st
       <strong>{title}</strong>
       <p>{body}</p>
     </section>
+  );
+}
+
+function DetailMiniDecisionBar({
+  data,
+  quote,
+  visible,
+  compareHref,
+}: {
+  data: StockScoreResponse;
+  quote: StockQuoteResponse | undefined;
+  visible: boolean;
+  compareHref: string;
+}) {
+  const displayData = scoreDataWithQuote(data, quote);
+  const symbol = quote?.symbol || data.symbol || data.requested_ticker || "KO";
+  const current = stringFromUnknown(quote?.latest_price_label) || formatValue(data.latest_price);
+  const price = stringFromUnknown(quote?.latest_price_label) || formatUsdPrice(displayData, current);
+  const daily = dailyChangeText(data, quote);
+  const qualityScore = clampScore(data.quality_score ?? data.score);
+  const opportunityScore = typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined;
+
+  return (
+    <aside className={`detail-mini-decision-bar ${visible ? "visible" : ""}`} aria-hidden={!visible}>
+      <div className="detail-mini-main">
+        <span>{symbol}</span>
+        <strong>{price}</strong>
+        <small className={daily.startsWith("-") ? "price-down" : "price-up"}>{daily}</small>
+      </div>
+      <dl className="detail-mini-score-pair">
+        <div>
+          <dt>품질</dt>
+          <dd>{qualityScore.toFixed(1)}</dd>
+        </div>
+        <div>
+          <dt>기회</dt>
+          <dd>{opportunityScore === undefined ? "-" : opportunityScore.toFixed(1)}</dd>
+        </div>
+      </dl>
+      <a className="detail-mini-compare" href={compareHref} tabIndex={visible ? 0 : -1}>
+        비교
+      </a>
+    </aside>
   );
 }
 
