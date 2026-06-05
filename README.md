@@ -108,6 +108,7 @@ python scripts/sync_symbol_master.py
 python scripts/backfill_symbol_profiles.py --source master --batch-size 1000
 python scripts/backfill_symbol_profiles.py --source kind --market KR --batch-size 1000
 python scripts/backfill_symbol_profiles.py --source nasdaq --market US --batch-size 1000
+python scripts/seed_industry_taxonomy_map.py
 ```
 
 `master`는 전체 종목을 pending profile로 빠르게 채웁니다. 국내 종목은 KIND 상장법인목록 bulk download를 1차 업종 소스로 사용합니다. 이 파일은 한 번의 요청으로 회사명, 시장구분, 종목코드, 업종, 주요제품, 상장일을 내려주므로 KOSPI/KOSDAQ/KONEX를 종목별 외부 호출 없이 채울 수 있습니다. 미국 종목은 Nasdaq screener bulk source를 1차 업종 소스로 사용하고, `yfinance`는 bulk source 구멍을 메우는 수동 fallback으로만 사용합니다. `SUPABASE_SERVICE_ROLE_KEY`가 있으면 REST upsert를 쓰고, service role key가 없으면 `.env.supabase.local`의 `SUPABASE_ACCESS_TOKEN`으로 `supabase db query`를 실행합니다.
@@ -117,6 +118,7 @@ python scripts/backfill_symbol_profiles.py --source nasdaq --market US --batch-s
 ```bash
 python scripts/run_industry_maintenance.py --seed-master --refresh-classifications
 python scripts/run_industry_maintenance.py --run-yfinance-fallback --lane KR:KOSPI:50 --lane KR:KOSDAQ:50
+python scripts/seed_industry_taxonomy_map.py
 ```
 
 매일 갱신할 대상은 업종 자체가 아니라 업종별 valuation benchmark입니다. 배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 하루 1회 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.

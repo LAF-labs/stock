@@ -1,4 +1,9 @@
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
+import {
+  getIndustryTaxonomyMappingForProfile,
+  sourceKeyForProfile,
+  type IndustryTaxonomyMapping,
+} from "@/lib/industryTaxonomy";
 
 export type SymbolProfileTarget = {
   market: "US" | "KR";
@@ -73,7 +78,8 @@ export async function enrichStockPayloadWithSymbolProfile<T extends Record<strin
   const target = targetFromStockPayload(payload);
   if (!target) return payload as T & Record<string, unknown>;
   const profile = await getSymbolIndustryProfile(target);
-  return mergeSymbolProfileIntoPayload(payload, profile);
+  const mapping = await getIndustryTaxonomyMappingForProfile(profile);
+  return mergeSymbolProfileIntoPayload(payload, profile, mapping);
 }
 
 export async function getSymbolIndustryProfile(target: SymbolProfileTarget): Promise<SymbolIndustryProfile | undefined> {
@@ -96,18 +102,23 @@ export async function getSymbolIndustryProfile(target: SymbolProfileTarget): Pro
 
 export function mergeSymbolProfileIntoPayload<T extends Record<string, unknown>>(
   payload: T,
-  profile: SymbolIndustryProfile | undefined
+  profile: SymbolIndustryProfile | undefined,
+  mapping?: IndustryTaxonomyMapping
 ): T & Record<string, unknown> {
   if (!profile) return payload as T & Record<string, unknown>;
 
   const currentSector = cleanString(payload.sector);
   const currentIndustry = cleanString(payload.industry);
-  const sector = meaningfulText(currentSector) || meaningfulText(profile.primarySector);
-  const industry = meaningfulText(currentIndustry) || meaningfulText(profile.primaryIndustry);
+  const rawSector = meaningfulText(currentSector) || meaningfulText(profile.primarySector);
+  const rawIndustry = meaningfulText(currentIndustry) || meaningfulText(profile.primaryIndustry);
+  const sector = meaningfulText(mapping?.canonicalSectorName) || rawSector;
+  const industry = meaningfulText(mapping?.canonicalIndustryName) || rawIndustry;
   const result: Record<string, unknown> = { ...payload };
 
-  if (sector && !meaningfulText(currentSector)) result.sector = sector;
-  if (industry && !meaningfulText(currentIndustry)) result.industry = industry;
+  if (sector) result.sector = sector;
+  if (industry) result.industry = industry;
+  if (rawSector) result.raw_sector = rawSector;
+  if (rawIndustry) result.raw_industry = rawIndustry;
 
   const rows = Array.isArray(payload.stock_profile)
     ? payload.stock_profile.map((item) => ({ ...recordFromUnknown(item) }))
@@ -126,6 +137,16 @@ export function mergeSymbolProfileIntoPayload<T extends Record<string, unknown>>
     primary_industry: profile.primaryIndustry,
     primary_sector_key: profile.primarySectorKey,
     primary_industry_key: profile.primaryIndustryKey,
+    raw_sector: rawSector,
+    raw_industry: rawIndustry,
+    display_sector: sector,
+    display_industry: industry,
+    canonical_sector_key: mapping?.canonicalSectorKey,
+    canonical_sector_name: mapping?.canonicalSectorName,
+    canonical_industry_key: mapping?.canonicalIndustryKey,
+    canonical_industry_name: mapping?.canonicalIndustryName,
+    taxonomy_source_key: sourceKeyForProfile(profile),
+    taxonomy_confidence: mapping?.confidence,
     classification_status: profile.classificationStatus,
     source: profile.source,
     source_priority: profile.sourcePriority,

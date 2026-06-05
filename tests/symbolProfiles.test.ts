@@ -7,6 +7,7 @@ import {
   targetFromStockPayload,
   type SymbolIndustryProfile,
 } from "../src/lib/symbolProfiles";
+import { clearIndustryTaxonomyCacheForTests } from "../src/lib/industryTaxonomy";
 
 const originalFetch = globalThis.fetch;
 const originalEnv = {
@@ -20,6 +21,7 @@ const originalEnv = {
 function restore() {
   globalThis.fetch = originalFetch;
   clearSymbolProfileCacheForTests();
+  clearIndustryTaxonomyCacheForTests();
   for (const [key, value] of Object.entries(originalEnv)) {
     if (value === undefined) {
       delete process.env[key];
@@ -106,17 +108,31 @@ test("symbol industry profile enriches top-level and display profile fields", ()
       name: "삼성전자",
       stock_profile: [{ label: "회사명", value: "삼성전자" }],
     },
-    profile
+    profile,
+    {
+      taxonomy: "profile_primary",
+      sourceKey: "KR:technology:technology.semiconductors",
+      canonicalSectorKey: "정보기술",
+      canonicalSectorName: "정보기술",
+      canonicalIndustryKey: "정보기술_반도체",
+      canonicalIndustryName: "반도체",
+      confidence: 0.9,
+    }
   );
 
   const rows = enriched.stock_profile as Array<{ label?: string; value?: string }>;
   const industryProfile = enriched.industry_profile as Record<string, unknown>;
 
-  assert.equal(enriched.sector, "Technology");
-  assert.equal(enriched.industry, "Semiconductors");
-  assert.equal(rows.some((row) => row.label === "섹터" && row.value === "Technology"), true);
-  assert.equal(rows.some((row) => row.label === "산업" && row.value === "Semiconductors"), true);
+  assert.equal(enriched.sector, "정보기술");
+  assert.equal(enriched.industry, "반도체");
+  assert.equal(enriched.raw_sector, "Technology");
+  assert.equal(enriched.raw_industry, "Semiconductors");
+  assert.equal(rows.some((row) => row.label === "섹터" && row.value === "정보기술"), true);
+  assert.equal(rows.some((row) => row.label === "산업" && row.value === "반도체"), true);
   assert.equal(industryProfile.primary_sector_key, "technology");
   assert.equal(industryProfile.primary_industry_key, "technology.semiconductors");
+  assert.equal(industryProfile.display_sector, "정보기술");
+  assert.equal(industryProfile.display_industry, "반도체");
+  assert.equal(industryProfile.canonical_industry_name, "반도체");
   assert.equal(industryProfile.classification_status, "verified");
 });

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import hashlib
 from html.parser import HTMLParser
+import io
 import json
 import os
 import re
@@ -136,17 +137,45 @@ def load_symbols(path: Path = SYMBOLS_PATH) -> list[dict[str, Any]]:
 
 def asset_class(item: dict[str, Any]) -> str:
     instrument = clean_text(item.get("instrumentType")).upper()
+    market = clean_text(item.get("market")).upper()
+    symbol = clean_text(item.get("ticker")).upper()
     name = clean_text(f"{item.get('koreanName') or ''} {item.get('englishName') or ''}")
     name_upper = name.upper()
     compact_name = re.sub(r"\s+", "", name_upper)
+    if market == "KR" and (symbol.startswith("F") or symbol.startswith("J") or symbol.startswith("Q")):
+        return "other"
     if "ETN" in name_upper or "상장지수증권" in name:
         return "etn"
-    if "ELW" in name_upper or "워런트" in name:
+    if "ELW" in name_upper or "WARRANT" in name_upper or "워런트" in name or "권리" in name:
+        return "other"
+    if "RIGHT" in name_upper and "COMMON" not in name_upper:
+        return "other"
+    if "UNIT" in name_upper or "유닛" in name or re.search(r"/U(N)?$", symbol):
         return "other"
     if "리츠" in name or "REIT" in name_upper:
         return "reit"
-    if re.search(r"(?:[0-9]+)?우(?:B|C)?(?:\(전환\))?$", compact_name):
+    if (
+        re.search(r"(?:[0-9]+)?우(?:B|C)?(?:\(전환\))?$", compact_name)
+        or "우선주" in name
+        or "우선" in name
+        or ("PREFERRED" in name_upper and "COMMON" not in name_upper)
+        or ("PREF" in name_upper and "COMMON" not in name_upper)
+        or ("PFD" in name_upper and "COMMON" not in name_upper)
+        or ("PRF" in name_upper and "COMMON" not in name_upper)
+        or ("/" in symbol and re.search(r"(?:DEP SHS|DEP REP|DEPOSITARY|SER [A-Z])", name_upper))
+        or ("/" in symbol and re.search(r"(?:%|PREFERRED|PREF|우선주)", name_upper))
+    ):
         return "preferred"
+    if "SPAC" in name_upper or "ACQUISITION" in name_upper or "MERGER" in name_upper or "스팩" in name or "애퀴지션" in name or "머저" in name:
+        return "spac"
+    if (
+        re.search(r"\b(?:CLOSED-END FUND|ETF|FUND)\b", name_upper)
+        or any(term in name for term in ("공모주", "부동산TOP", "인덱스", "파생형", "펀드"))
+        or any(term in name for term in ("X클래스", "크레딧", "아이엠에셋"))
+        or any(term in name_upper for term in ("SENIOR NOTE", "NOTE DUE", "BITCOIN TRUST", "STRATS TRUST", "ABS"))
+        or any(term in name for term in ("선순위채", "비트코인트러스트", "트러스트 ABS"))
+    ):
+        return "etf"
     etf_prefixes = (
         "1Q",
         "ACE",
@@ -165,7 +194,12 @@ def asset_class(item: dict[str, Any]) -> str:
         "TIME",
         "TIGER",
         "TREX",
+        "WON",
+        "BNK ",
+        "IBK ",
+        "DAISHIN",
         "마이티",
+        "파워",
     )
     etf_terms = (
         "ETF",
@@ -283,7 +317,7 @@ def yahoo_symbol_for(item: dict[str, Any]) -> str | None:
     if not symbol:
         return None
     if market == "US":
-        return symbol
+        return symbol.replace("/", "-")
     if market == "KR" and exchange == "KOSPI" and re.fullmatch(r"\d{6}", symbol):
         return f"{symbol}.KS"
     if market == "KR" and exchange == "KOSDAQ" and re.fullmatch(r"\d{6}", symbol):
@@ -329,7 +363,8 @@ def profile_and_tags_from_yfinance(item: dict[str, Any], pause_seconds: float, p
         time.sleep(pause_seconds)
 
     with provider_timeout(provider_timeout_seconds):
-        info = yfinance_info(yahoo_symbol)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            info = yfinance_info(yahoo_symbol)
     sector = clean_text(info.get("sector"))
     industry = clean_text(info.get("industry"))
     if not sector and not industry:
@@ -931,7 +966,7 @@ def build_yfinance_rows(items: list[dict[str, Any]], pause_seconds: float, provi
             profile, tag_rows = profile_and_tags_from_yfinance(item, pause_seconds, provider_timeout_seconds)
         except Exception as exc:
             misses += 1
-            print(f"skip {item.get('market')}:{item.get('ticker')}: {exc}")
+            print(f"skip {item.get('market')}:{item.get('ticker')}: {compact_exception(exc)}", file=sys.stderr)
             continue
         if not profile:
             misses += 1
@@ -939,6 +974,13 @@ def build_yfinance_rows(items: list[dict[str, Any]], pause_seconds: float, provi
         profiles.append(profile)
         tags.extend(tag_rows)
     return profiles, tags, misses
+
+
+def compact_exception(exc: Exception) -> str:
+    text = clean_text(str(exc)).split("<", 1)[0].strip()
+    if len(text) > 180:
+        text = f"{text[:177]}..."
+    return f"{type(exc).__name__}: {text or 'failed'}"
 
 
 def main() -> int:

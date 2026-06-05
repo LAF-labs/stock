@@ -31,6 +31,7 @@ Quarterly or event-driven:
 ```bash
 python scripts/sync_symbol_master.py
 python scripts/run_industry_maintenance.py --seed-master --refresh-classifications
+python scripts/seed_industry_taxonomy_map.py
 ```
 
 Daily:
@@ -43,7 +44,18 @@ Manual fallback only:
 
 ```bash
 python scripts/run_industry_maintenance.py --run-yfinance-fallback --lane KR:KOSPI:50 --lane KR:KOSDAQ:50
+python scripts/seed_industry_taxonomy_map.py
 ```
+
+## Korean Display And Canonical Groups
+
+Raw provider classifications stay in `stock_symbol_profiles.primary_sector` and `primary_industry`. Korean display names and merged comparison groups live in `industry_taxonomy_map` with:
+
+- `taxonomy = profile_primary`
+- `source_key = MARKET:primary_sector_key:primary_industry_key`
+- `canonical_sector_name` and `canonical_industry_name` as the display/comparison labels
+
+The application uses this map to show Korean sector/industry labels and to build rule-based comparison payloads. The benchmark refresh RPC also uses the same map, so PER/PBR averages are grouped by canonical industry instead of every provider-specific raw label.
 
 ## Future Source Candidates
 
