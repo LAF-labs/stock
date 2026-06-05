@@ -40,7 +40,7 @@ jobs:
 
       - name: Publish snapshots to Supabase
         run: |
-          TICKERS="${STOCK_SNAPSHOT_TICKERS:-NVDA,TSLA,KO,MRVL,005930,000660}"
+          TICKERS="${STOCK_SNAPSHOT_TICKERS:-NVDA,TSLA,KO,MRVL,POET,LITE,IONQ,RMBS,005930,000660,253590,108490}"
           if [ -n "${{ inputs.tickers }}" ]; then
             TICKERS="${{ inputs.tickers }}"
           fi
