@@ -3,7 +3,7 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AppTopbar, useThemePreference } from "@/components/AppChrome";
+import { AppDisclaimerFooter, AppTopbar, useThemePreference } from "@/components/AppChrome";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { clampScore, formatDateTimeFromEpoch, formatPercent, formatValue, recordEntries } from "@/lib/format";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -687,6 +687,10 @@ export default function StockDashboard() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function refreshQuote() {
     if (quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending") return;
 
@@ -807,8 +811,10 @@ export default function StockDashboard() {
             </DetailSection>
           </div>
           <DetailMiniDecisionBar data={data} quote={quoteData} visible={showMiniDecisionBar} compareHref={compareHref} />
+          <DetailMobileActionBar visible={showMiniDecisionBar} compareHref={compareHref} onBackToTop={scrollToTop} />
         </>
       )}
+      <AppDisclaimerFooter />
     </main>
   );
 }
@@ -971,6 +977,27 @@ function DetailMiniDecisionBar({
   );
 }
 
+function DetailMobileActionBar({
+  visible,
+  compareHref,
+  onBackToTop,
+}: {
+  visible: boolean;
+  compareHref: string;
+  onBackToTop: () => void;
+}) {
+  return (
+    <div className={`detail-mobile-action-bar ${visible ? "visible" : ""}`} aria-hidden={!visible}>
+      <a href={compareHref} tabIndex={visible ? 0 : -1}>
+        비교 추가
+      </a>
+      <button type="button" onClick={onBackToTop} tabIndex={visible ? 0 : -1}>
+        맨 위로
+      </button>
+    </div>
+  );
+}
+
 function StockHeader({
   data,
   quote,
@@ -1111,6 +1138,9 @@ function HeroScorePanel({
         <span>{label}</span>
         <strong>{score === undefined ? "-" : `${score.toFixed(1)}점`}</strong>
         <p>{caption}</p>
+        <span className="score-contribution-bar" aria-hidden="true">
+          <i />
+        </span>
       </div>
     </article>
   );

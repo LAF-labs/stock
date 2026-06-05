@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AppTopbar, useThemePreference } from "@/components/AppChrome";
+import { AppDisclaimerFooter, AppTopbar, useThemePreference } from "@/components/AppChrome";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -460,6 +460,7 @@ export default function StockCompare() {
           </div>
         </>
       ) : null}
+      <AppDisclaimerFooter />
     </main>
   );
 }

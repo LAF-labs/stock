@@ -72,6 +72,37 @@ export function AppTopbar({
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
 }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
+  async function copyCurrentUrl() {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = url;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setCopyState("copied");
+    } catch {
+      setCopyState("idle");
+    }
+  }
+
   return (
     <div className="app-topbar">
       <a className="app-brand" href="/" aria-label="SIA Stock Score 홈">
@@ -86,9 +117,16 @@ export function AppTopbar({
           비교
         </a>
       </nav>
+      <button type="button" className={`share-link-button ${copyState === "copied" ? "copied" : ""}`} onClick={copyCurrentUrl}>
+        {copyState === "copied" ? "복사됨" : "링크 복사"}
+      </button>
       <ThemeToggle value={theme} onChange={onThemeChange} />
     </div>
   );
+}
+
+export function AppDisclaimerFooter() {
+  return <footer className="app-disclaimer-footer">점수는 투자 추천이 아니라 비교를 돕는 분석 기준입니다.</footer>;
 }
 
 function ThemeToggle({ value, onChange }: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
