@@ -104,12 +104,12 @@ REDIS_URL=redis://127.0.0.1:6379
 
 ```bash
 python scripts/sync_symbol_master.py
-python scripts/backfill_symbol_profiles.py --source master
-python scripts/backfill_symbol_profiles.py --source yfinance --market US --limit 1000
-python scripts/backfill_symbol_profiles.py --source yfinance --market KR --limit 1000
+python scripts/backfill_symbol_profiles.py --source master --batch-size 1000
+python scripts/backfill_symbol_profiles.py --source yfinance --market US --exchange NAS --limit 1000 --batch-size 1000
+python scripts/backfill_symbol_profiles.py --source yfinance --market KR --exchange KOSPI --limit 1000 --batch-size 1000
 ```
 
-`master`는 전체 종목을 pending profile로 빠르게 채우고, `yfinance`는 sector/industry가 확인된 종목만 verified/partial profile로 승격합니다. 국내 종목은 KOSPI `.KS`, KOSDAQ `.KQ` 심볼을 사용하며 KONEX처럼 yfinance 매핑이 불확실한 시장은 master seed 상태로 둡니다. 전체 백필은 limit/offset을 나눠 cron 또는 배치 작업에서 점진 실행하세요.
+`master`는 전체 종목을 pending profile로 빠르게 채우고, `yfinance`는 sector/industry가 확인된 종목만 verified/partial profile로 승격합니다. `SUPABASE_SERVICE_ROLE_KEY`가 있으면 REST upsert를 쓰고, service role key가 없으면 `.env.supabase.local`의 `SUPABASE_ACCESS_TOKEN`으로 `supabase db query`를 실행합니다. 국내 종목은 KOSPI `.KS`, KOSDAQ `.KQ` 심볼을 사용하며 KONEX처럼 yfinance 매핑이 불확실한 시장은 master seed 상태로 둡니다. 전체 백필은 limit/offset을 나눠 cron 또는 배치 작업에서 점진 실행하세요.
 
 배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 주기적으로 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
 

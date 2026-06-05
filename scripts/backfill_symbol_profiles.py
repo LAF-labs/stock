@@ -4,7 +4,10 @@ import argparse
 import json
 import os
 import re
+import subprocess
+import sys
 import time
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -14,6 +17,7 @@ SYMBOLS_PATH = ROOT / "src" / "data" / "symbols.generated.json"
 PROFILE_TABLE = "stock_symbol_profiles"
 TAG_TABLE = "stock_symbol_industry_tags"
 SUPABASE_TIMEOUT_SECONDS = 10
+ENV_FILES = (".env.local", ".env.supabase.local", ".env")
 
 
 def env_value(name: str) -> str | None:
@@ -21,7 +25,7 @@ def env_value(name: str) -> str | None:
     if value:
         return value.strip()
 
-    for env_name in (".env.local", ".env"):
+    for env_name in ENV_FILES:
         env_path = ROOT / env_name
         if not env_path.exists():
             continue
@@ -35,6 +39,23 @@ def env_value(name: str) -> str | None:
         except Exception:
             return None
     return None
+
+
+def env_with_local_files() -> dict[str, str]:
+    env = dict(os.environ)
+    for env_name in ENV_FILES:
+        env_path = ROOT / env_name
+        if not env_path.exists():
+            continue
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if not line or line.lstrip().startswith("#") or "=" not in line:
+                    continue
+                key, raw_value = line.split("=", 1)
+                env.setdefault(key.strip(), raw_value.strip().strip('"').strip("'"))
+        except Exception:
+            continue
+    return env
 
 
 def supabase_write_config() -> tuple[str, str]:
@@ -215,12 +236,17 @@ def chunks(items: list[dict[str, Any]], size: int) -> Iterable[list[dict[str, An
         yield items[index : index + size]
 
 
-def upsert_rows(table: str, rows: list[dict[str, Any]], conflict: str, batch_size: int, dry_run: bool) -> int:
+def upsert_rows(table: str, rows: list[dict[str, Any]], conflict: str, batch_size: int, dry_run: bool, transport: str) -> int:
     if not rows:
         return 0
     if dry_run:
         print(json.dumps({"table": table, "count": len(rows), "sample": rows[:2]}, ensure_ascii=False, indent=2))
         return len(rows)
+
+    if transport == "auto":
+        transport = "rest" if supabase_write_config_optional() else "supabase-cli"
+    if transport == "supabase-cli":
+        return upsert_rows_with_supabase_cli(table, rows, batch_size)
 
     import requests
 
@@ -239,13 +265,207 @@ def upsert_rows(table: str, rows: list[dict[str, Any]], conflict: str, batch_siz
     return total
 
 
-def filter_symbols(items: list[dict[str, Any]], market: str, symbols: str | None, limit: int | None, offset: int) -> list[dict[str, Any]]:
+def supabase_write_config_optional() -> tuple[str, str] | None:
+    try:
+        return supabase_write_config()
+    except RuntimeError:
+        return None
+
+
+def upsert_rows_with_supabase_cli(table: str, rows: list[dict[str, Any]], batch_size: int) -> int:
+    total = 0
+    total_batches = (len(rows) + batch_size - 1) // batch_size
+    for batch_index, batch in enumerate(chunks(rows, batch_size), start=1):
+        print(f"upserting {table} batch {batch_index}/{total_batches} ({len(batch)} rows)", file=sys.stderr)
+        sql = upsert_sql(table, batch)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".sql", delete=False) as handle:
+            handle.write(sql)
+            sql_path = handle.name
+        try:
+            command = ["supabase", "db", "query", "--linked", "--file", sql_path]
+            result = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=env_with_local_files(),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError((result.stderr or result.stdout).strip())
+        finally:
+            try:
+                Path(sql_path).unlink()
+            except FileNotFoundError:
+                pass
+        total += len(batch)
+    return total
+
+
+def upsert_sql(table: str, rows: list[dict[str, Any]]) -> str:
+    payload = json_sql_literal(rows)
+    if table == PROFILE_TABLE:
+        return f"""
+with input as (
+  select *
+  from jsonb_to_recordset({payload}::jsonb) as row(
+    market text,
+    symbol text,
+    name text,
+    exchange text,
+    asset_class text,
+    primary_sector text,
+    primary_industry text,
+    primary_sector_key text,
+    primary_industry_key text,
+    classification_status text,
+    source_priority integer,
+    source text,
+    metadata jsonb
+  )
+),
+upserted as (
+  insert into public.stock_symbol_profiles (
+    market,
+    symbol,
+    name,
+    exchange,
+    asset_class,
+    primary_sector,
+    primary_industry,
+    primary_sector_key,
+    primary_industry_key,
+    classification_status,
+    source_priority,
+    source,
+    metadata
+  )
+  select
+    market,
+    symbol,
+    coalesce(name, ''),
+    coalesce(exchange, ''),
+    coalesce(asset_class, 'stock'),
+    coalesce(primary_sector, ''),
+    coalesce(primary_industry, ''),
+    coalesce(primary_sector_key, ''),
+    coalesce(primary_industry_key, ''),
+    coalesce(classification_status, 'pending'),
+    coalesce(source_priority, 100),
+    coalesce(source, 'unknown'),
+    coalesce(metadata, '{{}}'::jsonb)
+  from input
+  on conflict (market, symbol) do update
+    set name = coalesce(nullif(excluded.name, ''), public.stock_symbol_profiles.name),
+        exchange = coalesce(nullif(excluded.exchange, ''), public.stock_symbol_profiles.exchange),
+        asset_class = excluded.asset_class,
+        primary_sector = case
+          when excluded.source_priority <= public.stock_symbol_profiles.source_priority then excluded.primary_sector
+          else public.stock_symbol_profiles.primary_sector
+        end,
+        primary_industry = case
+          when excluded.source_priority <= public.stock_symbol_profiles.source_priority then excluded.primary_industry
+          else public.stock_symbol_profiles.primary_industry
+        end,
+        primary_sector_key = case
+          when excluded.source_priority <= public.stock_symbol_profiles.source_priority then excluded.primary_sector_key
+          else public.stock_symbol_profiles.primary_sector_key
+        end,
+        primary_industry_key = case
+          when excluded.source_priority <= public.stock_symbol_profiles.source_priority then excluded.primary_industry_key
+          else public.stock_symbol_profiles.primary_industry_key
+        end,
+        classification_status = case
+          when excluded.source_priority <= public.stock_symbol_profiles.source_priority then excluded.classification_status
+          else public.stock_symbol_profiles.classification_status
+        end,
+        source_priority = least(excluded.source_priority, public.stock_symbol_profiles.source_priority),
+        source = case
+          when excluded.source_priority <= public.stock_symbol_profiles.source_priority then excluded.source
+          else public.stock_symbol_profiles.source
+        end,
+        metadata = public.stock_symbol_profiles.metadata || excluded.metadata,
+        updated_at = now()
+  returning 1
+)
+select count(*) as upserted from upserted;
+"""
+    if table == TAG_TABLE:
+        return f"""
+with input as (
+  select *
+  from jsonb_to_recordset({payload}::jsonb) as row(
+    market text,
+    symbol text,
+    taxonomy text,
+    code text,
+    name text,
+    level integer,
+    source text,
+    confidence numeric,
+    is_primary boolean,
+    raw jsonb
+  )
+),
+upserted as (
+  insert into public.stock_symbol_industry_tags (
+    market,
+    symbol,
+    taxonomy,
+    code,
+    name,
+    level,
+    source,
+    confidence,
+    is_primary,
+    raw
+  )
+  select
+    market,
+    symbol,
+    coalesce(taxonomy, 'provider'),
+    coalesce(code, ''),
+    coalesce(name, ''),
+    coalesce(level, 0),
+    coalesce(source, 'unknown'),
+    coalesce(confidence, 0.5),
+    coalesce(is_primary, false),
+    coalesce(raw, '{{}}'::jsonb)
+  from input
+  on conflict (market, symbol, taxonomy, level, code, name, source) do update
+    set confidence = greatest(excluded.confidence, public.stock_symbol_industry_tags.confidence),
+        is_primary = excluded.is_primary or public.stock_symbol_industry_tags.is_primary,
+        raw = public.stock_symbol_industry_tags.raw || excluded.raw,
+        updated_at = now()
+  returning 1
+)
+select count(*) as upserted from upserted;
+"""
+    raise ValueError(f"Unsupported table for CLI upsert: {table}")
+
+
+def json_sql_literal(rows: list[dict[str, Any]]) -> str:
+    raw = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+    for tag in ("stockjson", "stockjson1", "stockjson2"):
+        delimiter = f"${tag}$"
+        if delimiter not in raw:
+            return f"{delimiter}{raw}{delimiter}"
+    return "'" + raw.replace("'", "''") + "'"
+
+
+def filter_symbols(items: list[dict[str, Any]], market: str, exchange: str | None, symbols: str | None, limit: int | None, offset: int) -> list[dict[str, Any]]:
     wanted = {token.strip().upper() for token in (symbols or "").split(",") if token.strip()}
+    wanted_exchange = clean_text(exchange).upper()
     filtered: list[dict[str, Any]] = []
     for item in items:
         item_market = clean_text(item.get("market")).upper()
+        item_exchange = clean_text(item.get("exchange")).upper()
         item_symbol = clean_text(item.get("ticker")).upper()
         if market != "ALL" and item_market != market:
+            continue
+        if wanted_exchange and item_exchange != wanted_exchange:
             continue
         if wanted and item_symbol not in wanted and f"{item_market}:{item_symbol}" not in wanted:
             continue
@@ -264,7 +484,9 @@ def build_yfinance_rows(items: list[dict[str, Any]], pause_seconds: float) -> tu
     profiles: list[dict[str, Any]] = []
     tags: list[dict[str, Any]] = []
     misses = 0
-    for item in items:
+    for index, item in enumerate(items, start=1):
+        if index == 1 or index % 25 == 0 or index == len(items):
+            print(f"fetching yfinance {index}/{len(items)}", file=sys.stderr)
         try:
             profile, tag_rows = profile_and_tags_from_yfinance(item, pause_seconds)
         except Exception as exc:
@@ -283,23 +505,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill stock symbol industry profiles into Supabase.")
     parser.add_argument("--source", choices=["master", "yfinance"], default="master")
     parser.add_argument("--market", choices=["ALL", "US", "KR"], default="ALL")
+    parser.add_argument("--exchange", help="Filter by exchange code, e.g. KOSPI, KOSDAQ, NAS, NYS, AMS.")
     parser.add_argument("--symbols", help="Comma-separated symbols or MARKET:SYMBOL values.")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=500)
     parser.add_argument("--pause-seconds", type=float, default=0.25)
+    parser.add_argument("--transport", choices=["auto", "rest", "supabase-cli"], default="auto")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    items = filter_symbols(load_symbols(), args.market, args.symbols, args.limit, args.offset)
+    items = filter_symbols(load_symbols(), args.market, args.exchange, args.symbols, args.limit, args.offset)
     if args.source == "master":
         profiles, tags = build_master_rows(items)
         misses = 0
     else:
         profiles, tags, misses = build_yfinance_rows(items, args.pause_seconds)
 
-    profile_count = upsert_rows(PROFILE_TABLE, profiles, "market,symbol", args.batch_size, args.dry_run)
-    tag_count = upsert_rows(TAG_TABLE, tags, "market,symbol,taxonomy,level,code,name,source", args.batch_size, args.dry_run)
+    profile_count = upsert_rows(PROFILE_TABLE, profiles, "market,symbol", args.batch_size, args.dry_run, args.transport)
+    tag_count = upsert_rows(TAG_TABLE, tags, "market,symbol,taxonomy,level,code,name,source", args.batch_size, args.dry_run, args.transport)
     print(
         json.dumps(
             {
