@@ -4,6 +4,23 @@ import scripts.supabase_runtime_readiness as readiness
 
 
 class SupabaseRuntimeReadinessTests(unittest.TestCase):
+    def test_readiness_contract_requires_kis_token_cache_checks(self):
+        payload = {
+            "required_tables": list(readiness.RUNTIME_TABLE_CHECKS),
+            "required_rpcs": list(readiness.RUNTIME_RPC_CHECKS),
+        }
+        self.assertEqual(readiness.readiness_contract_payload(payload), {"ok": True, "missing_tables": [], "missing_rpcs": []})
+
+        stale_payload = {
+            "required_tables": [table for table in readiness.RUNTIME_TABLE_CHECKS if table != "public.kis_access_tokens"],
+            "required_rpcs": [rpc for rpc in readiness.RUNTIME_RPC_CHECKS if rpc != "acquire_kis_token_issue_lock"],
+        }
+        contract = readiness.readiness_contract_payload(stale_payload)
+
+        self.assertEqual(contract["ok"], False)
+        self.assertEqual(contract["missing_tables"], ["public.kis_access_tokens"])
+        self.assertEqual(contract["missing_rpcs"], ["acquire_kis_token_issue_lock"])
+
     def test_public_read_payload_reports_permission_failures(self):
         calls = []
 

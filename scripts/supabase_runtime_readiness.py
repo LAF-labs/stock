@@ -11,6 +11,30 @@ import requests
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_TABLE_CHECKS = (
+    "public.stock_score_snapshots",
+    "public.stock_quote_snapshots",
+    "public.stock_refresh_jobs",
+    "public.stock_api_rate_limits",
+    "public.stock_refresh_leases",
+    "public.stock_refresh_cooldowns",
+    "public.stock_rule_judgments",
+    "public.stock_industry_benchmarks",
+    "public.stock_symbol_profiles",
+    "public.market_calendar",
+    "public.kis_access_tokens",
+)
+RUNTIME_RPC_CHECKS = (
+    "acquire_stock_api_rate_limit",
+    "acquire_stock_refresh_cooldown",
+    "acquire_stock_refresh_lease",
+    "enqueue_stock_refresh_job",
+    "claim_stock_refresh_jobs",
+    "complete_stock_refresh_job",
+    "fail_stock_refresh_job",
+    "refresh_stock_industry_benchmarks",
+    "acquire_kis_token_issue_lock",
+)
 PUBLIC_READ_CHECKS = (
     ("stock_score_snapshots", "ticker"),
     ("stock_quote_snapshots", "ticker"),
@@ -64,6 +88,14 @@ def readiness_payload(url: str, key: str, timeout: float) -> dict:
     return payload
 
 
+def readiness_contract_payload(payload: dict) -> dict:
+    checked_tables = set(payload.get("required_tables") or [])
+    checked_rpcs = set(payload.get("required_rpcs") or [])
+    missing_tables = sorted(set(RUNTIME_TABLE_CHECKS) - checked_tables)
+    missing_rpcs = sorted(set(RUNTIME_RPC_CHECKS) - checked_rpcs)
+    return {"ok": not missing_tables and not missing_rpcs, "missing_tables": missing_tables, "missing_rpcs": missing_rpcs}
+
+
 def public_read_payload(url: str, key: str, timeout: float) -> dict:
     failures: list[dict[str, object]] = []
     for table, column in PUBLIC_READ_CHECKS:
@@ -106,23 +138,33 @@ def main() -> int:
 
     try:
         payload = readiness_payload(url, service_role_key, args.timeout)
+        payload["readiness_contract"] = readiness_contract_payload(payload)
         payload["public_read"] = public_read_payload(url, publishable_key, args.timeout)
     except Exception as exc:  # noqa: BLE001 - deployment preflight should report one concise failure.
         print(str(exc), file=sys.stderr)
         return 1
 
-    if args.json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
-
-    if payload.get("ok") is not True or payload.get("public_read", {}).get("ok") is not True:
+    readiness_contract = payload.get("readiness_contract", {})
+    public_read = payload.get("public_read", {})
+    if payload.get("ok") is not True or readiness_contract.get("ok") is not True or public_read.get("ok") is not True:
         missing_tables = ", ".join(payload.get("missing_tables") or [])
         missing_rpcs = ", ".join(payload.get("missing_rpcs") or [])
-        public_failures = ", ".join(failure.get("table", "?") for failure in payload.get("public_read", {}).get("failures") or [])
+        contract_tables = ", ".join(readiness_contract.get("missing_tables") or [])
+        contract_rpcs = ", ".join(readiness_contract.get("missing_rpcs") or [])
+        public_failures = ", ".join(failure.get("table", "?") for failure in public_read.get("failures") or [])
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         print(
-            f"Supabase runtime readiness failed. missing_tables=[{missing_tables}] missing_rpcs=[{missing_rpcs}] public_read_failures=[{public_failures}]",
+            "Supabase runtime readiness failed. "
+            f"missing_tables=[{missing_tables}] missing_rpcs=[{missing_rpcs}] "
+            f"readiness_contract_missing_tables=[{contract_tables}] readiness_contract_missing_rpcs=[{contract_rpcs}] "
+            f"public_read_failures=[{public_failures}]",
             file=sys.stderr,
         )
         return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
     if not args.json:
         print("Supabase runtime readiness OK.")
