@@ -3,10 +3,12 @@ import tempfile
 import os
 from pathlib import Path
 
+import pandas as pd
 import scripts.fetch_yfinance_score as legacy_score_module
 import scripts.stock_score.formatting as formatting
 import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
+import scripts.stock_score.timeseries as timeseries
 from scripts.fetch_yfinance_score import (
     FactorScore,
     composite_score,
@@ -33,6 +35,41 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.as_float, formatting.as_float)
         self.assertIs(legacy_score_module.price_label, formatting.price_label)
         self.assertIs(legacy_score_module.labeled_money, formatting.labeled_money)
+
+    def test_timeseries_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.return_between, timeseries.return_between)
+        self.assertIs(legacy_score_module.simple_rsi, timeseries.simple_rsi)
+        self.assertIs(legacy_score_module.kis_chart_series, timeseries.kis_chart_series)
+
+    def test_timeseries_helpers_build_chart_rows(self):
+        history = pd.DataFrame(
+            [
+                {"Open": "10", "High": "12", "Low": "9", "Close": "11", "Volume": "1000"},
+                {"Open": "11", "High": "13", "Low": "10", "Close": "12", "Volume": "1200"},
+            ],
+            index=pd.to_datetime(["2026-06-01", "2026-06-02"]),
+        )
+
+        rows = timeseries.build_chart_series(history, "USD", 1300)
+
+        self.assertEqual(rows[0]["date"], "2026-06-01")
+        self.assertEqual(rows[0]["close_label"], "$11.00 (약 1.4만원)")
+        self.assertIsNone(rows[0]["change_pct"])
+        self.assertAlmostEqual(rows[1]["change_pct"], 12 / 11 - 1)
+
+    def test_kis_chart_helpers_preserve_provider_date_and_change_rules(self):
+        rows = timeseries.kis_chart_series(
+            [
+                {"xymd": "20260601", "open": "10", "high": "12", "low": "9", "clos": "11", "tvol": "100", "rate": "2.5"},
+                {"xymd": "20260602", "open": "11", "high": "13", "low": "10", "clos": "12", "tvol": "120"},
+            ],
+            "USD",
+            None,
+        )
+
+        self.assertEqual(rows[0]["date"], "2026-06-01")
+        self.assertEqual(rows[0]["change_pct"], 0.025)
+        self.assertAlmostEqual(rows[1]["change_pct"], 12 / 11 - 1)
 
     def test_quality_adjusted_valuation_moderates_premium_growth_leaders(self):
         valuation = quality_adjusted_valuation(
