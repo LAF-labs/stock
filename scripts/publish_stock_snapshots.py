@@ -348,7 +348,7 @@ def publish_queue_job(
             raise RuntimeError("claimed job is missing id")
         if kind == "score":
             if view not in {"detail", "compare"}:
-                view = "detail"
+                raise RuntimeError(f"unsupported score view: {view}")
             score = fetch_score(ticker, view=view)
             if not ok_payload(score):
                 raise RuntimeError(str(score.get("error") or "score_fetch_failed"))

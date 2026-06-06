@@ -7,6 +7,7 @@ import {
   parseTickerArgs,
   parseViews,
   permanentRefreshFailure,
+  publishQueueJob,
   retryAfterSeconds,
   run,
   upsertQuoteSnapshot,
@@ -83,6 +84,31 @@ test("TypeScript snapshot worker preserves all-kind claim when legacy fallback i
   await claimRefreshJobs({ url: "https://example.supabase.co", key: "service-role-key" }, options);
 
   assert.equal(requestedUrl, "https://example.supabase.co/rest/v1/rpc/claim_stock_refresh_jobs");
+});
+
+test("TypeScript snapshot worker rejects invalid score views before provider fetch", async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({
+      url: String(input),
+      body: init?.body ? JSON.parse(String(init.body)) : {},
+    });
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+
+  const options = parseOptions(["--drain-queue", "--kind", "score", "--allow-score-python-fallback"], {});
+  const row = await publishQueueJob(
+    { id: "job-1", kind: "score", market: "US", symbol: "NVDA", view_mode: "bogus", attempts: 1 },
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    options
+  );
+
+  assert.equal(row.status, "failed");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://example.supabase.co/rest/v1/rpc/fail_stock_refresh_job");
+  assert.equal(calls[0].body.p_job_id, "job-1");
+  assert.equal(calls[0].body.p_permanent, true);
+  assert.match(String(calls[0].body.p_error), /unsupported score view/);
 });
 
 test("TypeScript snapshot worker dry-runs quote tickers without provider calls", async () => {

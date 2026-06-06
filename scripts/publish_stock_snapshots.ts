@@ -212,12 +212,13 @@ async function publishTicker(ticker: string, options: Options, config?: Supabase
   return row;
 }
 
-async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, options: Options) {
+export async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, options: Options) {
   const jobId = stringValue(job.id);
   const kind = stringValue(job.kind)?.toLowerCase() as RefreshKind | undefined;
   const ticker = jobTicker(job);
-  const view = scoreViewValue(job.view_mode) || "detail";
-  const row: Record<string, unknown> = { job_id: jobId, kind, ticker, view: kind === "score" ? view : undefined, status: null, errors: [] as Array<Record<string, unknown>> };
+  const rawView = stringValue(job.view_mode)?.toLowerCase();
+  const view = rawView ? scoreViewValue(rawView) : "detail";
+  const row: Record<string, unknown> = { job_id: jobId, kind, ticker, view: kind === "score" ? view || rawView : undefined, status: null, errors: [] as Array<Record<string, unknown>> };
 
   try {
     if (!jobId) throw new Error("claimed job is missing id");
@@ -226,6 +227,9 @@ async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, options:
       assertFreshQuoteRefresh(result.cache, ticker);
       await upsertQuoteSnapshot(config, ticker, result.payload, result.cache.fetchedAt, result.cache.expiresAt, result.cache.staleExpiresAt);
     } else if (kind === "score") {
+      if (!view) {
+        throw new Error(`unsupported score view: ${String(rawView || "")}`);
+      }
       if (!options.allowScorePythonFallback) {
         throw new Error("score job requires legacy score fallback worker");
       }

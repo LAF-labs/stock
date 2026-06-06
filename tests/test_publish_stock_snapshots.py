@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
 import scripts.publish_stock_snapshots as publisher
@@ -254,6 +255,49 @@ class PublishStockSnapshotsTests(unittest.TestCase):
             calls[0]["data"],
             '{"p_job_id": "00000000-0000-0000-0000-000000000001", "p_worker_id": "worker-1", "p_error": "kis_not_found", "p_retry_after_seconds": 120, "p_permanent": true}',
         )
+
+    def test_publish_queue_job_rejects_invalid_score_view_without_fetching(self):
+        calls = []
+
+        def fake_fetch_score(*_args, **_kwargs):
+            raise AssertionError("invalid score view should fail before fetch_score")
+
+        def fake_complete(*_args, **_kwargs):
+            raise AssertionError("invalid score view should not complete the job")
+
+        def fake_fail(_config, worker_id, job_id, error, retry_after_seconds, permanent=False):
+            calls.append(
+                {
+                    "worker_id": worker_id,
+                    "job_id": job_id,
+                    "error": error,
+                    "retry_after_seconds": retry_after_seconds,
+                    "permanent": permanent,
+                }
+            )
+
+        original_fetch_score = publisher.fetch_score
+        original_complete = publisher.complete_refresh_job
+        original_fail = publisher.fail_refresh_job
+        publisher.fetch_score = fake_fetch_score
+        publisher.complete_refresh_job = fake_complete
+        publisher.fail_refresh_job = fake_fail
+        try:
+            row = publisher.publish_queue_job(
+                {"id": "job-1", "kind": "score", "market": "US", "symbol": "NVDA", "view_mode": "bogus", "attempts": 1},
+                SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7),
+                SimpleNamespace(score_ttl_seconds=1800),
+                "worker-1",
+            )
+        finally:
+            publisher.fetch_score = original_fetch_score
+            publisher.complete_refresh_job = original_complete
+            publisher.fail_refresh_job = original_fail
+
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(calls[0]["job_id"], "job-1")
+        self.assertEqual(calls[0]["permanent"], True)
+        self.assertIn("unsupported score view", calls[0]["error"])
 
 
 if __name__ == "__main__":
