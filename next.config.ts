@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 type BuildEnv = Record<string, string | undefined>;
 
+export const PYTHON_COLLECTOR_TRACE_INCLUDES = [
+  "./scripts/fetch_stock_score.py",
+  "./scripts/stock_score/**/*.py",
+  "./requirements.txt",
+];
+
 export function shouldIncludePythonCollector(env: BuildEnv = process.env): boolean {
   const requested =
     env.INCLUDE_PYTHON_COLLECTOR === "1"
@@ -57,8 +63,8 @@ const nextConfig: NextConfig = {
   ...(includePythonCollector
     ? {
         outputFileTracingIncludes: {
-          "/api/score": ["./scripts/fetch_stock_score.py", "./requirements.txt"],
-          "/api/score/batch": ["./scripts/fetch_stock_score.py", "./requirements.txt"],
+          "/api/score": PYTHON_COLLECTOR_TRACE_INCLUDES,
+          "/api/score/batch": PYTHON_COLLECTOR_TRACE_INCLUDES,
         },
       }
     : {}),
