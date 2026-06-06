@@ -722,7 +722,7 @@ remaining non-blocking finding: release gate thresholds are duplicated in README
 
 ### Task 7.1: Full Verification
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 npm run check:all 2>&1 | head -c 30000
@@ -740,9 +740,35 @@ ops check: ok true
 git status: clean
 ```
 
+Current evidence:
+
+```text
+npm run check:all: exit 0
+- Node tests: 149 passed
+- Python tests: 70 passed
+- Rust tests: 34 passed
+- TypeScript: exit 0
+- Next build: exit 0
+npm run supabase:readiness: ok true
+MARKET_DATA_SERVICE_URL=http://127.0.0.1:18080 MARKET_DATA_INTERNAL_TOKEN=ci-internal-token npm run ops:check: ok true, thresholds ok true, market_data_service ok true
+freshness_risks: high quote stale rate and due queue age warnings present, documented as non-gating operational warnings
+git status before final plan record: clean
+```
+
 ### Task 7.2: Final Subagent Review
 
-- [ ] Dispatch final read-only evaluator with all component scores and verification evidence.
-- [ ] Required result: every component `>=90`.
-- [ ] If every component is `>=90`, mark the goal complete.
-- [ ] If any component is below `90`, append a focused task to the relevant phase and continue.
+- [x] Dispatch final read-only evaluator with all component scores and verification evidence.
+- [x] Required result: every component `>=90`.
+- [x] If every component is `>=90`, mark the goal complete.
+- [x] If any component is below `90`, append a focused task to the relevant phase and continue.
+
+Final review result:
+
+```text
+all_components_90_or_higher: yes
+blocking_findings: none
+ready_to_close_goal: yes
+remaining non-blocking risks:
+- freshness_risks high warnings are operational warnings, not release blockers
+- release gate thresholds are duplicated in README/docs and package.json; keep package.json as source of truth
+```
