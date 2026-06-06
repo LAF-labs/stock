@@ -10,6 +10,7 @@ import scripts.stock_score.presentation as presentation
 import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
 import scripts.stock_score.timeseries as timeseries
+import scripts.stock_score.yfinance_provider as yfinance_provider
 from scripts.fetch_yfinance_score import (
     FactorScore,
     composite_score,
@@ -47,6 +48,75 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.signal_for, presentation.signal_for)
         self.assertIs(legacy_score_module.top_like_current, presentation.top_like_current)
         self.assertIs(legacy_score_module.opportunity_components_for, presentation.opportunity_components_for)
+
+    def test_yfinance_provider_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.safe_info, yfinance_provider.safe_info)
+        self.assertIs(legacy_score_module.safe_history, yfinance_provider.safe_history)
+        self.assertIs(legacy_score_module.safe_news, yfinance_provider.safe_news)
+
+    def test_yfinance_provider_helpers_normalize_fake_ticker_data(self):
+        class FakeTicker:
+            info = {"marketCap": 123}
+            fast_info = {"lastPrice": "12.5"}
+            news = [
+                {
+                    "content": {
+                        "title": "Headline",
+                        "canonicalUrl": {"url": "https://example.com/news"},
+                        "provider": {"displayName": "Provider"},
+                        "pubDate": "2026-06-06T00:00:00Z",
+                    }
+                }
+            ]
+
+            def history(self, *, period, interval, auto_adjust, actions):
+                if interval == "5m":
+                    return pd.DataFrame(
+                        [{"Close": "12.5", "Volume": "1000"}, {"Close": None, "Volume": "5"}],
+                        index=pd.to_datetime(["2026-06-06 09:30", "2026-06-06 09:35"]),
+                    )
+                return pd.DataFrame(
+                    [{"Close": 10.0, "Volume": 100}, {"Close": None, "Volume": 200}],
+                    index=pd.to_datetime(["2026-06-05", "2026-06-06"]),
+                )
+
+        ticker = FakeTicker()
+
+        self.assertEqual(yfinance_provider.safe_info(ticker), {"marketCap": 123})
+        self.assertEqual(yfinance_provider.safe_fast_info(ticker), {"lastPrice": "12.5"})
+        self.assertEqual(len(yfinance_provider.safe_history(ticker)), 1)
+        self.assertEqual(
+            yfinance_provider.safe_intraday(ticker)[0],
+            {
+                "ts": "2026-06-06T09:30:00",
+                "close": 12.5,
+                "close_label": "$12.50",
+                "volume": 1000,
+                "volume_label": "1,000주",
+            },
+        )
+        self.assertEqual(
+            yfinance_provider.safe_news(ticker)[0],
+            {
+                "title": "Headline",
+                "publisher": "Provider",
+                "link": "https://example.com/news",
+                "provider_publish_time": None,
+                "published_at": "2026-06-06T00:00:00Z",
+            },
+        )
+
+    def test_yfinance_provider_latest_statement_uses_latest_column(self):
+        statement = pd.DataFrame(
+            [[123.0], [float("nan")]],
+            index=["Net Income", "Ignored"],
+            columns=pd.to_datetime(["2026-03-31"]),
+        )
+
+        self.assertEqual(
+            yfinance_provider.latest_statement(statement, {"Net Income": "net_income", "Missing": "missing"}),
+            {"reported_date": "2026-03-31", "net_income": 123.0},
+        )
 
     def test_presentation_helpers_build_stock_response_summary(self):
         self.assertEqual(presentation.grade_for(82.0), {"class": "excellent", "label": "우수"})
