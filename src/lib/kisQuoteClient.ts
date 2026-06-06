@@ -9,6 +9,7 @@ import {
   type KisTokenCacheEntry,
 } from "@/lib/kisTokenCache";
 import { envValue, fetchWithTimeout } from "@/lib/supabaseRest";
+import { parseTickerRef } from "@/lib/tickerRef";
 import type { StockPayload } from "@/lib/stockSnapshotCache";
 
 type KisConfig = {
@@ -293,14 +294,12 @@ function kisConfig(): KisConfig {
 }
 
 function parseTicker(value: string): { market: "US" | "KR"; symbol: string } {
+  const parsed = parseTickerRef(value);
   const raw = value.trim().replace(/^!/, "").toUpperCase();
-  if (raw.includes(":")) {
-    const [marketPart, symbolPart] = raw.split(":", 2);
-    const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-    return { market: marketPart === "KR" ? "KR" : "US", symbol };
+  if (!raw.includes(":") && /^Q\d{6}$/.test(parsed.symbol)) {
+    return { market: "KR", symbol: parsed.symbol.replace(/^Q/, "") };
   }
-  const symbol = raw.replace(/[^A-Z0-9.-]/g, "");
-  return /^(?:\d{6}|Q\d{6})$/.test(symbol) ? { market: "KR", symbol: symbol.replace(/^Q/, "") } : { market: "US", symbol };
+  return { market: parsed.market, symbol: parsed.symbol };
 }
 
 function outputObject(payload: KisPayload, key = "output"): KisPayload {

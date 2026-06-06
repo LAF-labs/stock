@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind } from "@/lib/stockDataRuntime";
-
-type MarketCode = "US" | "KR";
+import { parseTickerRef } from "@/lib/tickerRef";
 
 export type AcquireStockRefreshLeaseInput = {
   kind: StockDataKind;
@@ -21,12 +20,6 @@ export type StockRefreshLeaseResult = {
   lockedBy?: string;
 };
 
-type ParsedTicker = {
-  ticker: string;
-  market: MarketCode;
-  symbol: string;
-};
-
 type LeaseRpcRow = {
   acquired?: boolean;
   lease_until?: string;
@@ -41,8 +34,8 @@ const LEASE_RPC = "acquire_stock_refresh_lease";
 const memoryLeases = (globalThis.__stockRefreshLeases ??= new Map<string, { leaseUntilMs: number; owner: string }>());
 
 export async function acquireStockRefreshLease(input: AcquireStockRefreshLeaseInput): Promise<StockRefreshLeaseResult> {
-  const ticker = normalizeTickerRef(input.ticker);
-  const parsed = parseTicker(ticker);
+  const parsed = parseTickerRef(input.ticker);
+  const ticker = parsed.ticker;
   const owner = input.owner || `vercel-${randomUUID()}`;
   const lockSeconds = clampLockSeconds(input.lockSeconds);
   const view = input.kind === "score" ? input.view || "detail" : undefined;
@@ -143,28 +136,4 @@ function clampLockSeconds(value: number | undefined): number {
   const fallback = numericEnv("STOCK_REFRESH_LEASE_SECONDS", 30);
   const seconds = Number.isFinite(value) ? Number(value) : fallback;
   return Math.min(300, Math.max(5, Math.trunc(seconds)));
-}
-
-function normalizeTickerRef(value: string): string {
-  const raw = value.trim().replace(/^!/, "").toUpperCase();
-  if (raw.includes(":")) {
-    const [market, symbolPart] = raw.split(":", 2);
-    const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-    if ((market === "US" || market === "KR") && symbol) return `${market}:${symbol}`;
-  }
-
-  const symbol = raw.replace(/[^A-Z0-9.-]/g, "");
-  if (/^(?:\d{6}|Q\d{6})$/.test(symbol)) return `KR:${symbol}`;
-  return `US:${symbol}`;
-}
-
-function parseTicker(ticker: string): ParsedTicker {
-  const [marketPart, symbolPart] = ticker.split(":", 2);
-  const market: MarketCode = marketPart === "KR" ? "KR" : "US";
-  const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-  return {
-    ticker: `${market}:${symbol}`,
-    market,
-    symbol,
-  };
 }

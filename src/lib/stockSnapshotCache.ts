@@ -5,6 +5,9 @@ import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
+
+export { normalizeTickerRef } from "@/lib/tickerRef";
 
 export type ScoreView = "detail" | "compare";
 export type StockPayload = Record<string, unknown>;
@@ -63,26 +66,11 @@ export function cleanView(value: string | null): ScoreView {
   return value === "compare" ? "compare" : "detail";
 }
 
-export function normalizeTickerRef(value: string | null | undefined, fallback = "US:ASTS"): string {
-  const raw = (value || fallback).trim().replace(/^!/, "").toUpperCase();
-
-  if (raw.includes(":")) {
-    const [market, symbolPart] = raw.split(":", 2);
-    const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-    if ((market === "US" || market === "KR") && symbol) return `${market}:${symbol}`;
-  }
-
-  const symbol = raw.replace(/[^A-Z0-9.-]/g, "");
-  if (!symbol) return fallback;
-  if (/^(?:\d{6}|Q\d{6})$/.test(symbol)) return `KR:${symbol}`;
-  return `US:${symbol}`;
-}
-
 export function parseTickerList(value: string | null, maxTickers = 5): string[] {
   const unique: string[] = [];
   (value || "")
     .split(",")
-    .map((ticker) => normalizeTickerRef(ticker, ""))
+    .map((ticker) => normalizeTickerRefValue(ticker, ""))
     .filter(Boolean)
     .forEach((ticker) => {
       if (!unique.includes(ticker)) unique.push(ticker);
@@ -264,7 +252,7 @@ function scheduleQueuedRefresh(ticker: string, view: ScoreView, priority: number
 }
 
 export async function getStockScore(tickerRef: string, view: ScoreView, options: { forceRefresh?: boolean } = {}): Promise<StockScoreResult> {
-  const ticker = normalizeTickerRef(tickerRef);
+  const ticker = normalizeTickerRefValue(tickerRef);
   const key = cacheKey(ticker, view);
   const nowMs = Date.now();
   let freshCandidate: StoredSnapshot | undefined;

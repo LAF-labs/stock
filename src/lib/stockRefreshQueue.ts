@@ -1,8 +1,7 @@
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind, StockDataUnavailableReason } from "@/lib/stockDataRuntime";
-
-type MarketCode = "US" | "KR";
+import { parseTickerRef } from "@/lib/tickerRef";
 
 export type EnqueueStockRefreshInput = {
   kind: StockDataKind;
@@ -21,18 +20,11 @@ export type EnqueueStockRefreshResult =
   | { queued: true; job?: EnqueuedStockRefreshJob }
   | { queued: false; reason: "missing_supabase_admin_config" | "enqueue_failed" };
 
-type ParsedTicker = {
-  ticker: string;
-  market: MarketCode;
-  symbol: string;
-};
-
 export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): Promise<EnqueueStockRefreshResult> {
   const config = supabaseAdminConfig();
   if (!config) return { queued: false, reason: "missing_supabase_admin_config" };
 
-  const ticker = normalizeTickerRef(input.ticker);
-  const parsed = parseTicker(ticker);
+  const parsed = parseTickerRef(input.ticker);
   const view = input.kind === "score" ? input.view || "detail" : undefined;
   const body = {
     p_kind: input.kind,
@@ -86,29 +78,5 @@ function pickJobFields(job: Record<string, unknown>): EnqueuedStockRefreshJob {
   return {
     id: typeof job.id === "string" ? job.id : undefined,
     status: typeof job.status === "string" ? job.status : undefined,
-  };
-}
-
-function normalizeTickerRef(value: string): string {
-  const raw = value.trim().replace(/^!/, "").toUpperCase();
-  if (raw.includes(":")) {
-    const [market, symbolPart] = raw.split(":", 2);
-    const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-    if ((market === "US" || market === "KR") && symbol) return `${market}:${symbol}`;
-  }
-
-  const symbol = raw.replace(/[^A-Z0-9.-]/g, "");
-  if (/^(?:\d{6}|Q\d{6})$/.test(symbol)) return `KR:${symbol}`;
-  return `US:${symbol}`;
-}
-
-function parseTicker(ticker: string): ParsedTicker {
-  const [marketPart, symbolPart] = ticker.split(":", 2);
-  const market: MarketCode = marketPart === "KR" ? "KR" : "US";
-  const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-  return {
-    ticker: `${market}:${symbol}`,
-    market,
-    symbol,
   };
 }

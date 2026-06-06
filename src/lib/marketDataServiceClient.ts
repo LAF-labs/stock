@@ -1,15 +1,8 @@
 import { fetchWithTimeout, numericEnv } from "@/lib/supabaseRest";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
+import { parseTickerRef, type ParsedTickerRef } from "@/lib/tickerRef";
 import type { StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
-
-type MarketCode = "US" | "KR";
-
-type ParsedTicker = {
-  ticker: string;
-  market: MarketCode;
-  symbol: string;
-};
 
 type MarketDataServiceResponse = {
   ok?: unknown;
@@ -54,7 +47,7 @@ export async function getMarketDataServiceQuote(
   const config = marketDataServiceConfig();
   if (!config) return undefined;
 
-  const ticker = parseTicker(tickerRef);
+  const ticker = parseTickerRef(tickerRef);
   const refresh = options.forceRefresh ? "?refresh=1" : "";
   const response = await callMarketDataService(
     config,
@@ -72,7 +65,7 @@ export async function getMarketDataServiceScore(
   const config = marketDataServiceConfig();
   if (!config) return undefined;
 
-  const ticker = parseTicker(tickerRef);
+  const ticker = parseTickerRef(tickerRef);
   const query = new URLSearchParams({ view });
   if (options.forceRefresh) query.set("refresh", "1");
   const response = await callMarketDataService(
@@ -110,7 +103,7 @@ async function callMarketDataService(
 }
 
 function adaptQuoteResponse(
-  ticker: ParsedTicker,
+  ticker: ParsedTickerRef,
   data: Record<string, unknown>,
   rawCache: unknown
 ): StockQuoteResult | undefined {
@@ -160,7 +153,7 @@ function adaptQuoteResponse(
 }
 
 function adaptScoreResponse(
-  ticker: ParsedTicker,
+  ticker: ParsedTickerRef,
   view: ScoreView,
   data: StockPayload,
   rawCache: unknown
@@ -182,18 +175,6 @@ function adaptScoreResponse(
       fetchedAt: serverCache.fetched_at,
       expiresAt: serverCache.expires_at,
     },
-  };
-}
-
-function parseTicker(value: string): ParsedTicker {
-  const raw = value.trim().replace(/^!/, "").toUpperCase();
-  const [marketPart, symbolPart] = raw.includes(":") ? raw.split(":", 2) : ["", raw];
-  const symbol = (symbolPart || "").replace(/[^A-Z0-9.-]/g, "");
-  const market: MarketCode = marketPart === "KR" || (!marketPart && /^(?:\d{6}|Q\d{6})$/.test(symbol)) ? "KR" : "US";
-  return {
-    ticker: `${market}:${symbol}`,
-    market,
-    symbol,
   };
 }
 
