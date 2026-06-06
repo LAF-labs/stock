@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import scripts.fetch_yfinance_score as legacy_score_module
+import scripts.stock_score.formatting as formatting
 import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
 from scripts.fetch_yfinance_score import (
@@ -27,6 +28,11 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.clean_ticker, symbols.clean_ticker)
         self.assertIs(legacy_score_module.parse_symbol_ref, symbols.parse_symbol_ref)
         self.assertIs(legacy_score_module.domestic_yfinance_symbol, symbols.domestic_yfinance_symbol)
+
+    def test_formatting_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.as_float, formatting.as_float)
+        self.assertIs(legacy_score_module.price_label, formatting.price_label)
+        self.assertIs(legacy_score_module.labeled_money, formatting.labeled_money)
 
     def test_quality_adjusted_valuation_moderates_premium_growth_leaders(self):
         valuation = quality_adjusted_valuation(
