@@ -3,9 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMonthLabel } from "@/components/stockDashboardHelpers";
 import type { ChartSeriesPoint } from "@/lib/types";
-import type { CandlestickData, HistogramData, LineData, Time } from "lightweight-charts";
+import type { CandlestickData, HistogramData, IChartApi, LineData, Time } from "lightweight-charts";
 
 type ChartPoint = ChartSeriesPoint & { close: number; date: string };
+
+const MOVING_AVERAGES = [
+  { period: 5, color: "#f59f00" },
+  { period: 20, color: "#18a976" },
+  { period: 60, color: "#7c3aed" },
+  { period: 120, color: "#475569" },
+] as const;
 
 function chartPriceLabel(point: ChartPoint) {
   if (point.close_label) return point.close_label;
@@ -24,8 +31,10 @@ function priceLabel(value: number | undefined, currency: string) {
 
 export default function TradingPriceChart({ points, mode, describedBy }: { points: ChartPoint[]; mode: "line" | "candle"; describedBy?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; price: string } | null>(null);
   const [renderState, setRenderState] = useState<"loading" | "ready" | "error">("loading");
+  const [scrollRange, setScrollRange] = useState<{ start: number; span: number; maxStart: number } | null>(null);
 
   const chartData = useMemo(() => {
     const lineData: LineData<Time>[] = [];
@@ -51,7 +60,12 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
       labels.set(point.date, chartPriceLabel(point));
     });
 
-    return { lineData, candleData, volumeData, labels };
+    const movingAverages = MOVING_AVERAGES.map((average) => ({
+      ...average,
+      data: movingAverageData(points, average.period),
+    }));
+
+    return { lineData, candleData, volumeData, labels, movingAverages };
   }, [points]);
 
   useEffect(() => {
@@ -59,8 +73,11 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
 
     let disposed = false;
     let resizeObserver: ResizeObserver | undefined;
-    let chartApi: { remove: () => void } | undefined;
+    let chartApi: IChartApi | undefined;
+    let wheelHandler: ((event: WheelEvent) => void) | undefined;
+    let visibleRangeHandler: ((range: { from: number; to: number } | null) => void) | undefined;
     setRenderState("loading");
+    setScrollRange(null);
 
     async function renderChart() {
       const currentContainer = containerRef.current;
@@ -91,6 +108,9 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
           borderVisible: false,
           timeVisible: false,
           secondsVisible: false,
+          fixLeftEdge: true,
+          fixRightEdge: true,
+          minBarSpacing: 2,
           tickMarkFormatter: (time: Time) => (typeof time === "string" ? formatMonthLabel(time) : ""),
         },
         crosshair: {
@@ -106,12 +126,13 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
         },
         handleScale: {
           axisPressedMouseMove: false,
-          mouseWheel: false,
+          mouseWheel: true,
           pinch: true,
         },
       });
 
         chartApi = chart;
+        chartRef.current = chart;
         const priceSeries =
           mode === "candle"
             ? chart.addSeries(CandlestickSeries, {
@@ -131,6 +152,17 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
 
         if (mode === "candle") {
           priceSeries.setData(chartData.candleData);
+          chartData.movingAverages.forEach((average) => {
+            if (!average.data.length) return;
+            const averageSeries = chart.addSeries(LineSeries, {
+              color: average.color,
+              lineWidth: average.period <= 20 ? 2 : 1,
+              priceLineVisible: false,
+              lastValueVisible: false,
+              crosshairMarkerVisible: false,
+            });
+            averageSeries.setData(average.data);
+          });
           const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: "volume" },
           priceScaleId: "",
@@ -170,6 +202,32 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
         });
 
         chart.timeScale().fitContent();
+        visibleRangeHandler = (range: { from: number; to: number } | null) => {
+          setScrollRange(scrollStateFromRange(range, chartData.lineData.length));
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(visibleRangeHandler);
+        visibleRangeHandler(chart.timeScale().getVisibleLogicalRange());
+
+        wheelHandler = (event: WheelEvent) => {
+          if (!containerRef.current || chartData.lineData.length < 2) return;
+          event.preventDefault();
+          const totalSpan = chartData.lineData.length - 1;
+          const currentRange = chart.timeScale().getVisibleLogicalRange() || { from: 0, to: totalSpan };
+          const currentSpan = Math.max(1, currentRange.to - currentRange.from);
+          const nextSpan = Math.max(8, Math.min(totalSpan, currentSpan * (event.deltaY < 0 ? 0.82 : 1.18)));
+          if (nextSpan >= totalSpan - 0.1) {
+            chart.timeScale().fitContent();
+            return;
+          }
+
+          const bounds = containerRef.current.getBoundingClientRect();
+          const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+          const anchor = currentRange.from + currentSpan * ratio;
+          let from = anchor - nextSpan * ratio;
+          from = Math.max(0, Math.min(totalSpan - nextSpan, from));
+          chart.timeScale().setVisibleLogicalRange({ from, to: from + nextSpan });
+        };
+        currentContainer.addEventListener("wheel", wheelHandler, { passive: false });
 
         resizeObserver = new ResizeObserver(() => {
           if (!containerRef.current) return;
@@ -190,15 +248,52 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
+      if (chartApi && visibleRangeHandler) chartApi.timeScale().unsubscribeVisibleLogicalRangeChange(visibleRangeHandler);
+      if (wheelHandler) containerRef.current?.removeEventListener("wheel", wheelHandler);
       chartApi?.remove();
+      if (chartRef.current === chartApi) chartRef.current = null;
       containerRef.current?.replaceChildren();
       setTooltip(null);
+      setScrollRange(null);
     };
   }, [chartData, mode, points]);
+
+  function scrollChart(value: string) {
+    const nextStart = Number(value);
+    if (!Number.isFinite(nextStart) || !scrollRange || !chartRef.current) return;
+    chartRef.current.timeScale().setVisibleLogicalRange({
+      from: nextStart,
+      to: nextStart + scrollRange.span,
+    });
+  }
+
+  const showRangeScrollbar = !!scrollRange && scrollRange.maxStart > 0.5;
 
   return (
     <div className="chart-plot">
       <div ref={containerRef} className="trading-chart" role="img" aria-label={mode === "candle" ? "캔들 가격 차트" : "선 가격 차트"} aria-describedby={describedBy} />
+      {mode === "candle" ? (
+        <div className="chart-ma-legend" aria-label="이동평균선">
+          {MOVING_AVERAGES.map((average) => (
+            <span key={average.period}>
+              <i style={{ background: average.color }} />
+              {average.period}일
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {showRangeScrollbar ? (
+        <input
+          className="chart-range-scrollbar"
+          type="range"
+          min="0"
+          max={scrollRange.maxStart}
+          step="0.1"
+          value={Math.min(scrollRange.start, scrollRange.maxStart)}
+          aria-label="차트 표시 구간 이동"
+          onChange={(event) => scrollChart(event.currentTarget.value)}
+        />
+      ) : null}
       {renderState === "loading" ? (
         <p className="chart-fallback" role="status" aria-live="polite">차트를 그리는 중이에요.</p>
       ) : null}
@@ -219,4 +314,31 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
       ) : null}
     </div>
   );
+}
+
+function movingAverageData(points: ChartPoint[], period: number): LineData<Time>[] {
+  const data: LineData<Time>[] = [];
+  let rolling = 0;
+  points.forEach((point, index) => {
+    rolling += point.close;
+    if (index >= period) rolling -= points[index - period].close;
+    if (index < period - 1) return;
+    data.push({
+      time: point.date as Time,
+      value: rolling / period,
+    });
+  });
+  return data;
+}
+
+function scrollStateFromRange(range: { from: number; to: number } | null, length: number): { start: number; span: number; maxStart: number } | null {
+  if (!range || length < 2) return null;
+  const totalSpan = length - 1;
+  const span = Math.max(1, Math.min(totalSpan, range.to - range.from));
+  const maxStart = Math.max(0, totalSpan - span);
+  return {
+    start: Math.max(0, Math.min(maxStart, range.from)),
+    span,
+    maxStart,
+  };
 }

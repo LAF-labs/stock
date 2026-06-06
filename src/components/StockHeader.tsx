@@ -7,13 +7,13 @@ import {
   dailyToneClass,
   formatKrwPrice,
   formatUsdPrice,
-  metricValue,
   opportunityExtremes,
   scoreDataWithQuote,
   scoreFreshnessTimeChip,
   strongestAndWeakest,
   stringFromUnknown,
   stockHeaderIdentity,
+  stockMarketCapDisplay,
 } from "@/components/stockDashboardHelpers";
 import { clampScore, formatValue } from "@/lib/format";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
@@ -75,24 +75,18 @@ export default function StockHeader({
         : quoteState.status === "error"
           ? `현재가 업데이트 실패: ${quoteState.error}`
           : undefined;
-  const marketCap = metricValue(data.key_metrics, "시가총액");
+  const marketCap = stockMarketCapDisplay(data);
   const signal = data.sia_snapshot?.raw_signal || "-";
   const risk = data.sia_snapshot?.risk_level || "-";
   const { strongest, weakest } = strongestAndWeakest(data);
   const opportunity = opportunityExtremes(data.opportunity_components);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
   const scoreTime = scoreFreshnessTimeChip(data);
-  const qualityScoreStyle = { "--quality-score-angle": `${qualityScore * 3.6}deg` } as CSSProperties;
+  const qualityScoreStyle = { "--score-angle": `${qualityScore * 3.6}deg` } as CSSProperties;
+  const opportunityScoreStyle = { "--score-angle": `${(opportunityScore ?? 0) * 3.6}deg` } as CSSProperties;
 
   return (
     <section className="stock-title-card">
-      <div className="stock-header-toolbar">
-        {scoreTime ? <span className="score-time-chip">{scoreTime}</span> : null}
-        <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
-          ↻
-        </button>
-      </div>
-
       <div className="stock-hero-main">
         <div className="stock-name-row">
           <div>
@@ -103,7 +97,12 @@ export default function StockHeader({
             {identity.secondary ? <p>{identity.secondary}</p> : null}
           </div>
         </div>
-        <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
+        <div className="stock-header-toolbar">
+          {scoreTime ? <span className="score-time-chip">{scoreTime}</span> : null}
+          <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
+            ↻
+          </button>
+        </div>
       </div>
 
       <div className="price-strip">
@@ -111,6 +110,7 @@ export default function StockHeader({
           <strong>{usdPrice}</strong>
           <span>{krwPrice}</span>
         </div>
+        <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
       </div>
       {quoteRefreshState.message ? (
         <p className={`quote-refresh-note ${quoteRefreshState.status}`} role="status" aria-live="polite">
@@ -123,25 +123,25 @@ export default function StockHeader({
       ) : null}
 
       <div className="quick-read">
-        <article>
+        <article className="quick-metric-card">
           <span>강점</span>
           <strong>{strongest?.label || "-"}</strong>
         </article>
-        <article>
+        <article className="quick-metric-card">
           <span>먼저 볼 것</span>
           <strong>{weakest?.label || "-"}</strong>
         </article>
-        <article>
+        <article className="quick-metric-card">
           <span>시가총액</span>
-          <strong>{marketCap}</strong>
+          <strong>{marketCap.primary}</strong>
+          {marketCap.secondary ? <small>{marketCap.secondary}</small> : null}
         </article>
         <article className="score-panel quality-score-panel">
           <span>품질 점수</span>
           <div className="quality-score-visual">
-            <div className="quality-donut" style={qualityScoreStyle} role="img" aria-label={`품질 점수 ${qualityScore.toFixed(1)}점`}>
+            <div className="score-donut" style={qualityScoreStyle} role="img" aria-label={`품질 점수 ${qualityScore.toFixed(1)}점`}>
               <span className="quality-donut-value">
                 <strong>{qualityScore.toFixed(1)}</strong>
-                <small>점</small>
               </span>
             </div>
             <div className="score-chip-row" aria-label="품질 점수 보조 신호">
@@ -152,20 +152,26 @@ export default function StockHeader({
         </article>
         <article className="score-panel opportunity-panel">
           <span>기회 점수</span>
-          <strong>{opportunityScore === undefined ? "-" : `${opportunityScore.toFixed(1)}점`}</strong>
-          <div className="opportunity-movers" aria-label="기회 점수 최고 및 최저 항목">
-            {opportunity.best ? (
-              <span className="opportunity-chip best">
-                <b aria-hidden="true">↗</b>
-                {opportunity.best.label}
+          <div className="quality-score-visual">
+            <div className="score-donut opportunity-donut" style={opportunityScoreStyle} role="img" aria-label={`기회 점수 ${opportunityScore === undefined ? "없음" : `${opportunityScore.toFixed(1)}점`}`}>
+              <span className="quality-donut-value">
+                <strong>{opportunityScore === undefined ? "-" : opportunityScore.toFixed(1)}</strong>
               </span>
-            ) : null}
-            {opportunity.worst ? (
-              <span className="opportunity-chip worst">
-                <b aria-hidden="true">↘</b>
-                {opportunity.worst.label}
-              </span>
-            ) : null}
+            </div>
+            <div className="opportunity-movers" aria-label="기회 점수 최고 및 최저 항목">
+              {opportunity.best ? (
+                <span className="opportunity-chip best">
+                  <b aria-hidden="true">↗</b>
+                  {opportunity.best.label}
+                </span>
+              ) : null}
+              {opportunity.worst ? (
+                <span className="opportunity-chip worst">
+                  <b aria-hidden="true">↘</b>
+                  {opportunity.worst.label}
+                </span>
+              ) : null}
+            </div>
           </div>
         </article>
       </div>

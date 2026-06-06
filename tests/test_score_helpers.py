@@ -266,6 +266,32 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIsNone(rows[0]["change_pct"])
         self.assertAlmostEqual(rows[1]["change_pct"], 12 / 11 - 1)
 
+    def test_timeseries_helpers_keep_roughly_one_trading_year(self):
+        history = pd.DataFrame(
+            [{"Open": index, "High": index + 1, "Low": index - 1, "Close": index, "Volume": "1000"} for index in range(1, 301)],
+            index=pd.date_range("2025-01-01", periods=300, freq="B"),
+        )
+
+        rows = timeseries.build_chart_series(history, "USD", None)
+
+        self.assertEqual(len(rows), 260)
+        self.assertEqual(rows[0]["date"], history.tail(260).index[0].date().isoformat())
+
+    def test_timeseries_helpers_convert_yfinance_domestic_history(self):
+        history = pd.DataFrame(
+            [{"Open": index, "High": index + 1, "Low": index - 1, "Close": index, "Volume": "1000"} for index in range(1, 301)],
+            index=pd.date_range("2025-01-01", periods=300, freq="B"),
+        )
+
+        provider_rows = timeseries.yfinance_domestic_daily_rows(history)
+        chart_rows = timeseries.kis_domestic_chart_series(provider_rows)
+
+        self.assertEqual(len(provider_rows), 300)
+        self.assertEqual(provider_rows[0]["stck_bsop_date"], "20250101")
+        self.assertEqual(provider_rows[-1]["stck_clpr"], 300)
+        self.assertEqual(len(chart_rows), 260)
+        self.assertEqual(chart_rows[0]["date"], history.tail(260).index[0].date().isoformat())
+
     def test_kis_chart_helpers_preserve_provider_date_and_change_rules(self):
         rows = timeseries.kis_chart_series(
             [

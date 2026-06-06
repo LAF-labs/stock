@@ -12,6 +12,7 @@ import {
   refreshCooldownMessage,
   snapshotPendingFromPayload,
   stringFromUnknown,
+  stockJudgmentRequestPayload,
   symbolRef,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
@@ -178,7 +179,7 @@ export default function StockDashboard() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(state.data),
+      body: JSON.stringify(stockJudgmentRequestPayload(state.data)),
     })
       .then(async (response) => {
         const payload = await response.json();

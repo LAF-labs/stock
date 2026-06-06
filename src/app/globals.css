@@ -452,6 +452,7 @@ a:focus-visible {
   justify-content: flex-end;
   gap: 8px;
   min-height: 34px;
+  margin-left: auto;
 }
 
 .score-time-chip {
@@ -499,13 +500,13 @@ a:focus-visible {
 .daily-pill {
   flex: 0 0 auto;
   min-width: 78px;
-  min-height: 42px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 12px;
   border-radius: 999px;
-  font-size: 18px;
+  font-size: 16px;
   font-style: normal;
   font-weight: 700;
   white-space: nowrap;
@@ -515,8 +516,12 @@ a:focus-visible {
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 14px;
   padding: 2px 0 4px;
+}
+
+.price-strip .daily-pill {
+  margin-top: 7px;
 }
 
 .price-block {
@@ -686,29 +691,39 @@ a:focus-visible {
 
 .quick-read {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 18px;
-  row-gap: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
   padding-top: 2px;
 }
 
 .quick-read article {
   min-width: 0;
-  padding: 0 0 18px;
-  border-radius: 0;
-  background: transparent;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
 }
 
-.quick-read article:nth-child(3),
+.quick-read .quick-metric-card {
+  grid-column: span 2;
+  min-height: 112px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 8px;
+}
+
 .quick-read .score-panel {
-  grid-column: 1 / -1;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  grid-column: span 3;
+  min-height: 132px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
 }
 
 .quick-read strong {
   display: block;
-  margin-top: 5px;
+  margin-top: 0;
   color: var(--text);
   font-size: 16px;
   line-height: 1.35;
@@ -716,35 +731,44 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.quick-read .score-panel {
-  background: transparent;
+.quick-read .quick-metric-card small {
+  display: block;
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 700;
 }
 
 .quality-score-visual {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 10px;
+  gap: 14px;
+  margin-top: 0;
 }
 
-.quality-donut {
+.score-donut {
   position: relative;
   flex: 0 0 auto;
-  width: 112px;
-  height: 112px;
+  width: 96px;
+  height: 96px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: conic-gradient(var(--accent) var(--quality-score-angle), #e8edf4 0deg);
+  background: conic-gradient(var(--accent) var(--score-angle), #e8edf4 0deg);
 }
 
-.quality-donut::before {
+.score-donut::before {
   position: absolute;
-  inset: 11px;
+  inset: 10px;
   content: "";
   border-radius: 50%;
   background: var(--surface);
   box-shadow: inset 0 0 0 1px rgba(139, 149, 161, 0.14);
+}
+
+.opportunity-donut {
+  background: conic-gradient(#18a976 var(--score-angle), #e8edf4 0deg);
 }
 
 .quick-read .score-panel .quality-donut-value {
@@ -757,18 +781,18 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.quick-read .score-panel .quality-donut .quality-donut-value strong {
+.quick-read .score-panel .score-donut .quality-donut-value strong {
   display: inline;
   margin: 0;
   color: var(--text);
-  font-size: 30px;
+  font-size: 28px;
   line-height: 0.95;
   font-weight: 820;
   overflow-wrap: normal;
   white-space: nowrap;
 }
 
-.quality-donut small {
+.score-donut small {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
@@ -778,9 +802,10 @@ a:focus-visible {
 
 .score-chip-row,
 .opportunity-movers {
-  display: flex;
+  display: grid;
   flex-wrap: wrap;
   gap: 8px;
+  align-content: center;
 }
 
 .quick-read .score-chip-row span,
@@ -802,19 +827,12 @@ a:focus-visible {
 }
 
 .quick-read .score-panel strong {
-  margin-top: 6px;
   color: var(--accent);
-  font-size: 46px;
-  line-height: 1;
   font-weight: 760;
 }
 
-.quick-read .opportunity-panel strong {
-  color: #0f9f6e;
-}
-
 .opportunity-movers {
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .quick-read .opportunity-chip.best {
@@ -970,6 +988,50 @@ a:focus-visible {
   width: 100%;
   height: 360px;
   touch-action: pan-y;
+}
+
+.chart-ma-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 30px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.chart-ma-legend span {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--subtext);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 750;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.chart-ma-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.chart-range-scrollbar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 3;
+  width: calc(100% - 24px);
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .trading-chart #tv-attr-logo {
@@ -1325,15 +1387,15 @@ a:focus-visible {
   position: relative;
   display: inline-flex;
   align-items: center;
-  padding: 6px;
-  margin: -6px;
+  padding: 2px;
+  margin: -2px;
   vertical-align: middle;
 }
 
 .info-tip {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1342,7 +1404,7 @@ a:focus-visible {
   border-radius: 50%;
   background: #e8edf3;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1;
   font-weight: 700;
 }
@@ -2625,6 +2687,124 @@ body {
   .stock-detail-app .factor-list,
   .compare-insight-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Header layout refinement */
+.stock-detail-app .stock-hero-main {
+  align-items: flex-start;
+}
+
+.stock-detail-app .stock-header-toolbar {
+  align-self: flex-start;
+  padding-top: 2px;
+}
+
+.stock-detail-app .quick-read {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.stock-detail-app .quick-read article,
+.stock-detail-app .quick-read article:nth-child(3),
+.stock-detail-app .quick-read .score-panel {
+  padding: 16px;
+  border: 1px solid rgba(49, 130, 246, 0.12);
+}
+
+.stock-detail-app .quick-read article.quick-metric-card {
+  grid-column: span 2;
+  min-height: 112px;
+}
+
+.stock-detail-app .quick-read .score-panel {
+  grid-column: span 3;
+  min-height: 132px;
+}
+
+.stock-detail-app .quick-read .score-panel strong {
+  font-size: 28px;
+}
+
+.stock-detail-app .score-donut {
+  width: 96px;
+  height: 96px;
+}
+
+@media (max-width: 640px) {
+  .stock-header-toolbar {
+    gap: 6px;
+  }
+
+  .score-time-chip {
+    min-height: 30px;
+    padding-inline: 9px;
+    font-size: 12px;
+  }
+
+  .quote-refresh-button {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+
+  .stock-detail-app .stock-hero-main {
+    gap: 10px;
+  }
+
+  .price-strip {
+    gap: 10px;
+  }
+
+  .daily-pill {
+    min-width: 68px;
+    min-height: 32px;
+    padding-inline: 10px;
+    font-size: 14px;
+  }
+
+  .stock-detail-app .quick-read {
+    gap: 8px;
+  }
+
+  .stock-detail-app .quick-read article,
+  .stock-detail-app .quick-read article:nth-child(3),
+  .stock-detail-app .quick-read .score-panel {
+    padding: 12px;
+  }
+
+  .stock-detail-app .quick-read article.quick-metric-card {
+    min-height: 94px;
+  }
+
+  .stock-detail-app .quick-read .score-panel {
+    min-height: 112px;
+  }
+
+  .quality-score-visual {
+    gap: 10px;
+  }
+
+  .stock-detail-app .score-donut {
+    width: 76px;
+    height: 76px;
+  }
+
+  .score-donut::before {
+    inset: 8px;
+  }
+
+  .quick-read .score-panel .score-donut .quality-donut-value strong,
+  .stock-detail-app .quick-read .score-panel strong {
+    font-size: 22px;
+  }
+
+  .quick-read .score-chip-row span,
+  .quick-read .opportunity-chip {
+    min-height: 26px;
+    padding-inline: 8px;
+    font-size: 11px;
   }
 }
 

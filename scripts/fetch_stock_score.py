@@ -42,19 +42,23 @@ except ModuleNotFoundError:
 
 try:
     from scripts.stock_score.timeseries import (
+        CHART_SERIES_TRADING_YEAR_ROWS,
         atr_percent,
         kis_chart_series,
         kis_domestic_chart_series,
         return_between,
         simple_rsi,
+        yfinance_domestic_daily_rows,
     )
 except ModuleNotFoundError:
     from stock_score.timeseries import (
+        CHART_SERIES_TRADING_YEAR_ROWS,
         atr_percent,
         kis_chart_series,
         kis_domestic_chart_series,
         return_between,
         simple_rsi,
+        yfinance_domestic_daily_rows,
     )
 
 try:
@@ -217,6 +221,11 @@ except ModuleNotFoundError:
         write_supabase_kis_access_token,
         yfinance_fundamentals,
     )
+
+try:
+    from scripts.stock_score.yfinance_provider import safe_history_for_symbol
+except ModuleNotFoundError:
+    from stock_score.yfinance_provider import safe_history_for_symbol
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -720,12 +729,6 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         stock_info = {}
 
     currency = "KRW"
-    closes = [float(row["stck_clpr"]) for row in daily_rows if as_float(row.get("stck_clpr")) is not None]
-    latest_history_close = closes[-1] if closes else None
-    latest_price = as_float(price.get("stck_prpr")) or latest_history_close
-    previous_close = as_float(price.get("stck_sdpr")) or (closes[-2] if len(closes) >= 2 else None)
-    latest_change = kis_percent(price.get("prdy_ctrt")) or (((latest_price / previous_close) - 1.0) if latest_price and previous_close else None)
-
     name = str(
         stock_info.get("prdt_abrv_name")
         or search.get("prdt_abrv_name")
@@ -737,6 +740,17 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     exchange = domestic_exchange_name(stock_info)
     yahoo_symbol = domestic_yfinance_symbol(symbol, exchange)
     fundamentals, fundamentals_cache = yfinance_fundamentals(yahoo_symbol, market="KR")
+    history_source = "kis"
+    if len(daily_rows) < CHART_SERIES_TRADING_YEAR_ROWS:
+        yfinance_rows = yfinance_domestic_daily_rows(safe_history_for_symbol(yahoo_symbol))
+        if len(yfinance_rows) > len(daily_rows):
+            daily_rows = yfinance_rows
+            history_source = "yfinance"
+    closes = [float(row["stck_clpr"]) for row in daily_rows if as_float(row.get("stck_clpr")) is not None]
+    latest_history_close = closes[-1] if closes else None
+    latest_price = as_float(price.get("stck_prpr")) or latest_history_close
+    previous_close = as_float(price.get("stck_sdpr")) or (closes[-2] if len(closes) >= 2 else None)
+    latest_change = kis_percent(price.get("prdy_ctrt")) or (((latest_price / previous_close) - 1.0) if latest_price and previous_close else None)
     latest_date = kis_date(daily_rows[-1].get("stck_bsop_date")) if daily_rows else datetime.now(timezone.utc).date().isoformat()
     listed_shares = as_int(price.get("lstn_stcn")) or as_int(stock_info.get("lstg_stqt"))
     market_cap_raw = as_float(price.get("hts_avls"))
@@ -1194,6 +1208,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "market_scope": "KR listed equity",
             "exchange_code": exchange,
             "history_rows": len(daily_rows),
+            "history_source": history_source,
         },
     }
 

@@ -31,6 +31,13 @@ def safe_history(ticker: Any) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def safe_history_for_symbol(symbol: str) -> pd.DataFrame:
+    try:
+        return safe_history(yf.Ticker(symbol))
+    except Exception:
+        return pd.DataFrame()
+
+
 def safe_intraday(ticker: Any) -> list[dict[str, Any]]:
     try:
         data = ticker.history(period="5d", interval="5m", auto_adjust=False, actions=False)

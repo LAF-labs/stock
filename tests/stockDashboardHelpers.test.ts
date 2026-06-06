@@ -14,9 +14,12 @@ import {
   scoreFreshnessTimeChip,
   snapshotPendingFromPayload,
   stockHeaderIdentity,
+  stockJudgmentRequestPayload,
+  stockMarketCapDisplay,
   usableChartPoints,
   visibleRecordEntries,
 } from "../src/components/stockDashboardHelpers";
+import { compactRuleJudgmentStock, tickerFromRuleJudgmentStock, validRuleJudgmentStock } from "../src/lib/ruleBasedJudgment";
 import type { StockQuoteResponse, StockScoreResponse } from "../src/lib/types";
 
 test("dashboard pending payload maps queue state into user-facing retry guidance", () => {
@@ -65,6 +68,55 @@ test("scoreDataWithQuote overlays fresh quote fields without losing score fields
     latest_bar_date: "2026-06-06",
     usd_krw_rate: 1360,
   });
+});
+
+test("stockJudgmentRequestPayload stays compact with one year of chart data", () => {
+  const score = {
+    requested_ticker: "KR:005930",
+    market: "KR",
+    symbol: "005930",
+    name: "삼성전자",
+    quality_score: 89.7,
+    opportunity_score: 86.1,
+    latest_bar_date: "2026-06-05",
+    sia_snapshot: { raw_signal: "BUY", risk_level: "HIGH" },
+    key_metrics: [
+      { label: "PER", value: "50.12" },
+      { label: "시가총액", value: "₩1923.43T" },
+    ],
+    valuation_rows: [{ label: "PBR", value: "5.14" }],
+    stock_profile: [
+      { label: "섹터", value: "Technology" },
+      { label: "산업", value: "Semiconductors" },
+    ],
+    components: [
+      {
+        key: "growth",
+        label: "성장 흐름",
+        score: 100,
+        metrics: [
+          { label: "매출 성장률", value: "+69.2%" },
+          { label: "이익 성장률", value: "+492.1%" },
+          { label: "52주 수익률", value: "+456.7%" },
+        ],
+      },
+    ],
+    chart_series: Array.from({ length: 260 }, (_, index) => ({
+      date: `2026-01-${String((index % 28) + 1).padStart(2, "0")}`,
+      close: 100 + index,
+      volume: 1_000_000 + index,
+    })),
+    financials: { oversized: "x".repeat(80_000) },
+  } satisfies StockScoreResponse;
+
+  const payload = stockJudgmentRequestPayload(score);
+  const compactStock = compactRuleJudgmentStock(payload);
+
+  assert.equal("chart_series" in payload, false);
+  assert.equal("financials" in payload, false);
+  assert.ok(JSON.stringify(payload).length < 8_192);
+  assert.equal(tickerFromRuleJudgmentStock(compactStock), "005930");
+  assert.equal(validRuleJudgmentStock(compactStock), true);
 });
 
 test("scoreFreshnessSummary separates score snapshot freshness from quote freshness", () => {
@@ -143,6 +195,29 @@ test("opportunityExtremes returns the highest and lowest scored opportunity labe
       best: { label: "유동성", score: 91 },
       worst: { label: "목표가", score: 44 },
     },
+  );
+});
+
+test("stockMarketCapDisplay formats domestic caps in Korean won units", () => {
+  assert.deepEqual(
+    stockMarketCapDisplay({
+      market: "KR",
+      currency: "KRW",
+      key_metrics: [{ label: "시가총액", value: 1_923_430_000_000_000 }],
+    }),
+    { primary: "1923조 4300억원" },
+  );
+});
+
+test("stockMarketCapDisplay formats US caps in KRW with compact dollar context", () => {
+  assert.deepEqual(
+    stockMarketCapDisplay({
+      market: "US",
+      currency: "USD",
+      usd_krw_rate: 1370,
+      key_metrics: [{ label: "시가총액", value: 3_242_000_000_000 }],
+    }),
+    { primary: "4441조 5400억원", secondary: "($3.2T)" },
   );
 });
 

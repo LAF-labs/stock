@@ -4,7 +4,7 @@ import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from 
 import type { ScoreView, StockPayload } from "@/lib/stockSnapshotCache";
 
 const SCRIPT_PATH = "scripts/fetch_stock_score.py";
-const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
+const PYTHON_RUNNER_PATH = "scripts/run_python.sh";
 const SCORE_TIMEOUT_MS = 35_000;
 const SCORE_OUTPUT_MAX_BYTES = 1_000_000;
 
@@ -18,6 +18,12 @@ async function acquireScoreCollectorSlot() {
   }
 }
 
+export function scoreCollectorCommand(env: Record<string, string | undefined> = process.env): string[] {
+  const configuredPython = env.PYTHON_BIN || env.PYTHON;
+  if (configuredPython) return [configuredPython, SCRIPT_PATH];
+  return ["bash", PYTHON_RUNNER_PATH, SCRIPT_PATH];
+}
+
 async function runPythonCollector(
   args: string[],
   timeoutMs: number,
@@ -28,7 +34,7 @@ async function runPythonCollector(
   const { spawn } = await import("node:child_process");
 
   return new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/env", [PYTHON_BIN, SCRIPT_PATH, ...args], {
+    const child = spawn("/usr/bin/env", [...scoreCollectorCommand(process.env), ...args], {
       env: {
         ...process.env,
         PYTHONUTF8: "1",

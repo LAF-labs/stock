@@ -144,6 +144,11 @@ export type OpportunityExtremes = {
   worst?: OpportunityExtreme;
 };
 
+export type MarketCapDisplay = {
+  primary: string;
+  secondary?: string;
+};
+
 export type UsableChartPoint = ChartSeriesPoint & { close: number; date: string };
 
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -169,6 +174,115 @@ function normalizedChartDate(value: unknown): string | undefined {
 
 export function metricValue(items: LabeledValue[] | undefined, label: string): string {
   return formatValue(items?.find((item) => item.label === label)?.value);
+}
+
+export function stockJudgmentRequestPayload(data: StockScoreResponse): Record<string, unknown> {
+  return compactRecord({
+    requested_ticker: data.requested_ticker,
+    market: data.market,
+    symbol: data.symbol,
+    name: data.name,
+    latest_bar_date: data.latest_bar_date,
+    score: data.score,
+    quality_score: data.quality_score,
+    opportunity_score: data.opportunity_score,
+    sector: typeof data.sector === "string" ? data.sector : undefined,
+    industry: typeof data.industry === "string" ? data.industry : undefined,
+    sia_snapshot: data.sia_snapshot
+      ? compactRecord({
+          raw_signal: data.sia_snapshot.raw_signal,
+          risk_level: data.sia_snapshot.risk_level,
+        })
+      : undefined,
+    key_metrics: compactMetrics(data.key_metrics, 12),
+    valuation_rows: compactMetrics(data.valuation_rows, 8),
+    stock_profile: compactMetrics(data.stock_profile, 16),
+    components: compactComponents(data.components),
+  });
+}
+
+export function stockMarketCapDisplay(data: StockScoreResponse): MarketCapDisplay {
+  const rawValue = data.key_metrics?.find((item) => item.label === "시가총액")?.value;
+  const parsed = marketCapNumber(rawValue);
+
+  if (data.market === "KR" || data.currency === "KRW") {
+    return { primary: parsed === undefined ? formatValue(rawValue) : formatKoreanWonLarge(parsed) };
+  }
+
+  const usdValue = parsed;
+  const krwValue = typeof usdValue === "number" && typeof data.usd_krw_rate === "number" ? usdValue * data.usd_krw_rate : undefined;
+  return {
+    primary: krwValue === undefined ? formatValue(rawValue) : formatKoreanWonLarge(krwValue),
+    secondary: usdValue === undefined ? undefined : `(${formatCompactUsd(usdValue)})`,
+  };
+}
+
+function marketCapNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+
+  const compact = value.trim().replaceAll(",", "");
+  const match = compact.match(/([-+]?\d+(?:\.\d+)?)\s*([TtBbMm])?/);
+  if (!match) return undefined;
+
+  const base = Number(match[1]);
+  if (!Number.isFinite(base)) return undefined;
+  const unit = match[2]?.toUpperCase();
+  const multiplier = unit === "T" ? 1_000_000_000_000 : unit === "B" ? 1_000_000_000 : unit === "M" ? 1_000_000 : 1;
+  return base * multiplier;
+}
+
+function formatKoreanWonLarge(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  const totalEok = Math.max(0, Math.round(value / 100_000_000));
+  const jo = Math.floor(totalEok / 10_000);
+  const eok = totalEok % 10_000;
+  if (jo > 0 && eok > 0) return `${jo}조 ${eok}억원`;
+  if (jo > 0) return `${jo}조원`;
+  return `${totalEok}억원`;
+}
+
+function formatCompactUsd(value: number): string {
+  if (!Number.isFinite(value)) return "$-";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000_000) return `$${trimCompact(value / 1_000_000_000_000)}T`;
+  if (abs >= 1_000_000_000) return `$${trimCompact(value / 1_000_000_000)}B`;
+  if (abs >= 1_000_000) return `$${trimCompact(value / 1_000_000)}M`;
+  return `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value)}`;
+}
+
+function trimCompact(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function compactComponents(components: ScoreComponent[] | undefined): Array<Record<string, unknown>> | undefined {
+  if (!components?.length) return undefined;
+  return components.slice(0, 5).map((component) =>
+    compactRecord({
+      key: component.key,
+      label: component.label,
+      score: component.score,
+      metrics: compactMetrics(component.metrics, 2),
+    })
+  );
+}
+
+function compactMetrics(items: LabeledValue[] | undefined, count: number): Array<Record<string, unknown>> | undefined {
+  if (!items?.length) return undefined;
+  return items.slice(0, count).map((item) =>
+    compactRecord({
+      label: item.label,
+      value: item.value,
+      note: item.note,
+    })
+  );
+}
+
+function compactRecord<T extends Record<string, unknown>>(record: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 function formatUsdAmount(price: number | undefined, currency?: string): string | undefined {

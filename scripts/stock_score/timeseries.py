@@ -6,6 +6,8 @@ import pandas as pd
 
 from .formatting import as_float, as_int, labeled_money, num_label, pct, price_label
 
+CHART_SERIES_TRADING_YEAR_ROWS = 260
+
 
 def return_between(closes: list[float], days: int) -> float | None:
     if len(closes) <= days:
@@ -56,7 +58,7 @@ def atr_percent(history: pd.DataFrame, period: int = 14) -> tuple[float | None, 
 def build_chart_series(history: pd.DataFrame, currency: str, usd_krw: float | None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     previous_close: float | None = None
-    for index, row in history.tail(180).iterrows():
+    for index, row in history.tail(CHART_SERIES_TRADING_YEAR_ROWS).iterrows():
         close = as_float(row.get("Close"))
         if close is None:
             continue
@@ -90,10 +92,47 @@ def build_chart_series(history: pd.DataFrame, currency: str, usd_krw: float | No
     return rows
 
 
+def yfinance_domestic_daily_rows(history: pd.DataFrame) -> list[dict[str, Any]]:
+    if history.empty:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for index, row in history.iterrows():
+        close = as_float(row.get("Close"))
+        date = yfinance_history_date(index)
+        if close is None or date is None:
+            continue
+        rows.append(
+            {
+                "stck_bsop_date": date,
+                "stck_oprc": row.get("Open"),
+                "stck_hgpr": row.get("High"),
+                "stck_lwpr": row.get("Low"),
+                "stck_clpr": close,
+                "acml_vol": as_int(row.get("Volume")),
+            }
+        )
+    rows.sort(key=lambda row: str(row.get("stck_bsop_date") or ""))
+    return rows
+
+
+def yfinance_history_date(index: Any) -> str | None:
+    try:
+        timestamp = pd.Timestamp(index)
+        if pd.isna(timestamp):
+            return None
+        return timestamp.date().strftime("%Y%m%d")
+    except Exception:
+        value = str(index)[:10]
+        if len(value) == 10 and value[4] == "-" and value[7] == "-":
+            return value.replace("-", "")
+        return None
+
+
 def kis_chart_series(rows: list[dict[str, Any]], currency: str, usd_krw: float | None) -> list[dict[str, Any]]:
     chart: list[dict[str, Any]] = []
     previous_close: float | None = None
-    for row in rows[-180:]:
+    for row in rows[-CHART_SERIES_TRADING_YEAR_ROWS:]:
         close = as_float(row.get("clos"))
         if close is None:
             continue
@@ -130,7 +169,7 @@ def kis_chart_series(rows: list[dict[str, Any]], currency: str, usd_krw: float |
 def kis_domestic_chart_series(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     chart: list[dict[str, Any]] = []
     previous_close: float | None = None
-    for row in rows[-180:]:
+    for row in rows[-CHART_SERIES_TRADING_YEAR_ROWS:]:
         close = as_float(row.get("stck_clpr"))
         if close is None:
             continue
