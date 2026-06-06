@@ -1,9 +1,18 @@
 import type { NextConfig } from "next";
 
-const includePythonCollector =
-  process.env.INCLUDE_PYTHON_COLLECTOR === "1"
-  || process.env.STOCK_DATA_RUNTIME === "python"
-  || process.env.STOCK_DATA_BACKEND === "python";
+type BuildEnv = Record<string, string | undefined>;
+
+export function shouldIncludePythonCollector(env: BuildEnv = process.env): boolean {
+  const requested =
+    env.INCLUDE_PYTHON_COLLECTOR === "1"
+    || env.STOCK_DATA_RUNTIME === "python"
+    || env.STOCK_DATA_BACKEND === "python";
+  if (!requested) return false;
+  if (env.VERCEL === "1" && env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME !== "1") return false;
+  return true;
+}
+
+const includePythonCollector = shouldIncludePythonCollector();
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -48,7 +57,6 @@ const nextConfig: NextConfig = {
   ...(includePythonCollector
     ? {
         outputFileTracingIncludes: {
-          "/api/quote": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
           "/api/score": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
           "/api/score/batch": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
         },

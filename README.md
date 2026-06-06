@@ -165,7 +165,7 @@ PYTHON_BIN=.venv/bin/python npm run score:smoke
 
 Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 줄이기 위한 rewrite 경로입니다. 현재 public Next API는 Supabase snapshot을 기본으로 읽고, quote는 Node KIS client 또는 Rust market-data service로 즉시 갱신할 수 있습니다. score snapshot 생성은 durable Rust/TypeScript score refresh가 완성될 때까지 Supabase queue + legacy Python score worker가 담당합니다.
 
-Vercel preview/prod 빌드는 기본적으로 Python collector 파일을 함수 번들에 포함하지 않습니다. Docker나 자체 Node 서버에서 요청 중 score collector fallback을 유지해야 하면 `INCLUDE_PYTHON_COLLECTOR=1` 또는 `STOCK_DATA_RUNTIME=python`/`STOCK_DATA_BACKEND=python`을 빌드 환경에 명시하세요.
+Vercel preview/prod 빌드는 `STOCK_DATA_RUNTIME=python` 같은 값이 실수로 들어와도 기본적으로 Python collector 파일을 함수 번들에 포함하지 않습니다. 정말로 Vercel에서 Python subprocess fallback을 번들링해야 하는 특수 상황에서는 `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1`까지 함께 설정해야 합니다. Docker나 자체 Node 서버에서 요청 중 score collector fallback을 유지해야 하면 `INCLUDE_PYTHON_COLLECTOR=1` 또는 `STOCK_DATA_RUNTIME=python`/`STOCK_DATA_BACKEND=python`을 빌드 환경에 명시하세요.
 
 ## 실행
 
