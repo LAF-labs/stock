@@ -91,7 +91,6 @@ try:
     from scripts.stock_score.scoring import (
         SCORE_MODEL_VERSION,
         FactorScore,
-        OpportunityResult,
         analyst_count_confidence,
         clamp_score,
         composite_score,
@@ -117,7 +116,6 @@ except ModuleNotFoundError:
     from stock_score.scoring import (
         SCORE_MODEL_VERSION,
         FactorScore,
-        OpportunityResult,
         analyst_count_confidence,
         clamp_score,
         composite_score,
@@ -138,6 +136,21 @@ except ModuleNotFoundError:
         target_upside_score,
         volume_acceleration_score,
         weighted_factor_score,
+    )
+
+try:
+    from scripts.stock_score.presentation import (
+        grade_for,
+        opportunity_components_for,
+        signal_for,
+        top_like_current,
+    )
+except ModuleNotFoundError:
+    from stock_score.presentation import (
+        grade_for,
+        opportunity_components_for,
+        signal_for,
+        top_like_current,
     )
 
 
@@ -206,24 +219,6 @@ def usd_krw_rate() -> float | None:
         return None
 
 
-def grade_for(score: float) -> dict[str, str]:
-    if score >= 80:
-        return {"class": "excellent", "label": "우수"}
-    if score >= 65:
-        return {"class": "good", "label": "양호"}
-    if score >= 50:
-        return {"class": "normal", "label": "보통"}
-    return {"class": "watch", "label": "주의"}
-
-
-def signal_for(score: float, rsi: float | None, return_3m: float | None) -> str:
-    if score >= 70 and (return_3m or 0.0) > 0 and (rsi or 50.0) < 75:
-        return "BUY"
-    if score < 40 or (return_3m is not None and return_3m < -0.15):
-        return "WATCH"
-    return "HOLD"
-
-
 def latest_statement(statement: pd.DataFrame, labels: dict[str, str]) -> dict[str, Any]:
     if statement.empty:
         return {}
@@ -266,84 +261,6 @@ def safe_news(ticker: yf.Ticker) -> list[dict[str, Any]]:
             }
         )
     return news
-
-
-def top_like_current(symbol: str, name: str, price: float | None, currency: str, score: float, components: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    component_map = {component["key"]: component["score"] for component in components}
-    return [
-        {
-            "symbol": symbol,
-            "name": name,
-            "price": price,
-            "currency": currency,
-            "score": round(score, 1),
-            "grade": grade_for(score),
-            "components": component_map,
-            "ts": int(time.time()),
-        }
-    ]
-
-
-def opportunity_components_for(opportunity: OpportunityResult, *, latest_price: float | None, target_mean_price: float | None, analyst_count: float | None, recommendation_mean: float | None, avg_volume_20: float | None, avg_volume_60: float | None, atr14_pct: float | None, beta: float | None) -> list[dict[str, Any]]:
-    components = opportunity.components
-    target_upside = (target_mean_price / latest_price - 1.0) if latest_price and target_mean_price else None
-    return [
-        {
-            "key": "opportunity_momentum",
-            "label": "기회 모멘텀",
-            "short": "모",
-            "score": round(components["momentum"].score, 1),
-            "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
-            "metrics": [
-                {"label": "신뢰도", "value": pct(components["momentum"].confidence)},
-            ],
-        },
-        {
-            "key": "opportunity_growth",
-            "label": "추정 성장",
-            "short": "성",
-            "score": round(components["estimate_growth"].score, 1),
-            "summary": "매출과 이익 성장률이 기회로 이어질 수 있는지 봐요.",
-            "metrics": [
-                {"label": "신뢰도", "value": pct(components["estimate_growth"].confidence)},
-            ],
-        },
-        {
-            "key": "opportunity_analyst",
-            "label": "목표가 여지",
-            "short": "목",
-            "score": round(components["analyst"].score, 1),
-            "summary": "평균 목표가, 투자의견, 커버리지 수를 보수적으로 봐요.",
-            "metrics": [
-                {"label": "목표가 여지", "value": pct(target_upside)},
-                {"label": "애널리스트 수", "value": num_label(as_int(analyst_count), "명")},
-                {"label": "투자의견 평균", "value": f"{recommendation_mean:.2f}" if recommendation_mean is not None else "-"},
-            ],
-        },
-        {
-            "key": "opportunity_liquidity",
-            "label": "유동성 관심",
-            "short": "유",
-            "score": round(components["liquidity"].score, 1),
-            "summary": "거래량 체력과 최근 거래 관심 증가를 봐요.",
-            "metrics": [
-                {"label": "20일 평균 거래량", "value": num_label(as_int(avg_volume_20), "주")},
-                {"label": "60일 평균 거래량", "value": num_label(as_int(avg_volume_60), "주")},
-            ],
-        },
-        {
-            "key": "opportunity_risk",
-            "label": "위험 제어",
-            "short": "위",
-            "score": round(components["risk"].score, 1),
-            "summary": "변동성과 과열도를 함께 봐요.",
-            "metrics": [
-                {"label": "ATR14", "value": pct(atr14_pct)},
-                {"label": "베타", "value": f"{beta:.2f}" if beta is not None else "-"},
-                {"label": "적용 상한", "value": ", ".join(opportunity.caps) if opportunity.caps else "-"},
-            ],
-        },
-    ]
 
 
 class KisApiError(Exception):

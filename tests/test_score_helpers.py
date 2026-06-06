@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import scripts.fetch_yfinance_score as legacy_score_module
 import scripts.stock_score.formatting as formatting
+import scripts.stock_score.presentation as presentation
 import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
 import scripts.stock_score.timeseries as timeseries
@@ -40,6 +41,68 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.return_between, timeseries.return_between)
         self.assertIs(legacy_score_module.simple_rsi, timeseries.simple_rsi)
         self.assertIs(legacy_score_module.kis_chart_series, timeseries.kis_chart_series)
+
+    def test_presentation_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.grade_for, presentation.grade_for)
+        self.assertIs(legacy_score_module.signal_for, presentation.signal_for)
+        self.assertIs(legacy_score_module.top_like_current, presentation.top_like_current)
+        self.assertIs(legacy_score_module.opportunity_components_for, presentation.opportunity_components_for)
+
+    def test_presentation_helpers_build_stock_response_summary(self):
+        self.assertEqual(presentation.grade_for(82.0), {"class": "excellent", "label": "우수"})
+        self.assertEqual(presentation.signal_for(72.0, 62.0, 0.08), "BUY")
+        self.assertEqual(presentation.signal_for(35.0, 45.0, 0.0), "WATCH")
+
+        rows = presentation.top_like_current(
+            "NVDA",
+            "NVIDIA",
+            120.25,
+            "USD",
+            82.36,
+            [{"key": "growth", "score": 91.2}, {"key": "valuation", "score": 62.1}],
+        )
+
+        self.assertEqual(rows[0]["score"], 82.4)
+        self.assertEqual(rows[0]["grade"], {"class": "excellent", "label": "우수"})
+        self.assertEqual(rows[0]["components"], {"growth": 91.2, "valuation": 62.1})
+        self.assertIsInstance(rows[0]["ts"], int)
+
+    def test_opportunity_component_presentation_uses_factor_evidence(self):
+        opportunity = scoring.OpportunityResult(
+            score=68.4,
+            confidence=0.82,
+            components={
+                "momentum": scoring.FactorScore(score=71.2, confidence=0.8),
+                "estimate_growth": scoring.FactorScore(score=64.0, confidence=0.7),
+                "analyst": scoring.FactorScore(score=60.0, confidence=0.6),
+                "liquidity": scoring.FactorScore(score=77.0, confidence=0.9),
+                "risk": scoring.FactorScore(score=58.0, confidence=0.75),
+            },
+            caps=("speculative_expensive_sales",),
+        )
+
+        components = presentation.opportunity_components_for(
+            opportunity,
+            latest_price=100.0,
+            target_mean_price=125.0,
+            analyst_count=7,
+            recommendation_mean=1.83,
+            avg_volume_20=123_456,
+            avg_volume_60=99_000,
+            atr14_pct=0.052,
+            beta=1.28,
+        )
+
+        self.assertEqual([component["key"] for component in components], [
+            "opportunity_momentum",
+            "opportunity_growth",
+            "opportunity_analyst",
+            "opportunity_liquidity",
+            "opportunity_risk",
+        ])
+        self.assertEqual(components[2]["metrics"][0], {"label": "목표가 여지", "value": "+25.0%"})
+        self.assertEqual(components[2]["metrics"][1], {"label": "애널리스트 수", "value": "7명"})
+        self.assertEqual(components[4]["metrics"][2], {"label": "적용 상한", "value": "speculative_expensive_sales"})
 
     def test_timeseries_helpers_build_chart_rows(self):
         history = pd.DataFrame(
