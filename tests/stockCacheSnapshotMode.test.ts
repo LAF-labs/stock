@@ -19,6 +19,7 @@ const ENV_KEYS = [
   "STOCK_API_APP_SECRET",
   "STOCK_API_BASE",
   "STOCK_QUOTE_CACHE_STALE_SECONDS",
+  "STOCK_SCORE_CACHE_STALE_SECONDS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -130,6 +131,59 @@ test("quote force refresh serves existing snapshot when a provider refresh lease
   assert.equal(result.payload.latest_price, 123.45);
   assert.equal(result.cache.state, "fresh");
   assert.equal(result.cache.source, "supabase");
+});
+
+test("score force refresh serves existing snapshot when refresh is unavailable", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.STOCK_SCORE_CACHE_STALE_SECONDS = "86400";
+
+  const ticker = "US:SCOREFALLBACK";
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker,
+    view_mode: "detail",
+    payload: {
+      ok: true,
+      type: "score",
+      requested_ticker: ticker,
+      market: "US",
+      symbol: "SCOREFALLBACK",
+      score: 72,
+      quality_score: 72,
+      opportunity_score: 61,
+      opportunity_confidence: 0.8,
+      opportunity_components: [],
+      score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      sia_snapshot: {
+        quality_score: 72,
+        opportunity_score: 61,
+        score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      },
+    },
+    fetched_at: new Date(nowMs - 60_000).toISOString(),
+    expires_at: new Date(nowMs + 20 * 60_000).toISOString(),
+  };
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_score_snapshots")) {
+      return new Response(JSON.stringify([snapshot]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore(ticker, "detail", { forceRefresh: true });
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.score, 72);
+  assert.equal(result.cache.state, "fresh");
+  assert.equal(result.cache.source, "supabase");
+  assert.equal(result.cache.refreshError, "refresh_failed");
 });
 
 test("quote force refresh can use Node KIS quote client in Vercel snapshot mode", async () => {

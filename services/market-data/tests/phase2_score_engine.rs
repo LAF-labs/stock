@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 
 use axum::body::Body;
 use http::{Method, Request, StatusCode, header};
@@ -18,11 +18,8 @@ use tower::ServiceExt;
 struct NoopQuoteProvider;
 
 impl QuoteProvider for NoopQuoteProvider {
-    fn fetch_quote(
-        &self,
-        _request: QuoteRequest,
-    ) -> impl Future<Output = Result<Value, MarketDataError>> + Send {
-        async move { unreachable!("score compute endpoint does not fetch quotes") }
+    async fn fetch_quote(&self, _request: QuoteRequest) -> Result<Value, MarketDataError> {
+        unreachable!("score compute endpoint does not fetch quotes")
     }
 }
 
@@ -290,9 +287,25 @@ fn computes_us_score_with_rust_ported_weights() {
     assert_eq!(output.components[0].score, 93.2);
     assert_eq!(output.payload["score"], 97.2);
     assert_eq!(output.payload["quality_score"], 97.2);
-    assert!(output.payload["opportunity_score"].as_f64().expect("opportunity score").is_finite());
-    assert!(output.payload["opportunity_confidence"].as_f64().expect("opportunity confidence") > 0.0);
-    assert_eq!(output.payload["opportunity_components"].as_array().expect("opportunity components").len(), 5);
+    assert!(
+        output.payload["opportunity_score"]
+            .as_f64()
+            .expect("opportunity score")
+            .is_finite()
+    );
+    assert!(
+        output.payload["opportunity_confidence"]
+            .as_f64()
+            .expect("opportunity confidence")
+            > 0.0
+    );
+    assert_eq!(
+        output.payload["opportunity_components"]
+            .as_array()
+            .expect("opportunity components")
+            .len(),
+        5
+    );
     assert_eq!(
         output.payload["score_model_version"],
         "score-v5-dual-quality-opportunity-2026-06-05"
@@ -387,8 +400,8 @@ fn premium_growth_leader_stays_excellent_despite_expensive_multiples() {
 
 #[test]
 fn speculative_growth_setup_gets_separate_capped_opportunity_score() {
-    let output = compute_score(speculative_covered_opportunity_input(), ScoreView::Detail)
-        .expect("score");
+    let output =
+        compute_score(speculative_covered_opportunity_input(), ScoreView::Detail).expect("score");
     let opportunity = output.payload["opportunity_score"]
         .as_f64()
         .expect("opportunity score");
@@ -406,7 +419,12 @@ fn speculative_growth_setup_gets_separate_capped_opportunity_score() {
         .as_f64()
         .expect("snapshot quality");
     assert!((snapshot_quality - output.score / 100.0).abs() < 0.001);
-    assert!(output.payload["sia_snapshot"]["opportunity_score"].as_f64().expect("snapshot opportunity") > 0.55);
+    assert!(
+        output.payload["sia_snapshot"]["opportunity_score"]
+            .as_f64()
+            .expect("snapshot opportunity")
+            > 0.55
+    );
 }
 
 #[test]

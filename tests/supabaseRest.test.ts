@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { supabaseAdminConfig, supabaseReadConfig } from "../src/lib/supabaseRest";
+import { fetchWithTimeout, supabaseAdminConfig, supabaseReadConfig } from "../src/lib/supabaseRest";
 
 const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+const originalFetch = globalThis.fetch;
 
 function restoreEnv() {
   for (const key of ENV_KEYS) {
@@ -17,7 +18,10 @@ function restoreEnv() {
   }
 }
 
-test.afterEach(restoreEnv);
+test.afterEach(() => {
+  restoreEnv();
+  globalThis.fetch = originalFetch;
+});
 
 test("Supabase read config prefers the publishable key over service role", () => {
   process.env.SUPABASE_URL = "https://example.supabase.co/";
@@ -54,3 +58,26 @@ test("Supabase admin config remains service-role only", () => {
     keySource: "service_role",
   });
 });
+
+test("fetchWithTimeout still times out when caller provides an abort signal", async () => {
+  const callerController = new AbortController();
+  globalThis.fetch = async (_url, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+
+  const result = await Promise.race([
+    fetchWithTimeout("https://example.com/slow", { signal: callerController.signal }, 10).then(
+      () => "resolved",
+      () => "rejected"
+    ),
+    sleep(80).then(() => "timeout"),
+  ]);
+
+  assert.equal(result, "rejected");
+  assert.equal(callerController.signal.aborted, false);
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

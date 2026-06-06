@@ -149,7 +149,7 @@ async fn quote_miss_fetches_provider_and_reuses_fresh_cache() {
     assert_eq!(first.payload["symbol"], "AAPL");
     assert_eq!(first.cache.state, CacheState::Miss);
     assert_eq!(first.cache.source, CacheSource::Provider);
-    assert_eq!(first.cache.refresh_started, false);
+    assert!(!first.cache.refresh_started);
     assert_eq!(provider.calls(), 1);
     assert_eq!(queue.len(), 0);
 
@@ -195,7 +195,7 @@ async fn stale_quote_returns_cached_payload_and_dedupes_refresh_job() {
 
     assert_eq!(stale.cache.state, CacheState::Stale);
     assert_eq!(stale.cache.source, CacheSource::Cache);
-    assert_eq!(stale.cache.refresh_started, true);
+    assert!(stale.cache.refresh_started);
     assert_eq!(stale.payload["quote"]["last"], 221.40);
     assert_eq!(stale.job.as_ref().map(|job| job.id.as_str()), Some("job-1"));
     assert_eq!(
@@ -221,11 +221,53 @@ async fn score_miss_returns_accepted_and_enqueues_single_refresh_job() {
 
     assert_eq!(first.cache.state, CacheState::Miss);
     assert_eq!(first.cache.source, CacheSource::Queue);
-    assert_eq!(first.cache.refresh_started, true);
+    assert!(first.cache.refresh_started);
     assert_eq!(first.payload["status"], "queued");
     assert_eq!(first.job.as_ref().map(|job| job.id.as_str()), Some("job-1"));
     assert_eq!(
         second.job.as_ref().map(|job| job.id.as_str()),
+        Some("job-1")
+    );
+    assert_eq!(queue.len(), 1);
+}
+
+#[tokio::test]
+async fn score_force_refresh_serves_stale_cache_and_enqueues_refresh_job() {
+    let provider = FakeQuoteProvider::ok(json!({"last": 913.0, "currency": "USD"}));
+    let (service, cache, queue) = test_service(
+        provider,
+        CacheTtls {
+            quote_fresh: Duration::from_secs(30),
+            quote_stale: Duration::from_secs(300),
+            score_fresh: Duration::from_millis(5),
+            score_stale: Duration::from_secs(60),
+        },
+    );
+    cache.upsert_score(
+        Market::Us,
+        "NVDA",
+        ScoreView::Detail,
+        json!({"score": 84, "symbol": "NVDA"}),
+        CacheTtls {
+            quote_fresh: Duration::from_secs(30),
+            quote_stale: Duration::from_secs(300),
+            score_fresh: Duration::from_millis(5),
+            score_stale: Duration::from_secs(60),
+        },
+    );
+    tokio::time::sleep(Duration::from_millis(15)).await;
+
+    let response = service
+        .score(Market::Us, "nvda", ScoreView::Detail, true)
+        .await
+        .expect("score force refresh fallback");
+
+    assert_eq!(response.cache.state, CacheState::Stale);
+    assert_eq!(response.cache.source, CacheSource::Cache);
+    assert!(response.cache.refresh_started);
+    assert_eq!(response.payload["score"], 84);
+    assert_eq!(
+        response.job.as_ref().map(|job| job.id.as_str()),
         Some("job-1")
     );
     assert_eq!(queue.len(), 1);

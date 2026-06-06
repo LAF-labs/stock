@@ -107,6 +107,10 @@ impl CacheMetadata {
         Self::from_record(CacheState::Fresh, CacheSource::Cache, false, record)
     }
 
+    pub fn fresh_refreshing(record: &CacheRecord) -> Self {
+        Self::from_record(CacheState::Fresh, CacheSource::Cache, true, record)
+    }
+
     pub fn stale(record: &CacheRecord, refresh_started: bool) -> Self {
         Self::from_record(
             CacheState::Stale,

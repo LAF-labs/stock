@@ -267,28 +267,36 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
   const ticker = normalizeTickerRef(tickerRef);
   const key = cacheKey(ticker, view);
   const nowMs = Date.now();
+  let freshCandidate: StoredSnapshot | undefined;
+  let freshSource: CacheSource = "memory";
   let staleCandidate: StoredSnapshot | undefined;
   let staleSource: CacheSource = "memory";
 
-  if (!options.forceRefresh) {
-    const memorySnapshot = memoryCache.get(key);
-    if (memorySnapshot && isFresh(memorySnapshot, nowMs)) {
-      return decorate(memorySnapshot, "fresh", "memory");
-    }
-    if (memorySnapshot && isServeableStale(memorySnapshot, nowMs)) {
-      staleCandidate = memorySnapshot;
-      staleSource = "memory";
-    }
+  const memorySnapshot = memoryCache.get(key);
+  if (memorySnapshot && isFresh(memorySnapshot, nowMs)) {
+    freshCandidate = memorySnapshot;
+    freshSource = "memory";
+  }
+  if (memorySnapshot && isServeableStale(memorySnapshot, nowMs)) {
+    staleCandidate = memorySnapshot;
+    staleSource = "memory";
+  }
 
+  if (!freshCandidate) {
     const dbSnapshot = await readSupabaseSnapshot(ticker, view);
     if (dbSnapshot && isFresh(dbSnapshot, nowMs)) {
       memoryCache.set(key, dbSnapshot);
-      return decorate(dbSnapshot, "fresh", "supabase");
+      freshCandidate = dbSnapshot;
+      freshSource = "supabase";
     }
     if (dbSnapshot && isServeableStale(dbSnapshot, nowMs)) {
       staleCandidate = dbSnapshot;
       staleSource = "supabase";
     }
+  }
+
+  if (!options.forceRefresh) {
+    if (freshCandidate) return decorate(freshCandidate, "fresh", freshSource);
 
     if (staleCandidate) {
       memoryCache.set(key, staleCandidate);
@@ -296,7 +304,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
         scheduleRefresh(ticker, view);
         return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
       }
-      scheduleQueuedRefresh(ticker, view, 60, options.forceRefresh ? "refresh_background_only" : "snapshot_miss");
+      scheduleQueuedRefresh(ticker, view, 60, "snapshot_miss");
       return decorate(staleCandidate, "stale", staleSource, { refreshStarted: false });
     }
   }
@@ -317,6 +325,11 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
     const refreshed = await refreshSnapshot(ticker, view);
     return decorate(refreshed, "miss", "collector");
   } catch (error) {
+    if (freshCandidate) {
+      return decorate(freshCandidate, "fresh", freshSource, {
+        refreshError: publicRefreshErrorCode(error),
+      });
+    }
     if (staleCandidate) {
       return decorate(staleCandidate, "stale", staleSource, {
         refreshStarted: false,

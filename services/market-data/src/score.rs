@@ -244,10 +244,7 @@ fn compute_kr_score(
         (eps_score(input.eps), 0.6),
         (score_positive_opt(roe, -0.10, 0.25), 1.2),
         (score_positive_opt(input.profit_margin, -0.05, 0.25), 0.9),
-        (
-            score_positive_opt(input.operating_margin, -0.05, 0.25),
-            0.8,
-        ),
+        (score_positive_opt(input.operating_margin, -0.05, 0.25), 0.8),
         (score_positive_opt(input.ocf_margin, -0.05, 0.25), 0.8),
     ]);
     let growth = weighted_average(&[
@@ -479,9 +476,10 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
             0.8 * coverage_confidence,
         ),
     ]);
-    let liquidity = weighted_average(&[
-        (liquidity_floor_score(input.market, input.avg_volume_20, input.market_cap), 0.8),
-    ]);
+    let liquidity = weighted_average(&[(
+        liquidity_floor_score(input.market, input.avg_volume_20, input.market_cap),
+        0.8,
+    )]);
     let risk = risk_control_score(input.rsi14, input.beta);
     let components = OpportunityScores {
         momentum,
@@ -514,7 +512,11 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
             clamp(effective_weight / total_weight, 0.0, 1.0),
         )
     };
-    let mut score = clamp(raw_score * confidence + 50.0 * (1.0 - confidence), 0.0, 100.0);
+    let mut score = clamp(
+        raw_score * confidence + 50.0 * (1.0 - confidence),
+        0.0,
+        100.0,
+    );
     let mut caps = Vec::new();
     let sales_multiple = positive_or(input.ev_to_revenue, input.price_to_sales);
     let weak_profit = input
@@ -555,7 +557,9 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
 }
 
 fn analyst_count_confidence(value: Option<f64>) -> f64 {
-    finite(value).map(|value| clamp(value / 8.0, 0.0, 1.0)).unwrap_or(0.0)
+    finite(value)
+        .map(|value| clamp(value / 8.0, 0.0, 1.0))
+        .unwrap_or(0.0)
 }
 
 fn target_upside_score(latest_price: Option<f64>, target_mean_price: Option<f64>) -> Option<f64> {

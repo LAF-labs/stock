@@ -201,27 +201,8 @@ where
         force_refresh: bool,
     ) -> Result<ScoreServiceResponse, MarketDataError> {
         let symbol = normalize_symbol(market, symbol)?;
-        if !force_refresh {
-            match self.cache.score(market, &symbol, view) {
-                CacheLookup::Fresh(record) => {
-                    let cache = CacheMetadata::fresh(&record);
-                    return Ok(ScoreServiceResponse {
-                        payload: record.payload,
-                        cache,
-                        job: None,
-                    });
-                }
-                CacheLookup::Stale(record) => {
-                    let job = self.queue.enqueue_score(market, &symbol, view);
-                    let cache = CacheMetadata::stale(&record, true);
-                    return Ok(ScoreServiceResponse {
-                        payload: record.payload,
-                        cache,
-                        job: Some(job),
-                    });
-                }
-                CacheLookup::Miss => {}
-            }
+        if let Some(response) = self.cached_score_response(market, &symbol, view, force_refresh) {
+            return Ok(response);
         }
 
         let job = self.queue.enqueue_score(market, &symbol, view);
@@ -235,6 +216,40 @@ where
             cache: CacheMetadata::queue(CacheState::Miss),
             job: Some(job),
         })
+    }
+
+    fn cached_score_response(
+        &self,
+        market: Market,
+        symbol: &str,
+        view: ScoreView,
+        force_refresh: bool,
+    ) -> Option<ScoreServiceResponse> {
+        match self.cache.score(market, symbol, view) {
+            CacheLookup::Fresh(record) => {
+                let job = force_refresh.then(|| self.queue.enqueue_score(market, symbol, view));
+                let cache = if force_refresh {
+                    CacheMetadata::fresh_refreshing(&record)
+                } else {
+                    CacheMetadata::fresh(&record)
+                };
+                Some(ScoreServiceResponse {
+                    payload: record.payload,
+                    cache,
+                    job,
+                })
+            }
+            CacheLookup::Stale(record) => {
+                let job = self.queue.enqueue_score(market, symbol, view);
+                let cache = CacheMetadata::stale(&record, true);
+                Some(ScoreServiceResponse {
+                    payload: record.payload,
+                    cache,
+                    job: Some(job),
+                })
+            }
+            CacheLookup::Miss => None,
+        }
     }
 
     pub fn enqueue_quote_refresh(

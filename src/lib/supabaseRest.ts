@@ -42,14 +42,45 @@ export function supabaseHeaders(key: string) {
 }
 
 export async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 2_500): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutController = new AbortController();
+  const { signal, cleanup } = combineAbortSignals(init.signal, timeoutController.signal);
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
   try {
     return await fetch(url, {
       ...init,
-      signal: init.signal || controller.signal,
+      signal,
     });
   } finally {
     clearTimeout(timer);
+    cleanup();
   }
+}
+
+function combineAbortSignals(callerSignal: AbortSignal | null | undefined, timeoutSignal: AbortSignal) {
+  if (!callerSignal) {
+    return {
+      signal: timeoutSignal,
+      cleanup: () => undefined,
+    };
+  }
+
+  if (callerSignal.aborted) {
+    return {
+      signal: callerSignal,
+      cleanup: () => undefined,
+    };
+  }
+
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  callerSignal.addEventListener("abort", abort, { once: true });
+  timeoutSignal.addEventListener("abort", abort, { once: true });
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      callerSignal.removeEventListener("abort", abort);
+      timeoutSignal.removeEventListener("abort", abort);
+    },
+  };
 }
