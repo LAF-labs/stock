@@ -31,6 +31,7 @@ pub struct ScoreEngineInput {
     pub ma50: Option<f64>,
     pub ma200: Option<f64>,
     pub avg_volume_20: Option<f64>,
+    pub avg_volume_60: Option<f64>,
     pub market_cap: Option<f64>,
     pub debt_to_equity: Option<f64>,
     pub current_ratio: Option<f64>,
@@ -40,7 +41,10 @@ pub struct ScoreEngineInput {
     pub price_to_book: Option<f64>,
     pub ev_to_revenue: Option<f64>,
     pub price_to_sales: Option<f64>,
+    #[serde(alias = "cashflow_margin")]
+    pub fcf_margin: Option<f64>,
     pub rsi14: Option<f64>,
+    pub atr14_pct: Option<f64>,
     pub target_mean_price: Option<f64>,
     pub analyst_count: Option<f64>,
     pub recommendation_mean: Option<f64>,
@@ -476,11 +480,17 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
             0.8 * coverage_confidence,
         ),
     ]);
-    let liquidity = weighted_average(&[(
-        liquidity_floor_score(input.market, input.avg_volume_20, input.market_cap),
-        0.8,
-    )]);
-    let risk = risk_control_score(input.rsi14, input.beta);
+    let liquidity = weighted_average(&[
+        (
+            volume_acceleration_score(input.avg_volume_20, input.avg_volume_60),
+            0.9,
+        ),
+        (
+            liquidity_floor_score(input.market, input.avg_volume_20, input.market_cap),
+            0.8,
+        ),
+    ]);
+    let risk = risk_control_score(input.atr14_pct, input.rsi14, input.beta);
     let components = OpportunityScores {
         momentum,
         estimate_growth,
@@ -522,8 +532,7 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
     let weak_profit = input
         .operating_margin
         .is_some_and(|margin| margin.is_finite() && margin < 0.0);
-    let weak_cashflow = input
-        .ocf_margin
+    let weak_cashflow = cashflow_margin(&input)
         .is_some_and(|margin| margin.is_finite() && margin < 0.0);
     if sales_multiple.is_some_and(|multiple| multiple >= 20.0) && (weak_profit || weak_cashflow) {
         score = score.min(72.0);
@@ -533,9 +542,24 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
         score = score.min(68.0);
         caps.push("low_forward_coverage");
     }
-    if input.rsi14.is_some_and(|rsi| rsi.is_finite() && rsi > 85.0) {
+    if input
+        .atr14_pct
+        .is_some_and(|atr| atr.is_finite() && atr > 0.10)
+        || input.rsi14.is_some_and(|rsi| rsi.is_finite() && rsi > 85.0)
+    {
         score = score.min(75.0);
         caps.push("short_term_overheat");
+    }
+    if input.avg_volume_20.is_some_and(|volume| {
+        volume.is_finite()
+            && volume
+                < match input.market {
+                    Market::Kr => 20_000.0,
+                    Market::Us => 50_000.0,
+                }
+    }) {
+        score = score.min(60.0);
+        caps.push("thin_liquidity");
     }
     let target_upside = match (finite(input.target_mean_price), finite(input.latest_price)) {
         (Some(target), Some(price)) if price > 0.0 => Some((target / price) - 1.0),
@@ -560,6 +584,15 @@ fn analyst_count_confidence(value: Option<f64>) -> f64 {
     finite(value)
         .map(|value| clamp(value / 8.0, 0.0, 1.0))
         .unwrap_or(0.0)
+}
+
+fn volume_acceleration_score(avg_volume_20: Option<f64>, avg_volume_60: Option<f64>) -> Option<f64> {
+    match (finite(avg_volume_20), finite(avg_volume_60)) {
+        (Some(short), Some(long)) if long > 0.0 => {
+            score_positive_opt(Some((short / long) - 1.0), -0.35, 0.80)
+        }
+        _ => None,
+    }
 }
 
 fn target_upside_score(latest_price: Option<f64>, target_mean_price: Option<f64>) -> Option<f64> {
@@ -597,11 +630,16 @@ fn liquidity_floor_score(
     }
 }
 
-fn risk_control_score(rsi14: Option<f64>, beta: Option<f64>) -> ComponentScore {
+fn risk_control_score(atr14_pct: Option<f64>, rsi14: Option<f64>, beta: Option<f64>) -> ComponentScore {
     weighted_average(&[
+        (score_negative_opt(atr14_pct, 0.025, 0.10), 1.0),
         (rsi_score(rsi14), 0.8),
         (score_negative_opt(beta, 0.8, 2.5), 0.4),
     ])
+}
+
+fn cashflow_margin(input: &ScoreEngineInput) -> Option<f64> {
+    finite(input.fcf_margin).or_else(|| finite(input.ocf_margin))
 }
 
 fn eps_score(eps: Option<f64>) -> Option<f64> {
@@ -732,8 +770,7 @@ fn guardrailed_valuation(
         || input
             .operating_margin
             .is_some_and(|margin| margin.is_finite() && margin < 0.08);
-    let weak_cashflow = input
-        .ocf_margin
+    let weak_cashflow = cashflow_margin(input)
         .is_some_and(|margin| margin.is_finite() && margin < 0.0);
     let expensive_sales = sales_multiple.is_some_and(|multiple| multiple >= 8.0);
     let expensive_earnings = positive(input.trailing_pe).is_some_and(|multiple| multiple >= 80.0);

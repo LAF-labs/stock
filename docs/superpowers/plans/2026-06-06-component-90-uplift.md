@@ -418,11 +418,11 @@ Evaluator finding: current score `82/100`. Blocking issues are Python/Rust score
 - Modify: `services/market-data/tests/phase2_score_engine.rs`
 - Modify if needed: `tests/fixtures/golden-score-guardrails.json`
 
-- [ ] Ensure Python and Rust score paths use the same representative cases for premium growth, sparse data, weak high-risk names, KR enriched fundamentals, and speculative expensive sales.
-- [ ] Fail if current model version differs across TS, Python, and Rust.
-- [ ] Load the same representative fixture cases in Python and Rust instead of maintaining unrelated examples.
-- [ ] Add tolerance-based parity assertions for quality score, opportunity score, and confidence.
-- [ ] Run:
+- [x] Ensure Python and Rust score paths use the same representative cases for premium growth, sparse data, weak high-risk names, KR enriched fundamentals, and speculative expensive sales.
+- [x] Fail if current model version differs across TS, Python, and Rust.
+- [x] Load the same representative fixture cases in Python and Rust instead of maintaining unrelated examples.
+- [x] Add tolerance-based parity assertions for quality score, opportunity score, and confidence.
+- [x] Run:
 
 ```bash
 npm run test:python 2>&1 | head -c 20000
@@ -444,12 +444,12 @@ Rust tests: failures 0
 - Modify: `src/lib/scoreModel.ts`
 - Modify related tests.
 
-- [ ] Ensure missing data lowers confidence instead of looking like neutral precision.
-- [ ] Ensure low-confidence high-score cases are capped or flagged.
-- [ ] Ensure public payload exposes enough confidence metadata for UI and ops reports.
-- [ ] Port Python opportunity inputs and caps into Rust: `avg_volume_60`, `atr14_pct`, `fcf_margin`, volume acceleration, ATR risk, and thin-liquidity cap.
-- [ ] Strengthen TS current-payload validation with component keys, confidence fields, and version consistency.
-- [ ] Run:
+- [x] Ensure missing data lowers confidence instead of looking like neutral precision.
+- [x] Ensure low-confidence high-score cases are capped or flagged.
+- [x] Ensure public payload exposes enough confidence metadata for UI and ops reports.
+- [x] Port Python opportunity inputs and caps into Rust: `avg_volume_60`, `atr14_pct`, `fcf_margin`, volume acceleration, ATR risk, and thin-liquidity cap.
+- [x] Strengthen TS current-payload validation with component keys, confidence fields, and version consistency.
+- [x] Run:
 
 ```bash
 npm run score:smoke 2>&1 | head -c 20000
@@ -463,11 +463,69 @@ score smoke: exit 0
 ops check: ok true
 ```
 
+Current evidence:
+
+```text
+node --import tsx --test tests/scoreModel.test.ts: 4 passed
+bash scripts/run_python.sh -m unittest tests.test_score_golden_guardrails: 5 passed
+npm test: 140 passed
+npm run test:python: 68 passed
+npm run test:rust: 26 passed
+npm run typecheck: exit 0
+npm run build: exit 0
+npm run score:smoke: OK
+docker build --target market-data -t stock-market-data:score-smoke .: exit 0
+MARKET_DATA_SERVICE_URL=http://127.0.0.1:18080 MARKET_DATA_INTERNAL_TOKEN=ci-internal-token npm run ops:check: ok true
+```
+
+First re-evaluation:
+
+```text
+score_model_data_quality_score: 88/100
+>=90_gate: fail
+blocking_findings:
+- Rust quality valuation used only ocf_margin for weak cashflow while opportunity parity had moved to fcf_margin/cashflow_margin.
+- TS component validation accepted key-only components even though UI consumes score and label.
+- Shared golden guardrail checked opportunity ranges but not parity targets.
+remediation:
+- Rust guardrailed valuation now uses cashflow_margin(input), with FCF-only negative cashflow coverage.
+- TS current-payload validation now requires usable component key, label, and 0..100 score for required quality and opportunity components.
+- Golden fixture now declares score/confidence parity targets; Python and Rust assert against them.
+```
+
+Current evidence after remediation:
+
+```text
+node --import tsx --test tests/scoreModel.test.ts: 5 passed
+bash scripts/run_python.sh -m unittest tests.test_score_golden_guardrails: 7 passed
+cargo test --manifest-path services/market-data/Cargo.toml --test phase2_score_engine rust_score_uses_shared_golden_opportunity_guardrails: passed
+npm test: 141 passed
+npm run test:python: 70 passed
+npm run test:rust: 27 passed
+npm run typecheck: exit 0
+npm run build: exit 0
+npm run score:smoke: OK
+docker build --target market-data -t stock-market-data:score-smoke .: exit 0
+MARKET_DATA_SERVICE_URL=http://127.0.0.1:18080 MARKET_DATA_INTERNAL_TOKEN=ci-internal-token npm run ops:check: ok true
+```
+
 ### Task 4.3: Score/Data Re-Evaluation Gate
 
-- [ ] Dispatch data/score/model evaluator with the diff and verification evidence.
-- [ ] Required result: score model/data quality `>=90`.
-- [ ] Commit and push only after `>=90`:
+- [x] Dispatch data/score/model evaluator with the diff and verification evidence.
+- [x] Required result: score model/data quality `>=90`.
+- [x] Commit and push only after `>=90`:
+
+Gate result:
+
+```text
+score_model_data_quality_score: 94/100
+>=90_gate: pass
+findings: none
+vulnerabilities: none found
+remaining_risk:
+- Rust shared golden parity covers opportunity score/confidence, while quality parity remains Python-side.
+- Intentional recalibration still needs reviewer scrutiny because parity fixture targets are now strict drift guards.
+```
 
 ```bash
 git status --short 2>&1 | head -c 4000

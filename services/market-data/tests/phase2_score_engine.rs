@@ -74,6 +74,7 @@ fn strong_input(market: Market) -> ScoreEngineInput {
         ma50: Some(90.0),
         ma200: Some(80.0),
         avg_volume_20: Some(5_000_000.0),
+        avg_volume_60: Some(4_000_000.0),
         market_cap: match market {
             Market::Us => Some(200_000_000_000.0),
             Market::Kr => Some(50_000_000_000_000.0),
@@ -92,7 +93,9 @@ fn strong_input(market: Market) -> ScoreEngineInput {
         },
         ev_to_revenue: Some(2.0),
         price_to_sales: None,
+        fcf_margin: Some(0.24),
         rsi14: Some(62.0),
+        atr14_pct: Some(0.03),
         target_mean_price: None,
         analyst_count: None,
         recommendation_mean: None,
@@ -124,6 +127,7 @@ fn nvda_like_input() -> ScoreEngineInput {
         ma50: Some(142.0),
         ma200: Some(118.0),
         avg_volume_20: Some(170_000_000.0),
+        avg_volume_60: Some(150_000_000.0),
         market_cap: Some(3_600_000_000_000.0),
         debt_to_equity: Some(18.0),
         current_ratio: Some(4.0),
@@ -133,7 +137,9 @@ fn nvda_like_input() -> ScoreEngineInput {
         price_to_book: Some(55.0),
         ev_to_revenue: Some(35.0),
         price_to_sales: None,
+        fcf_margin: Some(0.42),
         rsi14: Some(63.0),
+        atr14_pct: Some(0.035),
         target_mean_price: Some(190.0),
         analyst_count: Some(58.0),
         recommendation_mean: Some(1.7),
@@ -165,6 +171,7 @@ fn speculative_no_forward_input() -> ScoreEngineInput {
         ma50: Some(8.0),
         ma200: Some(5.0),
         avg_volume_20: Some(8_000_000.0),
+        avg_volume_60: Some(7_500_000.0),
         market_cap: Some(1_500_000_000.0),
         debt_to_equity: Some(5.0),
         current_ratio: Some(2.2),
@@ -174,7 +181,9 @@ fn speculative_no_forward_input() -> ScoreEngineInput {
         price_to_book: Some(5.0),
         ev_to_revenue: Some(13.5),
         price_to_sales: Some(14.2),
+        fcf_margin: Some(-0.20),
         rsi14: Some(68.0),
+        atr14_pct: Some(0.065),
         target_mean_price: None,
         analyst_count: Some(1.0),
         recommendation_mean: Some(1.8),
@@ -206,6 +215,7 @@ fn speculative_covered_opportunity_input() -> ScoreEngineInput {
         ma50: Some(280_000.0),
         ma200: Some(155_000.0),
         avg_volume_20: Some(1_200_000.0),
+        avg_volume_60: Some(900_000.0),
         market_cap: Some(2_100_000_000_000.0),
         debt_to_equity: Some(35.0),
         current_ratio: Some(2.1),
@@ -215,7 +225,9 @@ fn speculative_covered_opportunity_input() -> ScoreEngineInput {
         price_to_book: Some(38.0),
         ev_to_revenue: Some(117.0),
         price_to_sales: Some(103.0),
+        fcf_margin: Some(-0.02),
         rsi14: Some(72.0),
+        atr14_pct: Some(0.09),
         target_mean_price: Some(340_000.0),
         analyst_count: Some(1.0),
         recommendation_mean: Some(1.7),
@@ -247,6 +259,7 @@ fn sparse_input() -> ScoreEngineInput {
         ma50: None,
         ma200: None,
         avg_volume_20: None,
+        avg_volume_60: None,
         market_cap: None,
         debt_to_equity: None,
         current_ratio: None,
@@ -256,13 +269,149 @@ fn sparse_input() -> ScoreEngineInput {
         price_to_book: None,
         ev_to_revenue: None,
         price_to_sales: None,
+        fcf_margin: None,
         rsi14: None,
+        atr14_pct: None,
         target_mean_price: None,
         analyst_count: None,
         recommendation_mean: None,
         beta: None,
         trade_enabled: None,
     }
+}
+
+#[test]
+fn rust_opportunity_uses_python_volume_volatility_and_cashflow_inputs() {
+    let mut input = speculative_no_forward_input();
+    input.avg_volume_20 = Some(30_000.0);
+    input.avg_volume_60 = Some(300_000.0);
+    input.atr14_pct = Some(0.14);
+    input.fcf_margin = Some(-0.35);
+    input.operating_margin = Some(-0.20);
+    input.ev_to_revenue = Some(35.0);
+    input.price_to_sales = Some(33.0);
+
+    let output = compute_score(input, ScoreView::Detail).expect("score");
+    let opportunity = output.payload["opportunity_score"].as_f64().expect("opportunity");
+    let caps = output.payload["sia_snapshot"]["opportunity_caps"]
+        .as_array()
+        .expect("caps")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(opportunity <= 60.0, "thin liquidity and high volatility should cap opportunity");
+    assert!(caps.contains(&"thin_liquidity"));
+    assert!(caps.contains(&"short_term_overheat"));
+    assert!(caps.contains(&"speculative_expensive_sales"));
+}
+
+#[test]
+fn rust_score_uses_shared_golden_opportunity_guardrails() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/golden-score-guardrails.json"
+    ))
+    .expect("golden fixture");
+    let cases = cases.as_array().expect("fixture array");
+
+    for case in cases {
+        let ticker = case["ticker"].as_str().expect("ticker");
+        let input = rust_input_from_golden_case(case);
+        let output = compute_score(input, ScoreView::Detail).expect("score");
+        let opportunity = output.payload["opportunity_score"]
+            .as_f64()
+            .expect("opportunity score");
+        let opportunity_confidence = output.payload["opportunity_confidence"]
+            .as_f64()
+            .expect("opportunity confidence");
+        let expected = &case["expected_opportunity"];
+        let min = expected["min"].as_f64().expect("min");
+        let max = expected["max"].as_f64().expect("max");
+        let parity = &case["expected_parity"];
+        let expected_score = parity["opportunity_score"]["value"]
+            .as_f64()
+            .expect("opportunity parity value");
+        let score_tolerance = parity["opportunity_score"]["tolerance"]
+            .as_f64()
+            .expect("opportunity parity tolerance");
+        let expected_confidence = parity["opportunity_confidence"]["value"]
+            .as_f64()
+            .expect("opportunity confidence parity value");
+        let confidence_tolerance = parity["opportunity_confidence"]["tolerance"]
+            .as_f64()
+            .expect("opportunity confidence parity tolerance");
+
+        assert!(
+            opportunity >= min && opportunity <= max,
+            "{ticker} opportunity {opportunity} outside shared fixture range {min}..{max}"
+        );
+        assert!(
+            (opportunity - expected_score).abs() <= score_tolerance,
+            "{ticker} opportunity {opportunity} drifted from shared parity target {expected_score} +/- {score_tolerance}"
+        );
+        assert!(
+            (opportunity_confidence - expected_confidence).abs() <= confidence_tolerance,
+            "{ticker} opportunity confidence {opportunity_confidence} drifted from shared parity target {expected_confidence} +/- {confidence_tolerance}"
+        );
+    }
+}
+
+fn rust_input_from_golden_case(case: &Value) -> ScoreEngineInput {
+    let ticker = case["ticker"].as_str().expect("ticker");
+    let values = &case["opportunity_inputs"];
+    let market = match values["market"].as_str().unwrap_or("US") {
+        "KR" => Market::Kr,
+        _ => Market::Us,
+    };
+
+    ScoreEngineInput {
+        market,
+        symbol: ticker.to_string(),
+        name: ticker.to_string(),
+        currency: match market {
+            Market::Kr => "KRW".to_string(),
+            Market::Us => "USD".to_string(),
+        },
+        latest_price: json_number(values, "latest_price"),
+        previous_close: None,
+        eps: None,
+        bps: None,
+        profit_margin: json_number(values, "operating_margin"),
+        operating_margin: json_number(values, "operating_margin"),
+        ocf_margin: json_number(values, "cashflow_margin"),
+        revenue_growth: json_number(values, "revenue_growth"),
+        earnings_growth: json_number(values, "earnings_growth"),
+        return_1m: json_number(values, "ret_1m"),
+        return_3m: json_number(values, "ret_3m"),
+        return_6m: json_number(values, "ret_6m"),
+        return_52w: json_number(values, "ret_52w"),
+        distance_52w_high: json_number(values, "distance_52w_high"),
+        ma50: json_number(values, "ma50"),
+        ma200: json_number(values, "ma200"),
+        avg_volume_20: json_number(values, "avg_volume_20"),
+        avg_volume_60: json_number(values, "avg_volume_60"),
+        market_cap: json_number(values, "market_cap"),
+        debt_to_equity: None,
+        current_ratio: None,
+        quick_ratio: None,
+        trailing_pe: None,
+        forward_pe: json_number(values, "forward_pe"),
+        price_to_book: None,
+        ev_to_revenue: json_number(values, "ev_to_revenue"),
+        price_to_sales: json_number(values, "price_to_sales"),
+        fcf_margin: json_number(values, "cashflow_margin"),
+        rsi14: json_number(values, "rsi14"),
+        atr14_pct: json_number(values, "atr14_pct"),
+        target_mean_price: json_number(values, "target_mean_price"),
+        analyst_count: json_number(values, "analyst_count"),
+        recommendation_mean: json_number(values, "recommendation_mean"),
+        beta: json_number(values, "beta"),
+        trade_enabled: Some(true),
+    }
+}
+
+fn json_number(value: &Value, key: &str) -> Option<f64> {
+    value.get(key).and_then(Value::as_f64)
 }
 
 #[test]
@@ -444,6 +593,31 @@ fn no_forward_weak_quality_growth_story_stays_below_good_range() {
     assert!(
         valuation.score <= 45.0,
         "valuation should be capped for weak quality without forward coverage: {}",
+        valuation.score
+    );
+}
+
+#[test]
+fn fcf_only_weak_cashflow_caps_expensive_no_forward_valuation() {
+    let mut input = speculative_no_forward_input();
+    input.profit_margin = Some(0.18);
+    input.operating_margin = Some(0.12);
+    input.ocf_margin = None;
+    input.fcf_margin = Some(-0.25);
+    input.forward_pe = None;
+    input.ev_to_revenue = Some(11.0);
+    input.price_to_sales = Some(10.5);
+
+    let output = compute_score(input, ScoreView::Detail).expect("score");
+    let valuation = output
+        .components
+        .iter()
+        .find(|component| component.key == "valuation")
+        .expect("valuation component");
+
+    assert!(
+        valuation.score <= 45.0,
+        "negative FCF should cap expensive no-forward valuation even without OCF margin: {}",
         valuation.score
     );
 }
