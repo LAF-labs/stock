@@ -6,10 +6,13 @@ import math
 import sys
 from typing import Any
 
-from fetch_stock_score import SCORE_MODEL_VERSION, fetch_score
+try:
+    from scripts.fetch_stock_score import SCORE_MODEL_VERSION, fetch_score
+except ModuleNotFoundError:
+    from fetch_stock_score import SCORE_MODEL_VERSION, fetch_score
 
 
-DEFAULT_TICKERS = ["NVDA", "TSLA", "IONQ", "MVRL", "005930", "000660", "253590"]
+DEFAULT_TICKERS = ["NVDA", "TSLA", "IONQ", "MRVL", "005930", "000660", "253590"]
 
 
 def component_score(result: dict[str, Any], key: str) -> float | None:

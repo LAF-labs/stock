@@ -112,7 +112,7 @@ npm run ops:check
 
 Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 5 minutes.
 
-The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MVRL`, `005930`, `000660`, `253590`. It checks:
+The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MRVL`, `005930`, `000660`, `253590`. It checks:
 
 - every score is finite and in `0..100`
 - `quality_score` and `opportunity_score` are finite and in `0..100`

@@ -31,7 +31,7 @@ No external code was copied.
 - Domestic payload exposes `financial_statement.yfinance_fundamentals` with source symbol, cache state, and raw cached fields.
 - Rust score engine now applies the same domestic enriched-factor weights when those inputs are supplied.
 - Rule-based judgment now explains Forward PER against industry benchmarks before trailing PER/PBR when benchmark rows are available.
-- Smoke set now includes major US and domestic names: `NVDA`, `TSLA`, `IONQ`, `MVRL`, `005930`, `000660`, `253590`.
+- Smoke set now includes major US and domestic names: `NVDA`, `TSLA`, `IONQ`, `MRVL`, `005930`, `000660`, `253590`.
 
 ## Next Accuracy Upgrades
 
