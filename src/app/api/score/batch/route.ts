@@ -3,8 +3,8 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
-import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
-import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { enqueueStockPendingPayload } from "@/lib/stockPendingResponse";
 import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
@@ -46,29 +46,13 @@ export async function GET(request: NextRequest) {
         } catch (error) {
           if (isStockDataUnavailableError(error)) {
             console.info("batch_stock_snapshot_unavailable", { ticker, reason: error.payload.reason });
-            const refreshRequest = await enqueueStockRefreshJob({
-              kind: "score",
-              ticker,
-              view: "compare",
-              priority: 30,
-              reason: error.payload.reason,
-            });
             return {
-              payload: stockDataPendingPayload({
+              payload: await enqueueStockPendingPayload({
                 kind: "score",
                 ticker,
                 view: "compare",
+                priority: 30,
                 reason: error.payload.reason,
-                refreshRequest: refreshRequest.queued
-                  ? {
-                      queued: true,
-                      job_id: refreshRequest.job?.id,
-                      status: refreshRequest.job?.status,
-                    }
-                  : {
-                      queued: false,
-                      reason: refreshRequest.reason,
-                    },
               }),
             };
           }

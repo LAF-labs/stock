@@ -3,8 +3,8 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { jsonError } from "@/lib/apiGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
-import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
-import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { cleanView, getStockScore, normalizeTickerRef, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
@@ -60,36 +60,14 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("stock_snapshot_unavailable", { ticker, view, reason: error.payload.reason });
-      const refreshRequest = await enqueueStockRefreshJob({
+      const pendingPayload = await enqueueStockPendingPayload({
         kind: "score",
         ticker,
         view,
         priority: forceRefresh ? 10 : 20,
         reason: error.payload.reason,
       });
-      const pendingPayload = stockDataPendingPayload({
-        kind: "score",
-        ticker,
-        view,
-        reason: error.payload.reason,
-        refreshRequest: refreshRequest.queued
-          ? {
-              queued: true,
-              job_id: refreshRequest.job?.id,
-              status: refreshRequest.job?.status,
-            }
-          : {
-              queued: false,
-              reason: refreshRequest.reason,
-            },
-      });
-      const response = NextResponse.json(pendingPayload, {
-        status: 202,
-        headers: {
-          ...privateNoStoreHeaders(),
-          "Retry-After": String(pendingPayload.retry_after_seconds),
-        },
-      });
+      const response = stockPendingJsonResponse(pendingPayload);
       if (cooldown) applyRefreshUserCookie(response, cooldown);
       return response;
     }

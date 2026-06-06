@@ -3,10 +3,10 @@ import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders 
 import { jsonError } from "@/lib/apiGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
-import { isStockDataUnavailableError, stockDataPendingPayload } from "@/lib/stockDataRuntime";
+import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
-import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { normalizeTickerRef } from "@/lib/stockSnapshotCache";
 
 export const dynamic = "force-dynamic";
@@ -61,34 +61,13 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("quote_snapshot_unavailable", { ticker, reason: error.payload.reason });
-      const refreshRequest = await enqueueStockRefreshJob({
+      const pendingPayload = await enqueueStockPendingPayload({
         kind: "quote",
         ticker,
         priority: forceRefresh ? 10 : 40,
         reason: error.payload.reason,
       });
-      const pendingPayload = stockDataPendingPayload({
-        kind: "quote",
-        ticker,
-        reason: error.payload.reason,
-        refreshRequest: refreshRequest.queued
-          ? {
-              queued: true,
-              job_id: refreshRequest.job?.id,
-              status: refreshRequest.job?.status,
-            }
-          : {
-              queued: false,
-              reason: refreshRequest.reason,
-            },
-      });
-      const response = NextResponse.json(pendingPayload, {
-        status: 202,
-        headers: {
-          ...privateNoStoreHeaders(),
-          "Retry-After": String(pendingPayload.retry_after_seconds),
-        },
-      });
+      const response = stockPendingJsonResponse(pendingPayload);
       if (cooldown) applyRefreshUserCookie(response, cooldown);
       return response;
     }
