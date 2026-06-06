@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any, Iterable
+from typing import Iterable
+
+from .formatting import as_float, score_positive
+from .symbols import clean_ticker
 
 
 SCORE_MODEL_VERSION = "score-v5-dual-quality-opportunity-2026-06-05"
@@ -20,35 +23,6 @@ class OpportunityResult:
     confidence: float
     components: dict[str, FactorScore]
     caps: tuple[str, ...]
-
-
-def clean_ticker(raw: str) -> str:
-    return (raw or "").strip().replace(" ", "").replace("!", "").upper()
-
-
-def as_float(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)) and math.isfinite(float(value)):
-        return float(value)
-    if isinstance(value, str):
-        cleaned = value.strip().replace(",", "")
-        if not cleaned or cleaned in {"-", "."}:
-            return None
-        try:
-            parsed = float(cleaned)
-            return parsed if math.isfinite(parsed) else None
-        except ValueError:
-            return None
-    return None
-
-
-def score_positive(value: float | None, low: float, high: float, missing: float = 45.0) -> float:
-    if value is None:
-        return missing
-    if high == low:
-        return missing
-    return max(0.0, min(100.0, ((value - low) / (high - low)) * 100.0))
 
 
 def clamp_score(value: float) -> float:
