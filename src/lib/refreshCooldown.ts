@@ -13,12 +13,6 @@ export type RefreshCooldownStatus = {
   cookieValue: string;
 };
 
-type CooldownRow = {
-  user_key: string;
-  refreshed_at: string;
-  cooldown_until: string;
-};
-
 type AcquireCooldownRow = {
   acquired?: boolean;
   cooldown_until?: string;
@@ -30,7 +24,6 @@ declare global {
 }
 
 const COOKIE_NAME = "stock_refresh_user";
-const COOLDOWN_TABLE = "stock_refresh_cooldowns";
 const COOLDOWN_RPC = "acquire_stock_refresh_cooldown";
 const FALLBACK_COOKIE_SECRET = randomUUID();
 const memoryCooldowns = (globalThis.__stockRefreshCooldowns ??= new Map<string, string>());
@@ -39,48 +32,10 @@ export function refreshCooldownSeconds(): number {
   return numericEnv("STOCK_REFRESH_COOLDOWN_SECONDS", 300);
 }
 
-export async function refreshCooldownStatus(request: NextRequest, nowMs = Date.now()): Promise<RefreshCooldownStatus> {
-  const identity = refreshUserIdentity(request);
-  const nextAllowedAt = await readCooldownUntil(identity.userKey);
-  return statusFromUntil(identity, nextAllowedAt, nowMs);
-}
-
 export async function acquireRefreshCooldown(request: NextRequest, nowMs = Date.now()): Promise<RefreshCooldownStatus> {
   const identity = refreshUserIdentity(request);
   const acquiredUntil = await acquireCooldown(identity.userKey, nowMs);
   return statusFromUntil(identity, acquiredUntil.nextAllowedAt, nowMs, acquiredUntil.blocked);
-}
-
-export async function markRefreshCooldown(userKey: string, nowMs = Date.now()): Promise<string> {
-  const refreshedAt = new Date(nowMs).toISOString();
-  const cooldownUntil = new Date(nowMs + refreshCooldownSeconds() * 1000).toISOString();
-  memoryCooldowns.set(userKey, cooldownUntil);
-
-  const config = supabaseAdminConfig();
-  if (!config) return cooldownUntil;
-
-  try {
-    const response = await fetchWithTimeout(`${config.url}/rest/v1/${COOLDOWN_TABLE}?on_conflict=user_key`, {
-      method: "POST",
-      headers: {
-        ...supabaseHeaders(config.key),
-        Prefer: "resolution=merge-duplicates,return=minimal",
-      },
-      body: JSON.stringify({
-        user_key: userKey,
-        refreshed_at: refreshedAt,
-        cooldown_until: cooldownUntil,
-      }),
-    });
-    if (!response.ok) {
-      console.warn("stock_refresh_cooldown_write_failed", { status: response.status });
-    }
-  } catch (error) {
-    // The in-memory cooldown still protects this process if the DB write fails.
-    console.warn("stock_refresh_cooldown_write_failed", { error: error instanceof Error ? error.message : "unknown" });
-  }
-
-  return cooldownUntil;
 }
 
 export function applyRefreshUserCookie(response: NextResponse, status: RefreshCooldownStatus) {
@@ -155,29 +110,6 @@ function acquireMemoryCooldown(userKey: string, nowMs: number): { blocked: boole
   const nextAllowedAt = new Date(nowMs + refreshCooldownSeconds() * 1000).toISOString();
   memoryCooldowns.set(userKey, nextAllowedAt);
   return { blocked: false, nextAllowedAt };
-}
-
-async function readCooldownUntil(userKey: string): Promise<string | undefined> {
-  const memoryUntil = memoryCooldowns.get(userKey);
-  const config = supabaseAdminConfig();
-  if (!config) return memoryUntil;
-
-  try {
-    const query = new URLSearchParams({
-      user_key: `eq.${userKey}`,
-      select: "user_key,refreshed_at,cooldown_until",
-      limit: "1",
-    });
-    const response = await fetchWithTimeout(`${config.url}/rest/v1/${COOLDOWN_TABLE}?${query.toString()}`, {
-      headers: supabaseHeaders(config.key),
-      cache: "no-store",
-    });
-    if (!response.ok) return memoryUntil;
-    const rows = (await response.json()) as CooldownRow[];
-    return rows[0]?.cooldown_until || memoryUntil;
-  } catch {
-    return memoryUntil;
-  }
 }
 
 function statusFromUntil(
