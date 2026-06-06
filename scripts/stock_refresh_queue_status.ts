@@ -1,0 +1,135 @@
+import { appendFileSync } from "node:fs";
+
+import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
+import { loadLocalEnvFiles } from "./localEnv";
+
+type RefreshKind = "quote" | "score";
+
+type QueueStatusOptions = {
+  kind: RefreshKind;
+  dueOnly: boolean;
+  json: boolean;
+  timeoutMs: number;
+  githubOutputKey?: string;
+  forceIfList?: string;
+};
+
+export async function refreshQueueStatus(config: SupabaseConfig, options: QueueStatusOptions, now = new Date()) {
+  const url = new URL(`${config.url}/rest/v1/stock_refresh_jobs`);
+  url.searchParams.set("select", "id");
+  url.searchParams.set("kind", `eq.${options.kind}`);
+  url.searchParams.set("status", "eq.queued");
+  url.searchParams.set("limit", "1");
+  if (options.dueOnly) url.searchParams.set("run_after", `lte.${now.toISOString()}`);
+
+  const response = await fetchWithTimeout(
+    url.toString(),
+    {
+      headers: {
+        ...supabaseHeaders(config.key),
+        Prefer: "count=exact",
+        "Range-Unit": "items",
+        Range: "0-0",
+      },
+    },
+    options.timeoutMs
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase refresh queue status query failed: HTTP ${response.status} ${text.slice(0, 500)}`);
+  }
+
+  const count = contentRangeCount(response.headers.get("content-range"));
+  const fallbackRows = count === undefined ? await response.json().catch(() => []) : [];
+  const queuedJobs = count ?? (Array.isArray(fallbackRows) ? fallbackRows.length : 0);
+  const forced = hasListItems(options.forceIfList);
+  return {
+    ok: true,
+    kind: options.kind,
+    due_only: options.dueOnly,
+    queued_jobs: queuedJobs,
+    forced,
+    should_run: forced || queuedJobs > 0,
+  };
+}
+
+export function parseQueueStatusOptions(argv: string[]): QueueStatusOptions {
+  const options: QueueStatusOptions = {
+    kind: "score",
+    dueOnly: false,
+    json: false,
+    timeoutMs: 8_000,
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = () => {
+      index += 1;
+      if (index >= argv.length) throw new Error(`${arg} requires a value`);
+      return argv[index];
+    };
+    if (arg === "--kind") options.kind = parseKind(next());
+    else if (arg === "--due-only") options.dueOnly = true;
+    else if (arg === "--json") options.json = true;
+    else if (arg === "--timeout-ms") options.timeoutMs = positiveInteger(next(), 8_000);
+    else if (arg === "--github-output-key") options.githubOutputKey = next();
+    else if (arg === "--force-if-list") options.forceIfList = next();
+    else throw new Error(`Unsupported argument: ${arg}`);
+  }
+
+  return options;
+}
+
+export function writeGithubOutput(key: string | undefined, value: string) {
+  if (!key || !process.env.GITHUB_OUTPUT) return;
+  appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`, "utf8");
+}
+
+function contentRangeCount(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const match = value.match(/\/(\d+|\*)$/);
+  if (!match || match[1] === "*") return undefined;
+  const parsed = Number(match[1]);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function hasListItems(value: string | undefined): boolean {
+  return !!value?.split(",").some((item) => item.trim());
+}
+
+function parseKind(value: string): RefreshKind {
+  const kind = value.trim().toLowerCase();
+  if (kind === "quote" || kind === "score") return kind;
+  throw new Error(`Unsupported refresh kind: ${value}`);
+}
+
+function positiveInteger(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function publicError(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 1000) : "unknown";
+}
+
+function isMainModule(): boolean {
+  return process.argv[1]?.endsWith("stock_refresh_queue_status.ts") === true;
+}
+
+async function main() {
+  loadLocalEnvFiles();
+  const options = parseQueueStatusOptions(process.argv.slice(2));
+  const config = supabaseAdminConfig();
+  if (!config) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
+  const payload = await refreshQueueStatus(config, options);
+  writeGithubOutput(options.githubOutputKey, payload.should_run ? "1" : "0");
+  if (options.json) console.log(JSON.stringify(payload, null, 2));
+  else console.log(`${payload.kind} queued=${payload.queued_jobs} should_run=${payload.should_run ? "1" : "0"}`);
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(publicError(error));
+    process.exitCode = 2;
+  });
+}

@@ -84,7 +84,7 @@ Then publish hot quote/score snapshots from GitHub Actions, a local admin machin
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --json
 ```
 
-The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by the TypeScript worker. Score jobs remain on the kind-filtered legacy Python worker until the durable Rust/TypeScript score worker owns score snapshot writes. Configure these repository secrets:
+The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by the TypeScript worker. Score jobs remain on the kind-filtered legacy Python worker until the durable Rust/TypeScript score worker owns score snapshot writes, but Python setup/install is skipped unless due score jobs or workflow_dispatch manual tickers exist. Configure these repository secrets:
 
 ```text
 STOCK_API_APP_KEY
