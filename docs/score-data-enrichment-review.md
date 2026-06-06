@@ -40,3 +40,11 @@ No external code was copied.
 3. Keep yfinance as a fallback and cross-check source, not as the only long-term domestic accounting source.
 4. Add score calibration reports by market and industry: distribution, ties, missing-field rate, factor correlations, and representative ticker snapshots.
 5. Add benchmark comparison fields from industry medians, but keep them as factor context and rule-based judgment inputs until enough history exists to calibrate core score impact.
+
+## Ownership And Exit Criteria
+
+- Owner: data/score maintainer.
+- Review cadence: revisit after each score model version bump and at least quarterly after industry classification maintenance.
+- OpenDART exit criteria: API key available, quarterly batch job writes audited domestic fundamentals to Supabase, yfinance fallback path remains covered by tests, and `npm run score:smoke` passes for the domestic smoke set.
+- Calibration exit criteria: report by market/industry includes score distribution, tie rate, missing-field rate, confidence distribution, and representative ticker diffs before any score threshold or weight change ships.
+- Rust parity exit criteria: TypeScript/Python/Rust score payloads share the same `SCORE_MODEL_VERSION`, golden guardrails pass, and market-data `/readyz` reports durable score refresh only after score snapshot writes are owned outside the legacy Python worker.

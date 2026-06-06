@@ -115,6 +115,29 @@ npm run ops:check
 
 The package `ops:check` script includes `--max-market-data-service-failures 0`, so release checks require `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN`. Use `npm run ops:report` for Supabase-only observation, or run the market-data Docker target locally before `ops:check`.
 
+Current release gate values:
+
+| Threshold key | Field | Gate |
+| --- | --- | ---: |
+| `max_dead_refresh_jobs` | `refresh_queue.dead_jobs` | `0` |
+| `max_stale_running_refresh_jobs` | `refresh_queue.stale_running_jobs` | `0` |
+| `max_queued_refresh_jobs` | `refresh_queue.queued_jobs` | `1000` |
+| `max_stale_score_snapshots` | `score_calibration.stale_snapshots` | `100` |
+| `min_current_score_model_rate` | `score_calibration.current_model_rate` | `0.9` |
+| `max_duplicate_score_rate` | `score_calibration.duplicate_score_rate` | `0.5` |
+| `max_low_confidence_high_score` | `score_calibration.low_confidence_high_score_count` | `0` |
+| `max_missing_quote_price` | `quote_freshness.missing_price_count` | `25` |
+| `max_expired_industry_benchmark_rows` | `industry_benchmarks.expired_rows` | `0` |
+| `max_market_calendar_thin_markets` | `market_calendar.missing_or_thin_markets` | `0` |
+| `max_market_data_service_failures` | `market_data_service.failure_count` | `0` |
+
+Freshness warning cutoffs:
+
+| Warning key | Medium | High | First response |
+| --- | ---: | ---: | --- |
+| `quote_stale_rate` | `>= 0.75` | `>= 0.95` | Check quote provider errors, queue drain cadence, and hot ticker coverage |
+| `refresh_queue_due_age` | `> 60m` | `> 240m` | Check scheduled workflow, worker preflight, and Supabase RPC/table readiness |
+
 Queue-drain workers call `stock_runtime_readiness` before claiming jobs. If a required table or RPC is missing, the worker exits before it locks refresh jobs. Keep `npm run supabase:readiness` in deployment preflight and use `npm run ops:check` after migrations to confirm runtime health.
 
 Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 5 minutes.
@@ -154,6 +177,15 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
 - Prefer Rust `market-data` for long-term serving. Python collector should remain a score fallback until Rust owns score, batch, and refresh jobs end to end. Keep `MARKET_DATA_SERVICE_ENABLE_SCORE=0` until the durable score refresh/cache path is present and reflected in `/readyz`, `/metrics`, and ops reports.
+
+## Known Deployment Constraints
+
+- Production CSP currently allows `script-src 'unsafe-inline'` and `style-src 'unsafe-inline'` for Next runtime compatibility. Treat this as a documented defense-in-depth gap; removing it needs nonce/hash support and a verified Next deployment path.
+- `script-src 'unsafe-eval'` is development-only. It must not appear in production headers.
+- Vercel fail-closes to snapshot mode. `STOCK_DATA_RUNTIME=python` is ignored on Vercel unless `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1` is explicitly set for an emergency.
+- Vercel must not point `MARKET_DATA_SERVICE_URL` at localhost. Use a reachable service URL/token pair or leave Rust service integration disabled for that environment.
+- Public Supabase reads should use `SUPABASE_PUBLISHABLE_KEY`. Production service-role fallback for reads requires an explicit unsafe override; `SUPABASE_SERVICE_ROLE_KEY` remains server-only for writes, queue claims, and cache persistence.
+- Rust `market-data` uses bounded memory cache/queue unless a durable backend is configured. Do not infer durable score refresh from `REDIS_URL`; `/readyz` is the source of truth for active backend modes and `durable_refresh_available`.
 
 ## Calibration Rules
 

@@ -17,8 +17,17 @@ Next.js 기반 주식 티커 조회 리더입니다.
 
 ## 설치
 
+필수 툴체인은 CI와 맞춥니다.
+
+- Node.js 24.x
+- Python 3.12 권장
+- stable Rust toolchain
+- Supabase CLI는 schema push가 필요한 운영자만 설치
+
 ```bash
-npm install
+npm ci
+python3.12 -m venv .venv
+. .venv/bin/activate
 python -m pip install -r requirements.txt
 cargo test --manifest-path services/market-data/Cargo.toml
 ```
@@ -54,6 +63,15 @@ Supabase CLI는 아래 래퍼로 실행하면 `.env.supabase.local`을 자동으
 powershell -ExecutionPolicy Bypass -File scripts/supabase-cli.ps1 db push --linked --yes
 ```
 
+macOS/Linux에서 PowerShell 래퍼를 쓰지 않는 경우에는 토큰 파일을 shell에만 로드한 뒤 Supabase CLI를 직접 실행합니다.
+
+```bash
+set -a
+. .env.supabase.local
+set +a
+supabase db push --linked --yes
+```
+
 캐시는 demand-driven read-through 방식입니다. 사용자가 조회한 종목만 Supabase snapshot으로 살아남고, 장중 현재가/등락률은 5분, 점수/판정/분석은 30분 동안 공유됩니다. 현재가 새로고침 버튼은 quote만 즉시 갱신하며 사용자별 5분 cooldown과 종목별 refresh lease로 외부 API 폭주를 막습니다. 폐장/휴장 중에는 `market_calendar.next_open_at`까지 캐시하되, 장마감 이후 확정된 snapshot만 다음 개장까지 연장합니다.
 
 ```text
@@ -62,6 +80,9 @@ STOCK_SCORE_DETAIL_CACHE_SECONDS=1800
 STOCK_SCORE_COMPARE_CACHE_SECONDS=1800
 STOCK_SCORE_CACHE_STALE_SECONDS=86400
 STOCK_QUOTE_CACHE_STALE_SECONDS=86400
+STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS=1800
+STOCK_QUOTE_SNAPSHOT_EXPIRES_SECONDS=300
+STOCK_QUOTE_SNAPSHOT_STALE_SECONDS=86400
 STOCK_REFRESH_COOLDOWN_SECONDS=300
 STOCK_REFRESH_COOKIE_SECRET=...
 STOCK_RATE_LIMIT_SECRET=...
@@ -105,8 +126,10 @@ MARKET_DATA_SERVICE_ENABLE_SCORE=0
 MARKET_DATA_SERVICE_URL=http://127.0.0.1:8080
 MARKET_DATA_BIND_ADDR=0.0.0.0:8080
 MARKET_DATA_INTERNAL_TOKEN=...
-REDIS_URL=redis://127.0.0.1:6379
+REDIS_URL=
 ```
+
+`REDIS_URL`은 향후 durable cache/queue backend를 붙일 때만 설정합니다. 현재 Rust 서비스는 `REDIS_URL`이 비어 있으면 bounded memory cache/queue로 동작하고, `/readyz`의 `durable_refresh_available=false`는 score durable refresh가 아직 Rust 소유가 아님을 뜻합니다.
 
 `MARKET_DATA_SERVICE_ENABLE_SCORE=1`은 Rust market-data 서비스가 durable score refresh/cache 경로까지 담당할 때만 켜세요. 현재 기본 경로에서는 quote만 Rust 서비스로 넘기고, score snapshot 생성은 Supabase queue + worker/Python collector가 담당합니다. Rust 서비스의 quote/score cache와 refresh queue는 bounded memory fallback으로 동작하며, `/readyz`와 `/metrics`에서 active backend, capacity, queue depth, provider error class를 확인할 수 있습니다.
 
@@ -122,6 +145,24 @@ npm run ops:report
 ```
 
 `npm run ops:check`는 배포 게이트라서 market-data 서비스도 threshold에 포함합니다. 로컬에서 실행할 때는 `MARKET_DATA_SERVICE_URL`과 `MARKET_DATA_INTERNAL_TOKEN`을 설정하거나 Docker target을 먼저 띄우세요.
+
+현재 release gate 값은 `package.json`의 `ops:check` 스크립트와 동일해야 합니다.
+
+| Check | Gate | Remediation |
+| --- | ---: | --- |
+| `refresh_queue.dead_jobs` | `0` | dead job 원인 로그를 보고 재시도 가능 job만 reset |
+| `refresh_queue.stale_running_jobs` | `0` | lock을 잡은 worker 장애 확인 후 stale lock 정리 |
+| `refresh_queue.queued_jobs` | `<= 1000` | queue drain worker 증설 또는 provider rate limit 조정 |
+| `score_calibration.stale_snapshots` | `<= 100` | score queue drain 또는 hot ticker score refresh |
+| `score_calibration.current_model_rate` | `>= 0.9` | 구버전 score snapshot drain/삭제 후 재생성 |
+| `score_calibration.duplicate_score_rate` | `<= 0.5` | 점수 모델 rounding/coverage 회귀 조사 |
+| `score_calibration.low_confidence_high_score_count` | `0` | score guardrail 회귀로 보고 배포 중단 |
+| `quote_freshness.missing_price_count` | `<= 25` | quote provider/스냅샷 upsert 오류 확인 |
+| `industry_benchmarks.expired_rows` | `0` | benchmark refresh workflow 수동 실행 |
+| `market_calendar.missing_or_thin_markets` | `0` | `npm run market-calendar:sync` 실행 |
+| `market_data_service.failure_count` | `0` | `/healthz`, `/readyz`, `/metrics`와 token/env 확인 |
+
+`freshness_risks`는 threshold failure가 아니라 운영 경고입니다. `quote_stale_rate >= 0.75` 또는 oldest due job age `> 60`분이면 medium 경고, 각각 `>= 0.95` 또는 `> 240`분이면 high 경고로 보고 queue drain과 provider 상태를 먼저 확인하세요.
 
 업종 리포트는 canonical 업종 mapping 누락, 표본 수가 작은 업종, 이름만 다른 유사 업종을 점검합니다. 업종이 비어 있는 행은 실제 보강 대상인 `asset_class=stock`과 ETF/ETN/스팩/우선주 등 없어도 되는 비단일주식 대상으로 나눠 보여줍니다.
 
@@ -178,6 +219,27 @@ npm run dev
 ```text
 http://127.0.0.1:3000/?ticker=KO
 ```
+
+## 검증
+
+로컬 전체 검증은 CI 순서와 동일하게 실행합니다.
+
+```bash
+npm run check:all
+npm run supabase:readiness
+npm run ops:check
+```
+
+`npm run check:all`은 Node tests, Python unittest, Rust tests, TypeScript, production build를 모두 실행합니다. `ops:check`는 Supabase service role과 market-data service URL/token이 필요하므로, market-data target을 띄우지 않은 관찰 목적이면 `npm run ops:report`를 사용하세요.
+
+프론트엔드 변경 후에는 dev server에서 최소 두 경로를 desktop/mobile 폭으로 확인합니다.
+
+```text
+http://127.0.0.1:3000/?ticker=US:KO
+http://127.0.0.1:3000/compare?tickers=US:KO,US:PEP,US:MNST
+```
+
+확인 항목은 차트 비어 있음, 텍스트 겹침/가로 overflow, 자동완성 키보드 이동, retry/status/alert 상태, `h1`, chart `aria-describedby`, compare semantic table입니다.
 
 ## 배포
 
@@ -249,5 +311,13 @@ scripts/docker-build-market-data.sh stock-market-data
 ```
 
 Supabase migration을 먼저 적용해야 API rate limit과 서버 전용 cache read 정책이 함께 동작합니다.
+
+## 알려진 배포 제약
+
+- CSP는 production에서도 Next runtime script/style 동작을 위해 `script-src 'unsafe-inline'`과 `style-src 'unsafe-inline'`을 허용합니다. 직접 HTML injection sink는 쓰지 않고, nonce/hash 기반 CSP로 줄이는 작업은 별도 배포 전략이 필요합니다.
+- development에서만 `script-src 'unsafe-eval'`이 추가됩니다. production header에 포함되면 배포를 중단하세요.
+- Vercel은 `STOCK_DATA_RUNTIME=python`이 들어와도 기본적으로 snapshot mode로 fail closed 됩니다. Python collector를 Vercel bundle에 넣는 것은 `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1`이 있을 때만 허용합니다.
+- Vercel에서는 localhost market-data URL을 사용하지 않습니다. preview/prod에는 외부 접근 가능한 `MARKET_DATA_SERVICE_URL`과 `MARKET_DATA_INTERNAL_TOKEN`을 설정하거나 Rust service 연동을 끄세요.
+- `SUPABASE_PUBLISHABLE_KEY`는 public read 전용입니다. production에서 service-role read fallback은 명시 override 없이는 허용하지 않으며, `SUPABASE_SERVICE_ROLE_KEY`는 서버 작업과 queue/cache write 전용으로만 둡니다.
 
 주의: 점수는 조회값을 화면용으로 계산한 참고 지표입니다. 투자 판단이나 자동매매에 그대로 사용하면 안 됩니다.

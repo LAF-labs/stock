@@ -61,6 +61,11 @@ Run the audit report after taxonomy or profile updates. Treat these as review qu
 
 Latest preview audit after pagination and taxonomy cleanup:
 
+- recorded_at: 2026-06-06
+- environment: preview Supabase data after taxonomy pagination cleanup
+- owner: data/operations maintainer
+- cadence: refresh this snapshot after quarterly classification maintenance or after a material taxonomy migration
+
 - active profiles: 16,861
 - missing primary industry: 8,384 total, 7 actionable stock rows, 8,377 exempt non-stock rows
 - unmapped source keys: 1 (`US:energy:energy`)

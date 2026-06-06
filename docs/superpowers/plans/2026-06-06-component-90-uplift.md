@@ -682,9 +682,45 @@ git commit -m "chore(rust): raise market-data score to 90+"
 git push origin main
 ```
 
-## Phase 6: Final Whole-Project 90+ Review
+## Phase 6: Documentation And Maintainability 90+
 
-### Task 6.1: Full Verification
+Evaluator finding: current score `88/100`. Blocking issues are inconsistent score snapshot TTL docs/env, missing documented CSP/deployment constraints, missing explicit `ops:check` gate values and freshness warning cutoffs, and incomplete README onboarding/toolchain verification guidance.
+
+### Task 6.1: Update Documentation Contracts
+
+- [x] Sync `.env.example`, README, and operations docs on `STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS=1800`.
+- [x] Add Node 24, Python 3.12, stable Rust, `npm ci`, and `npm run check:all` onboarding guidance.
+- [x] Add Supabase CLI macOS/Linux alternative to the PowerShell wrapper.
+- [x] Add `ops:check` threshold table, freshness warning cutoffs, and first-response runbook.
+- [x] Document known deployment constraints: CSP `unsafe-inline`, dev-only `unsafe-eval`, Vercel snapshot fail-closed, localhost market-data limitation, service-role read fallback, and Rust memory backend durability.
+- [x] Date/scope/owner the industry audit snapshot.
+- [x] Add ownership and exit criteria for score data enrichment follow-ups.
+
+### Task 6.2: Documentation Re-Evaluation Gate
+
+- [x] Dispatch documentation evaluator with the diff and verification evidence.
+- [x] Required result: documentation/maintainability `>=90`.
+- [x] Commit and push only after `>=90`:
+
+```bash
+git status --short 2>&1 | head -c 4000
+git add .env.example README.md docs
+git commit -m "chore(docs): raise maintainability score to 90+"
+git push origin main
+```
+
+Gate result:
+
+```text
+documentation_maintainability_score: 94/100
+>=90_gate: pass
+required_before_commit: none
+remaining non-blocking finding: release gate thresholds are duplicated in README/docs and package.json; keep package.json as source of truth.
+```
+
+## Phase 7: Final Whole-Project 90+ Review
+
+### Task 7.1: Full Verification
 
 - [ ] Run:
 
@@ -704,7 +740,7 @@ ops check: ok true
 git status: clean
 ```
 
-### Task 6.2: Final Subagent Review
+### Task 7.2: Final Subagent Review
 
 - [ ] Dispatch final read-only evaluator with all component scores and verification evidence.
 - [ ] Required result: every component `>=90`.
