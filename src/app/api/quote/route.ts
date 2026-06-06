@@ -72,12 +72,12 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    console.warn("quote_collector_unreachable", { ticker, error: safeErrorMessage(error) });
+    console.warn("quote_provider_unavailable", { ticker, error: safeErrorMessage(error) });
     const response = NextResponse.json(
       {
         ok: false,
-        error: "quote_collector_unreachable",
-        message: "Quote collector is unavailable.",
+        error: "quote_provider_unavailable",
+        message: "Quote data provider is unavailable.",
       },
       { status: 502, headers: privateNoStoreHeaders() }
     );
