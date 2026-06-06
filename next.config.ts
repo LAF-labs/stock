@@ -57,8 +57,8 @@ const nextConfig: NextConfig = {
   ...(includePythonCollector
     ? {
         outputFileTracingIncludes: {
-          "/api/score": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
-          "/api/score/batch": ["./scripts/fetch_yfinance_score.py", "./requirements.txt"],
+          "/api/score": ["./scripts/fetch_stock_score.py", "./requirements.txt"],
+          "/api/score/batch": ["./scripts/fetch_stock_score.py", "./requirements.txt"],
         },
       }
     : {}),

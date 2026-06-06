@@ -6,7 +6,7 @@ import math
 import sys
 from typing import Any
 
-from fetch_yfinance_score import SCORE_MODEL_VERSION, fetch_score
+from fetch_stock_score import SCORE_MODEL_VERSION, fetch_score
 
 
 DEFAULT_TICKERS = ["NVDA", "TSLA", "IONQ", "MVRL", "005930", "000660", "253590"]

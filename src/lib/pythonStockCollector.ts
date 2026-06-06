@@ -3,7 +3,7 @@ import { numericEnv } from "@/lib/supabaseRest";
 import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
 import type { ScoreView, StockPayload } from "@/lib/stockSnapshotCache";
 
-const SCRIPT_PATH = "scripts/fetch_yfinance_score.py";
+const SCRIPT_PATH = "scripts/fetch_stock_score.py";
 const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
 const SCORE_TIMEOUT_MS = 35_000;
 const SCORE_OUTPUT_MAX_BYTES = 1_000_000;

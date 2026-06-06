@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import pandas as pd
-import scripts.fetch_yfinance_score as legacy_score_module
+import scripts.fetch_stock_score as score_module
 import scripts.stock_score.formatting as formatting
 import scripts.stock_score.io_utils as io_utils
 import scripts.stock_score.kis_client as kis_client
@@ -15,7 +15,7 @@ import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
 import scripts.stock_score.timeseries as timeseries
 import scripts.stock_score.yfinance_provider as yfinance_provider
-from scripts.fetch_yfinance_score import (
+from scripts.fetch_stock_score import (
     FactorScore,
     composite_score,
     domestic_yfinance_symbol,
@@ -27,51 +27,51 @@ from scripts.fetch_yfinance_score import (
 
 
 class ScoreHelperTests(unittest.TestCase):
-    def test_scoring_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.FactorScore, scoring.FactorScore)
-        self.assertIs(legacy_score_module.weighted_factor_score, scoring.weighted_factor_score)
-        self.assertIs(legacy_score_module.opportunity_factor_score, scoring.opportunity_factor_score)
+    def test_scoring_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.FactorScore, scoring.FactorScore)
+        self.assertIs(score_module.weighted_factor_score, scoring.weighted_factor_score)
+        self.assertIs(score_module.opportunity_factor_score, scoring.opportunity_factor_score)
 
-    def test_symbol_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.clean_ticker, symbols.clean_ticker)
-        self.assertIs(legacy_score_module.parse_symbol_ref, symbols.parse_symbol_ref)
-        self.assertIs(legacy_score_module.domestic_yfinance_symbol, symbols.domestic_yfinance_symbol)
+    def test_symbol_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.clean_ticker, symbols.clean_ticker)
+        self.assertIs(score_module.parse_symbol_ref, symbols.parse_symbol_ref)
+        self.assertIs(score_module.domestic_yfinance_symbol, symbols.domestic_yfinance_symbol)
 
-    def test_formatting_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.as_float, formatting.as_float)
-        self.assertIs(legacy_score_module.price_label, formatting.price_label)
-        self.assertIs(legacy_score_module.labeled_money, formatting.labeled_money)
+    def test_formatting_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.as_float, formatting.as_float)
+        self.assertIs(score_module.price_label, formatting.price_label)
+        self.assertIs(score_module.labeled_money, formatting.labeled_money)
 
-    def test_timeseries_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.return_between, timeseries.return_between)
-        self.assertIs(legacy_score_module.simple_rsi, timeseries.simple_rsi)
-        self.assertIs(legacy_score_module.kis_chart_series, timeseries.kis_chart_series)
+    def test_timeseries_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.return_between, timeseries.return_between)
+        self.assertIs(score_module.simple_rsi, timeseries.simple_rsi)
+        self.assertIs(score_module.kis_chart_series, timeseries.kis_chart_series)
 
-    def test_presentation_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.grade_for, presentation.grade_for)
-        self.assertIs(legacy_score_module.signal_for, presentation.signal_for)
-        self.assertIs(legacy_score_module.top_like_current, presentation.top_like_current)
-        self.assertIs(legacy_score_module.opportunity_components_for, presentation.opportunity_components_for)
+    def test_presentation_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.grade_for, presentation.grade_for)
+        self.assertIs(score_module.signal_for, presentation.signal_for)
+        self.assertIs(score_module.top_like_current, presentation.top_like_current)
+        self.assertIs(score_module.opportunity_components_for, presentation.opportunity_components_for)
 
-    def test_io_and_kis_cache_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.env_value, io_utils.env_value)
-        self.assertIs(legacy_score_module.one_byte_file_lock, io_utils.one_byte_file_lock)
-        self.assertIs(legacy_score_module.read_kis_discovery_cache, kis_discovery_cache.read_kis_discovery_cache)
-        self.assertIs(legacy_score_module.write_kis_discovery_cache, kis_discovery_cache.write_kis_discovery_cache)
+    def test_io_and_kis_cache_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.env_value, io_utils.env_value)
+        self.assertIs(score_module.one_byte_file_lock, io_utils.one_byte_file_lock)
+        self.assertIs(score_module.read_kis_discovery_cache, kis_discovery_cache.read_kis_discovery_cache)
+        self.assertIs(score_module.write_kis_discovery_cache, kis_discovery_cache.write_kis_discovery_cache)
 
-    def test_provider_cache_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.yfinance_fundamentals, provider_cache.yfinance_fundamentals)
-        self.assertIs(legacy_score_module.kis_token_cache_key, provider_cache.kis_token_cache_key)
-        self.assertIs(legacy_score_module.read_supabase_kis_access_token, provider_cache.read_supabase_kis_access_token)
-        self.assertIs(legacy_score_module.write_supabase_kis_access_token, provider_cache.write_supabase_kis_access_token)
+    def test_provider_cache_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.yfinance_fundamentals, provider_cache.yfinance_fundamentals)
+        self.assertIs(score_module.kis_token_cache_key, provider_cache.kis_token_cache_key)
+        self.assertIs(score_module.read_supabase_kis_access_token, provider_cache.read_supabase_kis_access_token)
+        self.assertIs(score_module.write_supabase_kis_access_token, provider_cache.write_supabase_kis_access_token)
 
-    def test_kis_client_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.KisApiError, kis_client.KisApiError)
-        self.assertIs(legacy_score_module.discover_kis_stock, kis_client.discover_kis_stock)
-        self.assertIs(legacy_score_module.domestic_exchange_name, kis_client.domestic_exchange_name)
-        self.assertIs(legacy_score_module.kis_access_token, kis_client.kis_access_token)
-        self.assertIs(legacy_score_module.kis_date, kis_client.kis_date)
-        self.assertIs(legacy_score_module.kis_percent, kis_client.kis_percent)
+    def test_kis_client_helpers_are_extracted_through_score_entrypoint(self):
+        self.assertIs(score_module.KisApiError, kis_client.KisApiError)
+        self.assertIs(score_module.discover_kis_stock, kis_client.discover_kis_stock)
+        self.assertIs(score_module.domestic_exchange_name, kis_client.domestic_exchange_name)
+        self.assertIs(score_module.kis_access_token, kis_client.kis_access_token)
+        self.assertIs(score_module.kis_date, kis_client.kis_date)
+        self.assertIs(score_module.kis_percent, kis_client.kis_percent)
 
     def test_env_value_reads_local_files_after_environment(self):
         original_cwd = Path.cwd()
@@ -466,7 +466,7 @@ class ScoreHelperTests(unittest.TestCase):
                 provider_cache.requests.get = fake_get
                 kis_client.requests.post = fake_post
 
-                self.assertEqual(legacy_score_module.kis_access_token(), "shared-token")
+                self.assertEqual(score_module.kis_access_token(), "shared-token")
             finally:
                 os.chdir(original_cwd)
                 provider_cache.requests.get = original_get

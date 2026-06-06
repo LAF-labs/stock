@@ -15,9 +15,9 @@ from zoneinfo import ZoneInfo
 import requests
 
 try:
-    from scripts.fetch_yfinance_score import fetch_score, parse_symbol_ref
+    from scripts.fetch_stock_score import fetch_score, parse_symbol_ref
 except ModuleNotFoundError:
-    from fetch_yfinance_score import fetch_score, parse_symbol_ref
+    from fetch_stock_score import fetch_score, parse_symbol_ref
 
 
 ScoreView = str

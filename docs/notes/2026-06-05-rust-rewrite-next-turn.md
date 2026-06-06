@@ -10,11 +10,11 @@
 ## Highest-Value Rust Rewrite Points
 
 1. Request-time collector execution
-   - Current hot path: `src/lib/stockSnapshotCache.ts` and `src/lib/stockQuoteCache.ts` spawn `scripts/fetch_yfinance_score.py`.
+   - Current hot path: `src/lib/stockSnapshotCache.ts` and `src/lib/stockQuoteCache.ts` spawn `scripts/fetch_stock_score.py`.
    - Rust value: removes process spawn overhead, gives typed errors, centralizes timeouts and rate limits, and makes horizontal scaling predictable.
 
 2. KIS client, auth token, and throttle
-   - Current code is embedded in `scripts/fetch_yfinance_score.py`.
+   - Current code is embedded in `scripts/fetch_stock_score.py`.
    - Rust value: long-lived HTTP client, shared token cache, global provider throttle, predictable retry/error mapping.
 
 3. Cache refresh orchestration
