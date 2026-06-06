@@ -5,6 +5,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "publish-stock-snapshots.yml"
 BENCHMARK_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "maintain-industry-benchmarks.yml"
+OPERATIONS_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "stock-operations-check.yml"
 
 
 class PublishWorkflowTests(unittest.TestCase):
@@ -12,6 +13,7 @@ class PublishWorkflowTests(unittest.TestCase):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
         self.assertIn('- cron: "*/5 * * * 1-5"', text)
+        self.assertIn('- cron: "*/30 * * * 0,6"', text)
         self.assertNotIn('- cron: "*/30 * * * 1-5"', text)
 
     def test_refresh_queue_worker_serializes_overlapping_runs(self):
@@ -30,6 +32,18 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("run_industry_maintenance.py --refresh-benchmarks", text)
         self.assertIn("industry_quality_audit.py --json", text)
         self.assertIn("supabase_runtime_readiness.py --json", text)
+
+    def test_operations_check_runs_on_schedule_with_thresholds(self):
+        text = OPERATIONS_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('cron: "*/15 * * * 1-5"', text)
+        self.assertIn('cron: "0 */3 * * 0,6"', text)
+        self.assertIn("workflow_dispatch:", text)
+        self.assertIn("stock_operations_report.py", text)
+        self.assertIn("--fail-on-threshold", text)
+        self.assertIn("--max-dead-refresh-jobs 0", text)
+        self.assertIn("--min-current-score-model-rate", text)
+        self.assertIn("STOCK_OPS_MAX_QUEUED_REFRESH_JOBS", text)
 
 
 if __name__ == "__main__":

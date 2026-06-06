@@ -1,0 +1,57 @@
+name: Stock operations check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * 1-5"
+    - cron: "0 */3 * * 0,6"
+
+concurrency:
+  group: stock-operations-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STOCK_OPS_SAMPLE_LIMIT: ${{ vars.STOCK_OPS_SAMPLE_LIMIT || '500' }}
+      STOCK_OPS_MAX_QUEUED_REFRESH_JOBS: ${{ vars.STOCK_OPS_MAX_QUEUED_REFRESH_JOBS || '1000' }}
+      STOCK_OPS_MAX_STALE_SCORE_SNAPSHOTS: ${{ vars.STOCK_OPS_MAX_STALE_SCORE_SNAPSHOTS || '100' }}
+      STOCK_OPS_MIN_CURRENT_SCORE_MODEL_RATE: ${{ vars.STOCK_OPS_MIN_CURRENT_SCORE_MODEL_RATE || '0.9' }}
+      STOCK_OPS_MAX_DUPLICATE_SCORE_RATE: ${{ vars.STOCK_OPS_MAX_DUPLICATE_SCORE_RATE || '0.5' }}
+      STOCK_OPS_MAX_MISSING_QUOTE_PRICE: ${{ vars.STOCK_OPS_MAX_MISSING_QUOTE_PRICE || '25' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install operations dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run operations threshold check
+        run: |
+          python scripts/stock_operations_report.py \
+            --json \
+            --fail-on-threshold \
+            --sample-limit "$STOCK_OPS_SAMPLE_LIMIT" \
+            --max-dead-refresh-jobs 0 \
+            --max-stale-running-refresh-jobs 0 \
+            --max-queued-refresh-jobs "$STOCK_OPS_MAX_QUEUED_REFRESH_JOBS" \
+            --max-stale-score-snapshots "$STOCK_OPS_MAX_STALE_SCORE_SNAPSHOTS" \
+            --min-current-score-model-rate "$STOCK_OPS_MIN_CURRENT_SCORE_MODEL_RATE" \
+            --max-duplicate-score-rate "$STOCK_OPS_MAX_DUPLICATE_SCORE_RATE" \
+            --max-low-confidence-high-score 0 \
+            --max-missing-quote-price "$STOCK_OPS_MAX_MISSING_QUOTE_PRICE" \
+            --max-expired-industry-benchmark-rows 0 \
+            --max-market-calendar-thin-markets 0

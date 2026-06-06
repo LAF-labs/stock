@@ -9,6 +9,7 @@ on:
         default: ""
   schedule:
     - cron: "*/5 * * * 1-5"
+    - cron: "*/30 * * * 0,6"
 
 concurrency:
   group: publish-stock-snapshots

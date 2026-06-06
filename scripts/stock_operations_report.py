@@ -18,6 +18,82 @@ import requests
 DEFAULT_SCORE_MODEL_VERSION = "score-v5-dual-quality-opportunity-2026-06-05"
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_ENV_FILES = (".env.local", ".env.supabase.local", ".env.vercel.local")
+THRESHOLD_RULES: tuple[tuple[str, str, str, tuple[str, ...], str], ...] = (
+    ("max_total_refresh_jobs", "max", "refresh_queue.total_jobs", ("refresh_queue", "total_jobs"), "number"),
+    ("max_queued_refresh_jobs", "max", "refresh_queue.queued_jobs", ("refresh_queue", "queued_jobs"), "number"),
+    ("max_dead_refresh_jobs", "max", "refresh_queue.dead_jobs", ("refresh_queue", "dead_jobs"), "number"),
+    (
+        "max_stale_running_refresh_jobs",
+        "max",
+        "refresh_queue.stale_running_jobs",
+        ("refresh_queue", "stale_running_jobs"),
+        "number",
+    ),
+    (
+        "max_due_refresh_age_minutes",
+        "max",
+        "refresh_queue.oldest_due_age_minutes",
+        ("refresh_queue", "oldest_due_age_minutes"),
+        "number",
+    ),
+    (
+        "max_stale_score_snapshots",
+        "max",
+        "score_calibration.stale_snapshots",
+        ("score_calibration", "stale_snapshots"),
+        "number",
+    ),
+    (
+        "min_current_score_model_rate",
+        "min",
+        "score_calibration.current_model_rate",
+        ("score_calibration", "current_model_rate"),
+        "number",
+    ),
+    (
+        "max_duplicate_score_rate",
+        "max",
+        "score_calibration.duplicate_score_rate",
+        ("score_calibration", "duplicate_score_rate"),
+        "number",
+    ),
+    (
+        "max_low_confidence_high_score",
+        "max",
+        "score_calibration.low_confidence_high_score_count",
+        ("score_calibration", "low_confidence_high_score_count"),
+        "number",
+    ),
+    ("max_stale_quote_rate", "max", "quote_freshness.stale_rate", ("quote_freshness", "stale_rate"), "number"),
+    (
+        "max_missing_quote_price",
+        "max",
+        "quote_freshness.missing_price_count",
+        ("quote_freshness", "missing_price_count"),
+        "number",
+    ),
+    (
+        "max_expired_industry_benchmark_rows",
+        "max",
+        "industry_benchmarks.expired_rows",
+        ("industry_benchmarks", "expired_rows"),
+        "number",
+    ),
+    (
+        "max_low_sample_industry_benchmark_rows",
+        "max",
+        "industry_benchmarks.low_sample_rows",
+        ("industry_benchmarks", "low_sample_rows"),
+        "number",
+    ),
+    (
+        "max_market_calendar_thin_markets",
+        "max",
+        "market_calendar.missing_or_thin_markets",
+        ("market_calendar", "missing_or_thin_markets"),
+        "count",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -27,7 +103,8 @@ class SupabaseReportConfig:
     timeout_seconds: float
 
 
-def summarize_queue_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize_queue_rows(rows: list[dict[str, Any]], now: datetime | None = None) -> dict[str, Any]:
+    current_now = now or datetime.now(timezone.utc)
     by_status: dict[str, int] = {}
     by_kind: dict[str, int] = {}
     oldest_run_after: str | None = None
@@ -46,6 +123,11 @@ def summarize_queue_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if run_after and (oldest_run_after is None or run_after < oldest_run_after):
             oldest_run_after = run_after
 
+    oldest_due_age_minutes = None
+    oldest_run_after_dt = parse_datetime(oldest_run_after)
+    if oldest_run_after_dt and oldest_run_after_dt <= current_now:
+        oldest_due_age_minutes = rounded((current_now - oldest_run_after_dt).total_seconds() / 60, 1)
+
     return {
         "total_jobs": total,
         "queued_jobs": by_status.get("queued", 0),
@@ -55,6 +137,7 @@ def summarize_queue_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "failed_jobs": by_status.get("failed", 0),
         "stale_running_jobs": stale_running,
         "oldest_run_after": oldest_run_after,
+        "oldest_due_age_minutes": oldest_due_age_minutes,
         "by_status": by_status,
         "by_kind": by_kind,
     }
@@ -116,7 +199,9 @@ def summarize_score_snapshots(
     return {
         "total_snapshots": len(rows),
         "current_model_snapshots": current_model,
+        "current_model_rate": rounded(current_model / len(rows), 3) if rows else 0.0,
         "missing_model_count": missing_model,
+        "missing_model_rate": rounded(missing_model / len(rows), 3) if rows else 0.0,
         "stale_snapshots": stale,
         "score_min": rounded(min(scores)) if scores else None,
         "score_max": rounded(max(scores)) if scores else None,
@@ -129,6 +214,22 @@ def summarize_score_snapshots(
         "duplicate_score_rate": rounded(duplicate_members / len(rows), 3) if rows else 0.0,
         "max_duplicate_bucket_size": duplicate_items[0]["count"] if duplicate_items else 0,
         "top_duplicate_scores": duplicate_items[:10],
+    }
+
+
+def evaluate_operations_thresholds(payload: dict[str, Any], thresholds: dict[str, float]) -> dict[str, Any]:
+    violations: list[dict[str, Any]] = []
+    for key, direction, label, path, value_kind in THRESHOLD_RULES:
+        actual = nested_count(payload, path) if value_kind == "count" else nested_number(payload, path)
+        if direction == "min":
+            add_min_violation(violations, thresholds, key, label, actual)
+        else:
+            add_max_violation(violations, thresholds, key, label, actual)
+
+    return {
+        "configured": bool(thresholds),
+        "ok": not violations,
+        "violations": violations,
     }
 
 
@@ -240,10 +341,11 @@ def fetch_supabase_report(
     quote_rows = fetch_quote_snapshot_rows(config, sample_limit)
     benchmark_rows = fetch_industry_benchmark_rows(config, sample_limit)
     calendar_rows = fetch_market_calendar_rows(config)
+    generated_at = datetime.now(timezone.utc).replace(microsecond=0)
     return {
         "ok": True,
-        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-        "refresh_queue": summarize_queue_rows(refresh_queue_rows),
+        "generated_at": generated_at.isoformat(),
+        "refresh_queue": summarize_queue_rows(refresh_queue_rows, now=generated_at),
         "score_snapshots": raw_operations.get("score_snapshots", {}) if isinstance(raw_operations, dict) else {},
         "score_calibration": summarize_score_snapshots(
             score_rows,
@@ -444,6 +546,81 @@ def rounded(value: float, digits: int = 2) -> float:
     return round(float(value), digits)
 
 
+def nested_number(payload: dict[str, Any], path: tuple[str, ...]) -> float | None:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return finite_number(current)
+
+
+def nested_count(payload: dict[str, Any], path: tuple[str, ...]) -> float | None:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    if isinstance(current, list):
+        return float(len(current))
+    if isinstance(current, dict):
+        return float(len(current))
+    return finite_number(current)
+
+
+def add_max_violation(
+    violations: list[dict[str, Any]],
+    thresholds: dict[str, float],
+    key: str,
+    path: str,
+    actual: float | None,
+) -> None:
+    threshold = thresholds.get(key)
+    if threshold is None or actual is None or actual <= threshold:
+        return
+    violations.append(
+        {
+            "key": key,
+            "path": path,
+            "operator": "<=",
+            "threshold": threshold,
+            "actual": rounded(actual, 3),
+            "message": f"{path} is {rounded(actual, 3)}, above threshold {threshold}",
+        }
+    )
+
+
+def add_min_violation(
+    violations: list[dict[str, Any]],
+    thresholds: dict[str, float],
+    key: str,
+    path: str,
+    actual: float | None,
+) -> None:
+    threshold = thresholds.get(key)
+    if threshold is None or actual is None or actual >= threshold:
+        return
+    violations.append(
+        {
+            "key": key,
+            "path": path,
+            "operator": ">=",
+            "threshold": threshold,
+            "actual": rounded(actual, 3),
+            "message": f"{path} is {rounded(actual, 3)}, below threshold {threshold}",
+        }
+    )
+
+
+def threshold_config_from_args(args: argparse.Namespace) -> dict[str, float]:
+    thresholds: dict[str, float] = {}
+    for key, _direction, _label, _path, _value_kind in THRESHOLD_RULES:
+        value = getattr(args, key)
+        if value is not None:
+            thresholds[key] = float(value)
+    return thresholds
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Report stock service queue health and score calibration metrics.")
     parser.add_argument("--supabase-url", help="Overrides SUPABASE_URL.")
@@ -452,6 +629,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-limit", type=int, default=500, help="Recent detail score snapshots to sample for calibration.")
     parser.add_argument("--score-stale-hours", type=int, default=24)
     parser.add_argument("--expected-score-model-version", default=os.environ.get("EXPECTED_SCORE_MODEL_VERSION", DEFAULT_SCORE_MODEL_VERSION))
+    parser.add_argument("--fail-on-threshold", action="store_true", help="Exit with code 1 when any configured threshold is violated.")
+    parser.add_argument("--max-total-refresh-jobs", type=float)
+    parser.add_argument("--max-queued-refresh-jobs", type=float)
+    parser.add_argument("--max-dead-refresh-jobs", type=float)
+    parser.add_argument("--max-stale-running-refresh-jobs", type=float)
+    parser.add_argument("--max-due-refresh-age-minutes", type=float)
+    parser.add_argument("--max-stale-score-snapshots", type=float)
+    parser.add_argument("--min-current-score-model-rate", type=float)
+    parser.add_argument("--max-duplicate-score-rate", type=float)
+    parser.add_argument("--max-low-confidence-high-score", type=float)
+    parser.add_argument("--max-stale-quote-rate", type=float)
+    parser.add_argument("--max-missing-quote-price", type=float)
+    parser.add_argument("--max-expired-industry-benchmark-rows", type=float)
+    parser.add_argument("--max-low-sample-industry-benchmark-rows", type=float)
+    parser.add_argument("--max-market-calendar-thin-markets", type=float)
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -470,11 +662,14 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    threshold_report = evaluate_operations_thresholds(payload, threshold_config_from_args(args))
+    payload["thresholds"] = threshold_report
+
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print_human_report(payload)
-    return 0
+    return 1 if args.fail_on_threshold and not threshold_report["ok"] else 0
 
 
 def print_human_report(payload: dict[str, Any]) -> None:
@@ -486,7 +681,7 @@ def print_human_report(payload: dict[str, Any]) -> None:
     print(f"generated_at={payload.get('generated_at')}")
     print(
         "queue total={total_jobs} queued={queued_jobs} running={running_jobs} "
-        "dead={dead_jobs} stale_running={stale_running_jobs}".format(**queue)
+        "dead={dead_jobs} stale_running={stale_running_jobs} oldest_due_age_minutes={oldest_due_age_minutes}".format(**queue)
     )
     print(
         "scores total={total_snapshots} current_model={current_model_snapshots} stale={stale_snapshots} "
@@ -510,6 +705,11 @@ def print_human_report(payload: dict[str, Any]) -> None:
         print(f"top_duplicate_scores={calibration['top_duplicate_scores'][:5]}")
     if calibration.get("low_confidence_high_score_count"):
         print(f"low_confidence_high_score_count={calibration['low_confidence_high_score_count']}")
+    thresholds = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else {}
+    if thresholds.get("configured"):
+        print(f"thresholds ok={thresholds.get('ok')} violations={len(thresholds.get('violations') or [])}")
+        for violation in thresholds.get("violations") or []:
+            print(f"threshold_violation {violation.get('message')}")
 
 
 if __name__ == "__main__":

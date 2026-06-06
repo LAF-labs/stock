@@ -13,7 +13,8 @@ class StockOperationsReportTests(unittest.TestCase):
                 {"kind": "score", "status": "queued", "jobs": 12, "oldest_run_after": "2026-06-05T11:00:00+00:00", "stale_running_jobs": 0},
                 {"kind": "quote", "status": "running", "jobs": 3, "oldest_run_after": "2026-06-05T11:10:00+00:00", "stale_running_jobs": 2},
                 {"kind": "score", "status": "dead", "jobs": 1, "oldest_run_after": "2026-06-05T10:30:00+00:00", "stale_running_jobs": 0},
-            ]
+            ],
+            now=datetime(2026, 6, 5, 11, 30, 0, tzinfo=timezone.utc),
         )
 
         self.assertEqual(summary["total_jobs"], 16)
@@ -21,6 +22,7 @@ class StockOperationsReportTests(unittest.TestCase):
         self.assertEqual(summary["running_jobs"], 3)
         self.assertEqual(summary["dead_jobs"], 1)
         self.assertEqual(summary["stale_running_jobs"], 2)
+        self.assertEqual(summary["oldest_due_age_minutes"], 60.0)
         self.assertEqual(summary["by_status"]["queued"], 12)
         self.assertEqual(summary["by_kind"]["score"], 13)
 
@@ -38,6 +40,7 @@ class StockOperationsReportTests(unittest.TestCase):
 
         self.assertEqual(summary["total_snapshots"], 5)
         self.assertEqual(summary["current_model_snapshots"], 4)
+        self.assertEqual(summary["current_model_rate"], 0.8)
         self.assertEqual(summary["stale_snapshots"], 1)
         self.assertEqual(summary["low_confidence_high_score_count"], 1)
         self.assertEqual(summary["duplicate_score_bucket_count"], 1)
@@ -129,6 +132,58 @@ class StockOperationsReportTests(unittest.TestCase):
         self.assertIn("/rest/v1/stock_quote_snapshots?", calls[2][1])
         self.assertIn("/rest/v1/stock_industry_benchmarks?", calls[3][1])
         self.assertIn("/rest/v1/market_calendar?", calls[4][1])
+
+    def test_evaluate_operations_thresholds_reports_violations(self):
+        payload = {
+            "refresh_queue": {"total_jobs": 30, "queued_jobs": 28, "dead_jobs": 1, "stale_running_jobs": 0},
+            "score_calibration": {
+                "stale_snapshots": 3,
+                "current_model_rate": 0.75,
+                "duplicate_score_rate": 0.42,
+                "low_confidence_high_score_count": 2,
+            },
+            "quote_freshness": {"stale_rate": 0.1, "missing_price_count": 0},
+            "industry_benchmarks": {"expired_rows": 0, "low_sample_rows": 0},
+            "market_calendar": {"missing_or_thin_markets": ["KR"]},
+        }
+
+        result = report.evaluate_operations_thresholds(
+            payload,
+            {
+                "max_dead_refresh_jobs": 0,
+                "max_queued_refresh_jobs": 100,
+                "min_current_score_model_rate": 0.9,
+                "max_duplicate_score_rate": 0.5,
+                "max_market_calendar_thin_markets": 0,
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(
+            [violation["key"] for violation in result["violations"]],
+            ["max_dead_refresh_jobs", "min_current_score_model_rate", "max_market_calendar_thin_markets"],
+        )
+
+    def test_evaluate_operations_thresholds_passes_when_inside_bounds(self):
+        payload = {
+            "refresh_queue": {"dead_jobs": 0, "stale_running_jobs": 0},
+            "score_calibration": {"current_model_rate": 1.0, "duplicate_score_rate": 0.1},
+            "market_calendar": {"missing_or_thin_markets": []},
+        }
+
+        result = report.evaluate_operations_thresholds(
+            payload,
+            {
+                "max_dead_refresh_jobs": 0,
+                "max_stale_running_refresh_jobs": 0,
+                "min_current_score_model_rate": 0.95,
+                "max_duplicate_score_rate": 0.2,
+                "max_market_calendar_thin_markets": 0,
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["violations"], [])
 
 
 def score_row(ticker, score, quality, opportunity, confidence, fetched_at, version=None):
