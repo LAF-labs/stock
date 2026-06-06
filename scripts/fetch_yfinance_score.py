@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -139,6 +138,24 @@ except ModuleNotFoundError:
     )
 
 try:
+    from scripts.stock_score.io_utils import env_value, int_env, one_byte_file_lock
+except ModuleNotFoundError:
+    from stock_score.io_utils import env_value, int_env, one_byte_file_lock
+
+try:
+    from scripts.stock_score.kis_discovery_cache import (
+        kis_discovery_cache_path,
+        read_kis_discovery_cache,
+        write_kis_discovery_cache,
+    )
+except ModuleNotFoundError:
+    from stock_score.kis_discovery_cache import (
+        kis_discovery_cache_path,
+        read_kis_discovery_cache,
+        write_kis_discovery_cache,
+    )
+
+try:
     from scripts.stock_score.presentation import (
         grade_for,
         opportunity_components_for,
@@ -205,123 +222,8 @@ KIS_US_MARKETS = [
 ]
 KIS_LAST_REQUEST_AT = 0.0
 KIS_REQUEST_INTERVAL = 1.05
-KIS_DISCOVERY_CACHE_VERSION = 1
-KIS_DISCOVERY_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30
 KIS_DOMESTIC_SCORE_MARKET_DIV_CODE = "J"
 KIS_DOMESTIC_QUOTE_MARKET_DIV_CODE = "UN"
-
-
-def env_value(name: str) -> str | None:
-    value = os.environ.get(name)
-    if value:
-        return value.strip()
-
-    for env_filename in (".env.local", ".env.supabase.local"):
-        env_path = Path.cwd() / env_filename
-        if not env_path.exists():
-            continue
-        try:
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                if not line or line.lstrip().startswith("#") or "=" not in line:
-                    continue
-                key, raw_value = line.split("=", 1)
-                if key.strip() == name:
-                    return raw_value.strip().strip('"').strip("'")
-        except Exception:
-            continue
-    return None
-
-
-def kis_discovery_cache_path() -> Path:
-    return Path.cwd() / ".kis_discovery_cache.json"
-
-
-def read_kis_discovery_cache(symbol: str) -> dict[str, Any] | None:
-    path = kis_discovery_cache_path()
-    try:
-        cache = json.loads(path.read_text(encoding="utf-8"))
-        item = cache.get(clean_ticker(symbol)) if isinstance(cache, dict) else None
-        if not isinstance(item, dict) or item.get("version") != KIS_DISCOVERY_CACHE_VERSION:
-            return None
-        fetched_at = as_float(item.get("fetched_at"))
-        if not fetched_at or fetched_at + KIS_DISCOVERY_CACHE_TTL_SECONDS <= time.time():
-            return None
-        market = item.get("market")
-        if not isinstance(market, dict) or not market.get("excd") or not market.get("product_type"):
-            return None
-        return item
-    except Exception:
-        return None
-
-
-def write_kis_discovery_cache(symbol: str, market: dict[str, Any], search: dict[str, Any]) -> None:
-    path = kis_discovery_cache_path()
-    lock_path = path.with_suffix(".lock")
-    with one_byte_file_lock(lock_path):
-        try:
-            cache = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(cache, dict):
-                cache = {}
-        except Exception:
-            cache = {}
-        cache[clean_ticker(symbol)] = {
-            "version": KIS_DISCOVERY_CACHE_VERSION,
-            "fetched_at": time.time(),
-            "market": market,
-            "search": search,
-        }
-        try:
-            tmp_path = path.with_suffix(".tmp")
-            tmp_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-            tmp_path.replace(path)
-        except Exception:
-            pass
-
-
-def int_env(name: str, default: int) -> int:
-    try:
-        value = int(env_value(name) or "")
-        return value if value > 0 else default
-    except (TypeError, ValueError):
-        return default
-
-
-@contextmanager
-def one_byte_file_lock(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        import msvcrt
-        lock = path.open("a+b")
-    except Exception:
-        pass
-    else:
-        with lock:
-            lock.seek(0, os.SEEK_END)
-            if lock.tell() == 0:
-                lock.write(b"0")
-                lock.flush()
-            lock.seek(0)
-            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
-        return
-
-    try:
-        import fcntl
-        lock = path.open("a+b")
-    except Exception:
-        yield
-        return
-
-    with lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 YFINANCE_FUNDAMENTAL_CACHE_VERSION = 2

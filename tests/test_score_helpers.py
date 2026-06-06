@@ -6,6 +6,8 @@ from pathlib import Path
 import pandas as pd
 import scripts.fetch_yfinance_score as legacy_score_module
 import scripts.stock_score.formatting as formatting
+import scripts.stock_score.io_utils as io_utils
+import scripts.stock_score.kis_discovery_cache as kis_discovery_cache
 import scripts.stock_score.presentation as presentation
 import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
@@ -53,6 +55,54 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.safe_info, yfinance_provider.safe_info)
         self.assertIs(legacy_score_module.safe_history, yfinance_provider.safe_history)
         self.assertIs(legacy_score_module.safe_news, yfinance_provider.safe_news)
+
+    def test_io_and_kis_cache_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.env_value, io_utils.env_value)
+        self.assertIs(legacy_score_module.one_byte_file_lock, io_utils.one_byte_file_lock)
+        self.assertIs(legacy_score_module.read_kis_discovery_cache, kis_discovery_cache.read_kis_discovery_cache)
+        self.assertIs(legacy_score_module.write_kis_discovery_cache, kis_discovery_cache.write_kis_discovery_cache)
+
+    def test_env_value_reads_local_files_after_environment(self):
+        original_cwd = Path.cwd()
+        original_value = os.environ.get("STOCK_SCORE_TEST_ENV")
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                Path(".env.local").write_text(
+                    "STOCK_SCORE_TEST_ENV='from-file'\nOTHER=value\n",
+                    encoding="utf-8",
+                )
+                os.environ.pop("STOCK_SCORE_TEST_ENV", None)
+                self.assertEqual(io_utils.env_value("STOCK_SCORE_TEST_ENV"), "from-file")
+
+                os.environ["STOCK_SCORE_TEST_ENV"] = " from-env "
+                self.assertEqual(io_utils.env_value("STOCK_SCORE_TEST_ENV"), "from-env")
+            finally:
+                os.chdir(original_cwd)
+                if original_value is None:
+                    os.environ.pop("STOCK_SCORE_TEST_ENV", None)
+                else:
+                    os.environ["STOCK_SCORE_TEST_ENV"] = original_value
+
+    def test_kis_discovery_cache_roundtrips_valid_market_data(self):
+        original_cwd = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                kis_discovery_cache.write_kis_discovery_cache(
+                    "nvda",
+                    {"excd": "NAS", "product_type": "512", "label": "Nasdaq"},
+                    {"prdt_eng_name": "NVIDIA"},
+                )
+
+                cached = kis_discovery_cache.read_kis_discovery_cache("NVDA")
+
+                self.assertIsNotNone(cached)
+                assert cached is not None
+                self.assertEqual(cached["market"]["excd"], "NAS")
+                self.assertEqual(cached["search"]["prdt_eng_name"], "NVIDIA")
+            finally:
+                os.chdir(original_cwd)
 
     def test_yfinance_provider_helpers_normalize_fake_ticker_data(self):
         class FakeTicker:
