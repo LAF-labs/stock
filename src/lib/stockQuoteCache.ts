@@ -2,6 +2,7 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSes
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
+import { QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
@@ -53,7 +54,7 @@ const memoryCache = (globalThis.__stockQuoteMemoryCache ??= new Map<string, Stor
 const inflightRefreshes = (globalThis.__stockQuoteInflight ??= new Map<string, Promise<StoredQuoteSnapshot>>());
 
 function staleTtlSeconds(): number {
-  return numericEnv("STOCK_QUOTE_CACHE_STALE_SECONDS", 86_400);
+  return numericEnv("STOCK_QUOTE_CACHE_STALE_SECONDS", QUOTE_CACHE_STALE_SECONDS);
 }
 
 function isFresh(snapshot: StoredQuoteSnapshot, nowMs: number): boolean {

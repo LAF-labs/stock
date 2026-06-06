@@ -133,6 +133,8 @@ REDIS_URL=
 
 `MARKET_DATA_SERVICE_ENABLE_SCORE=1`은 Rust market-data 서비스가 durable score refresh/cache 경로까지 담당할 때만 켜세요. 현재 기본 경로에서는 quote만 Rust 서비스로 넘기고, score snapshot 생성은 Supabase queue + worker/Python collector가 담당합니다. Rust 서비스의 quote/score cache와 refresh queue는 bounded memory fallback으로 동작하며, `/readyz`와 `/metrics`에서 active backend, capacity, queue depth, provider error class를 확인할 수 있습니다.
 
+Quote serving contract values shared by Next and Rust live in `shared/quote-contract.json`: domestic KIS market division, domestic exchange label, US exchange fallback order, and default quote freshness/stale TTL. Change that file first when quote semantics change, then run Node and Rust quote contract tests.
+
 판단문은 LLM 호출 없이 서버 룰 엔진에서 생성합니다. 결과는 `stock_rule_judgments`에 6시간 버킷으로 캐시하고, 프로세스 메모리 캐시를 먼저 확인해 인기 종목 반복 조회 비용을 줄입니다. PER/PBR 업종 비교는 `stock_industry_benchmarks`를 읽으며, 이 테이블은 요청 경로에서 집계하지 않습니다.
 
 종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
@@ -206,7 +208,7 @@ python scripts/run_industry_maintenance.py --refresh-benchmarks
 PYTHON_BIN=.venv/bin/python npm run score:smoke
 ```
 
-Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 줄이기 위한 rewrite 경로입니다. 현재 public Next API는 Supabase snapshot을 기본으로 읽고, quote는 Node KIS client 또는 Rust market-data service로 즉시 갱신할 수 있습니다. Rust quote provider는 미국 종목을 `NAS`, `NYS`, `AMS` 순서로 조회해 Node KIS path와 같은 거래소 fallback을 사용합니다. score snapshot 생성은 durable Rust/TypeScript score refresh가 완성될 때까지 Supabase queue + legacy Python score worker가 담당합니다.
+Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 줄이기 위한 rewrite 경로입니다. 현재 public Next API는 Supabase snapshot을 기본으로 읽고, quote는 Node KIS client 또는 Rust market-data service로 즉시 갱신할 수 있습니다. Rust quote provider는 `shared/quote-contract.json`에 정의된 국내 `UN` market division, `KRX/NXT` 라벨, 미국 `NAS`, `NYS`, `AMS` fallback 순서를 사용해 Node KIS path와 같은 계약을 따릅니다. score snapshot 생성은 durable Rust/TypeScript score refresh가 완성될 때까지 Supabase queue + legacy Python score worker가 담당합니다. 상세 화면의 점수 기준 표시는 score `server_cache`를 따로 보여주므로, 현재가가 방금 갱신돼도 점수 스냅샷이 stale이면 stale로 표시됩니다.
 
 Vercel preview/prod 빌드는 `STOCK_DATA_RUNTIME=python` 같은 값이 실수로 들어와도 기본적으로 Python collector 파일을 함수 번들에 포함하지 않습니다. 정말로 Vercel에서 Python subprocess fallback을 번들링해야 하는 특수 상황에서는 `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1`까지 함께 설정해야 합니다. Docker나 자체 Node 서버에서 요청 중 score collector fallback을 유지해야 하면 `INCLUDE_PYTHON_COLLECTOR=1` 또는 `STOCK_DATA_RUNTIME=python`/`STOCK_DATA_BACKEND=python`을 빌드 환경에 명시하세요.
 

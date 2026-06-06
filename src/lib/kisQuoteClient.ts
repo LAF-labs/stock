@@ -12,6 +12,7 @@ import {
 import { envValue, fetchWithTimeout } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import type { StockPayload } from "@/lib/stockSnapshotCache";
+import { KIS_DOMESTIC_EXCHANGE_LABEL, KIS_DOMESTIC_MARKET_DIV_CODE, KIS_US_MARKETS } from "@/lib/quoteContract";
 
 type KisConfig = {
   appKey: string;
@@ -19,23 +20,11 @@ type KisConfig = {
   baseUrl: string;
 };
 
-type KisMarket = {
-  excd: string;
-  productType: string;
-  label: string;
-};
-
 type KisPayload = Record<string, unknown>;
 
 declare global {
   var __kisQuoteTokenCache: Map<string, KisTokenCacheEntry> | undefined;
 }
-
-const US_MARKETS: KisMarket[] = [
-  { excd: "NAS", productType: "512", label: "Nasdaq" },
-  { excd: "NYS", productType: "513", label: "NYSE" },
-  { excd: "AMS", productType: "529", label: "AMEX" },
-];
 
 const tokenCache = (globalThis.__kisQuoteTokenCache ??= new Map<string, KisTokenCacheEntry>());
 
@@ -73,7 +62,7 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
 
   const price = outputObject(
     await kisGet("/uapi/domestic-stock/v1/quotations/inquire-price", "FHKST01010100", {
-      FID_COND_MRKT_DIV_CODE: "UN",
+      FID_COND_MRKT_DIV_CODE: KIS_DOMESTIC_MARKET_DIV_CODE,
       FID_INPUT_ISCD: symbol,
     })
   );
@@ -92,7 +81,7 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
     market: "KR",
     symbol,
     name,
-    exchange: "KRX/NXT",
+    exchange: KIS_DOMESTIC_EXCHANGE_LABEL,
     currency: "KRW",
     latest_price: latestPrice,
     latest_price_label: priceLabel(latestPrice, "KRW"),
@@ -111,7 +100,7 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
     fetch: {
       source: "market_data",
       price_endpoint: "/uapi/domestic-stock/v1/quotations/inquire-price",
-      market_div_code: "UN",
+      market_div_code: KIS_DOMESTIC_MARKET_DIV_CODE,
       fetched_at: now.toISOString(),
       cache: "server",
     },
@@ -124,7 +113,7 @@ async function fetchUsQuote(symbol: string): Promise<StockPayload> {
   }
 
   const errors: string[] = [];
-  for (const market of US_MARKETS) {
+  for (const market of KIS_US_MARKETS) {
     try {
       const detail = outputObject(
         await kisGet("/uapi/overseas-price/v1/quotations/price-detail", "HHDFS76200200", {

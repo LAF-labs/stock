@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { getStockQuote } from "@/lib/stockQuoteCache";
 import { getStockScore, type ScoreView, type StockPayload } from "@/lib/stockSnapshotCache";
+import { QUOTE_CACHE_FRESH_SECONDS, QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import { loadLocalEnvFiles } from "./localEnv";
@@ -157,8 +158,8 @@ async function postRpc<T = unknown>(config: SupabaseConfig, name: string, body: 
 export async function upsertQuoteSnapshot(config: SupabaseConfig, ticker: string, payload: StockPayload, fetchedAt?: string, expiresAt?: string, staleExpiresAt?: string) {
   const target = parseTickerRef(ticker);
   const fetched = validIso(fetchedAt) || new Date().toISOString();
-  const expires = validIso(expiresAt) || new Date(Date.parse(fetched) + 300_000).toISOString();
-  const stale = validIso(staleExpiresAt) || new Date(Math.max(Date.parse(expires), Date.parse(fetched) + 86_400_000)).toISOString();
+  const expires = validIso(expiresAt) || new Date(Date.parse(fetched) + QUOTE_CACHE_FRESH_SECONDS * 1000).toISOString();
+  const stale = validIso(staleExpiresAt) || new Date(Math.max(Date.parse(expires), Date.parse(fetched) + QUOTE_CACHE_STALE_SECONDS * 1000)).toISOString();
   const response = await fetchWithTimeout(
     `${config.url}/rest/v1/stock_quote_snapshots?on_conflict=ticker`,
     {

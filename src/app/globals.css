@@ -716,6 +716,35 @@ a:focus-visible {
   font-weight: 500;
 }
 
+.quick-read .score-freshness {
+  grid-column: 1 / -1;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.quick-read .score-freshness strong {
+  font-size: 18px;
+}
+
+.quick-read .score-freshness p {
+  margin: 7px 0 0;
+  color: var(--subtext);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.quick-read .score-freshness.fresh strong {
+  color: #0f9f6e;
+}
+
+.quick-read .score-freshness.stale strong {
+  color: #a15c00;
+}
+
+.quick-read .score-freshness.pending strong {
+  color: #2563eb;
+}
+
 .app-status,
 .empty-card,
 .chart-story,
@@ -2051,7 +2080,8 @@ a:focus-visible {
 
   .stock-detail-app .quick-read article,
   .stock-detail-app .quick-read article:nth-child(3),
-  .stock-detail-app .quick-read .score-panel {
+  .stock-detail-app .quick-read .score-panel,
+  .stock-detail-app .quick-read .score-freshness {
     grid-column: auto;
     padding: 0;
     border-top: 0;

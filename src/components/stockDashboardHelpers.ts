@@ -120,6 +120,13 @@ export type SnapshotPendingState = {
   retryAfterSeconds?: number;
 };
 
+export type ScoreFreshnessSummary = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "fresh" | "stale" | "pending" | "unknown";
+};
+
 export type UsableChartPoint = ChartSeriesPoint & { close: number; date: string };
 
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -225,6 +232,90 @@ export function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteRe
     latest_bar_date: stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date,
     usd_krw_rate: numberFromUnknown(quote?.usd_krw_rate) ?? data.usd_krw_rate,
   };
+}
+
+export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessSummary {
+  const cache = recordFromUnknown(data.server_cache);
+  const state = stringFromUnknown(cache?.state);
+  const source = scoreFreshnessSourceLabel(stringFromUnknown(cache?.source));
+  const fetchedAt = cacheTimestamp(cache, "fetched_at");
+  const refreshStarted = cache?.refresh_started === true;
+  const details = [source, fetchedAt ? `${formatKstMinute(fetchedAt)} 기준` : undefined, refreshStarted ? "새 점수 준비 중" : undefined].filter(
+    (item): item is string => !!item
+  );
+
+  if (state === "fresh") {
+    return {
+      label: "점수 기준",
+      value: "최신 스냅샷",
+      detail: details.join(" · ") || "스냅샷 기준 확인 중",
+      tone: "fresh",
+    };
+  }
+
+  if (state === "stale") {
+    return {
+      label: "점수 기준",
+      value: "오래된 스냅샷",
+      detail: details.join(" · ") || "새 점수 준비 중",
+      tone: "stale",
+    };
+  }
+
+  if (state === "miss") {
+    return {
+      label: "점수 기준",
+      value: "생성 대기",
+      detail: details.join(" · ") || "스냅샷 생성 대기",
+      tone: "pending",
+    };
+  }
+
+  return {
+    label: "점수 기준",
+    value: "기준 확인 중",
+    detail: details.join(" · ") || "스냅샷 기준 확인 중",
+    tone: "unknown",
+  };
+}
+
+function scoreFreshnessSourceLabel(source: string | undefined): string {
+  if (source === "supabase") return "Supabase";
+  if (source === "market-data") return "Rust market-data";
+  if (source === "cache") return "Rust cache";
+  if (source === "queue") return "Refresh queue";
+  if (source === "provider") return "Provider";
+  return "Score snapshot";
+}
+
+function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string): string | undefined {
+  const direct = stringFromUnknown(cache?.[key]);
+  if (direct && Number.isFinite(Date.parse(direct))) return direct;
+  const millis = numberFromUnknown(cache?.[`${key}_ms`]);
+  if (millis === undefined) return undefined;
+  return new Date(millis).toISOString();
+}
+
+function formatKstMinute(value: string): string | undefined {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return undefined;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  const hour = part("hour");
+  const minute = part("minute");
+  if (!year || !month || !day || !hour || !minute) return undefined;
+  return `${year}-${month}-${day} ${hour}:${minute} KST`;
 }
 
 export function dailyChangeText(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string {

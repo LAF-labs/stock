@@ -1,0 +1,13 @@
+{
+  "kis": {
+    "domestic": {
+      "market_div_code": "UN",
+      "exchange_label": "KRX/NXT"
+    },
+    "us_exchange_order": ["NAS", "NYS", "AMS"]
+  },
+  "quote_cache": {
+    "fresh_seconds": 300,
+    "stale_seconds": 86400
+  }
+}

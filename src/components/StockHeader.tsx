@@ -8,6 +8,7 @@ import {
   formatUsdPrice,
   metricValue,
   scoreDataWithQuote,
+  scoreFreshnessSummary,
   strongestAndWeakest,
   stringFromUnknown,
 } from "@/components/stockDashboardHelpers";
@@ -75,6 +76,7 @@ export default function StockHeader({
   const risk = data.sia_snapshot?.risk_level || "-";
   const { strongest, weakest } = strongestAndWeakest(data);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
+  const scoreFreshness = scoreFreshnessSummary(data);
 
   return (
     <section className="stock-title-card">
@@ -134,6 +136,11 @@ export default function StockHeader({
           <span>기회 점수</span>
           <strong>{opportunityScore === undefined ? "-" : `${opportunityScore.toFixed(1)}점`}</strong>
           <p>성장, 목표가, 모멘텀, 유동성을 따로 봐요</p>
+        </article>
+        <article className={`score-freshness ${scoreFreshness.tone}`} aria-label={`${scoreFreshness.label}: ${scoreFreshness.value}`}>
+          <span>{scoreFreshness.label}</span>
+          <strong>{scoreFreshness.value}</strong>
+          <p>{scoreFreshness.detail}</p>
         </article>
       </div>
 

@@ -1,4 +1,5 @@
 import { fetchWithTimeout, numericEnv, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { QUOTE_CACHE_FRESH_SECONDS } from "@/lib/quoteContract";
 
 export type MarketCode = "KR" | "US";
 export type MarketSessionState = "open" | "closed" | "holiday" | "unknown";
@@ -49,7 +50,7 @@ export function secondsUntil(iso: string | undefined, nowMs = Date.now(), fallba
 }
 
 export function quoteOpenTtlSeconds(market: MarketCode): number {
-  const base = numericEnv("STOCK_QUOTE_CACHE_OPEN_SECONDS", 300);
+  const base = numericEnv("STOCK_QUOTE_CACHE_OPEN_SECONDS", QUOTE_CACHE_FRESH_SECONDS);
   return numericEnv(`STOCK_QUOTE_${market}_CACHE_OPEN_SECONDS`, base);
 }
 

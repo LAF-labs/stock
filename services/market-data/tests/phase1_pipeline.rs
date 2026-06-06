@@ -110,6 +110,14 @@ fn test_service(
 }
 
 #[test]
+fn default_quote_ttls_match_production_quote_contract() {
+    let ttls = CacheTtls::default();
+
+    assert_eq!(ttls.quote_fresh, Duration::from_secs(300));
+    assert_eq!(ttls.quote_stale, Duration::from_secs(86_400));
+}
+
+#[test]
 fn bounded_memory_cache_evicts_oldest_quote_entries() {
     let cache = MemoryMarketDataCache::with_limits(1, 1);
     cache.upsert_quote(

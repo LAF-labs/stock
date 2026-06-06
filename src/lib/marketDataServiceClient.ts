@@ -1,5 +1,6 @@
 import { fetchWithTimeout, numericEnv } from "@/lib/supabaseRest";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
+import { KIS_DOMESTIC_EXCHANGE_LABEL } from "@/lib/quoteContract";
 import { parseTickerRef, type ParsedTickerRef } from "@/lib/tickerRef";
 import type { StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
@@ -122,7 +123,7 @@ function adaptQuoteResponse(
   const latestChange = previousClose && previousClose !== 0 ? latestPrice / previousClose - 1 : undefined;
   const volume = numberField(data, "volume") ?? numberField(recordField(data, "quote"), "volume");
   const serverCache = serverCachePayload(ticker.ticker, undefined, rawCache);
-  const exchange = stringField(data, "exchange") || (ticker.market === "KR" ? "KRX" : undefined);
+  const exchange = stringField(data, "exchange") || (ticker.market === "KR" ? KIS_DOMESTIC_EXCHANGE_LABEL : undefined);
   const currency = stringField(data, "currency") || (ticker.market === "KR" ? "KRW" : "USD");
   const payload: StockPayload = {
     ok: true,

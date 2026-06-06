@@ -16,6 +16,7 @@ use crate::{
         KisEnvelope, KisError, KisErrorKind, OverseasPriceDetail, RawOverseasPriceDetail,
         classify_http_error, classify_reqwest_error,
     },
+    quote_contract,
     rate_limit::ProviderThrottle,
     service::{MarketDataError, MarketDataErrorKind, QuoteProvider, QuoteRequest},
 };
@@ -469,11 +470,13 @@ fn token_ttl(_provider_expiry: Option<&str>) -> Duration {
 }
 
 async fn fetch_overseas_quote(client: &KisClient, symbol: &str) -> Result<Value, MarketDataError> {
-    const US_EXCHANGES: [&str; 3] = ["NAS", "NYS", "AMS"];
     let mut last_error: Option<MarketDataError> = None;
 
-    for exchange in US_EXCHANGES {
-        match client.overseas_price_detail(exchange, symbol).await {
+    for exchange in quote_contract::kis_us_exchange_order() {
+        match client
+            .overseas_price_detail(exchange.as_str(), symbol)
+            .await
+        {
             Ok(quote) if quote.last.is_some() => {
                 return Ok(json!({
                     "market": Market::Us.as_str(),
@@ -514,13 +517,13 @@ async fn fetch_overseas_quote(client: &KisClient, symbol: &str) -> Result<Value,
 
 async fn fetch_domestic_quote(client: &KisClient, symbol: &str) -> Result<Value, MarketDataError> {
     let raw = client
-        .domestic_price(symbol, "J")
+        .domestic_price(symbol, quote_contract::kis_domestic_market_div_code())
         .await
         .map_err(map_kis_error)?;
     Ok(json!({
         "market": Market::Kr.as_str(),
         "symbol": symbol,
-        "exchange": "KRX",
+        "exchange": quote_contract::kis_domestic_exchange_label(),
         "last": parse_number_field(&raw, "stck_prpr"),
         "currency": "KRW",
         "previous_close": parse_number_field(&raw, "stck_sdpr"),

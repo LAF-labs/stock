@@ -105,6 +105,8 @@ MARKET_DATA_SERVICE_URL=https://market-data.internal
 
 When `MARKET_DATA_SERVICE_URL` is set, also configure secret `MARKET_DATA_INTERNAL_TOKEN`. CI builds the `market-data` Docker target and smokes `/healthz`, authenticated `/readyz`, and authenticated `/metrics`; the scheduled operations workflow includes the same service in its report. `/readyz` reports active backend modes and deliberately shows `durable_refresh_available=false` for score refresh until Rust owns durable score snapshots end to end.
 
+Quote semantics shared across Next and Rust are owned by `shared/quote-contract.json`. It defines domestic KIS market division `UN`, domestic exchange label `KRX/NXT`, US fallback order `NAS` -> `NYS` -> `AMS`, and the default quote cache windows. Do not tune the Rust quote TTL or domestic provider label separately from that file.
+
 Use the read-only operations check before release and after score model changes:
 
 ```bash
@@ -168,6 +170,7 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Serve score reads from memory first, then Supabase snapshots. In Vercel snapshot mode, never invoke Python from a request handler.
 - Vercel fails closed to snapshot mode. `STOCK_DATA_RUNTIME=python` is ignored on Vercel unless `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1` is explicitly set for a one-off emergency.
 - If a Supabase snapshot is missing in snapshot mode, enqueue `stock_refresh_jobs` and return `snapshot_pending` with `Retry-After`. The default retry hint is 300 seconds, matching the 5-minute GitHub Actions backstop. Tune it with `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS` if a faster external worker is configured.
+- The detail UI displays score `server_cache` freshness separately from quote refresh status. A fresh quote does not imply a fresh score; stale score snapshots should stay visible until the score worker writes a new snapshot.
 - In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.
 - Keep score detail/compare snapshots fresh for 30 minutes during market hours. The publisher default `STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS` is 1800.
 - Keep `market_calendar` seeded ahead for both `US` and `KR`. The publisher extends quote and score expiry to the next open when the market is closed, so stale/off-hours behavior depends on this table.

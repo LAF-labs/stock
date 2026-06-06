@@ -38,6 +38,7 @@ struct MockState {
     token_hits: Arc<Mutex<usize>>,
     detail_authorizations: Arc<Mutex<Vec<String>>>,
     detail_exchanges: Arc<Mutex<Vec<String>>>,
+    domestic_market_div_codes: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Deserialize)]
@@ -45,6 +46,15 @@ struct DetailQuery {
     excd: Option<String>,
     #[allow(dead_code)]
     symb: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DomesticPriceQuery {
+    #[serde(rename = "FID_COND_MRKT_DIV_CODE")]
+    market_div_code: Option<String>,
+    #[allow(dead_code)]
+    #[serde(rename = "FID_INPUT_ISCD")]
+    symbol: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -59,12 +69,17 @@ async fn spawn_mock_kis(scenario: Scenario) -> (String, MockState) {
         token_hits: Arc::new(Mutex::new(0)),
         detail_authorizations: Arc::new(Mutex::new(Vec::new())),
         detail_exchanges: Arc::new(Mutex::new(Vec::new())),
+        domestic_market_div_codes: Arc::new(Mutex::new(Vec::new())),
     };
     let app = Router::new()
         .route("/oauth2/tokenP", post(token_handler))
         .route(
             "/uapi/overseas-price/v1/quotations/price-detail",
             get(detail_handler),
+        )
+        .route(
+            "/uapi/domestic-stock/v1/quotations/inquire-price",
+            get(domestic_price_handler),
         )
         .with_state(state.clone());
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -148,6 +163,30 @@ async fn detail_handler(
                 "curr": "USD",
                 "base": "71.80",
                 "tvol": "12345678"
+            }
+        })),
+    )
+}
+
+async fn domestic_price_handler(
+    State(state): State<MockState>,
+    Query(query): Query<DomesticPriceQuery>,
+) -> (StatusCode, Json<Value>) {
+    state
+        .domestic_market_div_codes
+        .lock()
+        .expect("domestic market div lock")
+        .push(query.market_div_code.unwrap_or_default());
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "rt_cd": "0",
+            "output": {
+                "stck_prpr": "70000",
+                "stck_sdpr": "69000",
+                "acml_vol": "123456",
+                "hts_kor_isnm": "삼성전자"
             }
         })),
     )
@@ -268,5 +307,30 @@ async fn us_quote_provider_falls_back_to_nyse_when_nasdaq_price_is_empty() {
             .expect("exchange lock")
             .as_slice(),
         ["NAS", "NYS"]
+    );
+}
+
+#[tokio::test]
+async fn kr_quote_provider_uses_unified_domestic_market_contract() {
+    let (base_url, state) = spawn_mock_kis(Scenario::Ok).await;
+    let provider = KisQuoteProvider::from_config(&provider_config(base_url));
+
+    let payload = provider
+        .fetch_quote(QuoteRequest {
+            market: Market::Kr,
+            symbol: "005930".to_string(),
+        })
+        .await
+        .expect("domestic quote");
+
+    assert_eq!(payload["exchange"], "KRX/NXT");
+    assert_eq!(payload["last"], 70000.0);
+    assert_eq!(
+        state
+            .domestic_market_div_codes
+            .lock()
+            .expect("domestic market div lock")
+            .as_slice(),
+        ["UN"]
     );
 }

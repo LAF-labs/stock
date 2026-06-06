@@ -118,6 +118,31 @@ test("quote client maps Rust quote response into public payload shape", async ()
   assert.equal(result?.cache.source, "market-data");
 });
 
+test("quote client uses the shared KR exchange contract when Rust omits exchange", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        data: {
+          market: "kr",
+          symbol: "005930",
+          last: 70000,
+          currency: "KRW",
+          previous_close: 69000,
+        },
+        server_cache: { state: "miss", source: "provider" },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )) as typeof fetch;
+
+  const result = await getMarketDataServiceQuote("KR:005930");
+
+  assert.equal(result?.payload.exchange, "KRX/NXT");
+});
+
 test("quote client can be disabled independently", async () => {
   process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
   process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";

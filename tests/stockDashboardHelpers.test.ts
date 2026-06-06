@@ -8,6 +8,7 @@ import {
   displayTickerInput,
   formatRecordValue,
   scoreDataWithQuote,
+  scoreFreshnessSummary,
   snapshotPendingFromPayload,
   usableChartPoints,
   visibleRecordEntries,
@@ -59,6 +60,43 @@ test("scoreDataWithQuote overlays fresh quote fields without losing score fields
     latest_price: 62.25,
     latest_bar_date: "2026-06-06",
     usd_krw_rate: 1360,
+  });
+});
+
+test("scoreFreshnessSummary separates score snapshot freshness from quote freshness", () => {
+  const staleScore = {
+    requested_ticker: "US:KO",
+    server_cache: {
+      state: "stale",
+      source: "supabase",
+      fetched_at: "2026-06-05T00:00:00.000Z",
+      refresh_started: true,
+    },
+  } satisfies StockScoreResponse;
+
+  assert.deepEqual(scoreFreshnessSummary(staleScore), {
+    label: "점수 기준",
+    value: "오래된 스냅샷",
+    detail: "Supabase · 2026-06-05 09:00 KST 기준 · 새 점수 준비 중",
+    tone: "stale",
+  });
+});
+
+test("scoreFreshnessSummary accepts Rust cache millisecond timestamps", () => {
+  const freshScore = {
+    requested_ticker: "KR:005930",
+    server_cache: {
+      state: "fresh",
+      source: "market-data",
+      fetched_at_ms: 1780617600000,
+    },
+  } satisfies StockScoreResponse;
+
+  assert.deepEqual(scoreFreshnessSummary(freshScore), {
+    label: "점수 기준",
+    value: "최신 스냅샷",
+    detail: "Rust market-data · 2026-06-05 09:00 KST 기준",
+    tone: "fresh",
   });
 });
 

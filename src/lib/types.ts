@@ -139,6 +139,7 @@ export type StockScoreResponse = {
   financial_statement?: Record<string, JsonValue>;
   sia_snapshot?: SiaSnapshot;
   fetch?: Record<string, JsonValue>;
+  server_cache?: Record<string, JsonValue>;
   [key: string]: unknown;
 };
 

@@ -8,7 +8,10 @@ use std::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::market::{Market, ScoreView};
+use crate::{
+    market::{Market, ScoreView},
+    quote_contract,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct CacheTtls {
@@ -93,8 +96,8 @@ struct ScoreKey {
 impl Default for CacheTtls {
     fn default() -> Self {
         Self {
-            quote_fresh: Duration::from_secs(30),
-            quote_stale: Duration::from_secs(300),
+            quote_fresh: quote_contract::quote_fresh_ttl(),
+            quote_stale: quote_contract::quote_stale_ttl(),
             score_fresh: Duration::from_secs(300),
             score_stale: Duration::from_secs(1_800),
         }
