@@ -9,6 +9,7 @@ import scripts.stock_score.formatting as formatting
 import scripts.stock_score.io_utils as io_utils
 import scripts.stock_score.kis_discovery_cache as kis_discovery_cache
 import scripts.stock_score.presentation as presentation
+import scripts.stock_score.provider_cache as provider_cache
 import scripts.stock_score.scoring as scoring
 import scripts.stock_score.symbols as symbols
 import scripts.stock_score.timeseries as timeseries
@@ -62,6 +63,12 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.read_kis_discovery_cache, kis_discovery_cache.read_kis_discovery_cache)
         self.assertIs(legacy_score_module.write_kis_discovery_cache, kis_discovery_cache.write_kis_discovery_cache)
 
+    def test_provider_cache_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.yfinance_fundamentals, provider_cache.yfinance_fundamentals)
+        self.assertIs(legacy_score_module.kis_token_cache_key, provider_cache.kis_token_cache_key)
+        self.assertIs(legacy_score_module.read_supabase_kis_access_token, provider_cache.read_supabase_kis_access_token)
+        self.assertIs(legacy_score_module.write_supabase_kis_access_token, provider_cache.write_supabase_kis_access_token)
+
     def test_env_value_reads_local_files_after_environment(self):
         original_cwd = Path.cwd()
         original_value = os.environ.get("STOCK_SCORE_TEST_ENV")
@@ -101,6 +108,21 @@ class ScoreHelperTests(unittest.TestCase):
                 assert cached is not None
                 self.assertEqual(cached["market"]["excd"], "NAS")
                 self.assertEqual(cached["search"]["prdt_eng_name"], "NVIDIA")
+            finally:
+                os.chdir(original_cwd)
+
+    def test_provider_cache_roundtrips_yfinance_fundamental_file_cache(self):
+        original_cwd = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                provider_cache.write_yfinance_fundamental_cache("nvda", {"forwardPE": 31.2, "beta": 1.1})
+
+                values, state = provider_cache.read_yfinance_fundamental_cache("NVDA")
+
+                self.assertEqual(values, {"forwardPE": 31.2, "beta": 1.1})
+                self.assertEqual(state, "fresh")
+                self.assertTrue(provider_cache.yfinance_fundamental_cache_path("NVDA").exists())
             finally:
                 os.chdir(original_cwd)
 
