@@ -12,6 +12,7 @@ umask 077
 
 cleanup() {
   rm -f "$ENV_LIST_FILE"
+  rm -rf "$DEPLOY_DIR"
 }
 trap cleanup EXIT
 
