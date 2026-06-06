@@ -30,6 +30,7 @@ RUNTIME_RPC_CHECKS = (
     "acquire_stock_refresh_lease",
     "enqueue_stock_refresh_job",
     "claim_stock_refresh_jobs",
+    "claim_stock_refresh_jobs_by_kind",
     "complete_stock_refresh_job",
     "fail_stock_refresh_job",
     "refresh_stock_industry_benchmarks",

@@ -29,23 +29,35 @@ jobs:
       STOCK_WARM_TICKERS: ${{ vars.STOCK_WARM_TICKERS || vars.STOCK_SNAPSHOT_TICKERS }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '50' }}
+      STOCK_LEGACY_SCORE_WORKER_ENABLED: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED || '1' }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
       - name: Set up Python
+        if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Install collector dependencies
+        if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Drain refresh queue and optionally warm hot tickers
+      - name: Drain quote refresh queue and optionally warm quote snapshots
         run: |
           TICKERS="${STOCK_WARM_TICKERS:-}"
           if [ -n "$MANUAL_WARM_TICKERS" ]; then
@@ -54,8 +66,31 @@ jobs:
           ARGS=(
             --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS"
             --drain-queue
+            --kind quote
             --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT"
-            --worker-id "github-${{ github.run_id }}-${{ github.run_attempt }}"
+            --worker-id "github-quote-${{ github.run_id }}-${{ github.run_attempt }}"
+            --json
+          )
+          if [ -n "$TICKERS" ]; then
+            ARGS+=(--tickers "$TICKERS")
+          fi
+          node --import tsx scripts/publish_stock_snapshots.ts \
+            "${ARGS[@]}"
+
+      - name: Drain legacy score refresh queue
+        if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
+        run: |
+          TICKERS="${STOCK_WARM_TICKERS:-}"
+          if [ -n "$MANUAL_WARM_TICKERS" ]; then
+            TICKERS="$MANUAL_WARM_TICKERS"
+          fi
+          ARGS=(
+            --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS"
+            --drain-queue
+            --queue-kind score
+            --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT"
+            --worker-id "github-score-${{ github.run_id }}-${{ github.run_attempt }}"
+            --skip-quote
             --json
           )
           if [ -n "$TICKERS" ]; then

@@ -84,13 +84,21 @@ Then publish hot quote/score snapshots from GitHub Actions, a local admin machin
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --json
 ```
 
-The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Configure these repository secrets:
+The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by the TypeScript worker. Score jobs remain on the kind-filtered legacy Python worker until the durable Rust/TypeScript score worker owns score snapshot writes. Configure these repository secrets:
 
 ```text
 STOCK_API_APP_KEY
 STOCK_API_APP_SECRET
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
+```
+
+Relevant repository variables:
+
+```text
+STOCK_SNAPSHOT_QUEUE_LIMIT=50
+STOCK_SNAPSHOT_SLEEP_SECONDS=0.5
+STOCK_LEGACY_SCORE_WORKER_ENABLED=1
 ```
 
 Use the read-only operations check before release and after score model changes:

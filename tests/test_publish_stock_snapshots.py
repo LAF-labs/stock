@@ -179,6 +179,35 @@ class PublishStockSnapshotsTests(unittest.TestCase):
             '{"p_worker_id": "worker-1", "p_limit": 5, "p_lock_seconds": 600}',
         )
 
+    def test_claim_refresh_jobs_can_filter_by_kind(self):
+        calls = []
+
+        class FakeResponse:
+            status_code = 200
+            text = "[]"
+
+            def json(self):
+                return [{"id": "job-1", "kind": "score", "market": "US", "symbol": "NVDA", "view_mode": "detail"}]
+
+        def fake_post(url, headers=None, data=None, timeout=None):
+            calls.append({"url": url, "headers": headers, "data": data, "timeout": timeout})
+            return FakeResponse()
+
+        original_post = publisher.requests.post
+        publisher.requests.post = fake_post
+        try:
+            config = SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7)
+            jobs = claim_refresh_jobs(config, "worker-1", 5, 600, "score")
+        finally:
+            publisher.requests.post = original_post
+
+        self.assertEqual(jobs[0]["kind"], "score")
+        self.assertEqual(calls[0]["url"], "https://example.supabase.co/rest/v1/rpc/claim_stock_refresh_jobs_by_kind")
+        self.assertEqual(
+            calls[0]["data"],
+            '{"p_worker_id": "worker-1", "p_kind": "score", "p_limit": 5, "p_lock_seconds": 600}',
+        )
+
     def test_queue_limit_default_is_high_enough_for_demand_driven_backlog(self):
         original = os.environ.get("STOCK_SNAPSHOT_QUEUE_LIMIT")
         os.environ.pop("STOCK_SNAPSHOT_QUEUE_LIMIT", None)

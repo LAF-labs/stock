@@ -6,6 +6,7 @@ import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDa
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { parseTickerRef } from "@/lib/tickerRef";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
 
 export type QuoteCacheState = "fresh" | "stale" | "miss";
@@ -94,6 +95,7 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
   if (!config) return;
 
   try {
+    const target = parseTickerRef(snapshot.ticker);
     const response = await fetchWithTimeout(`${config.url}/rest/v1/${SUPABASE_TABLE}?on_conflict=ticker`, {
       method: "POST",
       headers: {
@@ -102,6 +104,9 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
       },
       body: JSON.stringify({
         ticker: snapshot.ticker,
+        market: target.market,
+        symbol: target.symbol,
+        source: "kis",
         payload: snapshot.payload,
         fetched_at: snapshot.fetchedAt,
         expires_at: snapshot.expiresAt,

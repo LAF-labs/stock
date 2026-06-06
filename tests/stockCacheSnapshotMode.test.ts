@@ -223,6 +223,80 @@ test("quote force refresh can use Node KIS quote client in Vercel snapshot mode"
   assert.equal(result.cache.source, "market-data");
 });
 
+test("quote force refresh writes serving columns required by Supabase quote snapshots", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_API_APP_KEY = "write-app-key";
+  process.env.STOCK_API_APP_SECRET = "write-app-secret";
+  process.env.STOCK_API_BASE = "https://kis-write.example.com";
+
+  let writtenBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_quote_snapshots?") && init?.method !== "POST") {
+      return Response.json([]);
+    }
+    if (text.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 10, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (text.includes("/rest/v1/rpc/acquire_stock_refresh_lease")) {
+      return Response.json({ acquired: true, lease_until: new Date(Date.now() + 30_000).toISOString() });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens") && init?.method !== "POST") {
+      return Response.json([]);
+    }
+    if (text.includes("/rest/v1/rpc/acquire_kis_token_issue_lock")) {
+      return Response.json({ acquired: true });
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "issued-token", expires_in: 3600 });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens") && init?.method === "POST") {
+      return new Response(null, { status: 201 });
+    }
+    if (text.includes("/rest/v1/market_calendar?")) {
+      return Response.json([]);
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "72.25",
+          base: "71.80",
+          rate: "0.63",
+          tvol: "123456",
+          curr: "USD",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Write Test Inc",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    if (text.includes("/rest/v1/stock_quote_snapshots?") && init?.method === "POST") {
+      writtenBody = JSON.parse(String(init.body));
+      return new Response(null, { status: 201 });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockQuote("US:WRITETEST", { forceRefresh: true });
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(writtenBody?.ticker, "US:WRITETEST");
+  assert.equal(writtenBody?.market, "US");
+  assert.equal(writtenBody?.symbol, "WRITETEST");
+  assert.equal(writtenBody?.source, "kis");
+  assert.equal(typeof writtenBody?.stale_expires_at, "string");
+});
+
 test("quote stale snapshot returns immediately while inline provider refresh continues in background", async () => {
   useSnapshotOnlyRuntime();
   process.env.SUPABASE_URL = "https://example.supabase.co";

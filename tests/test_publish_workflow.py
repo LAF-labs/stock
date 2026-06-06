@@ -23,6 +23,19 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("publish-stock-snapshots", text)
         self.assertIn("cancel-in-progress: false", text)
 
+    def test_refresh_queue_worker_uses_typescript_quote_worker_and_isolates_legacy_score(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("actions/setup-node@v4", text)
+        self.assertIn("npm ci", text)
+        self.assertIn("node --import tsx scripts/publish_stock_snapshots.ts", text)
+        self.assertIn("--kind quote", text)
+        self.assertIn("github-quote-${{ github.run_id }}-${{ github.run_attempt }}", text)
+        self.assertIn("STOCK_LEGACY_SCORE_WORKER_ENABLED", text)
+        self.assertIn("--queue-kind score", text)
+        self.assertIn("--skip-quote", text)
+        self.assertIn("github-score-${{ github.run_id }}-${{ github.run_attempt }}", text)
+
     def test_industry_benchmark_worker_runs_once_after_us_aftermarket(self):
         text = BENCHMARK_WORKFLOW_PATH.read_text(encoding="utf-8")
 

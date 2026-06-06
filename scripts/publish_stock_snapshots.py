@@ -256,7 +256,21 @@ def claim_refresh_jobs(
     worker_id: str,
     limit: int,
     lock_seconds: int,
+    kind: str = "all",
 ) -> list[dict[str, Any]]:
+    if kind in {"quote", "score"}:
+        payload = post_supabase_rpc(
+            config,
+            "claim_stock_refresh_jobs_by_kind",
+            {
+                "p_worker_id": worker_id,
+                "p_kind": kind,
+                "p_limit": limit,
+                "p_lock_seconds": lock_seconds,
+            },
+        )
+        return payload if isinstance(payload, list) else []
+
     payload = post_supabase_rpc(
         config,
         "claim_stock_refresh_jobs",
@@ -429,7 +443,7 @@ def publish_queue_job(
 
 def drain_refresh_queue(config: SupabasePublishConfig, args: argparse.Namespace) -> list[dict[str, Any]]:
     worker_id = args.worker_id or f"stock-snapshot-publisher-{os.getpid()}"
-    jobs = claim_refresh_jobs(config, worker_id, args.queue_limit, args.queue_lock_seconds)
+    jobs = claim_refresh_jobs(config, worker_id, args.queue_limit, args.queue_lock_seconds, args.queue_kind)
     rows: list[dict[str, Any]] = []
     for index, job in enumerate(jobs):
         if index and args.sleep_seconds > 0:
@@ -455,6 +469,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--supabase-url", help="Overrides SUPABASE_URL.")
     parser.add_argument("--supabase-key", help="Overrides SUPABASE_SERVICE_ROLE_KEY.")
     parser.add_argument("--drain-queue", "--from-queue", dest="drain_queue", action="store_true", help="Claim and publish queued stock refresh jobs.")
+    parser.add_argument("--queue-kind", choices=("all", "quote", "score"), default="all", help="Claim only one refresh job kind. Use score when running the legacy Python score worker beside the TypeScript quote worker.")
     parser.add_argument("--queue-limit", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LIMIT", 50), help="Maximum queued jobs to claim in this run.")
     parser.add_argument("--queue-lock-seconds", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS", 900), help="Queue job lock duration.")
     parser.add_argument("--worker-id", default=os.environ.get("STOCK_SNAPSHOT_WORKER_ID"), help="Stable worker id for queued job claims.")
