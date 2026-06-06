@@ -334,6 +334,9 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
   const parsedTickers = parseTickerArgs(tickers);
   if (!parsedTickers.length && !options.drainQueue) throw new Error("At least one ticker is required unless --drain-queue is used.");
   if (options.skipQuote && options.skipScore) throw new Error("At least one of quote or score publishing must be enabled.");
+  if (!options.allowScorePythonFallback && (mode !== "quote" || !options.skipScore)) {
+    throw new Error("Score publishing requires --allow-score-python-fallback. Use the legacy Python score worker for score jobs.");
+  }
 
   return {
     ...options,

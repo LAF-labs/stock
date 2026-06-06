@@ -57,14 +57,29 @@ test("TypeScript snapshot worker claims quote jobs with kind-specific RPC", asyn
   assert.equal(calls[0].authorization, "Bearer service-role-key");
 });
 
-test("TypeScript snapshot worker preserves all-kind claim for compatibility", async () => {
+test("TypeScript snapshot worker rejects score queue modes without explicit legacy fallback", () => {
+  assert.throws(
+    () => parseOptions(["--drain-queue", "--kind", "all"], {}),
+    /Score publishing requires --allow-score-python-fallback/
+  );
+  assert.throws(
+    () => parseOptions(["--drain-queue", "--kind", "score"], {}),
+    /Score publishing requires --allow-score-python-fallback/
+  );
+  assert.throws(
+    () => parseOptions(["--ticker", "KO", "--include-score"], {}),
+    /Score publishing requires --allow-score-python-fallback/
+  );
+});
+
+test("TypeScript snapshot worker preserves all-kind claim when legacy fallback is explicit", async () => {
   let requestedUrl = "";
   globalThis.fetch = (async (input) => {
     requestedUrl = String(input);
     return Response.json([]);
   }) as typeof fetch;
 
-  const options = parseOptions(["--drain-queue", "--kind", "all"], {});
+  const options = parseOptions(["--drain-queue", "--kind", "all", "--allow-score-python-fallback"], {});
   await claimRefreshJobs({ url: "https://example.supabase.co", key: "service-role-key" }, options);
 
   assert.equal(requestedUrl, "https://example.supabase.co/rest/v1/rpc/claim_stock_refresh_jobs");
