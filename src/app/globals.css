@@ -517,16 +517,16 @@ a:focus-visible {
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
-.quote-refresh-button:hover:not([aria-disabled="true"]) {
+.quote-refresh-button:hover:not(:disabled) {
   border-color: rgba(49, 130, 246, 0.4);
   background: var(--surface-accent);
 }
 
-.quote-refresh-button:active:not([aria-disabled="true"]) {
+.quote-refresh-button:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.quote-refresh-button[aria-disabled="true"] {
+.quote-refresh-button:disabled {
   border-color: var(--line);
   background: #f2f4f6;
   color: var(--muted);

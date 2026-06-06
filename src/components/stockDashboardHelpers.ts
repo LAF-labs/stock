@@ -1,6 +1,6 @@
 import { formatPercent, formatValue, recordEntries } from "@/lib/format";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import type { JsonValue, LabeledValue, ScoreComponent, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
+import type { ChartSeriesPoint, JsonValue, LabeledValue, ScoreComponent, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 const RECORD_LABELS: Record<string, string> = {
   yfinance_version: "yfinance 버전",
@@ -119,6 +119,29 @@ export type SnapshotPendingState = {
   queued: boolean;
   retryAfterSeconds?: number;
 };
+
+export type UsableChartPoint = ChartSeriesPoint & { close: number; date: string };
+
+const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {
+  const byDate = new Map<string, UsableChartPoint>();
+  for (const point of points || []) {
+    if (typeof point.close !== "number" || !Number.isFinite(point.close)) continue;
+    const date = normalizedChartDate(point.date);
+    if (!date) continue;
+    byDate.set(date, { ...point, close: point.close, date });
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function normalizedChartDate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const date = value.slice(0, 10);
+  if (!CHART_DATE_RE.test(date)) return undefined;
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(parsed) ? date : undefined;
+}
 
 export function metricValue(items: LabeledValue[] | undefined, label: string): string {
   return formatValue(items?.find((item) => item.label === label)?.value);

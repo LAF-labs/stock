@@ -7,6 +7,7 @@ import {
   formatRecordValue,
   scoreDataWithQuote,
   snapshotPendingFromPayload,
+  usableChartPoints,
   visibleRecordEntries,
 } from "../src/components/stockDashboardHelpers";
 import type { StockQuoteResponse, StockScoreResponse } from "../src/lib/types";
@@ -77,4 +78,20 @@ test("displayTickerInput strips market prefixes only", () => {
   assert.equal(displayTickerInput("US:NVDA"), "NVDA");
   assert.equal(displayTickerInput("KR:005930"), "005930");
   assert.equal(displayTickerInput("NVDA"), "NVDA");
+});
+
+test("usableChartPoints sorts valid daily points and keeps the latest duplicate date", () => {
+  assert.deepEqual(
+    usableChartPoints([
+      { date: "2026-06-02", close: 102, close_label: "$102.00" },
+      { date: "bad-date", close: 101 },
+      { date: "2026-06-01T09:30:00Z", close: 100 },
+      { date: "2026-06-02", close: 103, close_label: "$103.00" },
+      { date: "2026-06-03", close: Number.NaN },
+    ]),
+    [
+      { date: "2026-06-01", close: 100 },
+      { date: "2026-06-02", close: 103, close_label: "$103.00" },
+    ],
+  );
 });

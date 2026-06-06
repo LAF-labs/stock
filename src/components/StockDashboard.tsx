@@ -28,6 +28,7 @@ import {
   stringFromUnknown,
   symbolRef,
   termTipFor,
+  usableChartPoints,
   visibleRecordEntries,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
@@ -529,7 +530,7 @@ function StockHeader({
           <strong>{usdPrice}</strong>
           <span>{krwPrice}</span>
         </div>
-        <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} aria-disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
+        <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
           ↻
         </button>
       </div>
@@ -690,14 +691,7 @@ function ChartStory({
   points: ChartSeriesPoint[] | undefined;
   patterns: ChartPattern[] | undefined;
 }) {
-  const usable = useMemo(
-    () =>
-      (points || []).filter(
-        (point): point is ChartSeriesPoint & { close: number; date: string } =>
-          typeof point.close === "number" && Number.isFinite(point.close) && typeof point.date === "string"
-      ),
-    [points]
-  );
+  const usable = useMemo(() => usableChartPoints(points), [points]);
   const [chartMode, setChartMode] = useState<"line" | "candle">("line");
 
   if (usable.length < 2) {
