@@ -323,6 +323,7 @@ export async function fetchMarketDataServiceStatus(config: MarketDataServiceConf
 
   const failures: Array<Record<string, unknown>> = [];
   let health: Record<string, unknown> | undefined;
+  let readiness: Record<string, unknown> | undefined;
   let metrics: Record<string, unknown> | undefined;
 
   try {
@@ -337,6 +338,29 @@ export async function fetchMarketDataServiceStatus(config: MarketDataServiceConf
     if (!health.ok) failures.push({ check: "healthz", status: response.status });
   } catch (error) {
     failures.push({ check: "healthz", error: publicError(error) });
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `${url}/readyz`,
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      config.timeoutMs
+    );
+    const payload = await parseJsonObjectResponse(response);
+    readiness = {
+      ok: response.ok && payload.ok === true,
+      status: response.status,
+      score: isRecord(payload.score) ? payload.score : undefined,
+      backends: isRecord(payload.backends) ? payload.backends : undefined,
+    };
+    if (!readiness.ok) failures.push({ check: "readyz", status: response.status });
+  } catch (error) {
+    failures.push({ check: "readyz", error: publicError(error) });
   }
 
   try {
@@ -369,6 +393,7 @@ export async function fetchMarketDataServiceStatus(config: MarketDataServiceConf
     failure_count: failures.length,
     base_url: url,
     health,
+    readiness,
     metrics,
     failures,
   };

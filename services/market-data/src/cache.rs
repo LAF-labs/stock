@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    hash::Hash,
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -61,10 +62,19 @@ pub enum CacheLookup {
     Miss,
 }
 
-#[derive(Default)]
 pub struct MemoryMarketDataCache {
     quotes: Mutex<HashMap<QuoteKey, CacheRecord>>,
     scores: Mutex<HashMap<ScoreKey, CacheRecord>>,
+    quote_capacity: usize,
+    score_capacity: usize,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct MemoryCacheStats {
+    pub quote_entries: usize,
+    pub score_entries: usize,
+    pub quote_capacity: usize,
+    pub score_capacity: usize,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -152,7 +162,22 @@ impl CacheMetadata {
     }
 }
 
+impl Default for MemoryMarketDataCache {
+    fn default() -> Self {
+        Self::with_limits(4_096, 4_096)
+    }
+}
+
 impl MemoryMarketDataCache {
+    pub fn with_limits(quote_capacity: usize, score_capacity: usize) -> Self {
+        Self {
+            quotes: Mutex::new(HashMap::new()),
+            scores: Mutex::new(HashMap::new()),
+            quote_capacity,
+            score_capacity,
+        }
+    }
+
     pub fn quote(&self, market: Market, symbol: &str) -> CacheLookup {
         let key = QuoteKey::new(market, symbol);
         lookup(self.quotes.lock().expect("quote cache lock").get(&key))
@@ -166,10 +191,13 @@ impl MemoryMarketDataCache {
         ttl: CacheTtls,
     ) -> CacheRecord {
         let record = CacheRecord::new(payload, ttl.quote_fresh, ttl.quote_stale);
-        self.quotes
-            .lock()
-            .expect("quote cache lock")
-            .insert(QuoteKey::new(market, symbol), record.clone());
+        let mut quotes = self.quotes.lock().expect("quote cache lock");
+        insert_bounded(
+            &mut quotes,
+            QuoteKey::new(market, symbol),
+            record.clone(),
+            self.quote_capacity,
+        );
         record
     }
 
@@ -187,11 +215,23 @@ impl MemoryMarketDataCache {
         ttl: CacheTtls,
     ) -> CacheRecord {
         let record = CacheRecord::new(payload, ttl.score_fresh, ttl.score_stale);
-        self.scores
-            .lock()
-            .expect("score cache lock")
-            .insert(ScoreKey::new(market, symbol, view), record.clone());
+        let mut scores = self.scores.lock().expect("score cache lock");
+        insert_bounded(
+            &mut scores,
+            ScoreKey::new(market, symbol, view),
+            record.clone(),
+            self.score_capacity,
+        );
         record
+    }
+
+    pub fn stats(&self) -> MemoryCacheStats {
+        MemoryCacheStats {
+            quote_entries: self.quotes.lock().expect("quote cache lock").len(),
+            score_entries: self.scores.lock().expect("score cache lock").len(),
+            quote_capacity: self.quote_capacity,
+            score_capacity: self.score_capacity,
+        }
     }
 }
 
@@ -238,6 +278,31 @@ fn lookup(record: Option<&CacheRecord>) -> CacheLookup {
     } else {
         CacheLookup::Miss
     }
+}
+
+fn insert_bounded<K>(
+    records: &mut HashMap<K, CacheRecord>,
+    key: K,
+    record: CacheRecord,
+    capacity: usize,
+) where
+    K: Eq + Hash + Clone,
+{
+    let now = now_ms();
+    records.retain(|_, value| value.stale_expires_at_ms >= now);
+    if capacity == 0 {
+        return;
+    }
+    if !records.contains_key(&key) && records.len() >= capacity {
+        if let Some(oldest_key) = records
+            .iter()
+            .min_by_key(|(_, value)| value.fetched_at_ms)
+            .map(|(key, _)| key.clone())
+        {
+            records.remove(&oldest_key);
+        }
+    }
+    records.insert(key, record);
 }
 
 fn now_ms() -> u64 {

@@ -469,18 +469,46 @@ fn token_ttl(_provider_expiry: Option<&str>) -> Duration {
 }
 
 async fn fetch_overseas_quote(client: &KisClient, symbol: &str) -> Result<Value, MarketDataError> {
-    let quote = client
-        .overseas_price_detail("NAS", symbol)
-        .await
-        .map_err(map_kis_error)?;
-    Ok(json!({
-        "market": Market::Us.as_str(),
-        "symbol": symbol,
-        "exchange": "NAS",
-        "last": quote.last,
-        "currency": quote.currency,
-        "previous_close": quote.previous_close,
-        "volume": quote.volume
+    const US_EXCHANGES: [&str; 3] = ["NAS", "NYS", "AMS"];
+    let mut last_error: Option<MarketDataError> = None;
+
+    for exchange in US_EXCHANGES {
+        match client.overseas_price_detail(exchange, symbol).await {
+            Ok(quote) if quote.last.is_some() => {
+                return Ok(json!({
+                    "market": Market::Us.as_str(),
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "last": quote.last,
+                    "currency": quote.currency,
+                    "previous_close": quote.previous_close,
+                    "volume": quote.volume
+                }));
+            }
+            Ok(_) => {
+                last_error = Some(MarketDataError::new(
+                    MarketDataErrorKind::InvalidProviderResponse,
+                    format!("KIS {exchange} quote response missing price"),
+                ));
+            }
+            Err(error) => {
+                let mapped = map_kis_error(error);
+                if matches!(
+                    mapped.kind(),
+                    MarketDataErrorKind::AuthFailed | MarketDataErrorKind::RateLimited
+                ) {
+                    return Err(mapped);
+                }
+                last_error = Some(mapped);
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        MarketDataError::new(
+            MarketDataErrorKind::ProviderUnavailable,
+            "KIS overseas quote unavailable",
+        )
     }))
 }
 

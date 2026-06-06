@@ -41,6 +41,13 @@ pub struct RefreshJob {
 pub struct MemoryRefreshQueue {
     sequence: AtomicU64,
     jobs: Mutex<HashMap<RefreshKey, RefreshJob>>,
+    capacity: usize,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct RefreshQueueStats {
+    pub depth: usize,
+    pub capacity: usize,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -56,11 +63,20 @@ impl Default for MemoryRefreshQueue {
         Self {
             sequence: AtomicU64::new(0),
             jobs: Mutex::new(HashMap::new()),
+            capacity: 4_096,
         }
     }
 }
 
 impl MemoryRefreshQueue {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            sequence: AtomicU64::new(0),
+            jobs: Mutex::new(HashMap::new()),
+            capacity,
+        }
+    }
+
     pub fn enqueue_quote(&self, market: Market, symbol: &str) -> RefreshJob {
         self.enqueue(RefreshKind::Quote, market, symbol, None)
     }
@@ -75,6 +91,13 @@ impl MemoryRefreshQueue {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn stats(&self) -> RefreshQueueStats {
+        RefreshQueueStats {
+            depth: self.len(),
+            capacity: self.capacity,
+        }
     }
 
     fn enqueue(
@@ -105,7 +128,17 @@ impl MemoryRefreshQueue {
             status: RefreshJobStatus::Queued,
             queued_at_ms: now_ms_for_jobs(),
         };
-        jobs.insert(key, job.clone());
+        if self.capacity > 0 {
+            if jobs.len() >= self.capacity
+                && let Some(oldest_key) = jobs
+                    .iter()
+                    .min_by_key(|(_, value)| value.queued_at_ms)
+                    .map(|(key, _)| key.clone())
+            {
+                jobs.remove(&oldest_key);
+            }
+            jobs.insert(key, job.clone());
+        }
         job
     }
 }

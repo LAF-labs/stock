@@ -3,7 +3,10 @@ use std::{
     error::Error,
     fmt,
     future::Future,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use serde::Serialize;
@@ -11,8 +14,10 @@ use serde_json::{Value, json};
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
 use crate::{
-    cache::{CacheLookup, CacheMetadata, CacheState, CacheTtls, MemoryMarketDataCache},
-    jobs::{MemoryRefreshQueue, RefreshJob},
+    cache::{
+        CacheLookup, CacheMetadata, CacheState, CacheTtls, MemoryCacheStats, MemoryMarketDataCache,
+    },
+    jobs::{MemoryRefreshQueue, RefreshJob, RefreshQueueStats},
     market::{Market, ScoreView},
 };
 
@@ -51,6 +56,37 @@ pub struct MarketDataService<P> {
     provider: P,
     ttl: CacheTtls,
     inflight: QuoteInflight,
+    metrics: Arc<ServiceMetrics>,
+}
+
+#[derive(Default)]
+struct ServiceMetrics {
+    quote_cache_fresh: AtomicU64,
+    quote_cache_stale: AtomicU64,
+    quote_cache_miss: AtomicU64,
+    score_cache_fresh: AtomicU64,
+    score_cache_stale: AtomicU64,
+    score_cache_miss: AtomicU64,
+    provider_requests: AtomicU64,
+    provider_rate_limited_errors: AtomicU64,
+    provider_auth_failed_errors: AtomicU64,
+    provider_unavailable_errors: AtomicU64,
+    provider_invalid_response_errors: AtomicU64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ServiceMetricsSnapshot {
+    pub quote_cache_fresh: u64,
+    pub quote_cache_stale: u64,
+    pub quote_cache_miss: u64,
+    pub score_cache_fresh: u64,
+    pub score_cache_stale: u64,
+    pub score_cache_miss: u64,
+    pub provider_requests: u64,
+    pub provider_rate_limited_errors: u64,
+    pub provider_auth_failed_errors: u64,
+    pub provider_unavailable_errors: u64,
+    pub provider_invalid_response_errors: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -128,6 +164,7 @@ where
             provider,
             ttl,
             inflight: QuoteInflight::default(),
+            metrics: Arc::new(ServiceMetrics::default()),
         }
     }
 
@@ -151,9 +188,13 @@ where
             market,
             symbol: symbol.clone(),
         };
+        self.metrics
+            .provider_requests
+            .fetch_add(1, Ordering::Relaxed);
         let fetched = match self.provider.fetch_quote(request).await {
             Ok(payload) => payload,
             Err(error) => {
+                self.metrics.record_provider_error(error.kind());
                 if let Some(response) = self.cached_quote_response(market, &symbol) {
                     return Ok(response);
                 }
@@ -173,6 +214,9 @@ where
     fn cached_quote_response(&self, market: Market, symbol: &str) -> Option<QuoteServiceResponse> {
         match self.cache.quote(market, symbol) {
             CacheLookup::Fresh(record) => {
+                self.metrics
+                    .quote_cache_fresh
+                    .fetch_add(1, Ordering::Relaxed);
                 let cache = CacheMetadata::fresh(&record);
                 Some(QuoteServiceResponse {
                     payload: record.payload,
@@ -181,6 +225,9 @@ where
                 })
             }
             CacheLookup::Stale(record) => {
+                self.metrics
+                    .quote_cache_stale
+                    .fetch_add(1, Ordering::Relaxed);
                 let job = self.queue.enqueue_quote(market, symbol);
                 let cache = CacheMetadata::stale(&record, true);
                 Some(QuoteServiceResponse {
@@ -189,7 +236,12 @@ where
                     job: Some(job),
                 })
             }
-            CacheLookup::Miss => None,
+            CacheLookup::Miss => {
+                self.metrics
+                    .quote_cache_miss
+                    .fetch_add(1, Ordering::Relaxed);
+                None
+            }
         }
     }
 
@@ -227,6 +279,9 @@ where
     ) -> Option<ScoreServiceResponse> {
         match self.cache.score(market, symbol, view) {
             CacheLookup::Fresh(record) => {
+                self.metrics
+                    .score_cache_fresh
+                    .fetch_add(1, Ordering::Relaxed);
                 let job = force_refresh.then(|| self.queue.enqueue_score(market, symbol, view));
                 let cache = if force_refresh {
                     CacheMetadata::fresh_refreshing(&record)
@@ -240,6 +295,9 @@ where
                 })
             }
             CacheLookup::Stale(record) => {
+                self.metrics
+                    .score_cache_stale
+                    .fetch_add(1, Ordering::Relaxed);
                 let job = self.queue.enqueue_score(market, symbol, view);
                 let cache = CacheMetadata::stale(&record, true);
                 Some(ScoreServiceResponse {
@@ -248,7 +306,12 @@ where
                     job: Some(job),
                 })
             }
-            CacheLookup::Miss => None,
+            CacheLookup::Miss => {
+                self.metrics
+                    .score_cache_miss
+                    .fetch_add(1, Ordering::Relaxed);
+                None
+            }
         }
     }
 
@@ -269,6 +332,60 @@ where
     ) -> Result<RefreshJob, MarketDataError> {
         let symbol = normalize_symbol(market, symbol)?;
         Ok(self.queue.enqueue_score(market, &symbol, view))
+    }
+
+    pub fn cache_stats(&self) -> MemoryCacheStats {
+        self.cache.stats()
+    }
+
+    pub fn queue_stats(&self) -> RefreshQueueStats {
+        self.queue.stats()
+    }
+
+    pub fn metrics_snapshot(&self) -> ServiceMetricsSnapshot {
+        self.metrics.snapshot()
+    }
+}
+
+impl ServiceMetrics {
+    fn record_provider_error(&self, kind: MarketDataErrorKind) {
+        match kind {
+            MarketDataErrorKind::InvalidRequest => {}
+            MarketDataErrorKind::RateLimited => {
+                self.provider_rate_limited_errors
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            MarketDataErrorKind::AuthFailed => {
+                self.provider_auth_failed_errors
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            MarketDataErrorKind::ProviderUnavailable => {
+                self.provider_unavailable_errors
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            MarketDataErrorKind::InvalidProviderResponse => {
+                self.provider_invalid_response_errors
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn snapshot(&self) -> ServiceMetricsSnapshot {
+        ServiceMetricsSnapshot {
+            quote_cache_fresh: self.quote_cache_fresh.load(Ordering::Relaxed),
+            quote_cache_stale: self.quote_cache_stale.load(Ordering::Relaxed),
+            quote_cache_miss: self.quote_cache_miss.load(Ordering::Relaxed),
+            score_cache_fresh: self.score_cache_fresh.load(Ordering::Relaxed),
+            score_cache_stale: self.score_cache_stale.load(Ordering::Relaxed),
+            score_cache_miss: self.score_cache_miss.load(Ordering::Relaxed),
+            provider_requests: self.provider_requests.load(Ordering::Relaxed),
+            provider_rate_limited_errors: self.provider_rate_limited_errors.load(Ordering::Relaxed),
+            provider_auth_failed_errors: self.provider_auth_failed_errors.load(Ordering::Relaxed),
+            provider_unavailable_errors: self.provider_unavailable_errors.load(Ordering::Relaxed),
+            provider_invalid_response_errors: self
+                .provider_invalid_response_errors
+                .load(Ordering::Relaxed),
+        }
     }
 }
 

@@ -140,6 +140,14 @@ test("TypeScript operations report checks configured market-data health and metr
     if (url.endsWith("/healthz")) {
       return jsonResponse({ ok: true, service: "market-data", dependencies: { supabase_configured: true } });
     }
+    if (url.endsWith("/readyz")) {
+      return jsonResponse({
+        ok: true,
+        service: "market-data",
+        score: { durable_refresh_available: false },
+        backends: { cache: { active: "memory" }, queue: { active: "memory" } },
+      });
+    }
     if (url.endsWith("/metrics")) {
       return new Response("market_data_service_info 1\n", { status: 200, headers: { "Content-Type": "text/plain" } });
     }
@@ -157,8 +165,16 @@ test("TypeScript operations report checks configured market-data health and metr
     assert.equal(status.ok, true);
     assert.equal(status.failure_count, 0);
     assert.equal(calls[0].url, "http://market-data.internal/healthz");
-    assert.equal(calls[1].url, "http://market-data.internal/metrics");
+    assert.equal(calls[1].url, "http://market-data.internal/readyz");
     assert.equal(calls[1].authorization, "Bearer internal-token");
+    assert.equal(calls[2].url, "http://market-data.internal/metrics");
+    assert.equal(calls[2].authorization, "Bearer internal-token");
+    assert.deepEqual(status.readiness, {
+      ok: true,
+      status: 200,
+      score: { durable_refresh_available: false },
+      backends: { cache: { active: "memory" }, queue: { active: "memory" } },
+    });
   } finally {
     global.fetch = originalFetch;
   }

@@ -532,8 +532,8 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
     let weak_profit = input
         .operating_margin
         .is_some_and(|margin| margin.is_finite() && margin < 0.0);
-    let weak_cashflow = cashflow_margin(&input)
-        .is_some_and(|margin| margin.is_finite() && margin < 0.0);
+    let weak_cashflow =
+        cashflow_margin(&input).is_some_and(|margin| margin.is_finite() && margin < 0.0);
     if sales_multiple.is_some_and(|multiple| multiple >= 20.0) && (weak_profit || weak_cashflow) {
         score = score.min(72.0);
         caps.push("speculative_expensive_sales");
@@ -586,7 +586,10 @@ fn analyst_count_confidence(value: Option<f64>) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn volume_acceleration_score(avg_volume_20: Option<f64>, avg_volume_60: Option<f64>) -> Option<f64> {
+fn volume_acceleration_score(
+    avg_volume_20: Option<f64>,
+    avg_volume_60: Option<f64>,
+) -> Option<f64> {
     match (finite(avg_volume_20), finite(avg_volume_60)) {
         (Some(short), Some(long)) if long > 0.0 => {
             score_positive_opt(Some((short / long) - 1.0), -0.35, 0.80)
@@ -630,7 +633,11 @@ fn liquidity_floor_score(
     }
 }
 
-fn risk_control_score(atr14_pct: Option<f64>, rsi14: Option<f64>, beta: Option<f64>) -> ComponentScore {
+fn risk_control_score(
+    atr14_pct: Option<f64>,
+    rsi14: Option<f64>,
+    beta: Option<f64>,
+) -> ComponentScore {
     weighted_average(&[
         (score_negative_opt(atr14_pct, 0.025, 0.10), 1.0),
         (rsi_score(rsi14), 0.8),
@@ -770,8 +777,8 @@ fn guardrailed_valuation(
         || input
             .operating_margin
             .is_some_and(|margin| margin.is_finite() && margin < 0.08);
-    let weak_cashflow = cashflow_margin(input)
-        .is_some_and(|margin| margin.is_finite() && margin < 0.0);
+    let weak_cashflow =
+        cashflow_margin(input).is_some_and(|margin| margin.is_finite() && margin < 0.0);
     let expensive_sales = sales_multiple.is_some_and(|multiple| multiple >= 8.0);
     let expensive_earnings = positive(input.trailing_pe).is_some_and(|multiple| multiple >= 80.0);
 

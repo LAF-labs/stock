@@ -54,6 +54,52 @@ async fn metrics_requires_internal_bearer_token() {
 }
 
 #[tokio::test]
+async fn readyz_requires_internal_bearer_token() {
+    let response = router(test_config())
+        .oneshot(
+            Request::builder()
+                .uri("/readyz")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn readyz_reports_active_backend_modes_without_claiming_durable_score() {
+    let response = router(test_config())
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/readyz")
+                .header(header::AUTHORIZATION, "Bearer test-internal-token")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let payload: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+    assert_eq!(payload["ok"], true);
+    assert_eq!(payload["backends"]["cache"]["active"], "memory");
+    assert_eq!(payload["backends"]["cache"]["durable"], false);
+    assert_eq!(payload["backends"]["queue"]["active"], "memory");
+    assert_eq!(payload["backends"]["queue"]["durable"], false);
+    assert_eq!(payload["score"]["durable_refresh_available"], false);
+    assert_eq!(
+        payload["score"]["recommended_next_client_flag"],
+        "MARKET_DATA_SERVICE_ENABLE_SCORE=0"
+    );
+}
+
+#[tokio::test]
 async fn metrics_accepts_internal_bearer_token() {
     let response = router(test_config())
         .oneshot(
@@ -75,4 +121,13 @@ async fn metrics_accepts_internal_bearer_token() {
             .and_then(|value| value.to_str().ok()),
         Some("text/plain; version=0.0.4")
     );
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let text = String::from_utf8(body.to_vec()).expect("metrics utf8");
+    assert!(text.contains(
+        "market_data_backend_info{kind=\"cache\",backend=\"memory\",durable=\"false\"} 1"
+    ));
+    assert!(text.contains("market_data_cache_entries{kind=\"quote\"}"));
+    assert!(text.contains("market_data_refresh_queue_depth"));
 }

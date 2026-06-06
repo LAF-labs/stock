@@ -292,7 +292,9 @@ fn rust_opportunity_uses_python_volume_volatility_and_cashflow_inputs() {
     input.price_to_sales = Some(33.0);
 
     let output = compute_score(input, ScoreView::Detail).expect("score");
-    let opportunity = output.payload["opportunity_score"].as_f64().expect("opportunity");
+    let opportunity = output.payload["opportunity_score"]
+        .as_f64()
+        .expect("opportunity");
     let caps = output.payload["sia_snapshot"]["opportunity_caps"]
         .as_array()
         .expect("caps")
@@ -300,7 +302,10 @@ fn rust_opportunity_uses_python_volume_volatility_and_cashflow_inputs() {
         .filter_map(|value| value.as_str())
         .collect::<Vec<_>>();
 
-    assert!(opportunity <= 60.0, "thin liquidity and high volatility should cap opportunity");
+    assert!(
+        opportunity <= 60.0,
+        "thin liquidity and high volatility should cap opportunity"
+    );
     assert!(caps.contains(&"thin_liquidity"));
     assert!(caps.contains(&"short_term_overheat"));
     assert!(caps.contains(&"speculative_expensive_sales"));

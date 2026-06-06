@@ -120,5 +120,10 @@ jobs:
           grep '"ok":true' /tmp/market-data-health.json
           curl -fsS \
             -H "Authorization: Bearer $MARKET_DATA_INTERNAL_TOKEN" \
+            http://127.0.0.1:18080/readyz \
+            >/tmp/market-data-ready.json
+          grep '"durable_refresh_available":false' /tmp/market-data-ready.json
+          curl -fsS \
+            -H "Authorization: Bearer $MARKET_DATA_INTERNAL_TOKEN" \
             http://127.0.0.1:18080/metrics \
             | grep market_data_service_info

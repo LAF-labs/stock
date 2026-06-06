@@ -10,9 +10,14 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
-use market_data::provider::{
-    kis::{KisClient, KisClientConfig, MemoryTokenCache},
-    models::KisErrorKind,
+use market_data::{
+    config::AppConfig,
+    market::Market,
+    provider::{
+        kis::{KisClient, KisClientConfig, KisQuoteProvider, MemoryTokenCache},
+        models::KisErrorKind,
+    },
+    service::{QuoteProvider, QuoteRequest},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -21,6 +26,7 @@ use tokio::net::TcpListener;
 #[derive(Clone, Copy)]
 enum Scenario {
     Ok,
+    NysOnly,
     RateLimited,
     AuthFailure,
     SlowDetail,
@@ -31,11 +37,11 @@ struct MockState {
     scenario: Scenario,
     token_hits: Arc<Mutex<usize>>,
     detail_authorizations: Arc<Mutex<Vec<String>>>,
+    detail_exchanges: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Deserialize)]
 struct DetailQuery {
-    #[allow(dead_code)]
     excd: Option<String>,
     #[allow(dead_code)]
     symb: Option<String>,
@@ -52,6 +58,7 @@ async fn spawn_mock_kis(scenario: Scenario) -> (String, MockState) {
         scenario,
         token_hits: Arc::new(Mutex::new(0)),
         detail_authorizations: Arc::new(Mutex::new(Vec::new())),
+        detail_exchanges: Arc::new(Mutex::new(Vec::new())),
     };
     let app = Router::new()
         .route("/oauth2/tokenP", post(token_handler))
@@ -87,7 +94,7 @@ async fn token_handler(State(state): State<MockState>) -> Result<Json<TokenPaylo
 async fn detail_handler(
     State(state): State<MockState>,
     headers: HeaderMap,
-    Query(_query): Query<DetailQuery>,
+    Query(query): Query<DetailQuery>,
 ) -> (StatusCode, Json<Value>) {
     if matches!(state.scenario, Scenario::SlowDetail) {
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -100,6 +107,12 @@ async fn detail_handler(
             .unwrap_or_default()
             .to_string(),
     );
+    let exchange = query.excd.unwrap_or_default();
+    state
+        .detail_exchanges
+        .lock()
+        .expect("exchange lock")
+        .push(exchange.clone());
 
     if matches!(state.scenario, Scenario::RateLimited) {
         return (
@@ -108,6 +121,20 @@ async fn detail_handler(
                 "rt_cd": "1",
                 "msg_cd": "EGW00201",
                 "msg1": "초당 거래건수를 초과했습니다."
+            })),
+        );
+    }
+    if matches!(state.scenario, Scenario::NysOnly) && exchange != "NYS" {
+        return (
+            StatusCode::OK,
+            Json(json!({
+                "rt_cd": "0",
+                "output": {
+                    "last": null,
+                    "curr": "USD",
+                    "base": "71.80",
+                    "tvol": "12345678"
+                }
             })),
         );
     }
@@ -124,6 +151,19 @@ async fn detail_handler(
             }
         })),
     )
+}
+
+fn provider_config(base_url: String) -> AppConfig {
+    AppConfig {
+        bind_addr: "127.0.0.1:0".parse().expect("valid bind addr"),
+        internal_token: "test-internal-token".to_string(),
+        supabase_url: None,
+        supabase_service_role_key: None,
+        stock_api_base: base_url,
+        stock_api_app_key: Some("app-key".to_string()),
+        stock_api_app_secret: Some("app-secret".to_string()),
+        redis_url: None,
+    }
 }
 
 fn client(base_url: String, timeout_ms: u64) -> KisClient<MemoryTokenCache> {
@@ -204,4 +244,29 @@ async fn maps_provider_timeout_to_provider_unavailable() {
         .expect_err("timeout error");
 
     assert_eq!(error.kind(), KisErrorKind::ProviderUnavailable);
+}
+
+#[tokio::test]
+async fn us_quote_provider_falls_back_to_nyse_when_nasdaq_price_is_empty() {
+    let (base_url, state) = spawn_mock_kis(Scenario::NysOnly).await;
+    let provider = KisQuoteProvider::from_config(&provider_config(base_url));
+
+    let payload = provider
+        .fetch_quote(QuoteRequest {
+            market: Market::Us,
+            symbol: "IBM".to_string(),
+        })
+        .await
+        .expect("fallback quote");
+
+    assert_eq!(payload["exchange"], "NYS");
+    assert_eq!(payload["last"], 72.25);
+    assert_eq!(
+        state
+            .detail_exchanges
+            .lock()
+            .expect("exchange lock")
+            .as_slice(),
+        ["NAS", "NYS"]
+    );
 }

@@ -109,6 +109,44 @@ fn test_service(
     (service, cache, queue)
 }
 
+#[test]
+fn bounded_memory_cache_evicts_oldest_quote_entries() {
+    let cache = MemoryMarketDataCache::with_limits(1, 1);
+    cache.upsert_quote(
+        Market::Us,
+        "AAPL",
+        json!({"symbol": "AAPL"}),
+        CacheTtls::fast_for_tests(),
+    );
+    cache.upsert_quote(
+        Market::Us,
+        "MSFT",
+        json!({"symbol": "MSFT"}),
+        CacheTtls::fast_for_tests(),
+    );
+
+    assert!(matches!(
+        cache.quote(Market::Us, "AAPL"),
+        market_data::cache::CacheLookup::Miss
+    ));
+    assert!(matches!(
+        cache.quote(Market::Us, "MSFT"),
+        market_data::cache::CacheLookup::Fresh(_)
+    ));
+    assert_eq!(cache.stats().quote_entries, 1);
+}
+
+#[test]
+fn bounded_memory_queue_evicts_oldest_unique_refresh_jobs() {
+    let queue = MemoryRefreshQueue::with_capacity(2);
+    queue.enqueue_quote(Market::Us, "AAPL");
+    queue.enqueue_quote(Market::Us, "MSFT");
+    queue.enqueue_quote(Market::Us, "NVDA");
+
+    assert_eq!(queue.len(), 2);
+    assert_eq!(queue.stats().capacity, 2);
+}
+
 #[tokio::test]
 async fn concurrent_quote_miss_singleflights_provider_fetch() {
     let provider = FakeQuoteProvider::ok(json!({"last": 182.0, "currency": "USD"}))
@@ -134,6 +172,56 @@ async fn concurrent_quote_miss_singleflights_provider_fetch() {
 
     assert_eq!(provider.calls(), 1);
     assert_eq!(queue.len(), 0);
+}
+
+#[tokio::test]
+async fn metrics_track_cache_queue_and_provider_error_state() {
+    let provider = FakeQuoteProvider::ok(json!({"last": 913.0, "currency": "USD"}));
+    let (service, _cache, _queue) = test_service(provider.clone(), CacheTtls::fast_for_tests());
+    let app = router_with_service(test_config(), service);
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/score/us/NVDA")
+                .header(header::AUTHORIZATION, "Bearer test-internal-token")
+                .body(Body::empty())
+                .expect("score request"),
+        )
+        .await
+        .expect("score response");
+
+    provider.set_error(MarketDataErrorKind::ProviderUnavailable);
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/quote/us/FAIL")
+                .header(header::AUTHORIZATION, "Bearer test-internal-token")
+                .body(Body::empty())
+                .expect("quote request"),
+        )
+        .await
+        .expect("quote response");
+
+    let metrics = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .header(header::AUTHORIZATION, "Bearer test-internal-token")
+                .body(Body::empty())
+                .expect("metrics request"),
+        )
+        .await
+        .expect("metrics response");
+    assert_eq!(metrics.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(metrics.into_body(), usize::MAX)
+        .await
+        .expect("metrics body");
+    let text = String::from_utf8(body.to_vec()).expect("metrics utf8");
+
+    assert!(text.contains("market_data_refresh_queue_depth 1"));
+    assert!(text.contains("market_data_provider_errors_total{kind=\"provider_unavailable\"} 1"));
+    assert!(text.contains("market_data_cache_events_total{kind=\"score\",state=\"miss\"} 1"));
 }
 
 #[tokio::test]

@@ -545,10 +545,10 @@ Evaluator finding: Rust market-data score `68/100`. Blocking issues are in-memor
 - Modify: `services/market-data/tests/kis_provider.rs`
 - Modify: `services/market-data/tests/phase1_pipeline.rs`
 
-- [ ] Bring Rust US quote fallback behavior closer to the Node KIS path: NAS, NYS, then AMS.
-- [ ] Preserve stable error kinds for not found, rate limited, auth failed, provider timeout, and invalid provider response.
-- [ ] Add provider metrics counters for fallback attempts and provider error classes if feasible within the existing metrics format.
-- [ ] Run:
+- [x] Bring Rust US quote fallback behavior closer to the Node KIS path: NAS, NYS, then AMS.
+- [x] Preserve stable error kinds for not found, rate limited, auth failed, provider timeout, and invalid provider response.
+- [x] Add provider metrics counters for fallback attempts and provider error classes if feasible within the existing metrics format.
+- [x] Run:
 
 ```bash
 npm run test:rust 2>&1 | head -c 20000
@@ -569,11 +569,11 @@ Rust tests: failures 0
 - Modify: `README.md`
 - Modify: `docs/score-system-operations.md`
 
-- [ ] If implementing durable storage is too large for this component pass, keep `MARKET_DATA_SERVICE_ENABLE_SCORE=0` as the documented default and add explicit health/dependency reporting that score durable mode is unavailable.
+- [x] If implementing durable storage is too large for this component pass, keep `MARKET_DATA_SERVICE_ENABLE_SCORE=0` as the documented default and add explicit health/dependency reporting that score durable mode is unavailable.
 - [ ] If implementing a narrow durable bridge, add tests that score refresh jobs are persisted through Supabase instead of memory-only queue.
-- [ ] Add `/readyz` with internal bearer protection and checks for durable mode configuration, queue backend, cache backend, and provider configuration without leaking secrets.
-- [ ] Add CI coverage for `docker build --target market-data` and authenticated `/metrics` smoke.
-- [ ] Run:
+- [x] Add `/readyz` with internal bearer protection and checks for durable mode configuration, queue backend, cache backend, and provider configuration without leaking secrets.
+- [x] Add CI coverage for `docker build --target market-data` and authenticated `/metrics` smoke.
+- [x] Run:
 
 ```bash
 npm run test:rust 2>&1 | head -c 20000
@@ -587,11 +587,48 @@ Rust tests: failures 0
 Next build: exit 0
 ```
 
+Current implementation notes:
+
+```text
+- Durable score ownership remains intentionally disabled; `/readyz` reports durable_refresh_available=false and recommends MARKET_DATA_SERVICE_ENABLE_SCORE=0.
+- Memory cache and refresh queue are bounded fallbacks with reported capacities and depth.
+- Rust KIS quote provider now tries US exchanges NAS, NYS, then AMS and skips empty price responses.
+- Provider throttle serializes concurrent waiters so distinct-symbol bursts respect KIS pacing.
+- `/metrics` includes backend info, cache entries/capacity, queue depth/capacity, cache events, provider request count, and provider error counters by stable class.
+- CI market-data container smoke now checks `/healthz`, authenticated `/readyz`, and authenticated `/metrics`.
+```
+
+Current evidence:
+
+```text
+npm test: 141 passed
+npm run test:python: 70 passed
+npm run test:rust: 34 passed
+npm run typecheck: exit 0
+npm run build: exit 0
+docker build --target market-data -t stock-market-data:rust-uplift .: exit 0
+container smoke: /healthz ok true, /readyz durable_refresh_available false, /metrics market_data_refresh_queue_depth present
+MARKET_DATA_SERVICE_URL=http://127.0.0.1:18080 MARKET_DATA_INTERNAL_TOKEN=ci-internal-token npm run ops:check: ok true
+```
+
 ### Task 5.3: Rust Re-Evaluation Gate
 
-- [ ] Dispatch Rust/operations evaluator with the diff and verification evidence.
-- [ ] Required result: Rust market-data service `>=90`.
-- [ ] Commit and push only after `>=90`:
+- [x] Dispatch Rust/operations evaluator with the diff and verification evidence.
+- [x] Required result: Rust market-data service `>=90`.
+- [x] Commit and push only after `>=90`:
+
+Gate result:
+
+```text
+rust_market_data_score: 91/100
+>=90_gate: pass
+findings:
+- Low/accepted: `/v1/score` still returns queued misses backed by memory only, but `/readyz`, docs, and Next client keep score disabled/fallback-only until durable score refresh exists.
+- Low: cache stats can count expired entries until the next insert prunes them; capacity still bounds memory.
+vulnerabilities:
+- No auth bypass or secret disclosure found.
+- Remaining ops/data-integrity risk is explicitly controlled: cache/queue are bounded but non-durable, and score durable refresh is unavailable by design.
+```
 
 ```bash
 git status --short 2>&1 | head -c 4000
