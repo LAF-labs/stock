@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   dailyChangeText,
@@ -7,10 +8,12 @@ import {
   formatKrwPrice,
   formatUsdPrice,
   metricValue,
+  opportunityExtremes,
   scoreDataWithQuote,
-  scoreFreshnessSummary,
+  scoreFreshnessTimeChip,
   strongestAndWeakest,
   stringFromUnknown,
+  stockHeaderIdentity,
 } from "@/components/stockDashboardHelpers";
 import { clampScore, formatValue } from "@/lib/format";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
@@ -51,6 +54,7 @@ export default function StockHeader({
   const qualityScore = clampScore(data.quality_score ?? data.score);
   const opportunityScore = typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined;
   const symbol = quote?.symbol || data.symbol || data.requested_ticker || "KO";
+  const identity = stockHeaderIdentity(data, quote);
   const current = stringFromUnknown(quote?.latest_price_label) || formatValue(data.latest_price);
   const usdPrice = stringFromUnknown(quote?.latest_price_label) || formatUsdPrice(displayData, current);
   const krwPrice = formatKrwPrice(displayData);
@@ -75,19 +79,28 @@ export default function StockHeader({
   const signal = data.sia_snapshot?.raw_signal || "-";
   const risk = data.sia_snapshot?.risk_level || "-";
   const { strongest, weakest } = strongestAndWeakest(data);
+  const opportunity = opportunityExtremes(data.opportunity_components);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
-  const scoreFreshness = scoreFreshnessSummary(data);
+  const scoreTime = scoreFreshnessTimeChip(data);
+  const qualityScoreStyle = { "--quality-score-angle": `${qualityScore * 3.6}deg` } as CSSProperties;
 
   return (
     <section className="stock-title-card">
+      <div className="stock-header-toolbar">
+        {scoreTime ? <span className="score-time-chip">{scoreTime}</span> : null}
+        <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
+          ↻
+        </button>
+      </div>
+
       <div className="stock-hero-main">
         <div className="stock-name-row">
           <div>
             <span>
               {quote?.exchange || data.exchange || "미국 거래소"} · {latestBarDate || "최근 가격"}
             </span>
-            <h2>{symbol}</h2>
-            <p>{quote?.name || data.name}</p>
+            <h2 className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</h2>
+            {identity.secondary ? <p>{identity.secondary}</p> : null}
           </div>
         </div>
         <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
@@ -98,9 +111,6 @@ export default function StockHeader({
           <strong>{usdPrice}</strong>
           <span>{krwPrice}</span>
         </div>
-        <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
-          ↻
-        </button>
       </div>
       {quoteRefreshState.message ? (
         <p className={`quote-refresh-note ${quoteRefreshState.status}`} role="status" aria-live="polite">
@@ -125,22 +135,38 @@ export default function StockHeader({
           <span>시가총액</span>
           <strong>{marketCap}</strong>
         </article>
-        <article className="score-panel">
+        <article className="score-panel quality-score-panel">
           <span>품질 점수</span>
-          <strong>{qualityScore.toFixed(1)}점</strong>
-          <p>
-            {signal} 신호 · 변동성 {risk}
-          </p>
+          <div className="quality-score-visual">
+            <div className="quality-donut" style={qualityScoreStyle} role="img" aria-label={`품질 점수 ${qualityScore.toFixed(1)}점`}>
+              <span className="quality-donut-value">
+                <strong>{qualityScore.toFixed(1)}</strong>
+                <small>점</small>
+              </span>
+            </div>
+            <div className="score-chip-row" aria-label="품질 점수 보조 신호">
+              <span>매수신호 {signal}</span>
+              <span>변동성 {risk}</span>
+            </div>
+          </div>
         </article>
         <article className="score-panel opportunity-panel">
           <span>기회 점수</span>
           <strong>{opportunityScore === undefined ? "-" : `${opportunityScore.toFixed(1)}점`}</strong>
-          <p>성장, 목표가, 모멘텀, 유동성을 따로 봐요</p>
-        </article>
-        <article className={`score-freshness ${scoreFreshness.tone}`} aria-label={`${scoreFreshness.label}: ${scoreFreshness.value}`}>
-          <span>{scoreFreshness.label}</span>
-          <strong>{scoreFreshness.value}</strong>
-          <p>{scoreFreshness.detail}</p>
+          <div className="opportunity-movers" aria-label="기회 점수 최고 및 최저 항목">
+            {opportunity.best ? (
+              <span className="opportunity-chip best">
+                <b aria-hidden="true">↗</b>
+                {opportunity.best.label}
+              </span>
+            ) : null}
+            {opportunity.worst ? (
+              <span className="opportunity-chip worst">
+                <b aria-hidden="true">↘</b>
+                {opportunity.worst.label}
+              </span>
+            ) : null}
+          </div>
         </article>
       </div>
 

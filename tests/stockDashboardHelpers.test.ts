@@ -8,9 +8,12 @@ import {
   directInputSymbolItem,
   displayTickerInput,
   formatRecordValue,
+  opportunityExtremes,
   scoreDataWithQuote,
   scoreFreshnessSummary,
+  scoreFreshnessTimeChip,
   snapshotPendingFromPayload,
+  stockHeaderIdentity,
   usableChartPoints,
   visibleRecordEntries,
 } from "../src/components/stockDashboardHelpers";
@@ -99,6 +102,48 @@ test("scoreFreshnessSummary accepts Rust cache millisecond timestamps", () => {
     detail: "Rust market-data · 2026-06-05 09:00 KST 기준",
     tone: "fresh",
   });
+});
+
+test("scoreFreshnessTimeChip keeps only the KST time for compact header display", () => {
+  const score = {
+    server_cache: {
+      fetched_at: "2026-06-06T09:08:00.000Z",
+    },
+  } satisfies StockScoreResponse;
+
+  assert.equal(scoreFreshnessTimeChip(score), "18:08 기준");
+});
+
+test("stockHeaderIdentity prioritizes Korean names except long derivative-like products", () => {
+  assert.deepEqual(stockHeaderIdentity({ symbol: "005930", name: "삼성전자" }), {
+    primary: "삼성전자",
+    secondary: "005930",
+    primaryKind: "name",
+  });
+  assert.deepEqual(stockHeaderIdentity({ symbol: "0194M0", name: "ACE 삼성전자단일종목레버리지" }), {
+    primary: "0194M0",
+    secondary: "ACE 삼성전자단일종목레버리지",
+    primaryKind: "ticker",
+  });
+  assert.deepEqual(stockHeaderIdentity({ symbol: "KO", name: "Coca-Cola Co" }), {
+    primary: "KO",
+    secondary: "Coca-Cola Co",
+    primaryKind: "ticker",
+  });
+});
+
+test("opportunityExtremes returns the highest and lowest scored opportunity labels", () => {
+  assert.deepEqual(
+    opportunityExtremes([
+      { label: "성장", score: 72 },
+      { label: "유동성", score: 91 },
+      { label: "목표가", score: 44 },
+    ]),
+    {
+      best: { label: "유동성", score: 91 },
+      worst: { label: "목표가", score: 44 },
+    },
+  );
 });
 
 test("dailyChangeText prefers quote label, then quote value, then cached score value", () => {

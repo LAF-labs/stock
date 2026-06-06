@@ -128,6 +128,22 @@ export type ScoreFreshnessSummary = {
   tone: "fresh" | "stale" | "pending" | "unknown";
 };
 
+export type StockHeaderIdentity = {
+  primary: string;
+  secondary: string;
+  primaryKind: "name" | "ticker";
+};
+
+export type OpportunityExtreme = {
+  label: string;
+  score: number;
+};
+
+export type OpportunityExtremes = {
+  best?: OpportunityExtreme;
+  worst?: OpportunityExtreme;
+};
+
 export type UsableChartPoint = ChartSeriesPoint & { close: number; date: string };
 
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -280,6 +296,13 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   };
 }
 
+export function scoreFreshnessTimeChip(data: StockScoreResponse): string | undefined {
+  const cache = recordFromUnknown(data.server_cache);
+  const fetchedAt = cacheTimestamp(cache, "fetched_at");
+  const time = fetchedAt ? formatKstTime(fetchedAt) : undefined;
+  return time ? `${time} 기준` : undefined;
+}
+
 function scoreFreshnessSourceLabel(source: string | undefined): string {
   if (source === "supabase") return "Supabase";
   if (source === "market-data") return "Rust market-data";
@@ -317,6 +340,22 @@ function formatKstMinute(value: string): string | undefined {
   const minute = part("minute");
   if (!year || !month || !day || !hour || !minute) return undefined;
   return `${year}-${month}-${day} ${hour}:${minute} KST`;
+}
+
+function formatKstTime(value: string): string | undefined {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return undefined;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+  const hour = part("hour");
+  const minute = part("minute");
+  if (!hour || !minute) return undefined;
+  return `${hour}:${minute}`;
 }
 
 export function dailyChangeText(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string {
@@ -436,6 +475,59 @@ export function strongestAndWeakest(data: StockScoreResponse) {
   const strongest = components.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
   const weakest = [...components].sort((a, b) => (a.score ?? 101) - (b.score ?? 101))[0];
   return { strongest, weakest };
+}
+
+export function stockHeaderIdentity(data: StockScoreResponse, quote?: StockQuoteResponse): StockHeaderIdentity {
+  const symbol = stringFromUnknown(quote?.symbol) || stringFromUnknown(data.symbol) || stringFromUnknown(data.requested_ticker) || "KO";
+  const quoteName = stringFromUnknown(quote?.name);
+  const dataName = stringFromUnknown(data.name);
+  const name = meaningfulHeaderName(quoteName, symbol, data.requested_ticker) || meaningfulHeaderName(dataName, symbol, data.requested_ticker) || "";
+
+  if (/[가-힣]/.test(name) && !isDerivativeLikeDisplayName(name)) {
+    return { primary: name, secondary: symbol, primaryKind: "name" };
+  }
+
+  return { primary: symbol, secondary: name, primaryKind: "ticker" };
+}
+
+export function opportunityExtremes(components: ScoreComponent[] | undefined): OpportunityExtremes {
+  const scored = (components || [])
+    .map((component) => {
+      const score = numberFromUnknown(component.score);
+      const label = shortOpportunityLabel(component.label || component.key);
+      return score === undefined || !label ? undefined : { label, score };
+    })
+    .filter((component): component is OpportunityExtreme => !!component);
+
+  if (!scored.length) return {};
+
+  const sorted = [...scored].sort((a, b) => b.score - a.score);
+  return {
+    best: sorted[0],
+    worst: sorted.length > 1 ? sorted[sorted.length - 1] : undefined,
+  };
+}
+
+function meaningfulHeaderName(value: string | undefined, symbol: string, requestedTicker: string | undefined): string | undefined {
+  const name = value?.trim();
+  if (!name) return undefined;
+  const comparableName = name.toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
+  const comparableSymbol = symbol.toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
+  const comparableRequested = (requestedTicker || "").toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
+  if (comparableName === comparableSymbol || comparableName === comparableRequested) return undefined;
+  return name;
+}
+
+function isDerivativeLikeDisplayName(name: string): boolean {
+  const length = Array.from(name).length;
+  if (length < 12) return false;
+  return /(ETF|ETN|KODEX|TIGER|ACE|RISE|PLUS|SOL|HANARO|KOSEF|KBSTAR|WON|1Q|레버리지|인버스|선물|채권혼합|단일종목)/i.test(name);
+}
+
+function shortOpportunityLabel(value: string | undefined): string | undefined {
+  const label = value?.trim();
+  if (!label) return undefined;
+  return label.replace(/^기회\s*/, "");
 }
 
 export function termTipFor(label: string | undefined) {
