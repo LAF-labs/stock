@@ -35,6 +35,7 @@ test("batch status reports snapshot pending as accepted work", () => {
     202
   );
   assert.equal(batchStatusFromResults([{ ok: false, error: "snapshot_pending" }, { ok: true }]), 200);
+  assert.equal(batchStatusFromResults([{ ok: false, error: "refresh_queue_unavailable" }]), 502);
 });
 
 test("subprocess output is bounded and marked when truncated", () => {

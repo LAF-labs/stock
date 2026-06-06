@@ -18,7 +18,14 @@ export type StockPendingInput = {
   view?: ScoreView;
 };
 
-export async function enqueueStockPendingPayload(input: StockPendingInput): Promise<StockDataPendingPayload> {
+export type StockRefreshQueueUnavailablePayload = Omit<StockDataPendingPayload, "error" | "message"> & {
+  error: "refresh_queue_unavailable";
+  message: string;
+};
+
+export type StockPendingPayload = StockDataPendingPayload | StockRefreshQueueUnavailablePayload;
+
+export async function enqueueStockPendingPayload(input: StockPendingInput): Promise<StockPendingPayload> {
   const refreshRequest = await enqueueStockRefreshJob({
     kind: input.kind,
     ticker: input.ticker,
@@ -26,31 +33,40 @@ export async function enqueueStockPendingPayload(input: StockPendingInput): Prom
     priority: input.priority,
     reason: input.reason,
   });
-
-  return stockDataPendingPayload({
+  const publicRefreshRequest = publicRefreshRequestFromResult(refreshRequest);
+  const payload = stockDataPendingPayload({
     kind: input.kind,
     ticker: input.ticker,
     view: input.view,
     reason: input.reason,
-    refreshRequest: publicRefreshRequest(refreshRequest),
+    refreshRequest: publicRefreshRequest,
   });
+
+  return publicRefreshRequest.queued
+    ? payload
+    : {
+        ...payload,
+        error: "refresh_queue_unavailable",
+        message: "Stock refresh queue is unavailable.",
+      };
 }
 
-export function stockPendingJsonResponse(payload: StockDataPendingPayload): NextResponse {
+export function stockPendingJsonResponse(payload: StockPendingPayload): NextResponse {
   return NextResponse.json(payload, {
-    status: 202,
+    status: payload.error === "snapshot_pending" ? 202 : 503,
     headers: stockPendingHeaders(payload),
   });
 }
 
-export function stockPendingHeaders(payload: StockDataPendingPayload): HeadersInit {
+export function stockPendingHeaders(payload: StockPendingPayload): HeadersInit {
+  if (payload.error !== "snapshot_pending") return privateNoStoreHeaders();
   return {
     ...privateNoStoreHeaders(),
     "Retry-After": String(payload.retry_after_seconds),
   };
 }
 
-function publicRefreshRequest(refreshRequest: EnqueueStockRefreshResult): StockDataPendingPayload["refresh_request"] {
+function publicRefreshRequestFromResult(refreshRequest: EnqueueStockRefreshResult): StockDataPendingPayload["refresh_request"] {
   return refreshRequest.queued
     ? {
         queued: true,

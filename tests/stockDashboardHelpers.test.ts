@@ -32,6 +32,7 @@ test("dashboard pending payload maps queue state into user-facing retry guidance
 
 test("dashboard pending payload ignores unrelated errors", () => {
   assert.equal(snapshotPendingFromPayload({ error: "provider_timeout" }, "US:KO"), undefined);
+  assert.equal(snapshotPendingFromPayload({ error: "refresh_queue_unavailable" }, "US:KO"), undefined);
 });
 
 test("scoreDataWithQuote overlays fresh quote fields without losing score fields", () => {
