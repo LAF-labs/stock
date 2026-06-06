@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "publish-stock-snapshots.yml"
 BENCHMARK_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "maintain-industry-benchmarks.yml"
 OPERATIONS_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "stock-operations-check.yml"
+VERCEL_PREVIEW_DEPLOY_PATH = ROOT / "scripts" / "vercel_preview_deploy.sh"
 
 
 class PublishWorkflowTests(unittest.TestCase):
@@ -47,6 +48,7 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("sync_market_calendar.py --days 550", text)
         self.assertIn("run_industry_maintenance.py --refresh-benchmarks", text)
         self.assertIn("industry_quality_audit.py --json", text)
+        self.assertIn("SUPABASE_PUBLISHABLE_KEY", text)
         self.assertIn("supabase_runtime_readiness.py --json", text)
 
     def test_operations_check_runs_on_schedule_with_thresholds(self):
@@ -64,6 +66,13 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("--max-dead-refresh-jobs 0", text)
         self.assertIn("--min-current-score-model-rate", text)
         self.assertIn("STOCK_OPS_MAX_QUEUED_REFRESH_JOBS", text)
+
+    def test_manual_vercel_preview_deploy_uses_node_readiness(self):
+        text = VERCEL_PREVIEW_DEPLOY_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("npm run supabase:readiness", text)
+        self.assertNotIn("supabase_runtime_readiness.py", text)
+        self.assertNotIn("PYTHON_CMD", text)
 
 
 if __name__ == "__main__":

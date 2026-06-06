@@ -66,12 +66,7 @@ export STOCK_API_APP_KEY="${STOCK_API_APP_KEY:-${KIS_APP_KEY:-}}"
 export STOCK_API_APP_SECRET="${STOCK_API_APP_SECRET:-${KIS_APP_SECRET:-}}"
 export STOCK_API_BASE="${STOCK_API_BASE:-${KIS_API_BASE:-https://openapi.koreainvestment.com:9443}}"
 
-PYTHON_CMD="${PYTHON_BIN:-}"
-if [[ -z "$PYTHON_CMD" && -x "$ROOT_DIR/.venv/bin/python" ]]; then
-  PYTHON_CMD="$ROOT_DIR/.venv/bin/python"
-fi
-PYTHON_CMD="${PYTHON_CMD:-python3}"
-"$PYTHON_CMD" scripts/supabase_runtime_readiness.py
+npm run supabase:readiness
 
 rm -rf "$DEPLOY_DIR"
 mkdir -p "$DEPLOY_DIR/.vercel"
