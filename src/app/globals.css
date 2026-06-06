@@ -1202,8 +1202,8 @@ a:focus-visible {
   visibility: visible;
 }
 
-.factor-score .info-bubble,
-.pattern-chips span + .info-tip-wrap .info-bubble {
+.factor-title .info-bubble,
+.pattern-chips strong .info-bubble {
   right: 0;
   left: auto;
 }
