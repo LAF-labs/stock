@@ -11,6 +11,8 @@ const originalEnv = {
   MARKET_DATA_SERVICE_URL: process.env.MARKET_DATA_SERVICE_URL,
   MARKET_DATA_INTERNAL_TOKEN: process.env.MARKET_DATA_INTERNAL_TOKEN,
   MARKET_DATA_SERVICE_ENABLED: process.env.MARKET_DATA_SERVICE_ENABLED,
+  MARKET_DATA_SERVICE_ENABLE_QUOTE: process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE,
+  MARKET_DATA_SERVICE_ENABLE_SCORE: process.env.MARKET_DATA_SERVICE_ENABLE_SCORE,
   MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL: process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL,
   VERCEL: process.env.VERCEL,
 };
@@ -31,6 +33,16 @@ function restore() {
     delete process.env.MARKET_DATA_SERVICE_ENABLED;
   } else {
     process.env.MARKET_DATA_SERVICE_ENABLED = originalEnv.MARKET_DATA_SERVICE_ENABLED;
+  }
+  if (originalEnv.MARKET_DATA_SERVICE_ENABLE_QUOTE === undefined) {
+    delete process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE;
+  } else {
+    process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE = originalEnv.MARKET_DATA_SERVICE_ENABLE_QUOTE;
+  }
+  if (originalEnv.MARKET_DATA_SERVICE_ENABLE_SCORE === undefined) {
+    delete process.env.MARKET_DATA_SERVICE_ENABLE_SCORE;
+  } else {
+    process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = originalEnv.MARKET_DATA_SERVICE_ENABLE_SCORE;
   }
   if (originalEnv.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL === undefined) {
     delete process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL;
@@ -106,9 +118,41 @@ test("quote client maps Rust quote response into public payload shape", async ()
   assert.equal(result?.cache.source, "market-data");
 });
 
+test("quote client can be disabled independently", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE = "0";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  const result = await getMarketDataServiceQuote("US:KO");
+
+  assert.equal(result, undefined);
+  assert.equal(calls, 0);
+});
+
+test("score client is opt-in until Rust score has a durable refresh path", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  const result = await getMarketDataServiceScore("US:KO", "detail");
+
+  assert.equal(result, undefined);
+  assert.equal(calls, 0);
+});
+
 test("score client falls back when Rust score is only queued", async () => {
   process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
   process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = "1";
 
   globalThis.fetch = (async () =>
     new Response(
@@ -128,6 +172,7 @@ test("score client falls back when Rust score is only queued", async () => {
 test("score client falls back when Rust score model version is stale", async () => {
   process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
   process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = "1";
 
   globalThis.fetch = (async () =>
     new Response(

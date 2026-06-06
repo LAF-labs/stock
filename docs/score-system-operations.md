@@ -84,7 +84,7 @@ Then publish hot quote/score snapshots from GitHub Actions, a local admin machin
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --json
 ```
 
-The bundled GitHub Actions workflow runs on weekdays every 5 minutes and uses workflow concurrency to avoid overlapping provider bursts. Configure these repository secrets:
+The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Configure these repository secrets:
 
 ```text
 STOCK_API_APP_KEY
@@ -92,6 +92,14 @@ STOCK_API_APP_SECRET
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ```
+
+Use the read-only operations check before release and after score model changes:
+
+```bash
+npm run ops:check
+```
+
+`ops:check` fails on dead refresh jobs, stale running jobs, excessive backlog, stale score model versions, duplicate-score drift, missing quote prices, expired industry benchmarks, or thin market calendars. Dormant quote snapshots can be stale in a demand-driven cache, so stale quote rate is reported but is not a default failure threshold.
 
 Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 5 minutes.
 

@@ -31,6 +31,11 @@ export function marketDataServiceConfig(): MarketDataServiceConfig | undefined {
   };
 }
 
+function marketDataServiceFeatureEnabled(feature: "quote" | "score"): boolean {
+  if (feature === "quote") return process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE !== "0";
+  return process.env.MARKET_DATA_SERVICE_ENABLE_SCORE === "1";
+}
+
 function isLocalServiceUrl(value: string): boolean {
   try {
     const hostname = new URL(value).hostname.toLowerCase();
@@ -44,6 +49,7 @@ export async function getMarketDataServiceQuote(
   tickerRef: string,
   options: { forceRefresh?: boolean } = {}
 ): Promise<StockQuoteResult | undefined> {
+  if (!marketDataServiceFeatureEnabled("quote")) return undefined;
   const config = marketDataServiceConfig();
   if (!config) return undefined;
 
@@ -62,6 +68,7 @@ export async function getMarketDataServiceScore(
   view: ScoreView,
   options: { forceRefresh?: boolean } = {}
 ): Promise<StockScoreResult | undefined> {
+  if (!marketDataServiceFeatureEnabled("score")) return undefined;
   const config = marketDataServiceConfig();
   if (!config) return undefined;
 
