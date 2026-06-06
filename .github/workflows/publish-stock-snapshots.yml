@@ -98,7 +98,6 @@ jobs:
             --queue-kind score
             --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT"
             --worker-id "github-score-${{ github.run_id }}-${{ github.run_attempt }}"
-            --skip-quote
             --json
           )
           if [ -n "$TICKERS" ]; then

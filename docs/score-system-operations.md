@@ -78,10 +78,11 @@ For Vercel + Supabase production, set the public app runtime to snapshot-only:
 STOCK_DATA_RUNTIME=snapshot
 ```
 
-Then publish hot quote/score snapshots from GitHub Actions, a local admin machine, or another worker that can safely run Python dependencies:
+Then drain quote snapshots through the TypeScript worker and legacy score snapshots through the Python score worker:
 
 ```bash
-python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --json
+node --import tsx scripts/publish_stock_snapshots.ts --tickers NVDA,TSLA,KO,MRVL,005930,000660 --drain-queue --kind quote --queue-limit 50 --json
+python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --queue-kind score --json
 ```
 
 The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by the TypeScript worker. Score jobs remain on the kind-filtered legacy Python worker until the durable Rust/TypeScript score worker owns score snapshot writes, but Python setup/install is skipped unless due score jobs or workflow_dispatch manual tickers exist. Configure these repository secrets:
@@ -145,7 +146,7 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.
 - Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
-- Prefer Rust `market-data` for long-term serving. Python collector should remain a fallback until Rust owns quote, score, batch, and refresh jobs end to end.
+- Prefer Rust `market-data` for long-term serving. Python collector should remain a score fallback until Rust owns score, batch, and refresh jobs end to end.
 
 ## Calibration Rules
 

@@ -152,7 +152,6 @@ except ModuleNotFoundError:
 
 try:
     from scripts.stock_score.kis_client import (
-        KIS_DOMESTIC_QUOTE_MARKET_DIV_CODE,
         KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
         US_EQUITY_EXCHANGES,
         US_EXCHANGE_NAME_MARKERS,
@@ -173,7 +172,6 @@ try:
     )
 except ModuleNotFoundError:
     from stock_score.kis_client import (
-        KIS_DOMESTIC_QUOTE_MARKET_DIV_CODE,
         KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
         US_EQUITY_EXCHANGES,
         US_EXCHANGE_NAME_MARKERS,
@@ -727,125 +725,6 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
             "history_rows": len(daily_rows),
         },
     }
-
-
-def fetch_quote_kis_domestic(raw_ticker: str) -> dict[str, Any]:
-    symbol = clean_ticker(raw_ticker)
-    if not symbol or not KR_TICKER_RE.match(symbol):
-        return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "Invalid KR ticker."}
-
-    try:
-        price = kis_domestic_price(symbol, KIS_DOMESTIC_QUOTE_MARKET_DIV_CODE)
-    except KisApiError as exc:
-        return kis_error_payload(exc)
-
-    now = datetime.now(timezone.utc)
-    latest_price = as_float(price.get("stck_prpr"))
-    previous_close = as_float(price.get("stck_sdpr")) or as_float(price.get("stck_prdy_clpr"))
-    latest_change = kis_percent(price.get("prdy_ctrt")) or (((latest_price / previous_close) - 1.0) if latest_price and previous_close else None)
-    volume = as_int(price.get("acml_vol"))
-    name = str(price.get("hts_kor_isnm") or price.get("prdt_abrv_name") or symbol)
-    latest_date = kis_date(price.get("stck_bsop_date")) or datetime.now(timezone(timedelta(hours=9))).date().isoformat()
-
-    return {
-        "ok": True,
-        "type": "quote",
-        "requested_ticker": f"KR:{symbol}",
-        "market": "KR",
-        "symbol": symbol,
-        "name": name,
-        "exchange": "KRX/NXT",
-        "currency": "KRW",
-        "latest_price": latest_price,
-        "latest_price_label": price_label(latest_price, "KRW"),
-        "latest_bar_date": latest_date,
-        "previous_close": previous_close,
-        "latest_change": latest_change,
-        "latest_change_label": pct(latest_change),
-        "volume": volume,
-        "volume_label": num_label(volume),
-        "price_metrics": {
-            "price": latest_price,
-            "previous_close": previous_close,
-            "latest_change": latest_change,
-            "volume": volume,
-        },
-        "fetch": {
-            "source": "market_data",
-            "price_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-price",
-            "market_div_code": KIS_DOMESTIC_QUOTE_MARKET_DIV_CODE,
-            "fetched_at": now.isoformat(),
-            "cache": "server",
-        },
-    }
-
-
-def fetch_quote_kis_us(raw_ticker: str) -> dict[str, Any]:
-    symbol = clean_ticker(raw_ticker)
-    if not symbol or not TICKER_RE.match(symbol):
-        return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "Invalid US ticker."}
-
-    try:
-        discovered = discover_kis_stock(symbol)
-    except KisApiError as exc:
-        return kis_error_payload(exc)
-
-    now = datetime.now(timezone.utc)
-    market = discovered["market"]
-    detail = discovered["detail"]
-    search = discovered["search"]
-    currency = str(detail.get("curr") or search.get("tr_crcy_cd") or "USD")
-    usd_krw = as_float(detail.get("t_rate")) if currency == "USD" else None
-    latest_price = as_float(detail.get("last")) or as_float(search.get("ovrs_now_pric1"))
-    previous_close = as_float(detail.get("base"))
-    latest_change = kis_percent(detail.get("rate")) or (((latest_price / previous_close) - 1.0) if latest_price and previous_close else None)
-    volume = as_int(detail.get("tvol"))
-    name = str(search.get("prdt_eng_name") or search.get("ovrs_item_name") or search.get("prdt_name") or symbol)
-    exchange = str(search.get("ovrs_excg_name") or market["label"])
-    latest_date = kis_date(detail.get("xymd")) or now.date().isoformat()
-
-    return {
-        "ok": True,
-        "type": "quote",
-        "requested_ticker": f"US:{symbol}",
-        "market": "US",
-        "symbol": symbol,
-        "name": name,
-        "exchange": exchange,
-        "exchange_code": market["excd"],
-        "currency": currency,
-        "usd_krw_rate": usd_krw,
-        "usd_krw_label": f"$1 = {price_label(usd_krw, 'KRW')}" if usd_krw else None,
-        "latest_price": latest_price,
-        "latest_price_label": labeled_money(latest_price, currency, usd_krw),
-        "latest_bar_date": latest_date,
-        "previous_close": previous_close,
-        "latest_change": latest_change,
-        "latest_change_label": pct(latest_change),
-        "volume": volume,
-        "volume_label": num_label(volume),
-        "price_metrics": {
-            "price": latest_price,
-            "previous_close": previous_close,
-            "latest_change": latest_change,
-            "volume": volume,
-        },
-        "fetch": {
-            "source": "market_data",
-            "price_detail_endpoint": "/uapi/overseas-price/v1/quotations/price-detail",
-            "search_info_endpoint": "/uapi/overseas-price/v1/quotations/search-info",
-            "exchange_code": market["excd"],
-            "fetched_at": now.isoformat(),
-            "cache": "server",
-        },
-    }
-
-
-def fetch_quote(raw_ticker: str) -> dict[str, Any]:
-    market, symbol = parse_symbol_ref(raw_ticker)
-    if market == "KR":
-        return fetch_quote_kis_domestic(symbol)
-    return fetch_quote_kis_us(symbol)
 
 
 def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_override: float | None = None, use_rate_override: bool = False) -> dict[str, Any]:
@@ -1846,12 +1725,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch latest stock score data.")
     parser.add_argument("ticker", nargs="?")
     parser.add_argument("--tickers")
-    parser.add_argument("--view", choices=["detail", "compare", "quote"], default="detail")
+    parser.add_argument("--view", choices=["detail", "compare"], default="detail")
     args = parser.parse_args()
 
     tickers = parse_batch_tickers(args.tickers)
     if tickers:
-        results = [fetch_quote(ticker) if args.view == "quote" else fetch_score(ticker, view=args.view) for ticker in tickers]
+        results = [fetch_score(ticker, view=args.view) for ticker in tickers]
         payload = {
             "ok": any(result.get("ok") is True for result in results),
             "results": results,
@@ -1859,7 +1738,7 @@ def main() -> int:
     else:
         if not args.ticker:
             parser.error("ticker is required unless --tickers is provided")
-        payload = fetch_quote(args.ticker) if args.view == "quote" else fetch_score(args.ticker, view=args.view)
+        payload = fetch_score(args.ticker, view=args.view)
     print(json.dumps(payload, ensure_ascii=False, allow_nan=False, default=json_default))
     return 0
 

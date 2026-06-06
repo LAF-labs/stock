@@ -2,7 +2,7 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSes
 import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
-import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
@@ -10,7 +10,7 @@ import { parseTickerRef } from "@/lib/tickerRef";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
 
 export type QuoteCacheState = "fresh" | "stale" | "miss";
-export type QuoteCacheSource = "memory" | "supabase" | "collector" | "market-data";
+export type QuoteCacheSource = "memory" | "supabase" | "market-data";
 
 export type StockQuoteResult = {
   payload: StockPayload;
@@ -127,16 +127,11 @@ async function collectLiveQuotePayload(ticker: string): Promise<StockPayload> {
     return fetchKisQuote(ticker);
   }
 
-  if (!pythonCollectorEnabled()) {
-    throw new StockDataUnavailableError({
-      kind: "quote",
-      ticker,
-      reason: "refresh_background_only",
-    });
-  }
-
-  const { runQuoteCollector } = await import("@/lib/pythonStockCollector");
-  return runQuoteCollector(ticker);
+  throw new StockDataUnavailableError({
+    kind: "quote",
+    ticker,
+    reason: "refresh_background_only",
+  });
 }
 
 async function refreshQuoteSnapshot(
@@ -164,7 +159,7 @@ async function refreshQuoteSnapshot(
       });
     }
 
-    if (!kisQuoteConfigured() && !pythonCollectorEnabled()) {
+    if (!kisQuoteConfigured()) {
       throw new StockDataUnavailableError({
         kind: "quote",
         ticker,
@@ -269,7 +264,7 @@ function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredQuoteSnap
 }
 
 function inlineQuoteRefreshAvailable(): boolean {
-  return kisQuoteConfigured() || pythonCollectorEnabled() || !!marketDataServiceConfig();
+  return kisQuoteConfigured() || !!marketDataServiceConfig();
 }
 
 export async function getStockQuote(tickerRef: string, options: { forceRefresh?: boolean } = {}): Promise<StockQuoteResult> {

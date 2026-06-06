@@ -6,24 +6,12 @@ import type { ScoreView, StockPayload } from "@/lib/stockSnapshotCache";
 const SCRIPT_PATH = "scripts/fetch_yfinance_score.py";
 const PYTHON_BIN = process.env.PYTHON_BIN || process.env.PYTHON || "python";
 const SCORE_TIMEOUT_MS = 35_000;
-const QUOTE_TIMEOUT_MS = 18_000;
 const SCORE_OUTPUT_MAX_BYTES = 1_000_000;
-const QUOTE_OUTPUT_MAX_BYTES = 500_000;
 
 async function acquireScoreCollectorSlot() {
   const result = await acquireRateLimit(
     fixedRateLimitKey("stock-score-collector-global"),
     apiLimitPolicy("stock_score_collector", 30, 60)
-  );
-  if (!result.allowed) {
-    throw new Error(`collector_rate_limited_until_${result.resetAt}`);
-  }
-}
-
-async function acquireQuoteCollectorSlot() {
-  const result = await acquireRateLimit(
-    fixedRateLimitKey("stock-quote-collector-global"),
-    apiLimitPolicy("stock_quote_collector", 60, 60)
   );
   if (!result.allowed) {
     throw new Error(`collector_rate_limited_until_${result.resetAt}`);
@@ -89,9 +77,4 @@ async function runPythonCollector(
 export async function runScoreCollector(ticker: string, view: ScoreView): Promise<StockPayload> {
   await acquireScoreCollectorSlot();
   return runPythonCollector([ticker, "--view", view], SCORE_TIMEOUT_MS, SCORE_OUTPUT_MAX_BYTES, "Python collector", "Stock lookup");
-}
-
-export async function runQuoteCollector(ticker: string): Promise<StockPayload> {
-  await acquireQuoteCollectorSlot();
-  return runPythonCollector([ticker, "--view", "quote"], QUOTE_TIMEOUT_MS, QUOTE_OUTPUT_MAX_BYTES, "Python quote collector", "Quote lookup");
 }

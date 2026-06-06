@@ -37,7 +37,6 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("--force-if-list \"$MANUAL_WARM_TICKERS\"", text)
         self.assertIn("steps.legacy_score_queue.outputs.run == '1'", text)
         self.assertIn("--queue-kind score", text)
-        self.assertIn("--skip-quote", text)
         self.assertIn("github-score-${{ github.run_id }}-${{ github.run_attempt }}", text)
 
     def test_industry_benchmark_worker_runs_once_after_us_aftermarket(self):

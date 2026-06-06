@@ -15,9 +15,9 @@ from zoneinfo import ZoneInfo
 import requests
 
 try:
-    from scripts.fetch_yfinance_score import fetch_quote, fetch_score, parse_symbol_ref
+    from scripts.fetch_yfinance_score import fetch_score, parse_symbol_ref
 except ModuleNotFoundError:
-    from fetch_yfinance_score import fetch_quote, fetch_score, parse_symbol_ref
+    from fetch_yfinance_score import fetch_score, parse_symbol_ref
 
 
 ScoreView = str
@@ -82,38 +82,6 @@ def build_score_snapshot_row(
     }
 
 
-def build_quote_snapshot_row(
-    ticker: str,
-    payload: dict[str, Any],
-    fetched_at: datetime,
-    ttl_seconds: int,
-    stale_ttl_seconds: int | None = None,
-    expires_at: str | None = None,
-) -> dict[str, Any]:
-    market, symbol = parse_symbol_ref(ticker)
-    stale_seconds = stale_ttl_seconds or numeric_env("STOCK_QUOTE_SNAPSHOT_STALE_SECONDS", 86_400)
-    fresh_expires_at = expires_at or ttl_expires_at(fetched_at, ttl_seconds)
-    stale_expires_at = max_iso_datetime(ttl_expires_at(fetched_at, stale_seconds), fresh_expires_at)
-    return {
-        "ticker": ticker,
-        "market": market,
-        "symbol": symbol,
-        "source": "kis",
-        "payload": payload,
-        "fetched_at": fetched_at.replace(microsecond=0).isoformat(),
-        "expires_at": fresh_expires_at,
-        "stale_expires_at": stale_expires_at,
-    }
-
-
-def max_iso_datetime(left: str, right: str) -> str:
-    left_dt = parse_iso_datetime(left)
-    right_dt = parse_iso_datetime(right)
-    if left_dt and right_dt and right_dt > left_dt:
-        return right
-    return left
-
-
 def numeric_env(name: str, fallback: int) -> int:
     try:
         parsed = int(os.environ.get(name, ""))
@@ -165,15 +133,6 @@ def upsert_snapshot(config: SupabasePublishConfig, table: str, row: dict[str, An
     )
     if response.status_code >= 400:
         raise RuntimeError(f"Supabase upsert failed for {table}: HTTP {response.status_code} {response.text[:500]}")
-
-
-def quote_snapshot_expires_at(
-    config: SupabasePublishConfig | None,
-    ticker: str,
-    fetched_at: datetime,
-    ttl_seconds: int,
-) -> str:
-    return market_aware_snapshot_expires_at(config, ticker, fetched_at, ttl_seconds)
 
 
 def market_aware_snapshot_expires_at(
@@ -256,26 +215,16 @@ def claim_refresh_jobs(
     worker_id: str,
     limit: int,
     lock_seconds: int,
-    kind: str = "all",
+    kind: str = "score",
 ) -> list[dict[str, Any]]:
-    if kind in {"quote", "score"}:
-        payload = post_supabase_rpc(
-            config,
-            "claim_stock_refresh_jobs_by_kind",
-            {
-                "p_worker_id": worker_id,
-                "p_kind": kind,
-                "p_limit": limit,
-                "p_lock_seconds": lock_seconds,
-            },
-        )
-        return payload if isinstance(payload, list) else []
-
+    if kind != "score":
+        raise ValueError("Legacy Python publisher only supports score refresh jobs.")
     payload = post_supabase_rpc(
         config,
-        "claim_stock_refresh_jobs",
+        "claim_stock_refresh_jobs_by_kind",
         {
             "p_worker_id": worker_id,
+            "p_kind": "score",
             "p_limit": limit,
             "p_lock_seconds": lock_seconds,
         },
@@ -364,32 +313,19 @@ def publish_ticker(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     fetched_at = datetime.now(timezone.utc)
-    summary: dict[str, Any] = {"ticker": ticker, "quote": None, "scores": {}, "errors": []}
+    summary: dict[str, Any] = {"ticker": ticker, "scores": {}, "errors": []}
 
-    if not args.skip_quote:
-        quote = fetch_quote(ticker)
-        if ok_payload(quote):
-            expires_at = quote_snapshot_expires_at(config, ticker, fetched_at, args.quote_ttl_seconds)
-            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds, expires_at)
+    for view in views:
+        score = fetch_score(ticker, view=view)
+        if ok_payload(score):
+            expires_at = market_aware_snapshot_expires_at(config, ticker, fetched_at, args.score_ttl_seconds)
+            row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds, expires_at)
             if config:
-                upsert_snapshot(config, "stock_quote_snapshots", row, "ticker")
-            summary["quote"] = "published" if config else "dry_run"
+                upsert_snapshot(config, "stock_score_snapshots", row, "ticker,view_mode")
+            summary["scores"][view] = "published" if config else "dry_run"
         else:
-            summary["quote"] = "skipped"
-            summary["errors"].append({"kind": "quote", "error": quote.get("error") or "fetch_failed"})
-
-    if not args.skip_score:
-        for view in views:
-            score = fetch_score(ticker, view=view)
-            if ok_payload(score):
-                expires_at = market_aware_snapshot_expires_at(config, ticker, fetched_at, args.score_ttl_seconds)
-                row = build_score_snapshot_row(ticker, view, score, fetched_at, args.score_ttl_seconds, expires_at)
-                if config:
-                    upsert_snapshot(config, "stock_score_snapshots", row, "ticker,view_mode")
-                summary["scores"][view] = "published" if config else "dry_run"
-            else:
-                summary["scores"][view] = "skipped"
-                summary["errors"].append({"kind": "score", "view": view, "error": score.get("error") or "fetch_failed"})
+            summary["scores"][view] = "skipped"
+            summary["errors"].append({"kind": "score", "view": view, "error": score.get("error") or "fetch_failed"})
 
     return summary
 
@@ -410,14 +346,7 @@ def publish_queue_job(
     try:
         if not job_id:
             raise RuntimeError("claimed job is missing id")
-        if kind == "quote":
-            quote = fetch_quote(ticker)
-            if not ok_payload(quote):
-                raise RuntimeError(str(quote.get("error") or "quote_fetch_failed"))
-            expires_at = quote_snapshot_expires_at(config, ticker, fetched_at, args.quote_ttl_seconds)
-            row = build_quote_snapshot_row(ticker, quote, fetched_at, args.quote_ttl_seconds, args.quote_stale_ttl_seconds, expires_at)
-            upsert_snapshot(config, "stock_quote_snapshots", row, "ticker")
-        elif kind == "score":
+        if kind == "score":
             if view not in {"detail", "compare"}:
                 view = "detail"
             score = fetch_score(ticker, view=view)
@@ -453,23 +382,19 @@ def drain_refresh_queue(config: SupabasePublishConfig, args: argparse.Namespace)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Publish stock quote and score snapshots into Supabase.")
+    parser = argparse.ArgumentParser(description="Publish legacy stock score snapshots into Supabase.")
     parser.add_argument("--ticker", action="append", help="Ticker to publish. Can be repeated or comma-separated.")
     parser.add_argument("--tickers", help="Comma-separated ticker list.")
     parser.add_argument("--tickers-file", help="Text file with one ticker per line. # comments are ignored.")
     parser.add_argument("--views", default="detail,compare", help="Score views to publish: detail,compare.")
-    parser.add_argument("--skip-quote", action="store_true", help="Do not publish quote snapshots.")
-    parser.add_argument("--skip-score", action="store_true", help="Do not publish score snapshots.")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and build rows without writing to Supabase.")
     parser.add_argument("--sleep-seconds", type=float, default=0.0, help="Delay between tickers to avoid provider bursts.")
     parser.add_argument("--timeout-seconds", type=float, default=15.0, help="Supabase REST timeout.")
     parser.add_argument("--score-ttl-seconds", type=int, default=numeric_env("STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS", 1_800))
-    parser.add_argument("--quote-ttl-seconds", type=int, default=numeric_env("STOCK_QUOTE_SNAPSHOT_EXPIRES_SECONDS", 300))
-    parser.add_argument("--quote-stale-ttl-seconds", type=int, default=numeric_env("STOCK_QUOTE_SNAPSHOT_STALE_SECONDS", 86_400))
     parser.add_argument("--supabase-url", help="Overrides SUPABASE_URL.")
     parser.add_argument("--supabase-key", help="Overrides SUPABASE_SERVICE_ROLE_KEY.")
     parser.add_argument("--drain-queue", "--from-queue", dest="drain_queue", action="store_true", help="Claim and publish queued stock refresh jobs.")
-    parser.add_argument("--queue-kind", choices=("all", "quote", "score"), default="all", help="Claim only one refresh job kind. Use score when running the legacy Python score worker beside the TypeScript quote worker.")
+    parser.add_argument("--queue-kind", choices=("score",), default="score", help="Claim score jobs only. Quote jobs are handled by the TypeScript worker.")
     parser.add_argument("--queue-limit", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LIMIT", 50), help="Maximum queued jobs to claim in this run.")
     parser.add_argument("--queue-lock-seconds", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS", 900), help="Queue job lock duration.")
     parser.add_argument("--worker-id", default=os.environ.get("STOCK_SNAPSHOT_WORKER_ID"), help="Stable worker id for queued job claims.")
@@ -486,8 +411,6 @@ def main() -> int:
     tickers.extend(ticker for ticker in parse_ticker_file(args.tickers_file) if ticker not in tickers)
     if not tickers and not args.drain_queue:
         parser.error("At least one ticker is required unless --drain-queue is used.")
-    if args.skip_quote and args.skip_score:
-        parser.error("At least one of quote or score publishing must be enabled.")
 
     try:
         views = parse_views(args.views)
@@ -507,7 +430,7 @@ def main() -> int:
         try:
             rows.append(publish_ticker(ticker, views, config, args))
         except Exception as exc:
-            rows.append({"ticker": ticker, "quote": "error", "scores": {}, "errors": [{"error": str(exc)}]})
+            rows.append({"ticker": ticker, "scores": {}, "errors": [{"error": str(exc)}]})
 
     payload = {
         "ok": not any(row["errors"] for row in rows) and not any(row["errors"] for row in queue_rows),
@@ -521,7 +444,7 @@ def main() -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         for row in rows:
-            print(f"{row['ticker']} quote={row['quote']} scores={row['scores']} errors={len(row['errors'])}")
+            print(f"{row['ticker']} scores={row['scores']} errors={len(row['errors'])}")
         print("OK" if payload["ok"] else "FAILED")
     return 0 if payload["ok"] else 1
 
