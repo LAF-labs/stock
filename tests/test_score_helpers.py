@@ -7,6 +7,7 @@ import pandas as pd
 import scripts.fetch_yfinance_score as legacy_score_module
 import scripts.stock_score.formatting as formatting
 import scripts.stock_score.io_utils as io_utils
+import scripts.stock_score.kis_client as kis_client
 import scripts.stock_score.kis_discovery_cache as kis_discovery_cache
 import scripts.stock_score.presentation as presentation
 import scripts.stock_score.provider_cache as provider_cache
@@ -68,6 +69,14 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.kis_token_cache_key, provider_cache.kis_token_cache_key)
         self.assertIs(legacy_score_module.read_supabase_kis_access_token, provider_cache.read_supabase_kis_access_token)
         self.assertIs(legacy_score_module.write_supabase_kis_access_token, provider_cache.write_supabase_kis_access_token)
+
+    def test_kis_client_helpers_are_extracted_without_breaking_legacy_imports(self):
+        self.assertIs(legacy_score_module.KisApiError, kis_client.KisApiError)
+        self.assertIs(legacy_score_module.discover_kis_stock, kis_client.discover_kis_stock)
+        self.assertIs(legacy_score_module.domestic_exchange_name, kis_client.domestic_exchange_name)
+        self.assertIs(legacy_score_module.kis_access_token, kis_client.kis_access_token)
+        self.assertIs(legacy_score_module.kis_date, kis_client.kis_date)
+        self.assertIs(legacy_score_module.kis_percent, kis_client.kis_percent)
 
     def test_env_value_reads_local_files_after_environment(self):
         original_cwd = Path.cwd()
@@ -418,8 +427,8 @@ class ScoreHelperTests(unittest.TestCase):
             )
         }
         original_cwd = Path.cwd()
-        original_get = legacy_score_module.requests.get
-        original_post = legacy_score_module.requests.post
+        original_get = provider_cache.requests.get
+        original_post = kis_client.requests.post
 
         class FakeResponse:
             def __init__(self, payload, ok=True, status_code=200, text=""):
@@ -459,14 +468,14 @@ class ScoreHelperTests(unittest.TestCase):
                 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "service-role-key"
                 for key in ("KIS_APP_KEY", "KIS_APP_SECRET", "KIS_API_BASE", "SUPABASE_PUBLISHABLE_KEY"):
                     os.environ.pop(key, None)
-                legacy_score_module.requests.get = fake_get
-                legacy_score_module.requests.post = fake_post
+                provider_cache.requests.get = fake_get
+                kis_client.requests.post = fake_post
 
                 self.assertEqual(legacy_score_module.kis_access_token(), "shared-token")
             finally:
                 os.chdir(original_cwd)
-                legacy_score_module.requests.get = original_get
-                legacy_score_module.requests.post = original_post
+                provider_cache.requests.get = original_get
+                kis_client.requests.post = original_post
                 for key, value in original_env.items():
                     if value is None:
                         os.environ.pop(key, None)
