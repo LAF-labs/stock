@@ -80,6 +80,8 @@ test("KR detail score response exposes cached fundamental enrichment metadata", 
 
 test("manual refresh payload keeps cooldown contract", () => {
   const payload = loadFixture("quote-us-ko-refresh.json");
+  assertObject(payload.server_cache, "server_cache must be present on refresh responses");
+  assert.equal((payload.server_cache as JsonObject).source, "market-data");
   assertObject(payload.refresh_cooldown, "refresh_cooldown must be present on refresh responses");
   assertRequiredNumber(payload.refresh_cooldown, "seconds");
   assertRequiredString(payload.refresh_cooldown, "next_allowed_at");

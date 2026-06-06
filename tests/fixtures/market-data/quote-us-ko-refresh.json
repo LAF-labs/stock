@@ -13,7 +13,7 @@
   },
   "server_cache": {
     "state": "miss",
-    "source": "collector",
+    "source": "market-data",
     "ticker": "US:KO",
     "fetched_at": "2026-06-05T00:00:00.000Z",
     "expires_at": "2026-06-05T00:03:00.000Z"
