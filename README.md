@@ -94,14 +94,12 @@ STOCK_SYMBOL_PROFILE_CACHE_MAX_ENTRIES=20000
 STOCK_SYMBOL_PROFILE_TIMEOUT_MS=1500
 STOCK_SCORE_COLLECTOR_RATE_LIMIT=30
 STOCK_SCORE_COLLECTOR_RATE_LIMIT_WINDOW_SECONDS=60
-STOCK_QUOTE_COLLECTOR_RATE_LIMIT=60
-STOCK_QUOTE_COLLECTOR_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_FUNDAMENTALS_CACHE_SECONDS=43200
 STOCK_FUNDAMENTALS_STALE_SECONDS=604800
 STOCK_COLLECTOR_OUTPUT_MAX_BYTES=1000000
 STOCK_SCORE_MEMORY_CACHE_MAX_ENTRIES=1000
 STOCK_QUOTE_MEMORY_CACHE_MAX_ENTRIES=2000
-MARKET_DATA_BACKEND=python
+STOCK_DATA_RUNTIME=snapshot
 MARKET_DATA_SERVICE_ENABLE_QUOTE=1
 MARKET_DATA_SERVICE_ENABLE_SCORE=0
 MARKET_DATA_SERVICE_URL=http://127.0.0.1:8080
@@ -165,9 +163,9 @@ python scripts/run_industry_maintenance.py --refresh-benchmarks
 PYTHON_BIN=.venv/bin/python npm run score:smoke
 ```
 
-Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 없애기 위한 rewrite 경로입니다. 현재 public Next API는 `MARKET_DATA_BACKEND=python`을 기본 fallback으로 유지하며, Rust 서비스는 `/healthz`, `/metrics`와 내부 인증 골격부터 제공합니다. 다음 단계에서 KIS client, cache/job pipeline, score engine을 순차적으로 이관합니다.
+Rust 기반 `market-data` 서비스는 요청 중 Python subprocess 실행을 줄이기 위한 rewrite 경로입니다. 현재 public Next API는 Supabase snapshot을 기본으로 읽고, quote는 Node KIS client 또는 Rust market-data service로 즉시 갱신할 수 있습니다. score snapshot 생성은 durable Rust/TypeScript score refresh가 완성될 때까지 Supabase queue + legacy Python score worker가 담당합니다.
 
-Vercel preview/prod 빌드는 기본적으로 Python collector 파일을 함수 번들에 포함하지 않습니다. Docker나 자체 Node 서버에서 요청 중 Python collector fallback을 유지해야 하면 `INCLUDE_PYTHON_COLLECTOR=1` 또는 `STOCK_DATA_RUNTIME=python`/`STOCK_DATA_BACKEND=python`을 빌드 환경에 명시하세요.
+Vercel preview/prod 빌드는 기본적으로 Python collector 파일을 함수 번들에 포함하지 않습니다. Docker나 자체 Node 서버에서 요청 중 score collector fallback을 유지해야 하면 `INCLUDE_PYTHON_COLLECTOR=1` 또는 `STOCK_DATA_RUNTIME=python`/`STOCK_DATA_BACKEND=python`을 빌드 환경에 명시하세요.
 
 ## 실행
 
