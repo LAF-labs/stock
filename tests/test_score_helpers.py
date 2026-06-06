@@ -53,11 +53,6 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(legacy_score_module.top_like_current, presentation.top_like_current)
         self.assertIs(legacy_score_module.opportunity_components_for, presentation.opportunity_components_for)
 
-    def test_yfinance_provider_helpers_are_extracted_without_breaking_legacy_imports(self):
-        self.assertIs(legacy_score_module.safe_info, yfinance_provider.safe_info)
-        self.assertIs(legacy_score_module.safe_history, yfinance_provider.safe_history)
-        self.assertIs(legacy_score_module.safe_news, yfinance_provider.safe_news)
-
     def test_io_and_kis_cache_helpers_are_extracted_without_breaking_legacy_imports(self):
         self.assertIs(legacy_score_module.env_value, io_utils.env_value)
         self.assertIs(legacy_score_module.one_byte_file_lock, io_utils.one_byte_file_lock)

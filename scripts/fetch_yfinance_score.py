@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
-import yfinance as yf
 
 try:
     from scripts.stock_score.formatting import (
@@ -17,14 +16,12 @@ try:
         average,
         finite_or_none,
         first_float,
-        is_number,
         krw_approx,
         labeled_money,
         money,
         num_label,
         pct,
         price_label,
-        score_negative,
         score_positive,
     )
 except ModuleNotFoundError:
@@ -34,21 +31,18 @@ except ModuleNotFoundError:
         average,
         finite_or_none,
         first_float,
-        is_number,
         krw_approx,
         labeled_money,
         money,
         num_label,
         pct,
         price_label,
-        score_negative,
         score_positive,
     )
 
 try:
     from scripts.stock_score.timeseries import (
         atr_percent,
-        build_chart_series,
         kis_chart_series,
         kis_domestic_chart_series,
         return_between,
@@ -57,7 +51,6 @@ try:
 except ModuleNotFoundError:
     from stock_score.timeseries import (
         atr_percent,
-        build_chart_series,
         kis_chart_series,
         kis_domestic_chart_series,
         return_between,
@@ -153,8 +146,6 @@ except ModuleNotFoundError:
 try:
     from scripts.stock_score.kis_client import (
         KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
-        US_EQUITY_EXCHANGES,
-        US_EXCHANGE_NAME_MARKERS,
         KisApiError,
         discover_kis_stock,
         domestic_exchange_name,
@@ -173,8 +164,6 @@ try:
 except ModuleNotFoundError:
     from stock_score.kis_client import (
         KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
-        US_EQUITY_EXCHANGES,
-        US_EXCHANGE_NAME_MARKERS,
         KisApiError,
         discover_kis_stock,
         domestic_exchange_name,
@@ -204,27 +193,6 @@ except ModuleNotFoundError:
         opportunity_components_for,
         signal_for,
         top_like_current,
-    )
-
-try:
-    from scripts.stock_score.yfinance_provider import (
-        latest_statement,
-        safe_fast_info,
-        safe_history,
-        safe_info,
-        safe_intraday,
-        safe_news,
-        usd_krw_rate,
-    )
-except ModuleNotFoundError:
-    from stock_score.yfinance_provider import (
-        latest_statement,
-        safe_fast_info,
-        safe_history,
-        safe_info,
-        safe_intraday,
-        safe_news,
-        usd_krw_rate,
     )
 
 try:
@@ -1235,475 +1203,6 @@ def fetch_score(raw_ticker: str, view: str = "detail", usd_krw_override: float |
     if market == "KR":
         return fetch_score_kis_domestic(symbol, view=view, usd_krw_override=usd_krw_override, use_rate_override=use_rate_override)
     return fetch_score_kis_us(symbol, view=view, usd_krw_override=usd_krw_override, use_rate_override=use_rate_override)
-
-
-def fetch_score_yfinance_legacy(raw_ticker: str, view: str = "detail", usd_krw_override: float | None = None, use_rate_override: bool = False) -> dict[str, Any]:
-    symbol = clean_ticker(raw_ticker)
-    if not symbol or not TICKER_RE.match(symbol):
-        return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "정확한 미국 주식 티커만 입력하세요."}
-
-    ticker = yf.Ticker(symbol)
-    info = safe_info(ticker)
-    fast = safe_fast_info(ticker)
-    history = safe_history(ticker)
-
-    if history.empty:
-        return {"ok": False, "status": 404, "error": "not_found", "message": f"{symbol} 가격 데이터를 찾지 못했습니다."}
-
-    exchange = str(info.get("exchange") or fast.get("exchange") or "").upper()
-    full_exchange = str(info.get("fullExchangeName") or "")
-    quote_type = str(info.get("quoteType") or fast.get("quoteType") or "").upper()
-    is_us_exchange = exchange in US_EQUITY_EXCHANGES or any(marker in full_exchange.upper() for marker in US_EXCHANGE_NAME_MARKERS)
-    if quote_type and quote_type != "EQUITY":
-        return {"ok": False, "status": 400, "error": "not_equity", "message": f"{symbol}은 주식(EQUITY)이 아닙니다."}
-    if not is_us_exchange:
-        return {
-            "ok": False,
-            "status": 400,
-            "error": "not_us_listed",
-            "message": f"{symbol}은 지원하는 미국 상장 주식으로 확인되지 않았습니다.",
-            "exchange": exchange,
-            "fullExchangeName": full_exchange,
-        }
-
-    is_compare_view = view == "compare"
-    usd_krw = usd_krw_override if use_rate_override else usd_krw_rate()
-    closes = [float(value) for value in history["Close"].tolist() if is_number(value)]
-    latest_history_close = closes[-1] if closes else None
-    latest_price = as_float(fast.get("lastPrice")) or as_float(info.get("currentPrice")) or as_float(info.get("regularMarketPrice")) or latest_history_close
-    previous_close = as_float(fast.get("regularMarketPreviousClose")) or as_float(info.get("previousClose"))
-    latest_change = ((latest_price / previous_close) - 1.0) if latest_price and previous_close else None
-
-    currency = str(info.get("currency") or fast.get("currency") or "USD")
-    name = str(info.get("longName") or info.get("shortName") or symbol)
-    latest_date = history.index[-1].date().isoformat() if hasattr(history.index[-1], "date") else str(history.index[-1])
-    market_cap = as_float(info.get("marketCap")) or as_float(fast.get("marketCap"))
-    volume = as_int(info.get("regularMarketVolume")) or as_int(fast.get("lastVolume"))
-    avg_volume_20 = as_float(history["Volume"].tail(20).mean()) if "Volume" in history else None
-    avg_volume_60 = as_float(history["Volume"].tail(60).mean()) if "Volume" in history else None
-    year_high = as_float(fast.get("yearHigh")) or (max(closes[-252:]) if closes else None)
-    year_low = as_float(fast.get("yearLow")) or (min(closes[-252:]) if closes else None)
-    ma50 = as_float(history["Close"].tail(50).mean()) if len(history) >= 50 else None
-    ma200 = as_float(history["Close"].tail(200).mean()) if len(history) >= 200 else None
-    ret_1m = return_between(closes, 21)
-    ret_3m = return_between(closes, 63)
-    ret_6m = return_between(closes, 126)
-    ret_52w = return_between(closes, min(251, len(closes) - 1)) if len(closes) > 2 else None
-    rsi14 = simple_rsi(closes, 14)
-    atr14, atr14_pct = atr_percent(history, 14)
-    distance_52w_high = ((latest_price / year_high) - 1.0) if latest_price and year_high else None
-
-    profit_margin = as_float(info.get("profitMargins"))
-    roe = as_float(info.get("returnOnEquity"))
-    operating_margin = as_float(info.get("operatingMargins"))
-    revenue_growth = as_float(info.get("revenueGrowth"))
-    earnings_growth = as_float(info.get("earningsGrowth"))
-    debt_to_equity = as_float(info.get("debtToEquity"))
-    current_ratio = as_float(info.get("currentRatio"))
-    quick_ratio = as_float(info.get("quickRatio"))
-    operating_cashflow = as_float(info.get("operatingCashflow"))
-    total_revenue = as_float(info.get("totalRevenue"))
-    ocf_margin = (operating_cashflow / total_revenue) if operating_cashflow is not None and total_revenue else None
-    trailing_pe = as_float(info.get("trailingPE"))
-    forward_pe = as_float(info.get("forwardPE"))
-    price_to_book = as_float(info.get("priceToBook"))
-    ev_to_revenue = as_float(info.get("enterpriseToRevenue"))
-    price_to_sales = as_float(info.get("priceToSalesTrailing12Months"))
-    target_mean_price = first_float(info.get("targetMeanPrice"), info.get("targetMedianPrice"))
-    analyst_count = as_float(info.get("numberOfAnalystOpinions"))
-    recommendation_mean = as_float(info.get("recommendationMean"))
-    beta = as_float(info.get("beta"))
-
-    profitability_score = average(
-        [
-            score_positive(profit_margin, -0.05, 0.25),
-            score_positive(roe, -0.05, 0.25),
-            score_positive(ocf_margin, -0.05, 0.25),
-            score_positive(operating_margin, -0.05, 0.25),
-        ]
-    )
-    growth_score = average(
-        [
-            score_positive(revenue_growth, -0.10, 0.35),
-            score_positive(earnings_growth, -0.20, 0.50),
-            score_positive(ret_6m, -0.20, 0.40),
-        ]
-    )
-    health_score = average(
-        [
-            score_negative(debt_to_equity, 25.0, 220.0),
-            score_positive(current_ratio, 0.8, 2.0),
-            score_positive(quick_ratio, 0.7, 1.6),
-            score_positive(ocf_margin, -0.05, 0.18),
-        ]
-    )
-    momentum_score = average(
-        [
-            score_positive(ret_1m, -0.10, 0.15),
-            score_positive(ret_3m, -0.20, 0.35),
-            score_positive(ret_6m, -0.25, 0.50),
-            score_positive(distance_52w_high, -0.45, 0.0),
-            80.0 if latest_price and ma50 and latest_price > ma50 else 35.0,
-            80.0 if latest_price and ma200 and latest_price > ma200 else 35.0,
-        ]
-    )
-    valuation_score = average(
-        [
-            score_negative(trailing_pe if trailing_pe and trailing_pe > 0 else None, 12.0, 85.0),
-            score_negative(forward_pe if forward_pe and forward_pe > 0 else None, 10.0, 70.0),
-            score_negative(price_to_book if price_to_book and price_to_book > 0 else None, 1.5, 25.0),
-            score_negative(ev_to_revenue if ev_to_revenue and ev_to_revenue > 0 else price_to_sales, 2.0, 25.0),
-        ]
-    )
-
-    components = [
-        {
-            "key": "profitability",
-            "label": "수익성",
-            "short": "수",
-            "score": round(profitability_score, 1),
-            "summary": "순이익률, ROE, 영업현금흐름 마진으로 이익의 질을 봅니다.",
-            "metrics": [
-                {"label": "순이익률", "value": pct(profit_margin)},
-                {"label": "ROE", "value": pct(roe)},
-                {"label": "OCF 마진", "value": pct(ocf_margin)},
-            ],
-        },
-        {
-            "key": "growth",
-            "label": "성장성",
-            "short": "성",
-            "score": round(growth_score, 1),
-            "summary": "매출/이익 성장과 최근 6개월 가격 흐름을 같이 봅니다.",
-            "metrics": [
-                {"label": "매출 성장률", "value": pct(revenue_growth)},
-                {"label": "이익 성장률", "value": pct(earnings_growth)},
-                {"label": "6개월 수익률", "value": pct(ret_6m)},
-            ],
-        },
-        {
-            "key": "health",
-            "label": "재무건전성",
-            "short": "건",
-            "score": round(health_score, 1),
-            "summary": "부채 부담, 유동성, 현금흐름으로 버틸 수 있는 체력을 봅니다.",
-            "metrics": [
-                {"label": "부채/자본", "value": f"{debt_to_equity:.1f}%" if debt_to_equity is not None else "-"},
-                {"label": "유동비율", "value": f"{current_ratio:.2f}" if current_ratio is not None else "-"},
-                {"label": "영업현금흐름", "value": labeled_money(operating_cashflow, currency, usd_krw)},
-            ],
-        },
-        {
-            "key": "momentum",
-            "label": "모멘텀",
-            "short": "모",
-            "score": round(momentum_score, 1),
-            "summary": "최근 수익률, 52주 고점 거리, 50/200일 평균선 위치를 합칩니다.",
-            "metrics": [
-                {"label": "1개월 수익률", "value": pct(ret_1m)},
-                {"label": "3개월 수익률", "value": pct(ret_3m)},
-                {"label": "52주 고점 거리", "value": pct(distance_52w_high)},
-            ],
-        },
-        {
-            "key": "valuation",
-            "label": "밸류에이션",
-            "short": "밸",
-            "score": round(valuation_score, 1),
-            "summary": "PER/PBR/EV 매출 배수를 보수적으로 점수화합니다.",
-            "metrics": [
-                {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
-                {"label": "Forward PER", "value": f"{forward_pe:.2f}" if forward_pe is not None and forward_pe > 0 else "-"},
-                {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
-            ],
-        },
-    ]
-
-    total_score = (
-        profitability_score * 0.24
-        + growth_score * 0.20
-        + health_score * 0.20
-        + momentum_score * 0.22
-        + valuation_score * 0.14
-    )
-    total_score = round(max(0.0, min(100.0, total_score)), 1)
-    opportunity = opportunity_factor_score(
-        market="US",
-        latest_price=latest_price,
-        ret_1m=ret_1m,
-        ret_3m=ret_3m,
-        ret_6m=ret_6m,
-        ret_52w=ret_52w,
-        distance_52w_high=distance_52w_high,
-        ma50=ma50,
-        ma200=ma200,
-        rsi14=rsi14,
-        atr14_pct=atr14_pct,
-        avg_volume_20=avg_volume_20,
-        avg_volume_60=avg_volume_60,
-        market_cap=market_cap,
-        revenue_growth=revenue_growth,
-        earnings_growth=earnings_growth,
-        target_mean_price=target_mean_price,
-        analyst_count=analyst_count,
-        recommendation_mean=recommendation_mean,
-        forward_pe=forward_pe,
-        operating_margin=operating_margin,
-        cashflow_margin=ocf_margin,
-        ev_to_revenue=ev_to_revenue,
-        price_to_sales=price_to_sales,
-        beta=beta,
-    )
-    opportunity_components = opportunity_components_for(
-        opportunity,
-        latest_price=latest_price,
-        target_mean_price=target_mean_price,
-        analyst_count=analyst_count,
-        recommendation_mean=recommendation_mean,
-        avg_volume_20=avg_volume_20,
-        avg_volume_60=avg_volume_60,
-        atr14_pct=atr14_pct,
-        beta=beta,
-    )
-    grade = grade_for(total_score)
-    signal = signal_for(total_score, rsi14, ret_3m)
-    strongest = max(components, key=lambda item: item["score"])
-    weakest = min(components, key=lambda item: item["score"])
-
-    chart_patterns = [
-        {
-            "name": "추세 정렬",
-            "status": "우호" if latest_price and ma50 and ma200 and latest_price > ma50 > ma200 else "확인 필요",
-            "evidence": f"가격 {price_label(latest_price, currency)} · MA50 {price_label(ma50, currency)} · MA200 {price_label(ma200, currency)}",
-            "interpretation": "현재가가 주요 이동평균 위에 있으면 중기 추세가 우호적으로 해석됩니다.",
-        },
-        {
-            "name": "52주 위치",
-            "status": "고점 근접" if distance_52w_high is not None and distance_52w_high > -0.1 else "중간권",
-            "evidence": f"52주 고점 거리 {pct(distance_52w_high)}",
-            "interpretation": "0%에 가까울수록 신고가권에 가까우며, 너무 멀면 회복 확인이 필요합니다.",
-        },
-        {
-            "name": "단기 변동성",
-            "status": "높음" if atr14_pct is not None and atr14_pct > 0.05 else "보통",
-            "evidence": f"ATR14 {pct(atr14_pct)} · RSI14 {rsi14:.1f}" if rsi14 is not None else f"ATR14 {pct(atr14_pct)}",
-            "interpretation": "ATR 비중이 높을수록 단기 가격 변동 폭을 더 보수적으로 봐야 합니다.",
-        },
-    ]
-
-    key_metrics = [
-        {"label": "현재가", "value": labeled_money(latest_price, currency, usd_krw)},
-        {"label": "전일 대비", "value": pct(latest_change)},
-        {"label": "거래량", "value": num_label(volume, "주")},
-        {"label": "20일 평균 거래량", "value": num_label(as_int(avg_volume_20), "주")},
-        {"label": "시가총액", "value": labeled_money(market_cap, currency, usd_krw)},
-        {"label": "1개월 수익률", "value": pct(ret_1m)},
-        {"label": "3개월 수익률", "value": pct(ret_3m)},
-        {"label": "6개월 수익률", "value": pct(ret_6m)},
-        {"label": "52주 수익률", "value": pct(ret_52w)},
-        {"label": "ATR14", "value": pct(atr14_pct)},
-        {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-"},
-        {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-"},
-        {"label": "기회 점수", "value": f"{opportunity.score:.1f}점"},
-        {"label": "점수 신호", "value": signal},
-    ]
-
-    stock_profile = [
-        {"label": "회사명", "value": name},
-        {"label": "티커", "value": symbol},
-        {"label": "거래소", "value": full_exchange or exchange},
-        {"label": "산업", "value": info.get("industry") or "-"},
-        {"label": "섹터", "value": info.get("sector") or "-"},
-        {"label": "통화", "value": currency},
-        {"label": "환율 기준", "value": f"$1 = ₩{usd_krw:,.2f}" if usd_krw else "-"},
-        {"label": "최근 가격일", "value": latest_date},
-        {"label": "52주 고가", "value": labeled_money(year_high, currency, usd_krw)},
-        {"label": "52주 저가", "value": labeled_money(year_low, currency, usd_krw)},
-        {"label": "발행주식수", "value": num_label(as_int(fast.get("shares") or info.get("sharesOutstanding")), "주")},
-        {"label": "웹사이트", "value": info.get("website") or "-"},
-    ]
-
-    valuation_rows = [
-        {"label": "PER", "value": f"{trailing_pe:.2f}" if trailing_pe is not None and trailing_pe > 0 else "-", "note": "TTM 이익 대비 가격"},
-        {"label": "Forward PER", "value": f"{forward_pe:.2f}" if forward_pe is not None and forward_pe > 0 else "-", "note": "예상 이익 대비 가격"},
-        {"label": "PBR", "value": f"{price_to_book:.2f}" if price_to_book is not None else "-", "note": "자본 대비 시장가치"},
-        {"label": "EV/Revenue", "value": f"{ev_to_revenue:.2f}" if ev_to_revenue is not None else "-", "note": "기업가치/매출"},
-        {"label": "Price/Sales", "value": f"{price_to_sales:.2f}" if price_to_sales is not None else "-", "note": "시가총액/매출"},
-        {"label": "평균 목표가", "value": labeled_money(target_mean_price, currency, usd_krw), "note": "Yahoo Finance 기준"},
-        {"label": "시가총액", "value": labeled_money(market_cap, currency, usd_krw), "note": "Yahoo Finance 기준"},
-    ]
-
-    price_metrics = {
-        "price": latest_price,
-        "previous_close": previous_close,
-        "latest_change": latest_change,
-        "return_1m": ret_1m,
-        "return_3m": ret_3m,
-        "return_6m": ret_6m,
-        "return_52w": ret_52w,
-        "distance_from_52w_high": distance_52w_high,
-        "high_52w": year_high,
-        "low_52w": year_low,
-        "sma50": ma50,
-        "sma200": ma200,
-        "rsi14": rsi14,
-        "atr14": atr14,
-        "atr14_pct": atr14_pct,
-        "avg_volume_20": avg_volume_20,
-        "avg_volume_60": avg_volume_60,
-    }
-
-    financials = {
-        "profitMargins": profit_margin,
-        "operatingMargins": operating_margin,
-        "returnOnEquity": roe,
-        "revenueGrowth": revenue_growth,
-        "earningsGrowth": earnings_growth,
-        "totalRevenue": total_revenue,
-        "operatingCashflow": operating_cashflow,
-        "debtToEquity": debt_to_equity,
-        "currentRatio": current_ratio,
-        "quickRatio": quick_ratio,
-        "targetMeanPrice": target_mean_price,
-        "numberOfAnalystOpinions": analyst_count,
-        "recommendationMean": recommendation_mean,
-        "beta": beta,
-    }
-
-    financial_statement: dict[str, Any] = {}
-    if not is_compare_view:
-        try:
-            income = latest_statement(
-                ticker.quarterly_income_stmt,
-                {
-                    "Total Revenue": "최근 분기 매출",
-                    "Gross Profit": "최근 분기 매출총이익",
-                    "Operating Income": "최근 분기 영업이익",
-                    "Net Income": "최근 분기 순이익",
-                },
-            )
-            if income:
-                financial_statement["income_statement"] = income
-        except Exception:
-            pass
-        try:
-            balance = latest_statement(
-                ticker.quarterly_balance_sheet,
-                {
-                    "Total Assets": "총자산",
-                    "Total Debt": "총부채",
-                    "Stockholders Equity": "자본총계",
-                    "Cash And Cash Equivalents": "현금성자산",
-                },
-            )
-            if balance:
-                financial_statement["balance_sheet"] = balance
-        except Exception:
-            pass
-        try:
-            cashflow = latest_statement(
-                ticker.quarterly_cashflow,
-                {
-                    "Operating Cash Flow": "영업현금흐름",
-                    "Free Cash Flow": "잉여현금흐름",
-                    "Capital Expenditure": "자본지출",
-                },
-            )
-            if cashflow:
-                financial_statement["cashflow"] = cashflow
-        except Exception:
-            pass
-
-    summary = (
-        f"{symbol}의 yfinance 최신 데이터 기준 품질 점수는 {total_score:.1f}/100, 기회 점수는 {opportunity.score:.1f}/100입니다. "
-        f"가장 강한 항목은 {strongest['label']}({strongest['score']:.1f})이고, "
-        f"현재 점수를 가장 제한하는 항목은 {weakest['label']}({weakest['score']:.1f})입니다. "
-        f"미국 거래소({full_exchange or exchange}) 상장 주식 기준으로 조회합니다."
-    )
-
-    now = datetime.now(timezone.utc)
-    return {
-        "ok": True,
-        "app": "US yfinance Stock Radar",
-        "requested_ticker": raw_ticker,
-        "symbol": symbol,
-        "name": name,
-        "exchange": full_exchange or exchange,
-        "currency": currency,
-        "score_model_version": SCORE_MODEL_VERSION,
-        "score": total_score,
-        "quality_score": total_score,
-        "quality_grade": grade,
-        "opportunity_score": opportunity.score,
-        "opportunity_grade": grade_for(opportunity.score),
-        "opportunity_confidence": round(opportunity.confidence, 3),
-        "grade": grade,
-        "summary": summary,
-        "latest_price": latest_price,
-        "latest_bar_date": latest_date,
-        "evaluation_label": f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} 조회",
-        "evaluation_ts": int(now.timestamp()),
-        "data_quality": "정상",
-        "usd_krw_rate": usd_krw,
-        "usd_krw_label": f"$1 = ₩{usd_krw:,.2f}" if usd_krw else None,
-        "components": components,
-        "opportunity_components": opportunity_components,
-        "key_metrics": key_metrics,
-        "stock_profile": [] if is_compare_view else stock_profile,
-        "valuation_rows": valuation_rows,
-        "chart_patterns": [] if is_compare_view else chart_patterns,
-        "chart_series": build_chart_series(history, currency, usd_krw),
-        "intraday_series": [] if is_compare_view else safe_intraday(ticker),
-        "history": top_like_current(symbol, name, latest_price, currency, total_score, components),
-        "top_scores": top_like_current(symbol, name, latest_price, currency, total_score, components),
-        "news": [] if is_compare_view else safe_news(ticker),
-        "price_metrics": price_metrics,
-        "financials": financials,
-        "financial_statement": financial_statement,
-        "sia_snapshot": {
-            "symbol": symbol,
-            "price": latest_price,
-            "raw_signal": signal,
-            "risk_level": "HIGH" if atr14_pct is not None and atr14_pct > 0.06 else "MEDIUM" if atr14_pct is not None and atr14_pct > 0.03 else "LOW",
-            "score_model_version": SCORE_MODEL_VERSION,
-            "confidence": round(min(1.0, len(history) / 252.0), 3),
-            "quality_score": round(total_score / 100.0, 3),
-            "opportunity_score": round(opportunity.score / 100.0, 3),
-            "opportunity_confidence": round(opportunity.confidence, 3),
-            "spot_score": round(total_score / 100.0, 3),
-            "chart_score": round(momentum_score / 100.0, 3),
-            "trend_score": round(score_positive(ret_3m, -0.20, 0.35) / 100.0, 3),
-            "momentum_score": round(momentum_score / 100.0, 3),
-            "momentum_label": "UP" if ret_3m is not None and ret_3m > 0 else "DOWN" if ret_3m is not None and ret_3m < 0 else "FLAT",
-            "signal_source": "yfinance:us-equity",
-            "bar_ts": latest_date,
-            "indicators": {
-                "sma50": ma50,
-                "sma200": ma200,
-                "rsi14": rsi14,
-                "atr14": atr14,
-                "atr14_pct": atr14_pct,
-            },
-            "reasons": {
-                "profitability_score": round(profitability_score / 100.0, 3),
-                "growth_score": round(growth_score / 100.0, 3),
-                "health_score": round(health_score / 100.0, 3),
-                "momentum_score": round(momentum_score / 100.0, 3),
-                "valuation_score": round(valuation_score / 100.0, 3),
-                "opportunity_score": round(opportunity.score / 100.0, 3),
-            },
-        },
-        "fetch": {
-            "source": "yfinance",
-            "score_model_version": SCORE_MODEL_VERSION,
-            "yfinance_version": yf.__version__,
-            "fetched_at": now.isoformat(),
-            "cache": "no-store",
-            "input_mode": "exact_ticker_only",
-            "market_scope": "US listed equity only",
-            "history_rows": len(history),
-        },
-    }
 
 
 def json_default(value: Any) -> Any:
