@@ -5,6 +5,7 @@ import {
   chartSummary,
   dailyChangeText,
   dailyToneClass,
+  directInputSymbolItem,
   displayTickerInput,
   formatRecordValue,
   scoreDataWithQuote,
@@ -125,6 +126,35 @@ test("displayTickerInput strips market prefixes only", () => {
   assert.equal(displayTickerInput("US:NVDA"), "NVDA");
   assert.equal(displayTickerInput("KR:005930"), "005930");
   assert.equal(displayTickerInput("NVDA"), "NVDA");
+});
+
+test("directInputSymbolItem only creates direct ticker entries for ticker-like input", () => {
+  assert.equal(directInputSymbolItem("삼성전자"), undefined);
+  assert.equal(directInputSymbolItem("###"), undefined);
+  assert.deepEqual(directInputSymbolItem("005930"), {
+    key: "005930",
+    market: "KR",
+    ticker: "005930",
+    displayName: "005930",
+    subtitle: "005930",
+    exchange: "",
+    exchangeName: "직접 입력",
+    koreanName: "",
+    englishName: "005930",
+    instrumentType: "STOCK",
+  });
+  assert.deepEqual(directInputSymbolItem("brk.b"), {
+    key: "BRK.B",
+    market: "US",
+    ticker: "BRK.B",
+    displayName: "BRK.B",
+    subtitle: "BRK.B",
+    exchange: "",
+    exchangeName: "직접 입력",
+    koreanName: "",
+    englishName: "BRK.B",
+    instrumentType: "STOCK",
+  });
 });
 
 test("usableChartPoints sorts valid daily points and keeps the latest duplicate date", () => {

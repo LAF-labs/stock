@@ -1,5 +1,6 @@
 import { formatPercent, formatValue, recordEntries } from "@/lib/format";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
+import { cleanTickerSymbol } from "@/lib/tickerRef";
 import type { ChartSeriesPoint, JsonValue, LabeledValue, ScoreComponent, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 const RECORD_LABELS: Record<string, string> = {
@@ -384,6 +385,23 @@ export function displayTickerInput(value: string): string {
 
 export function symbolRef(item: SymbolSearchItem): string {
   return `${item.market}:${item.ticker}`;
+}
+
+export function directInputSymbolItem(value: string): SymbolSearchItem | undefined {
+  const ticker = cleanTickerSymbol(value);
+  if (!ticker) return undefined;
+  return {
+    key: ticker,
+    market: /^\d{6}$/.test(ticker) ? "KR" : "US",
+    ticker,
+    displayName: ticker,
+    subtitle: ticker,
+    exchange: "",
+    exchangeName: "직접 입력",
+    koreanName: "",
+    englishName: ticker,
+    instrumentType: "STOCK",
+  };
 }
 
 export function humanizeRecordKey(key: string): string {

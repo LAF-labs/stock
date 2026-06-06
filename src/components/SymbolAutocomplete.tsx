@@ -2,6 +2,7 @@
 
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
 type SymbolSearchPayload = {
@@ -45,8 +46,8 @@ export default function SymbolAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const query = value.trim();
-  const normalizedQueryTicker = query.toUpperCase().replace(/[^A-Z0-9.-]/g, "");
-  const canSubmit = Boolean(normalizedQueryTicker) && !disabled;
+  const directItem = directInputSymbolItem(query);
+  const canSubmit = Boolean(directItem) && !disabled;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -126,22 +127,6 @@ export default function SymbolAutocomplete({
           : "검색 결과가 없어요."
         : "";
 
-  function directInputItem(): SymbolSearchItem {
-    const ticker = normalizedQueryTicker;
-    return {
-      key: ticker,
-      market: /^\d{6}$/.test(ticker) ? "KR" : "US",
-      ticker,
-      displayName: ticker,
-      subtitle: ticker,
-      exchange: "",
-      exchangeName: "직접 입력",
-      koreanName: "",
-      englishName: ticker,
-      instrumentType: "STOCK",
-    };
-  }
-
   function selectItem(item: SymbolSearchItem) {
     onValueChange(displayInputValue(item));
     inputRef.current?.blur();
@@ -155,8 +140,8 @@ export default function SymbolAutocomplete({
       selectItem(activeItem);
       return;
     }
-    if (query) {
-      onSelect(directInputItem());
+    if (directItem) {
+      onSelect(directItem);
     }
   }
 
@@ -184,8 +169,8 @@ export default function SymbolAutocomplete({
       event.preventDefault();
       if (activeItem) {
         selectItem(activeItem);
-      } else if (query) {
-        onSelect(directInputItem());
+      } else if (directItem) {
+        onSelect(directItem);
       }
     } else if (event.key === "Escape") {
       setIsOpen(false);
