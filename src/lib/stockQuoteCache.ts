@@ -19,6 +19,7 @@ export type StockQuoteResult = {
     ticker: string;
     fetchedAt?: string;
     expiresAt?: string;
+    staleExpiresAt?: string;
     refreshStarted?: boolean;
     refreshError?: string;
   };
@@ -29,6 +30,7 @@ type StoredQuoteSnapshot = {
   payload: StockPayload;
   fetchedAt: string;
   expiresAt: string;
+  staleExpiresAt?: string;
 };
 
 type SupabaseQuoteRow = {
@@ -36,6 +38,7 @@ type SupabaseQuoteRow = {
   payload: StockPayload;
   fetched_at: string;
   expires_at: string;
+  stale_expires_at?: string;
 };
 
 declare global {
@@ -57,6 +60,8 @@ function isFresh(snapshot: StoredQuoteSnapshot, nowMs: number): boolean {
 }
 
 function isServeableStale(snapshot: StoredQuoteSnapshot, nowMs: number): boolean {
+  const staleExpiresAt = Date.parse(snapshot.staleExpiresAt || "");
+  if (Number.isFinite(staleExpiresAt)) return staleExpiresAt > nowMs;
   const fetchedAt = Date.parse(snapshot.fetchedAt);
   return Number.isFinite(fetchedAt) && fetchedAt + staleTtlSeconds() * 1000 > nowMs;
 }
@@ -66,7 +71,7 @@ async function readSupabaseSnapshot(ticker: string): Promise<StoredQuoteSnapshot
   if (!config) return undefined;
 
   try {
-    const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,payload,fetched_at,expires_at&limit=1`;
+    const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,payload,fetched_at,expires_at,stale_expires_at&limit=1`;
     const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" });
     if (!response.ok) return undefined;
     const rows = (await response.json()) as SupabaseQuoteRow[];
@@ -77,6 +82,7 @@ async function readSupabaseSnapshot(ticker: string): Promise<StoredQuoteSnapshot
       payload: row.payload,
       fetchedAt: row.fetched_at,
       expiresAt: row.expires_at,
+      staleExpiresAt: row.stale_expires_at,
     };
   } catch {
     return undefined;
@@ -99,6 +105,7 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
         payload: snapshot.payload,
         fetched_at: snapshot.fetchedAt,
         expires_at: snapshot.expiresAt,
+        stale_expires_at: snapshot.staleExpiresAt || fallbackStaleExpiresAt(snapshot.fetchedAt, snapshot.expiresAt),
       }),
     });
     if (!response.ok) {
@@ -165,6 +172,7 @@ async function refreshQuoteSnapshot(
     const market = payload.market === "KR" || payload.market === "US" ? payload.market : marketFromTicker(ticker);
     const { expiresAt, session } = await cacheExpiresAtForMarket(market, "quote", nowMs);
     const fetchedAt = new Date(nowMs).toISOString();
+    const staleExpiresAt = fallbackStaleExpiresAt(fetchedAt, expiresAt);
     const snapshot: StoredQuoteSnapshot = {
       ticker,
       payload: {
@@ -173,6 +181,7 @@ async function refreshQuoteSnapshot(
       },
       fetchedAt,
       expiresAt,
+      staleExpiresAt,
     };
 
     if (payload.ok !== false) {
@@ -207,6 +216,7 @@ function decorate(
     ticker: snapshot.ticker,
     fetched_at: snapshot.fetchedAt,
     expires_at: snapshot.expiresAt,
+    stale_expires_at: snapshot.staleExpiresAt,
     refresh_started: extra?.refreshStarted,
     refresh_error: extra?.refreshError,
   };
@@ -222,10 +232,19 @@ function decorate(
       ticker: snapshot.ticker,
       fetchedAt: snapshot.fetchedAt,
       expiresAt: snapshot.expiresAt,
+      staleExpiresAt: snapshot.staleExpiresAt,
       refreshStarted: extra?.refreshStarted,
       refreshError: extra?.refreshError,
     },
   };
+}
+
+function fallbackStaleExpiresAt(fetchedAt: string, expiresAt: string): string {
+  const fetchedAtMs = Date.parse(fetchedAt);
+  const expiresAtMs = Date.parse(expiresAt);
+  const staleExpiresAtMs = Number.isFinite(fetchedAtMs) ? fetchedAtMs + staleTtlSeconds() * 1000 : NaN;
+  const fallbackMs = Math.max(Number.isFinite(expiresAtMs) ? expiresAtMs : 0, Number.isFinite(staleExpiresAtMs) ? staleExpiresAtMs : 0);
+  return new Date(fallbackMs || Date.now()).toISOString();
 }
 
 function scheduleQueuedRefresh(ticker: string, priority: number, reason: "snapshot_miss" | "refresh_background_only") {

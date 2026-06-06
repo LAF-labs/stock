@@ -355,6 +355,49 @@ test("quote stale snapshot also enqueues a refresh backstop when Supabase admin 
   });
 });
 
+test("quote cache honors Supabase stale_expires_at over local stale ttl math", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.STOCK_QUOTE_CACHE_STALE_SECONDS = "1";
+
+  const ticker = "US:DBSTALETTL";
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker,
+    payload: {
+      ok: true,
+      type: "quote",
+      requested_ticker: ticker,
+      market: "US",
+      symbol: "DBSTALETTL",
+      latest_price: 77,
+    },
+    fetched_at: new Date(nowMs - 2 * 86_400_000).toISOString(),
+    expires_at: new Date(nowMs - 86_400_000).toISOString(),
+    stale_expires_at: new Date(nowMs + 86_400_000).toISOString(),
+  };
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_quote_snapshots")) {
+      return new Response(JSON.stringify([snapshot]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockQuote(ticker);
+  const serverCache = result.payload.server_cache as Record<string, unknown>;
+
+  assert.equal(result.cache.state, "stale");
+  assert.equal(result.cache.source, "supabase");
+  assert.equal(result.cache.staleExpiresAt, snapshot.stale_expires_at);
+  assert.equal(serverCache.stale_expires_at, snapshot.stale_expires_at);
+});
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
