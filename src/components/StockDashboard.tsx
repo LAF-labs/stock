@@ -4,7 +4,33 @@ import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import { clampScore, formatDateTimeFromEpoch, formatPercent, formatValue, recordEntries } from "@/lib/format";
+import {
+  SOURCE_VENDOR_TEXT,
+  componentWord,
+  dailyChangeText,
+  displayTickerInput,
+  easySentence,
+  factorSummary,
+  formatKrwPrice,
+  formatMonthLabel,
+  formatNote,
+  formatRecordValue,
+  formatUsdPrice,
+  humanizeRecordKey,
+  isRecordValue,
+  isSourceOnlyLabel,
+  metricValue,
+  refreshCooldownMessage,
+  scoreDataWithQuote,
+  snapshotPendingFromPayload,
+  strongestAndWeakest,
+  stringFromUnknown,
+  symbolRef,
+  termTipFor,
+  visibleRecordEntries,
+  type SnapshotPendingState,
+} from "@/components/stockDashboardHelpers";
+import { clampScore, formatDateTimeFromEpoch, formatValue } from "@/lib/format";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { CandlestickData, HistogramData, LineData, Time } from "lightweight-charts";
 import type {
@@ -43,117 +69,6 @@ const DETAIL_SECTIONS = [
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
 
-const RECORD_LABELS: Record<string, string> = {
-  yfinance_version: "yfinance 버전",
-  fetched_at: "조회 시각",
-  cache: "캐시",
-  input_mode: "입력 방식",
-  market_scope: "지원 범위",
-  history_rows: "가격 데이터 수",
-  price: "현재가",
-  previous_close: "전일 종가",
-  latest_change: "전일 대비",
-  return_1m: "1개월 수익률",
-  return_3m: "3개월 수익률",
-  return_6m: "6개월 수익률",
-  return_52w: "52주 수익률",
-  distance_from_52w_high: "52주 고점 거리",
-  high_52w: "52주 고가",
-  low_52w: "52주 저가",
-  sma50: "50일 평균",
-  sma200: "200일 평균",
-  rsi14: "RSI14",
-  atr14: "ATR14",
-  atr14_pct: "ATR14 비중",
-  avg_volume_20: "20일 평균 거래량",
-  avg_volume_60: "60일 평균 거래량",
-  profitMargins: "순이익률",
-  operatingMargins: "영업이익률",
-  returnOnEquity: "ROE",
-  revenueGrowth: "매출 성장률",
-  earningsGrowth: "이익 성장률",
-  totalRevenue: "총매출",
-  operatingCashflow: "영업현금흐름",
-  debtToEquity: "부채/자본",
-  currentRatio: "유동비율",
-  quickRatio: "당좌비율",
-  targetMeanPrice: "평균 목표가",
-  numberOfAnalystOpinions: "애널리스트 수",
-  recommendationMean: "투자의견 평균",
-  beta: "베타",
-  income_statement: "손익계산서",
-  balance_sheet: "재무상태표",
-  cashflow: "현금흐름표",
-  reported_date: "보고 기준일",
-  profitability_score: "수익성 기여도",
-  growth_score: "성장성 기여도",
-  health_score: "재무건전성 기여도",
-  momentum_score: "모멘텀 기여도",
-  valuation_score: "밸류에이션 기여도",
-  quality_score: "품질 점수",
-  opportunity_score: "기회 점수",
-  opportunity_confidence: "기회 신뢰도",
-};
-
-const HIDDEN_RECORD_KEYS = new Set(["source", "signal_source", "market_scope"]);
-const SOURCE_VENDOR_TEXT = ["K", "I", "S"].join("");
-const SOURCE_LABEL_TEXT = ["데이터", "출처"].join(" ");
-
-const PERCENT_RECORD_KEYS = new Set([
-  "latest_change",
-  "return_1m",
-  "return_3m",
-  "return_6m",
-  "return_52w",
-  "distance_from_52w_high",
-  "atr14_pct",
-  "profitMargins",
-  "operatingMargins",
-  "returnOnEquity",
-  "revenueGrowth",
-  "earningsGrowth",
-  "profitability_score",
-  "growth_score",
-  "health_score",
-  "momentum_score",
-  "valuation_score",
-  "quality_score",
-  "opportunity_score",
-  "opportunity_confidence",
-]);
-
-const NOTE_COPY: Record<string, string> = {
-  "TTM 이익 대비 가격": "지난 12개월 이익과 비교한 가격이에요.",
-  "예상 이익 대비 가격": "앞으로 예상되는 이익과 비교한 가격이에요.",
-  "자본 대비 시장가치": "회사의 장부상 자본과 시장가치를 비교해요.",
-  "기업가치/매출": "기업 전체 가치가 매출에 비해 큰지 봐요.",
-  "시가총액/매출": "시가총액이 매출에 비해 큰지 봐요.",
-  "Yahoo Finance 기준": "Yahoo Finance에서 가져온 기준값이에요.",
-};
-
-const TERM_TIPS = [
-  { term: "Forward PER", keys: ["forward per"], body: "앞으로 예상되는 이익으로 계산한 PER예요." },
-  { term: "EV/Revenue", keys: ["ev/revenue"], body: "기업 전체 가치가 매출에 비해 얼마나 큰지 보여줘요." },
-  { term: "Price/Sales", keys: ["price/sales"], body: "시가총액을 매출과 비교한 숫자예요." },
-  { term: "ATR14", keys: ["atr14", "atr"], body: "최근 14일 기준 하루 가격 흔들림을 보여줘요." },
-  { term: "RSI14", keys: ["rsi14", "rsi"], body: "최근 상승과 하락의 힘을 비교해 과열 여부를 봐요." },
-  { term: "ROE", keys: ["roe"], body: "자본을 얼마나 효율적으로 이익으로 바꾸는지 보여줘요." },
-  { term: "OCF", keys: ["ocf", "영업현금흐름"], body: "회계상 이익이 아니라 실제로 들어온 현금 흐름이에요." },
-  { term: "PER", keys: ["per"], body: "주가가 이익에 비해 비싼지 보는 숫자예요." },
-  { term: "PBR", keys: ["pbr"], body: "회사의 장부가치에 비해 주가가 비싼지 보는 숫자예요." },
-  { term: "52주", keys: ["52주"], body: "최근 1년 범위에서 고점이나 저점과 비교해요." },
-  { term: "50일 평균", keys: ["50일 평균", "sma50", "ma50"], body: "최근 50거래일 평균 가격이에요." },
-  { term: "200일 평균", keys: ["200일 평균", "sma200", "ma200"], body: "최근 200거래일 평균 가격이에요." },
-  { term: "시가총액", keys: ["시가총액"], body: "주가에 발행주식 수를 곱한 회사 전체 시장가치예요." },
-  { term: "유동비율", keys: ["유동비율"], body: "단기 빚을 갚을 여력이 있는지 보는 비율이에요." },
-  { term: "부채/자본", keys: ["부채/자본"], body: "자본 대비 부채가 얼마나 큰지 보여줘요." },
-  { term: "수익성", keys: ["수익성", "순이익률", "영업이익률"], body: "매출에서 이익을 얼마나 잘 남기는지 봐요." },
-  { term: "성장성", keys: ["성장성", "성장률"], body: "매출이나 이익이 커지는 속도를 봐요." },
-  { term: "재무건전성", keys: ["재무건전성"], body: "회사가 버틸 체력이 있는지 보는 항목이에요." },
-  { term: "모멘텀", keys: ["모멘텀"], body: "최근 가격 흐름에 힘이 붙었는지 보는 개념이에요." },
-  { term: "밸류에이션", keys: ["밸류에이션"], body: "현재 가격이 실적이나 자산에 비해 부담스러운지 봐요." },
-];
-
 type LoadState =
   | { status: "idle" | "loading"; data?: undefined; error?: undefined }
   | { status: "success"; data: StockScoreResponse; error?: undefined }
@@ -176,218 +91,6 @@ type JudgmentState =
   | { status: "idle" | "loading"; judgment?: undefined; error?: undefined }
   | { status: "success"; judgment: StockJudgment; error?: undefined }
   | { status: "error"; judgment?: undefined; error: string };
-
-type SnapshotPendingState = {
-  message: string;
-  ticker?: string;
-  queued: boolean;
-  retryAfterSeconds?: number;
-};
-
-function metricValue(items: LabeledValue[] | undefined, label: string): string {
-  return formatValue(items?.find((item) => item.label === label)?.value);
-}
-
-function formatUsdAmount(price: number | undefined, currency?: string): string | undefined {
-  if (typeof price !== "number" || !Number.isFinite(price)) return undefined;
-  const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
-  return `${prefix}${new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(price)}`;
-}
-
-function formatKrwAmount(price: number | undefined, rate: number | undefined): string | undefined {
-  if (typeof price !== "number" || !Number.isFinite(price) || typeof rate !== "number" || !Number.isFinite(rate)) return undefined;
-  return `약 ${new Intl.NumberFormat("ko-KR").format(Math.round(price * rate))}원`;
-}
-
-function formatUsdPrice(data: StockScoreResponse, fallback: string): string {
-  if (data.currency === "KRW") {
-    if (fallback && fallback !== "-") return fallback;
-    if (typeof data.latest_price === "number" && Number.isFinite(data.latest_price)) {
-      return `${new Intl.NumberFormat("ko-KR").format(Math.round(data.latest_price))}원`;
-    }
-  }
-  const price = formatUsdAmount(data.latest_price, data.currency);
-  if (price) return price;
-  return fallback.replace(/\s*\(.+\)$/, "");
-}
-
-function formatKrwPrice(data: StockScoreResponse): string {
-  if (data.currency === "KRW") return "국내 원화 기준";
-  return formatKrwAmount(data.latest_price, data.usd_krw_rate) || "원화 환산 정보가 없어요";
-}
-
-function numberFromUnknown(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function stringFromUnknown(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function recordFromUnknown(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-}
-
-function snapshotPendingFromPayload(payload: unknown, fallbackTicker: string): SnapshotPendingState | undefined {
-  const record = recordFromUnknown(payload);
-  const error = stringFromUnknown(record?.error);
-  if (error !== "snapshot_pending" && error !== "snapshot_unavailable") return undefined;
-
-  const refreshRequest = recordFromUnknown(record?.refresh_request);
-  const queued = refreshRequest?.queued === true;
-  const retryAfterSeconds = numberFromUnknown(record?.retry_after_seconds);
-  const ticker = stringFromUnknown(record?.ticker) || fallbackTicker;
-  const message = queued
-    ? "처음 조회하는 종목이라 데이터를 준비하고 있어요. 수집이 끝나면 점수와 현재가가 표시됩니다."
-    : "이 종목 데이터가 아직 준비되지 않았어요. 잠시 후 다시 조회해주세요.";
-
-  return {
-    message: retryAfterSeconds ? `${message} 보통 ${retryAfterSeconds}초 안에 다시 확인할 수 있어요.` : message,
-    ticker,
-    queued,
-    retryAfterSeconds,
-  };
-}
-
-function numberFromJsonRecord(record: Record<string, JsonValue> | undefined, key: string): number | undefined {
-  return numberFromUnknown(record?.[key]);
-}
-
-function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteResponse | undefined): StockScoreResponse {
-  const latestPrice = numberFromUnknown(quote?.latest_price);
-  if (latestPrice === undefined) return data;
-  return {
-    ...data,
-    currency: stringFromUnknown(quote?.currency) || data.currency,
-    latest_price: latestPrice,
-    latest_bar_date: stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date,
-    usd_krw_rate: numberFromUnknown(quote?.usd_krw_rate) ?? data.usd_krw_rate,
-  };
-}
-
-function dailyChangeText(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string {
-  const quoteLabel = stringFromUnknown(quote?.latest_change_label);
-  if (quoteLabel) return quoteLabel;
-  const quoteChange = numberFromUnknown(quote?.latest_change);
-  if (quoteChange !== undefined) return formatPercent(quoteChange);
-  const cachedChange = numberFromJsonRecord(data.price_metrics, "latest_change");
-  if (cachedChange !== undefined) return formatPercent(cachedChange);
-  return "-";
-}
-
-function refreshCooldownMessage(nextAllowedAt: string | undefined): string | undefined {
-  if (!nextAllowedAt || Date.parse(nextAllowedAt) <= Date.now()) return undefined;
-  return `${new Date(nextAllowedAt).toLocaleTimeString("ko-KR")} 이후 새로고침 가능`;
-}
-
-function removeSourceText(text: string): string {
-  const vendor = SOURCE_VENDOR_TEXT;
-  return text
-    .replaceAll(`${vendor} Open API 기준 `, "")
-    .replaceAll(`${vendor}가 제공하는 `, "")
-    .replaceAll(`${vendor} 기간별 시세로 `, "")
-    .replaceAll(`${vendor} 일별 시세로 `, "")
-    .replaceAll(`${vendor} 현재가상세의 `, "")
-    .replaceAll(`${vendor} 국내 현재가의 `, "")
-    .replaceAll(`${vendor}의 `, "")
-    .replaceAll(`${vendor}에서 조회했어요.`, "함께 봤어요.")
-    .replaceAll(`${vendor} 현재가상세 기준`, "")
-    .replaceAll(`${vendor} 국내 현재가 기준`, "")
-    .replaceAll(vendor, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function isSourceOnlyLabel(label: string | undefined): boolean {
-  return !!label && (label.includes(SOURCE_VENDOR_TEXT) || label.includes(SOURCE_LABEL_TEXT));
-}
-
-function displayTickerInput(value: string): string {
-  return value.replace(/^(US|KR):/i, "");
-}
-
-function symbolRef(item: SymbolSearchItem): string {
-  return `${item.market}:${item.ticker}`;
-}
-
-function humanizeRecordKey(key: string): string {
-  return RECORD_LABELS[key] || key.replaceAll("_", " ");
-}
-
-function formatRecordValue(key: string, value: JsonValue | undefined): string {
-  if (typeof value === "number") {
-    if (PERCENT_RECORD_KEYS.has(key)) return formatPercent(value);
-    if (key === "debtToEquity") return `${value.toFixed(1)}%`;
-  }
-  return formatValue(value);
-}
-
-function isRecordValue(value: JsonValue | undefined): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function visibleRecordEntries(record: Record<string, JsonValue>) {
-  return recordEntries(record).filter(([key]) => !HIDDEN_RECORD_KEYS.has(key));
-}
-
-function componentWord(score: number): string {
-  if (score >= 80) return "좋음";
-  if (score >= 60) return "무난";
-  if (score >= 45) return "보통";
-  return "주의";
-}
-
-function strongestAndWeakest(data: StockScoreResponse) {
-  const components = [...(data.components || [])];
-  const strongest = components.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
-  const weakest = [...components].sort((a, b) => (a.score ?? 101) - (b.score ?? 101))[0];
-  return { strongest, weakest };
-}
-
-function termTipFor(label: string | undefined) {
-  if (!label) return undefined;
-  const normalized = label.toLowerCase();
-  return TERM_TIPS.find((tip) => tip.keys.some((key) => normalized.includes(key)));
-}
-
-function easySentence(text: string | undefined): string {
-  if (!text) return "";
-  return removeSourceText(text)
-    .replaceAll("봐야 합니다.", "봐야 해요.")
-    .replaceAll("보수적으로 봐야 합니다.", "보수적으로 봐야 해요.")
-    .replaceAll("봅니다.", "봐요.")
-    .replaceAll("합칩니다.", "함께 봐요.")
-    .replaceAll("점수화합니다.", "점수로 바꿔요.")
-    .replaceAll("입니다.", "이에요.")
-    .replaceAll("합니다.", "해요.");
-}
-
-function formatNote(note: unknown): string | undefined {
-  if (typeof note !== "string" || !note) return undefined;
-  const cleaned = removeSourceText(note);
-  if (!cleaned) return undefined;
-  return NOTE_COPY[cleaned] || easySentence(cleaned);
-}
-
-function factorSummary(component: ScoreComponent): string {
-  const label = component.label || component.key || "";
-  if (label.includes("수익성")) return "순이익률, ROE, 현금흐름처럼 실제로 돈을 잘 버는지 봐요.";
-  if (label.includes("성장성")) return "매출과 이익이 커지는 속도, 최근 가격 흐름을 같이 봐요.";
-  if (label.includes("재무건전성")) return "부채 부담과 단기 현금 여력을 봐요. 버틸 체력이 중요해요.";
-  if (label.includes("모멘텀")) return "최근 가격이 올라가는 힘이 있는지, 고점에서 얼마나 떨어져 있는지 봐요.";
-  if (label.includes("밸류에이션")) return "좋은 회사라도 가격이 너무 비싸면 점수가 낮아질 수 있어요.";
-  return easySentence(component.summary) || "관련 숫자를 묶어서 점수로 바꿔요.";
-}
-
-function formatMonthLabel(date: string | undefined): string {
-  if (!date) return "";
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return `${parsed.getMonth() + 1}월`;
-}
 
 export default function StockDashboard() {
   const router = useRouter();
