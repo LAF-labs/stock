@@ -86,3 +86,39 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --manifest-path services/market-data/Cargo.toml
+
+  market-data-container:
+    name: Market-data container smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build market-data image
+        run: docker build --target market-data -t stock-market-data:ci .
+
+      - name: Smoke health and metrics
+        env:
+          MARKET_DATA_INTERNAL_TOKEN: ci-internal-token
+        run: |
+          set -euo pipefail
+          docker run -d --rm \
+            --name stock-market-data-smoke \
+            -e MARKET_DATA_INTERNAL_TOKEN="$MARKET_DATA_INTERNAL_TOKEN" \
+            -p 18080:8080 \
+            stock-market-data:ci
+          trap 'docker stop stock-market-data-smoke >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/healthz >/tmp/market-data-health.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep '"ok":true' /tmp/market-data-health.json
+          curl -fsS \
+            -H "Authorization: Bearer $MARKET_DATA_INTERNAL_TOKEN" \
+            http://127.0.0.1:18080/metrics \
+            | grep market_data_service_info

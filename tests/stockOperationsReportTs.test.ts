@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   DEFAULT_SCORE_MODEL_VERSION,
   evaluateOperationsThresholds,
+  fetchMarketDataServiceStatus,
   fetchSupabaseReport,
+  freshnessRiskSummary,
   parseOperationsOptions,
   summarizeIndustryBenchmarks,
   summarizeQueueRows,
@@ -111,6 +113,81 @@ test("TypeScript operations report evaluates thresholds", () => {
     result.violations.map((violation) => violation.key),
     ["max_dead_refresh_jobs", "min_current_score_model_rate", "max_market_calendar_thin_markets"]
   );
+});
+
+test("TypeScript operations report separates freshness risks from threshold pass", () => {
+  const risks = freshnessRiskSummary({
+    refresh_queue: { oldest_due_age_minutes: 75, queued_jobs: 3 },
+    score_calibration: { stale_snapshots: 4 },
+    quote_freshness: { stale_rate: 1, stale_snapshots: 13, total_snapshots: 13 },
+    thresholds: { ok: true, violations: [] },
+  });
+
+  assert.equal(risks.ok, false);
+  assert.equal(risks.thresholds_ok, true);
+  assert.deepEqual(
+    risks.warnings.map((warning) => warning.key),
+    ["quote_stale_rate", "refresh_queue_due_age"]
+  );
+});
+
+test("TypeScript operations report checks configured market-data health and metrics", async () => {
+  const calls: Array<{ url: string; authorization: string | null }> = [];
+  const originalFetch = global.fetch;
+  global.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+    if (url.endsWith("/healthz")) {
+      return jsonResponse({ ok: true, service: "market-data", dependencies: { supabase_configured: true } });
+    }
+    if (url.endsWith("/metrics")) {
+      return new Response("market_data_service_info 1\n", { status: 200, headers: { "Content-Type": "text/plain" } });
+    }
+    return jsonResponse({ error: "unexpected" }, 404);
+  };
+
+  try {
+    const status = await fetchMarketDataServiceStatus({
+      url: "http://market-data.internal/",
+      token: "internal-token",
+      timeoutMs: 1000,
+    });
+
+    assert.equal(status.configured, true);
+    assert.equal(status.ok, true);
+    assert.equal(status.failure_count, 0);
+    assert.equal(calls[0].url, "http://market-data.internal/healthz");
+    assert.equal(calls[1].url, "http://market-data.internal/metrics");
+    assert.equal(calls[1].authorization, "Bearer internal-token");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("TypeScript operations report fails required market-data config when URL or token is missing", async () => {
+  const status = await fetchMarketDataServiceStatus({
+    timeoutMs: 1000,
+    required: true,
+  });
+
+  assert.equal(status.configured, false);
+  assert.equal(status.ok, false);
+  assert.equal(status.failure_count, 1);
+  assert.deepEqual(status.failures[0].missing, ["MARKET_DATA_SERVICE_URL", "MARKET_DATA_INTERNAL_TOKEN"]);
+});
+
+test("TypeScript operations report can threshold market-data service failures", () => {
+  const result = evaluateOperationsThresholds(
+    {
+      market_data_service: { configured: true, ok: false, failure_count: 1 },
+    },
+    {
+      max_market_data_service_failures: 0,
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.violations.map((violation) => violation.key), ["max_market_data_service_failures"]);
 });
 
 test("TypeScript operations report fetches Supabase report through REST only", async () => {

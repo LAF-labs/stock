@@ -3,9 +3,11 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_PATH = ROOT / "package.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "publish-stock-snapshots.yml"
 BENCHMARK_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "maintain-industry-benchmarks.yml"
 OPERATIONS_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "stock-operations-check.yml"
+CI_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 VERCEL_PREVIEW_DEPLOY_PATH = ROOT / "scripts" / "vercel_preview_deploy.sh"
 
 
@@ -65,6 +67,29 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("--max-dead-refresh-jobs 0", text)
         self.assertIn("--min-current-score-model-rate", text)
         self.assertIn("STOCK_OPS_MAX_QUEUED_REFRESH_JOBS", text)
+        self.assertIn("MARKET_DATA_SERVICE_URL", text)
+        self.assertIn("MARKET_DATA_INTERNAL_TOKEN", text)
+        self.assertIn("--max-market-data-service-failures 0", text)
+
+    def test_package_ops_check_uses_market_data_threshold(self):
+        text = PACKAGE_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("--max-market-data-service-failures 0", text)
+
+    def test_stock_operations_report_does_not_hide_old_refresh_jobs(self):
+        text = (ROOT / "supabase" / "migrations" / "20260606170000_stock_operations_report_full_queue.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create or replace function public.stock_operations_report", text)
+        self.assertNotIn("created_at >= now() - interval '14 days'", text)
+
+    def test_ci_builds_and_smokes_market_data_container(self):
+        text = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("Market-data container smoke", text)
+        self.assertIn("docker build --target market-data", text)
+        self.assertIn("/healthz", text)
+        self.assertIn("/metrics", text)
+        self.assertIn("MARKET_DATA_INTERNAL_TOKEN", text)
 
     def test_manual_vercel_preview_deploy_uses_node_readiness(self):
         text = VERCEL_PREVIEW_DEPLOY_PATH.read_text(encoding="utf-8")

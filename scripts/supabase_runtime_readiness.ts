@@ -28,6 +28,13 @@ export const RUNTIME_RPC_CHECKS = [
   "acquire_kis_token_issue_lock",
 ] as const;
 
+export const RUNTIME_RPC_SIGNATURE_CHECKS = [
+  ["claim_stock_refresh_jobs", "p_worker_id text, p_limit integer, p_lock_seconds integer"],
+  ["claim_stock_refresh_jobs_by_kind", "p_worker_id text, p_kind text, p_limit integer, p_lock_seconds integer"],
+  ["complete_stock_refresh_job", "p_job_id uuid, p_worker_id text"],
+  ["fail_stock_refresh_job", "p_job_id uuid, p_worker_id text, p_error text, p_retry_after_seconds integer, p_permanent boolean"],
+] as const;
+
 export const PUBLIC_READ_CHECKS = [
   ["stock_score_snapshots", "ticker"],
   ["stock_quote_snapshots", "ticker"],
@@ -51,12 +58,21 @@ export type ReadinessOptions = {
 export function readinessContractPayload(payload: JsonRecord) {
   const checkedTables = new Set(arrayOfStrings(payload.required_tables));
   const checkedRpcs = new Set(arrayOfStrings(payload.required_rpcs));
+  const checkedRpcSignatures = new Set(arrayOfRpcSignatures(payload.required_rpc_signatures));
   const missingTables = RUNTIME_TABLE_CHECKS.filter((item) => !checkedTables.has(item));
   const missingRpcs = RUNTIME_RPC_CHECKS.filter((item) => !checkedRpcs.has(item));
+  const missingRpcSignatures = payload.required_rpc_signatures === undefined
+    ? []
+    : RUNTIME_RPC_SIGNATURE_CHECKS
+        .map(([name, identityArguments]) => `${name}(${identityArguments})`)
+        .filter((item) => !checkedRpcSignatures.has(item));
+  const missingRpcGrants = arrayOfStrings(payload.missing_rpc_grants);
   return {
-    ok: missingTables.length === 0 && missingRpcs.length === 0,
+    ok: missingTables.length === 0 && missingRpcs.length === 0 && missingRpcSignatures.length === 0 && missingRpcGrants.length === 0,
     missing_tables: missingTables,
     missing_rpcs: missingRpcs,
+    missing_rpc_signatures: missingRpcSignatures,
+    missing_rpc_grants: missingRpcGrants,
   };
 }
 
@@ -162,6 +178,18 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function arrayOfRpcSignatures(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isRecord)
+    .map((item) => {
+      const name = typeof item.name === "string" ? item.name : "";
+      const identityArguments = typeof item.identity_arguments === "string" ? item.identity_arguments : "";
+      return name && identityArguments ? `${name}(${identityArguments})` : "";
+    })
+    .filter(Boolean);
 }
 
 function positiveNumber(value: unknown, fallback: number): number {

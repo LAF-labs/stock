@@ -6,6 +6,7 @@ import unittest
 
 import scripts.publish_stock_snapshots as publisher
 from scripts.publish_stock_snapshots import (
+    assert_refresh_worker_readiness,
     build_score_snapshot_row,
     claim_refresh_jobs,
     fail_refresh_job,
@@ -188,6 +189,36 @@ class PublishStockSnapshotsTests(unittest.TestCase):
             calls[0]["data"],
             '{"p_worker_id": "worker-1", "p_kind": "score", "p_limit": 5, "p_lock_seconds": 600}',
         )
+
+    def test_legacy_score_worker_preflights_runtime_readiness_before_claiming(self):
+        calls = []
+
+        class FakeResponse:
+            status_code = 200
+            text = "{}"
+
+            def json(self):
+                return {
+                    "ok": True,
+                    "required_tables": ["public.stock_score_snapshots"],
+                    "required_rpcs": ["claim_stock_refresh_jobs_by_kind"],
+                }
+
+        def fake_post(url, headers=None, data=None, timeout=None):
+            calls.append({"url": url, "data": data})
+            return FakeResponse()
+
+        original_post = publisher.requests.post
+        publisher.requests.post = fake_post
+        try:
+            config = SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7)
+            with self.assertRaisesRegex(RuntimeError, "Supabase runtime readiness failed"):
+                assert_refresh_worker_readiness(config)
+        finally:
+            publisher.requests.post = original_post
+
+        self.assertEqual(calls[0]["url"], "https://example.supabase.co/rest/v1/rpc/stock_runtime_readiness")
+        self.assertEqual(calls[0]["data"], "{}")
 
     def test_queue_limit_default_is_high_enough_for_demand_driven_backlog(self):
         original = os.environ.get("STOCK_SNAPSHOT_QUEUE_LIMIT")

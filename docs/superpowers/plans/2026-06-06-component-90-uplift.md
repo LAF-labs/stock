@@ -319,12 +319,12 @@ Evaluator finding: operations score `84/100`. Blocking issues are stale-data bli
 - Modify: `tests/supabaseRuntimeReadinessTs.test.ts`
 - Modify: `tests/stockOperationsReportTs.test.ts`
 
-- [ ] Ensure readiness checks cover every runtime table/RPC/public read contract required by the app.
-- [ ] Ensure ops report distinguishes threshold pass from stale-data risk.
-- [ ] Add a reported-but-not-failing freshness signal for quote stale rate and oldest queued job age.
-- [ ] Add an explicit market-data service health section when `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN` are configured.
-- [ ] Ensure operations report does not hide dead/stale jobs outside the current sampling window.
-- [ ] Run:
+- [x] Ensure readiness checks cover every runtime table/RPC/public read contract required by the app.
+- [x] Ensure ops report distinguishes threshold pass from stale-data risk.
+- [x] Add a reported-but-not-failing freshness signal for quote stale rate and oldest queued job age.
+- [x] Add an explicit market-data service health section when `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN` are configured.
+- [x] Ensure operations report does not hide dead/stale jobs outside the current sampling window.
+- [x] Run:
 
 ```bash
 npm test 2>&1 | head -c 20000
@@ -346,11 +346,11 @@ Ops check: ok true
 - Modify: `README.md`
 - Modify: `docs/score-system-operations.md`
 
-- [ ] Document the difference between threshold pass and stale-data freshness.
-- [ ] Document the component gate workflow for score worker, quote worker, and benchmark worker.
-- [ ] Document expected stale rates for demand-driven cache and hot-ticker freshness SLOs.
-- [ ] Document Rust container smoke expectations in CI.
-- [ ] Run:
+- [x] Document the difference between threshold pass and stale-data freshness.
+- [x] Document the component gate workflow for score worker, quote worker, and benchmark worker.
+- [x] Document expected stale rates for demand-driven cache and hot-ticker freshness SLOs.
+- [x] Document Rust container smoke expectations in CI.
+- [x] Run:
 
 ```bash
 npm run ops:check 2>&1 | head -c 20000
@@ -362,11 +362,43 @@ Expected:
 thresholds.ok: true
 ```
 
+Current evidence:
+
+```text
+npm test: 138 passed
+npm run test:python: 66 passed
+npm run test:rust: 24 passed
+npm run typecheck: exit 0
+npm run build: exit 0
+npm run supabase:readiness: ok true, readiness_contract includes rpc signature/grant drift fields
+npm run ops:check with local market-data service env: ok true, market_data_service ok true, freshness_risks warnings reported
+docker build --target market-data: exit 0
+market-data smoke: /healthz ok true, /metrics contains market_data_service_info
+```
+
+Second-pass evaluator blockers addressed:
+
+```text
+package ops:check includes --max-market-data-service-failures 0
+market-data URL/token omission fails when service threshold is configured
+legacy Python score queue drain preflights stock_runtime_readiness before claim
+stock_runtime_readiness migration reports selected RPC signatures and service_role grants
+stock_operations_report migration removes the 14-day refresh job filter
+```
+
 ### Task 3.3: Supabase/Ops Re-Evaluation Gate
 
-- [ ] Dispatch Rust/operations evaluator with the diff and verification evidence.
-- [ ] Required result: Supabase and operations `>=90`.
+- [x] Dispatch Rust/operations evaluator with the diff and verification evidence.
+- [x] Required result: Supabase and operations `>=90`.
 - [ ] Commit and push only after `>=90`:
+
+Current evaluator result:
+
+```text
+supabase_score: 92/100
+operations_score: 92/100
+>=90_gate: pass
+```
 
 ```bash
 git status --short 2>&1 | head -c 4000

@@ -16,8 +16,10 @@ import requests
 
 try:
     from scripts.fetch_stock_score import fetch_score, parse_symbol_ref
+    from scripts.supabase_runtime_readiness import readiness_contract_payload
 except ModuleNotFoundError:
     from fetch_stock_score import fetch_score, parse_symbol_ref
+    from supabase_runtime_readiness import readiness_contract_payload
 
 
 ScoreView = str
@@ -232,6 +234,18 @@ def claim_refresh_jobs(
     return payload if isinstance(payload, list) else []
 
 
+def assert_refresh_worker_readiness(config: SupabasePublishConfig) -> None:
+    payload = post_supabase_rpc(config, "stock_runtime_readiness", {})
+    contract = readiness_contract_payload(payload if isinstance(payload, dict) else {})
+    if contract.get("ok") is True:
+        return
+    missing_tables = ",".join(contract.get("missing_tables") or []) or "none"
+    missing_rpcs = ",".join(contract.get("missing_rpcs") or []) or "none"
+    raise RuntimeError(
+        f"Supabase runtime readiness failed before queue drain. missing_tables={missing_tables} missing_rpcs={missing_rpcs}"
+    )
+
+
 def complete_refresh_job(config: SupabasePublishConfig, worker_id: str, job_id: str) -> None:
     post_supabase_rpc(
         config,
@@ -372,6 +386,7 @@ def publish_queue_job(
 
 def drain_refresh_queue(config: SupabasePublishConfig, args: argparse.Namespace) -> list[dict[str, Any]]:
     worker_id = args.worker_id or f"stock-snapshot-publisher-{os.getpid()}"
+    assert_refresh_worker_readiness(config)
     jobs = claim_refresh_jobs(config, worker_id, args.queue_limit, args.queue_lock_seconds, args.queue_kind)
     rows: list[dict[str, Any]] = []
     for index, job in enumerate(jobs):

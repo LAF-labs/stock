@@ -115,11 +115,13 @@ REDIS_URL=redis://127.0.0.1:6379
 종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
 업종 원천과 운영 주기는 [docs/industry-data-sources.md](docs/industry-data-sources.md)에, 점수 모델 버전/캐시/스모크 운영은 [docs/score-system-operations.md](docs/score-system-operations.md)에 정리되어 있습니다. 점수 정확도 개선을 위한 데이터 보강 검토는 [docs/score-data-enrichment-review.md](docs/score-data-enrichment-review.md)를 보세요.
 
-운영 리포트는 refresh queue backlog, stale/dead job, score snapshot 모델 분포, 점수 동점률, 결측/저신뢰 고득점 위험을 한 번에 확인합니다.
+운영 리포트는 refresh queue backlog, stale/dead job, score snapshot 모델 분포, 점수 동점률, 결측/저신뢰 고득점 위험을 한 번에 확인합니다. `thresholds`는 배포를 막는 실패 기준이고, `freshness_risks`는 demand-driven cache에서 임계값을 넘지 않아도 확인해야 하는 경고입니다. `MARKET_DATA_SERVICE_URL`과 `MARKET_DATA_INTERNAL_TOKEN`이 설정되어 있으면 Rust market-data `/healthz`와 인증된 `/metrics`도 함께 점검합니다.
 
 ```bash
 npm run ops:report
 ```
+
+`npm run ops:check`는 배포 게이트라서 market-data 서비스도 threshold에 포함합니다. 로컬에서 실행할 때는 `MARKET_DATA_SERVICE_URL`과 `MARKET_DATA_INTERNAL_TOKEN`을 설정하거나 Docker target을 먼저 띄우세요.
 
 업종 리포트는 canonical 업종 mapping 누락, 표본 수가 작은 업종, 이름만 다른 유사 업종을 점검합니다. 업종이 비어 있는 행은 실제 보강 대상인 `asset_class=stock`과 ETF/ETN/스팩/우선주 등 없어도 되는 비단일주식 대상으로 나눠 보여줍니다.
 
@@ -219,7 +221,7 @@ PYTHON_BIN=.venv/bin/python npm run snapshots:drain:score-legacy -- --queue-limi
 
 GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. 기본 queue drain은 평일 5분마다, 주말 30분마다 최대 50개이고, workflow concurrency로 provider 호출이 겹치지 않게 합니다. quote refresh는 TypeScript worker가 처리합니다. score refresh는 Rust/TS durable score worker가 완성될 때까지 `STOCK_LEGACY_SCORE_WORKER_ENABLED=1`의 legacy Python score worker가 `score` job만 분리 claim해서 처리하되, due score job 또는 workflow_dispatch 수동 ticker가 있을 때만 Python을 설치/실행합니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`, `STOCK_SNAPSHOT_SLEEP_SECONDS`, `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS`로 처리량, provider 간격, 사용자 pending 재시도 안내를 조정합니다.
 
-업종 평균과 외부 업종 PER은 `.github/workflows/maintain-industry-benchmarks.yml`에서 미국 정규/애프터마켓 종료 후 하루 1번 갱신합니다. 이 workflow는 `scripts/sync_market_calendar.py`로 US/KR 시장 달력도 550일치 유지합니다. 배포 전에는 Node 기반 `npm run supabase:readiness`와 `npm run ops:check`로 필수 테이블/RPC와 운영 threshold를 확인하고, 운영 중에는 `npm run ops:report`로 큐, 점수 snapshot, 현재가 freshness, 업종 benchmark 만료, 시장 달력 커버리지를 함께 점검합니다.
+업종 평균과 외부 업종 PER은 `.github/workflows/maintain-industry-benchmarks.yml`에서 미국 정규/애프터마켓 종료 후 하루 1번 갱신합니다. 이 workflow는 `scripts/sync_market_calendar.py`로 US/KR 시장 달력도 550일치 유지합니다. 배포 전에는 Node 기반 `npm run supabase:readiness`와 `npm run ops:check`로 필수 테이블/RPC와 운영 threshold를 확인하고, 운영 중에는 `npm run ops:report`로 큐, 점수 snapshot, 현재가 freshness, 업종 benchmark 만료, 시장 달력 커버리지, market-data service 상태를 함께 점검합니다. queue drain worker는 실행 전 `stock_runtime_readiness` preflight를 수행하므로 필수 RPC/table이 빠진 환경에서는 job을 claim하지 않습니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 
@@ -233,6 +235,8 @@ Rust market-data 서비스 이미지만 빌드할 때는 Docker target을 지정
 ```bash
 scripts/docker-build-market-data.sh stock-market-data
 docker run --env-file .env.local -p 8080:8080 stock-market-data
+curl http://127.0.0.1:8080/healthz
+curl -H "Authorization: Bearer $MARKET_DATA_INTERNAL_TOKEN" http://127.0.0.1:8080/metrics
 ```
 
 macOS에서 Docker Desktop이 관리자 권한 설정에 막히면 Colima를 사용할 수 있습니다.

@@ -6,6 +6,7 @@ import { getStockScore, type ScoreView, type StockPayload } from "@/lib/stockSna
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import { loadLocalEnvFiles } from "./localEnv";
+import { readinessContractPayload } from "./supabase_runtime_readiness";
 
 export { loadLocalEnvFiles } from "./localEnv";
 
@@ -100,6 +101,19 @@ export async function claimRefreshJobs(config: SupabaseConfig, options: Options)
     p_limit: options.queueLimit,
     p_lock_seconds: options.queueLockSeconds,
   }, options.timeoutMs);
+}
+
+export async function assertRefreshWorkerReadiness(config: SupabaseConfig, options: Pick<Options, "timeoutMs">): Promise<void> {
+  const payload = await postRpc<Record<string, unknown>>(config, "stock_runtime_readiness", {}, options.timeoutMs);
+  const contract = readinessContractPayload(payload);
+  if (contract.ok) return;
+  throw new Error(
+    [
+      "Supabase runtime readiness failed before queue drain.",
+      `missing_tables=${contract.missing_tables.join(",") || "none"}`,
+      `missing_rpcs=${contract.missing_rpcs.join(",") || "none"}`,
+    ].join(" ")
+  );
 }
 
 export async function completeRefreshJob(config: SupabaseConfig, workerId: string, jobId: string, timeoutMs: number) {
@@ -272,6 +286,7 @@ export async function run(options: Options): Promise<PublishSummary> {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required unless --dry-run is used.");
   }
 
+  if (options.drainQueue && config) await assertRefreshWorkerReadiness(config, options);
   const queueRows = options.drainQueue && config ? await drainRefreshQueue(config, options) : [];
   const rows: Array<Record<string, unknown>> = [];
   for (let index = 0; index < options.tickers.length; index += 1) {

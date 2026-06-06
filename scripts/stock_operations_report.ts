@@ -41,6 +41,7 @@ export const THRESHOLD_RULES = [
     "number",
   ],
   ["max_market_calendar_thin_markets", "max", "market_calendar.missing_or_thin_markets", ["market_calendar", "missing_or_thin_markets"], "count"],
+  ["max_market_data_service_failures", "max", "market_data_service.failure_count", ["market_data_service", "failure_count"], "number"],
 ] as const satisfies readonly ThresholdRule[];
 
 const THRESHOLD_ARGS = new Map(THRESHOLD_RULES.map(([key]) => [`--${key.replaceAll("_", "-")}`, key]));
@@ -61,6 +62,17 @@ export type OperationsOptions = {
   supabaseUrl?: string;
   supabaseKey?: string;
   timeoutMs: number;
+  marketDataUrl?: string;
+  marketDataToken?: string;
+  marketDataTimeoutMs: number;
+  marketDataRequired: boolean;
+};
+
+export type MarketDataServiceConfig = {
+  url?: string;
+  token?: string;
+  timeoutMs: number;
+  required?: boolean;
 };
 
 export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
@@ -292,6 +304,108 @@ export async function fetchSupabaseReport(
   };
 }
 
+export async function fetchMarketDataServiceStatus(config: MarketDataServiceConfig) {
+  const url = config.url?.trim().replace(/\/$/, "");
+  const token = config.token?.trim();
+  if (!url || !token) {
+    const missing = [
+      ...(url ? [] : ["MARKET_DATA_SERVICE_URL"]),
+      ...(token ? [] : ["MARKET_DATA_INTERNAL_TOKEN"]),
+    ];
+    return {
+      configured: false,
+      required: config.required === true,
+      ok: config.required === true ? false : null,
+      failure_count: config.required === true ? 1 : 0,
+      failures: config.required === true ? [{ check: "configuration", missing }] : [] as Array<Record<string, unknown>>,
+    };
+  }
+
+  const failures: Array<Record<string, unknown>> = [];
+  let health: Record<string, unknown> | undefined;
+  let metrics: Record<string, unknown> | undefined;
+
+  try {
+    const response = await fetchWithTimeout(`${url}/healthz`, { headers: { Accept: "application/json" } }, config.timeoutMs);
+    const payload = await parseJsonObjectResponse(response);
+    health = {
+      ok: response.ok && payload.ok === true,
+      status: response.status,
+      service: stringValue(payload.service),
+      dependencies: isRecord(payload.dependencies) ? payload.dependencies : undefined,
+    };
+    if (!health.ok) failures.push({ check: "healthz", status: response.status });
+  } catch (error) {
+    failures.push({ check: "healthz", error: publicError(error) });
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `${url}/metrics`,
+      {
+        headers: {
+          Accept: "text/plain",
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      config.timeoutMs
+    );
+    const text = await response.text().catch(() => "");
+    const containsServiceInfo = text.includes("market_data_service_info");
+    metrics = {
+      ok: response.ok && containsServiceInfo,
+      status: response.status,
+      contains_service_info: containsServiceInfo,
+    };
+    if (!metrics.ok) failures.push({ check: "metrics", status: response.status });
+  } catch (error) {
+    failures.push({ check: "metrics", error: publicError(error) });
+  }
+
+  return {
+    configured: true,
+    required: config.required === true,
+    ok: failures.length === 0,
+    failure_count: failures.length,
+    base_url: url,
+    health,
+    metrics,
+    failures,
+  };
+}
+
+export function freshnessRiskSummary(payload: JsonRecord) {
+  const warnings: Array<Record<string, unknown>> = [];
+  const quoteFreshness = isRecord(payload.quote_freshness) ? payload.quote_freshness : {};
+  const queue = isRecord(payload.refresh_queue) ? payload.refresh_queue : {};
+  const thresholds = isRecord(payload.thresholds) ? payload.thresholds : {};
+
+  const quoteStaleRate = finiteNumber(quoteFreshness.stale_rate);
+  const quoteTotal = finiteNumber(quoteFreshness.total_snapshots) || 0;
+  if (quoteTotal > 0 && quoteStaleRate !== undefined && quoteStaleRate >= 0.75) {
+    warnings.push({
+      key: "quote_stale_rate",
+      severity: quoteStaleRate >= 0.95 ? "high" : "medium",
+      message: `quote stale rate is ${quoteStaleRate}`,
+    });
+  }
+
+  const oldestDueAgeMinutes = finiteNumber(queue.oldest_due_age_minutes);
+  if (oldestDueAgeMinutes !== undefined && oldestDueAgeMinutes > 60) {
+    warnings.push({
+      key: "refresh_queue_due_age",
+      severity: oldestDueAgeMinutes > 240 ? "high" : "medium",
+      message: `oldest queued refresh job is due by ${oldestDueAgeMinutes} minutes`,
+    });
+  }
+
+  return {
+    ok: warnings.length === 0,
+    thresholds_ok: thresholds.ok === true,
+    warnings,
+  };
+}
+
 export async function fetchScoreSnapshotRows(config: SupabaseReportConfig, sampleLimit: number) {
   return fetchRows(config, "stock_score_snapshots", {
     view_mode: "eq.detail",
@@ -377,6 +491,10 @@ export function parseOperationsOptions(argv: string[], env: Record<string, strin
     expectedScoreModelVersion: env.EXPECTED_SCORE_MODEL_VERSION || DEFAULT_SCORE_MODEL_VERSION,
     thresholds: {},
     timeoutMs: 15_000,
+    marketDataUrl: env.MARKET_DATA_SERVICE_URL,
+    marketDataToken: env.MARKET_DATA_INTERNAL_TOKEN,
+    marketDataTimeoutMs: positiveInteger(env.MARKET_DATA_SERVICE_HEALTH_TIMEOUT_MS, 5_000),
+    marketDataRequired: env.MARKET_DATA_SERVICE_REQUIRED === "1",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -395,6 +513,10 @@ export function parseOperationsOptions(argv: string[], env: Record<string, strin
     else if (arg === "--supabase-key") options.supabaseKey = next();
     else if (arg === "--timeout-seconds") options.timeoutMs = positiveNumber(next(), 15) * 1000;
     else if (arg === "--timeout-ms") options.timeoutMs = positiveNumber(next(), 15_000);
+    else if (arg === "--market-data-url") options.marketDataUrl = next();
+    else if (arg === "--market-data-token") options.marketDataToken = next();
+    else if (arg === "--market-data-timeout-ms") options.marketDataTimeoutMs = positiveInteger(next(), 5_000);
+    else if (arg === "--require-market-data-service") options.marketDataRequired = true;
     else if (arg === "--sample-limit") options.sampleLimit = positiveInteger(next(), 500);
     else if (arg === "--score-stale-hours") options.scoreStaleHours = positiveInteger(next(), 24);
     else if (arg === "--expected-score-model-version") options.expectedScoreModelVersion = next();
@@ -409,9 +531,20 @@ export function parseOperationsOptions(argv: string[], env: Record<string, strin
 
 export async function runOperationsReport(options: OperationsOptions) {
   const payload = await fetchSupabaseReport(supabaseReportConfig(options), options.sampleLimit, options.scoreStaleHours, options.expectedScoreModelVersion);
-  return {
+  const withService = {
     ...payload,
-    thresholds: evaluateOperationsThresholds(payload, options.thresholds),
+    market_data_service: await fetchMarketDataServiceStatus({
+      url: options.marketDataUrl,
+      token: options.marketDataToken,
+      timeoutMs: options.marketDataTimeoutMs,
+      required: options.marketDataRequired || options.thresholds.max_market_data_service_failures !== undefined,
+    }),
+  };
+  const thresholds = evaluateOperationsThresholds(withService, options.thresholds);
+  return {
+    ...withService,
+    thresholds,
+    freshness_risks: freshnessRiskSummary({ ...withService, thresholds }),
   };
 }
 
@@ -537,6 +670,17 @@ function publicError(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 1000) : "unknown";
 }
 
+async function parseJsonObjectResponse(response: Response): Promise<JsonRecord> {
+  const text = await response.text().catch(() => "");
+  if (!text) return {};
+  try {
+    const payload = JSON.parse(text);
+    return isRecord(payload) ? payload : {};
+  } catch {
+    return {};
+  }
+}
+
 function printHumanReport(payload: JsonRecord) {
   const queue = isRecord(payload.refresh_queue) ? payload.refresh_queue : {};
   const calibration = isRecord(payload.score_calibration) ? payload.score_calibration : {};
@@ -559,6 +703,12 @@ function printHumanReport(payload: JsonRecord) {
     console.log(`benchmarks total=${benchmarks.total_rows} expired=${benchmarks.expired_rows} low_sample=${benchmarks.low_sample_rows} newest_as_of=${benchmarks.newest_as_of_date}`);
   }
   if (Object.keys(calendar).length) console.log(`calendar total=${calendar.total_rows} thin_markets=${JSON.stringify(calendar.missing_or_thin_markets || [])}`);
+  const marketData = isRecord(payload.market_data_service) ? payload.market_data_service : {};
+  if (marketData.configured) console.log(`market_data_service ok=${marketData.ok} failures=${marketData.failure_count}`);
+  const freshnessRisks = isRecord(payload.freshness_risks) ? payload.freshness_risks : {};
+  if (Array.isArray(freshnessRisks.warnings) && freshnessRisks.warnings.length) {
+    console.log(`freshness_risks ok=${freshnessRisks.ok} warnings=${freshnessRisks.warnings.length}`);
+  }
   const thresholds = isRecord(payload.thresholds) ? payload.thresholds : {};
   if (thresholds.configured) {
     const violations = Array.isArray(thresholds.violations) ? thresholds.violations : [];

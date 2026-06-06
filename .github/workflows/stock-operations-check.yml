@@ -23,6 +23,8 @@ jobs:
       STOCK_OPS_MIN_CURRENT_SCORE_MODEL_RATE: ${{ vars.STOCK_OPS_MIN_CURRENT_SCORE_MODEL_RATE || '0.9' }}
       STOCK_OPS_MAX_DUPLICATE_SCORE_RATE: ${{ vars.STOCK_OPS_MAX_DUPLICATE_SCORE_RATE || '0.5' }}
       STOCK_OPS_MAX_MISSING_QUOTE_PRICE: ${{ vars.STOCK_OPS_MAX_MISSING_QUOTE_PRICE || '25' }}
+      MARKET_DATA_SERVICE_URL: ${{ vars.MARKET_DATA_SERVICE_URL }}
+      MARKET_DATA_INTERNAL_TOKEN: ${{ secrets.MARKET_DATA_INTERNAL_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -52,4 +54,5 @@ jobs:
             --max-low-confidence-high-score 0 \
             --max-missing-quote-price "$STOCK_OPS_MAX_MISSING_QUOTE_PRICE" \
             --max-expired-industry-benchmark-rows 0 \
-            --max-market-calendar-thin-markets 0
+            --max-market-calendar-thin-markets 0 \
+            --max-market-data-service-failures 0

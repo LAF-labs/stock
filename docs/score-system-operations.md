@@ -64,7 +64,7 @@ npm run ops:report
 node --import tsx scripts/stock_operations_report.ts --sample-limit 500 --json
 ```
 
-The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, quote freshness, industry benchmark expiry, market-calendar coverage, low-confidence high scores, and rounded score duplicate buckets. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
+The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, quote freshness, industry benchmark expiry, market-calendar coverage, low-confidence high scores, rounded score duplicate buckets, and the Rust `market-data` service when `MARKET_DATA_SERVICE_URL` plus `MARKET_DATA_INTERNAL_TOKEN` are configured. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
 
 Before a manual Vercel preview deployment, run the Supabase readiness check. The deploy script also runs it before uploading:
 
@@ -100,7 +100,10 @@ Relevant repository variables:
 STOCK_SNAPSHOT_QUEUE_LIMIT=50
 STOCK_SNAPSHOT_SLEEP_SECONDS=0.5
 STOCK_LEGACY_SCORE_WORKER_ENABLED=1
+MARKET_DATA_SERVICE_URL=https://market-data.internal
 ```
+
+When `MARKET_DATA_SERVICE_URL` is set, also configure secret `MARKET_DATA_INTERNAL_TOKEN`. CI builds the `market-data` Docker target and smokes `/healthz` plus authenticated `/metrics`; the scheduled operations workflow includes the same service in its report.
 
 Use the read-only operations check before release and after score model changes:
 
@@ -108,7 +111,11 @@ Use the read-only operations check before release and after score model changes:
 npm run ops:check
 ```
 
-`ops:check` fails on dead refresh jobs, stale running jobs, excessive backlog, stale score model versions, duplicate-score drift, missing quote prices, expired industry benchmarks, or thin market calendars. Dormant quote snapshots can be stale in a demand-driven cache, so stale quote rate is reported but is not a default failure threshold.
+`ops:check` fails on dead refresh jobs, stale running jobs, excessive backlog, stale score model versions, duplicate-score drift, missing quote prices, expired industry benchmarks, thin market calendars, or configured `market-data` health/metrics failures. `freshness_risks` is separate from `thresholds`: dormant quote snapshots can be stale in a demand-driven cache, so stale quote rate and old due queue age are surfaced as warnings even when the threshold gate passes.
+
+The package `ops:check` script includes `--max-market-data-service-failures 0`, so release checks require `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN`. Use `npm run ops:report` for Supabase-only observation, or run the market-data Docker target locally before `ops:check`.
+
+Queue-drain workers call `stock_runtime_readiness` before claiming jobs. If a required table or RPC is missing, the worker exits before it locks refresh jobs. Keep `npm run supabase:readiness` in deployment preflight and use `npm run ops:check` after migrations to confirm runtime health.
 
 Configure repository variable `STOCK_SNAPSHOT_TICKERS` for the prewarm set. Keep it focused on search/autocomplete hot names, top domestic names, and comparison defaults. Do not try to refresh every listed symbol every 5 minutes.
 
@@ -146,7 +153,7 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.
 - Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
-- Prefer Rust `market-data` for long-term serving. Python collector should remain a score fallback until Rust owns score, batch, and refresh jobs end to end.
+- Prefer Rust `market-data` for long-term serving. Python collector should remain a score fallback until Rust owns score, batch, and refresh jobs end to end. Keep `MARKET_DATA_SERVICE_ENABLE_SCORE=0` until the durable score refresh/cache path is present and reflected in health/ops reports.
 
 ## Calibration Rules
 

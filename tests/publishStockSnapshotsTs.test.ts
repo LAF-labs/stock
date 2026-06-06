@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   claimRefreshJobs,
+  assertRefreshWorkerReadiness,
   parseOptions,
   parseTickerArgs,
   parseViews,
@@ -56,6 +57,31 @@ test("TypeScript snapshot worker claims quote jobs with kind-specific RPC", asyn
     p_lock_seconds: 900,
   });
   assert.equal(calls[0].authorization, "Bearer service-role-key");
+});
+
+test("TypeScript snapshot worker preflights Supabase runtime before queue drain", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({
+      url: String(input),
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    return Response.json({
+      ok: true,
+      required_tables: ["public.stock_quote_snapshots"],
+      required_rpcs: ["claim_stock_refresh_jobs_by_kind"],
+    });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    assertRefreshWorkerReadiness(
+      { url: "https://example.supabase.co", key: "service-role-key" },
+      parseOptions(["--drain-queue", "--kind", "quote"], {})
+    ),
+    /Supabase runtime readiness failed/
+  );
+  assert.equal(calls[0].url, "https://example.supabase.co/rest/v1/rpc/stock_runtime_readiness");
+  assert.deepEqual(calls[0].body, {});
 });
 
 test("TypeScript snapshot worker rejects score queue modes without explicit legacy fallback", () => {

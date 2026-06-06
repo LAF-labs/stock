@@ -9,7 +9,29 @@ class SupabaseRuntimeReadinessTests(unittest.TestCase):
             "required_tables": list(readiness.RUNTIME_TABLE_CHECKS),
             "required_rpcs": list(readiness.RUNTIME_RPC_CHECKS),
         }
-        self.assertEqual(readiness.readiness_contract_payload(payload), {"ok": True, "missing_tables": [], "missing_rpcs": []})
+        self.assertEqual(
+            readiness.readiness_contract_payload(payload),
+            {
+                "ok": True,
+                "missing_tables": [],
+                "missing_rpcs": [],
+                "missing_rpc_signatures": [],
+                "missing_rpc_grants": [],
+            },
+        )
+
+        signature_payload = {
+            "required_tables": list(readiness.RUNTIME_TABLE_CHECKS),
+            "required_rpcs": list(readiness.RUNTIME_RPC_CHECKS),
+            "required_rpc_signatures": [
+                {"name": "claim_stock_refresh_jobs", "identity_arguments": "p_worker_id text, p_limit integer, p_lock_seconds integer"}
+            ],
+            "missing_rpc_grants": ["claim_stock_refresh_jobs_by_kind(text,text,integer,integer)"],
+        }
+        signature_contract = readiness.readiness_contract_payload(signature_payload)
+        self.assertEqual(signature_contract["ok"], False)
+        self.assertIn("claim_stock_refresh_jobs_by_kind", "\n".join(signature_contract["missing_rpc_signatures"]))
+        self.assertEqual(signature_contract["missing_rpc_grants"], ["claim_stock_refresh_jobs_by_kind(text,text,integer,integer)"])
 
         stale_payload = {
             "required_tables": [table for table in readiness.RUNTIME_TABLE_CHECKS if table != "public.kis_access_tokens"],

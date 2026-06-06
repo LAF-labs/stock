@@ -36,6 +36,12 @@ RUNTIME_RPC_CHECKS = (
     "refresh_stock_industry_benchmarks",
     "acquire_kis_token_issue_lock",
 )
+RUNTIME_RPC_SIGNATURE_CHECKS = (
+    ("claim_stock_refresh_jobs", "p_worker_id text, p_limit integer, p_lock_seconds integer"),
+    ("claim_stock_refresh_jobs_by_kind", "p_worker_id text, p_kind text, p_limit integer, p_lock_seconds integer"),
+    ("complete_stock_refresh_job", "p_job_id uuid, p_worker_id text"),
+    ("fail_stock_refresh_job", "p_job_id uuid, p_worker_id text, p_error text, p_retry_after_seconds integer, p_permanent boolean"),
+)
 PUBLIC_READ_CHECKS = (
     ("stock_score_snapshots", "ticker"),
     ("stock_quote_snapshots", "ticker"),
@@ -92,9 +98,26 @@ def readiness_payload(url: str, key: str, timeout: float) -> dict:
 def readiness_contract_payload(payload: dict) -> dict:
     checked_tables = set(payload.get("required_tables") or [])
     checked_rpcs = set(payload.get("required_rpcs") or [])
+    checked_signatures = {
+        f"{item.get('name')}({item.get('identity_arguments')})"
+        for item in payload.get("required_rpc_signatures") or []
+        if isinstance(item, dict)
+    }
     missing_tables = sorted(set(RUNTIME_TABLE_CHECKS) - checked_tables)
     missing_rpcs = sorted(set(RUNTIME_RPC_CHECKS) - checked_rpcs)
-    return {"ok": not missing_tables and not missing_rpcs, "missing_tables": missing_tables, "missing_rpcs": missing_rpcs}
+    missing_rpc_signatures = (
+        []
+        if "required_rpc_signatures" not in payload
+        else sorted(f"{name}({identity_arguments})" for name, identity_arguments in RUNTIME_RPC_SIGNATURE_CHECKS if f"{name}({identity_arguments})" not in checked_signatures)
+    )
+    missing_rpc_grants = [item for item in payload.get("missing_rpc_grants") or [] if isinstance(item, str)]
+    return {
+        "ok": not missing_tables and not missing_rpcs and not missing_rpc_signatures and not missing_rpc_grants,
+        "missing_tables": missing_tables,
+        "missing_rpcs": missing_rpcs,
+        "missing_rpc_signatures": missing_rpc_signatures,
+        "missing_rpc_grants": missing_rpc_grants,
+    }
 
 
 def public_read_payload(url: str, key: str, timeout: float) -> dict:

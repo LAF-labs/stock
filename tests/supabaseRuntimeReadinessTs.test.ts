@@ -21,6 +21,24 @@ test("TypeScript Supabase readiness contract catches missing required checks", (
   assert.deepEqual(payload.missing_rpcs, ["claim_stock_refresh_jobs_by_kind"]);
 });
 
+test("TypeScript Supabase readiness contract catches RPC signature and grant drift", () => {
+  const payload = readinessContractPayload({
+    required_tables: RUNTIME_TABLE_CHECKS,
+    required_rpcs: RUNTIME_RPC_CHECKS,
+    required_rpc_signatures: [
+      {
+        name: "claim_stock_refresh_jobs",
+        identity_arguments: "p_worker_id text, p_limit integer, p_lock_seconds integer",
+      },
+    ],
+    missing_rpc_grants: ["claim_stock_refresh_jobs_by_kind(text,text,integer,integer)"],
+  });
+
+  assert.equal(payload.ok, false);
+  assert.match(payload.missing_rpc_signatures.join("\n"), /claim_stock_refresh_jobs_by_kind/);
+  assert.deepEqual(payload.missing_rpc_grants, ["claim_stock_refresh_jobs_by_kind(text,text,integer,integer)"]);
+});
+
 test("TypeScript Supabase readiness public reads report table failures", async () => {
   const originalFetch = global.fetch;
   global.fetch = async (input) => {
