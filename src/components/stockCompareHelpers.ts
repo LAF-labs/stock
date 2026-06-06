@@ -1,6 +1,7 @@
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
+import { usableChartPoints } from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import type { ChartSeriesPoint, JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
+import type { JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
 
 export const MAX_COMPARE = 5;
 
@@ -73,6 +74,10 @@ export function parseTickers(raw: string | null): string[] {
   return unique.slice(0, MAX_COMPARE);
 }
 
+export function removeCompareTicker(tickers: string[], ticker: string): string[] {
+  return tickers.filter((item, index) => index === 0 || item !== ticker);
+}
+
 export function numberFromRecord(record: Record<string, JsonValue> | undefined, key: string): number | undefined {
   const value = record?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -105,9 +110,30 @@ export function percentText(value: number | undefined): string {
   return typeof value === "number" ? formatPercent(value) : "-";
 }
 
+export function comparePriceTone(value: number | undefined): "price-up" | "price-down" | "price-neutral" {
+  if (typeof value !== "number" || !Number.isFinite(value) || value === 0) return "price-neutral";
+  return value < 0 ? "price-down" : "price-up";
+}
+
 export function ratioText(value: number | undefined, suffix = ""): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   return `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value)}${suffix}`;
+}
+
+export type SemanticMetricRow<T> = {
+  label: string;
+  value: (item: T) => number | undefined;
+  display: (value: number | undefined) => string;
+};
+
+export function semanticMetricRows<T extends { ticker: string }>(items: T[], rows: Array<SemanticMetricRow<T>>) {
+  return rows.map((row) => ({
+    label: row.label,
+    values: items.map((item) => ({
+      ticker: item.ticker,
+      value: row.display(row.value(item)),
+    })),
+  }));
 }
 
 export function strongestAndWeakest(data: StockScoreResponse) {
@@ -173,10 +199,7 @@ export function pendingMessage(result: BatchScoreResult | undefined): string {
 }
 
 export function normalizedPoints(item: CompareItem) {
-  const usable = (item.data.chart_series || []).filter(
-    (point): point is ChartSeriesPoint & { close: number; date: string } =>
-      typeof point.close === "number" && Number.isFinite(point.close) && typeof point.date === "string"
-  );
+  const usable = usableChartPoints(item.data.chart_series);
   if (usable.length < 2) return [];
   const first = usable[0].close;
   if (!Number.isFinite(first) || first === 0) return [];

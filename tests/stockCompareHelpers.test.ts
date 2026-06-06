@@ -4,10 +4,13 @@ import assert from "node:assert/strict";
 import {
   MAX_COMPARE,
   bestBy,
+  comparePriceTone,
   normalizeTicker,
   normalizedPoints,
   parseTickers,
   pendingMessage,
+  removeCompareTicker,
+  semanticMetricRows,
   toCompareItem,
 } from "../src/components/stockCompareHelpers";
 import type { StockScoreResponse } from "../src/lib/types";
@@ -19,6 +22,13 @@ test("compare helpers normalize and cap ticker lists", () => {
   assert.equal(normalizeTicker("US:BRK.B"), "US:BRK.B");
   assert.deepEqual(parseTickers("KO, US:KO,005930,TSLA,NVDA,AAPL,MSFT"), ["US:KO", "KR:005930", "US:TSLA", "US:NVDA", "US:AAPL"]);
   assert.equal(parseTickers("KO,TSLA,NVDA,AAPL,MSFT,GOOGL").length, MAX_COMPARE);
+});
+
+test("compare helpers never remove the base ticker", () => {
+  const tickers = ["US:KO", "US:PEP", "US:MNST"];
+
+  assert.deepEqual(removeCompareTicker(tickers, "US:KO"), tickers);
+  assert.deepEqual(removeCompareTicker(tickers, "US:PEP"), ["US:KO", "US:MNST"]);
 });
 
 test("compare helpers build stable compare item fields", () => {
@@ -54,18 +64,36 @@ test("compare helpers build stable compare item fields", () => {
 });
 
 test("compare helpers choose best values and normalize chart series", () => {
-  const first = { ticker: "A", score: 70, data: { chart_series: [{ date: "d1", close: 100 }, { date: "d2", close: 125 }] } } as any;
-  const second = { ticker: "B", score: 90, data: { chart_series: [{ date: "d1", close: 200 }, { date: "d2", close: 180 }] } } as any;
+  const first = { ticker: "A", score: 70, data: { chart_series: [{ date: "2026-06-02", close: 125 }, { date: "bad", close: 900 }, { date: "2026-06-01", close: 100 }] } } as any;
+  const second = { ticker: "B", score: 90, data: { chart_series: [{ date: "2026-06-01", close: 200 }, { date: "2026-06-02", close: 180 }] } } as any;
 
   assert.equal(bestBy([first, second], (item) => item.score)?.ticker, "B");
   assert.equal(bestBy([first, second], (item) => item.score, "low")?.ticker, "A");
   assert.deepEqual(normalizedPoints(first), [
-    { date: "d1", value: 100 },
-    { date: "d2", value: 125 },
+    { date: "2026-06-01", value: 100 },
+    { date: "2026-06-02", value: 125 },
   ]);
 });
 
 test("compare pending message includes retry hint when available", () => {
   assert.match(pendingMessage({ retry_after_seconds: 300 } as any), /300초/);
   assert.doesNotMatch(pendingMessage(undefined), /초 안에/);
+});
+
+test("compare price tone keeps missing and flat moves neutral", () => {
+  assert.equal(comparePriceTone(undefined), "price-neutral");
+  assert.equal(comparePriceTone(0), "price-neutral");
+  assert.equal(comparePriceTone(0.012), "price-up");
+  assert.equal(comparePriceTone(-0.012), "price-down");
+});
+
+test("semanticMetricRows maps compare items into accessible table rows", () => {
+  const items = [
+    { ticker: "KO", daily: 0.01, score: 70, data: {} },
+    { ticker: "PEP", daily: -0.02, score: 80, data: {} },
+  ] as any;
+
+  assert.deepEqual(semanticMetricRows<any>(items, [{ label: "전일 대비", value: (item) => item.daily, display: (value) => `${value ?? "-"}` }]), [
+    { label: "전일 대비", values: [{ ticker: "KO", value: "0.01" }, { ticker: "PEP", value: "-0.02" }] },
+  ]);
 });

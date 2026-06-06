@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  chartSummary,
   dailyChangeText,
+  dailyToneClass,
   displayTickerInput,
   formatRecordValue,
   scoreDataWithQuote,
@@ -68,6 +70,13 @@ test("dailyChangeText prefers quote label, then quote value, then cached score v
   assert.equal(dailyChangeText(score, undefined), "-1.2%");
 });
 
+test("dailyToneClass separates neutral missing and flat price states", () => {
+  assert.equal(dailyToneClass("-"), "price-neutral");
+  assert.equal(dailyToneClass("0.0%"), "price-neutral");
+  assert.equal(dailyToneClass("+1.4%"), "price-up");
+  assert.equal(dailyToneClass("-1.2%"), "price-down");
+});
+
 test("dashboard record formatting hides provider-only fields and formats ratio fields", () => {
   assert.equal(formatRecordValue("return_1m", 0.123), "+12.3%");
   assert.equal(formatRecordValue("debtToEquity", 55.432), "55.4%");
@@ -93,5 +102,17 @@ test("usableChartPoints sorts valid daily points and keeps the latest duplicate 
       { date: "2026-06-01", close: 100 },
       { date: "2026-06-02", close: 103, close_label: "$103.00" },
     ],
+  );
+});
+
+test("chartSummary describes accessible chart range and move", () => {
+  assert.equal(chartSummary([]), "가격 차트 데이터가 충분하지 않아요.");
+  assert.equal(
+    chartSummary([
+      { date: "2026-06-01", close: 100 },
+      { date: "2026-06-02", close: 112 },
+      { date: "2026-06-03", close: 108 },
+    ]),
+    "2026-06-01부터 2026-06-03까지 3개 가격 지점입니다. 시작 100, 마지막 108, 기간 변화 +8.0%, 최고 112, 최저 100.",
   );
 });

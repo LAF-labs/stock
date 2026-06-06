@@ -7,6 +7,7 @@ import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import {
   MAX_COMPARE,
   bestBy,
+  comparePriceTone,
   componentScore,
   displayName,
   displayTickerRef,
@@ -16,8 +17,10 @@ import {
   parseTickers,
   pendingMessage,
   percentText,
+  removeCompareTicker,
   ratioText,
   scoreWord,
+  semanticMetricRows,
   symbolRef,
   toCompareItem,
   type BatchScorePayload,
@@ -59,6 +62,7 @@ export default function StockCompare() {
   const baseTickerLabel = displayTickerRef(baseTicker);
   const [input, setInput] = useState("");
   const [states, setStates] = useState<LoadState[]>(tickers.map((ticker) => ({ status: "loading", ticker })));
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -109,7 +113,7 @@ export default function StockCompare() {
       });
 
     return () => controller.abort();
-  }, [tickers]);
+  }, [tickers, reloadVersion]);
 
   const items = useMemo(
     () => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
@@ -134,8 +138,12 @@ export default function StockCompare() {
   }
 
   function removeTicker(ticker: string) {
-    const next = tickers.filter((item, index) => index === 0 || item !== ticker);
-    pushTickers(router, next);
+    const next = removeCompareTicker(tickers, ticker);
+    if (next.length !== tickers.length) pushTickers(router, next);
+  }
+
+  function retryCompare() {
+    setReloadVersion((version) => version + 1);
   }
 
   return (
@@ -178,7 +186,7 @@ export default function StockCompare() {
       {suggestions.length ? (
         <section className="compare-suggestions" aria-label="추천 비교 종목">
           {suggestions.map((ticker) => (
-            <button key={ticker} type="button" onClick={() => addTicker(ticker)}>
+            <button key={ticker} type="button" onClick={() => addTicker(ticker)} aria-label={`${displayTickerRef(ticker)} 비교에 추가`}>
               + {displayTickerRef(ticker)}
             </button>
           ))}
@@ -186,7 +194,7 @@ export default function StockCompare() {
       ) : null}
 
       {states.some((state) => state.status === "error") ? (
-        <section className="compare-errors">
+        <section className="compare-errors" role="alert" aria-live="assertive">
           {states
             .filter((state): state is Extract<LoadState, { status: "error" }> => state.status === "error")
             .map((state) => (
@@ -194,16 +202,18 @@ export default function StockCompare() {
                 <strong>{state.ticker}</strong> {state.error}
               </p>
             ))}
+          <button type="button" onClick={retryCompare}>다시 시도</button>
         </section>
       ) : null}
 
       {pendingStates.length ? (
-        <section className="compare-errors compare-pending">
+        <section className="compare-errors compare-pending" role="status" aria-live="polite">
           {pendingStates.map((state) => (
             <p key={state.ticker}>
               <strong>{state.ticker}</strong> {state.message}
             </p>
           ))}
+          <button type="button" onClick={retryCompare}>다시 확인</button>
         </section>
       ) : null}
 
@@ -298,7 +308,7 @@ function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker:
                 <span>{item.ticker === baseTicker ? "기준 종목" : "비교 종목"}</span>
                 <strong>{item.ticker}</strong>
               </div>
-              <em className={item.daily !== undefined && item.daily < 0 ? "price-down" : "price-up"}>{percentText(item.daily)}</em>
+              <em className={comparePriceTone(item.daily)}>{percentText(item.daily)}</em>
             </div>
             <p>{displayName(item.data)}</p>
             <div className="compare-score-line">
@@ -342,7 +352,15 @@ function CompareChart({ items }: { items: CompareItem[] }) {
     }))
     .filter((entry) => entry.points.length >= 2);
 
-  if (!series.length) return null;
+  if (!series.length) {
+    return (
+      <section className="compare-section">
+        <span>가격 흐름</span>
+        <h2>비교할 가격 차트가 아직 없어요</h2>
+        <p className="compare-empty-note" role="status">선택한 종목의 가격 기록이 충분히 모이면 1년 기준 흐름을 보여드릴게요.</p>
+      </section>
+    );
+  }
 
   const width = 860;
   const height = 310;
@@ -356,13 +374,21 @@ function CompareChart({ items }: { items: CompareItem[] }) {
   const maxLength = Math.max(...series.map((entry) => entry.points.length));
   const x = (index: number) => padX + (width - padX * 2) * (index / Math.max(1, maxLength - 1));
   const y = (value: number) => height - padBottom - (height - padTop - padBottom) * ((value - min) / span);
+  const chartSummary = series
+    .map((entry) => {
+      const latest = entry.points[entry.points.length - 1]?.value;
+      return `${entry.item.ticker} ${Number.isFinite(latest) ? `${(latest - 100).toFixed(1)}%` : "-"}`;
+    })
+    .join(", ");
+  const summaryId = "compare-chart-summary";
 
   return (
     <section className="compare-section">
       <span>가격 흐름</span>
       <h2>1년 전을 100으로 맞춰봤어요</h2>
+      <p id={summaryId} className="sr-only">비교 가격 흐름 요약: {chartSummary}</p>
       <div className="compare-chart">
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="비교 가격 흐름">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="비교 가격 흐름" aria-describedby={summaryId}>
           <line x1={padX} y1={y(100)} x2={width - padX} y2={y(100)} className="compare-base-line" />
           {series.map((entry) => (
             <polyline
@@ -450,10 +476,32 @@ function metricFill(items: CompareItem[], row: MetricRow, item: CompareItem): nu
 }
 
 function CompareMatrix({ items }: { items: CompareItem[] }) {
+  const rows = semanticMetricRows(items, METRIC_ROWS);
   return (
     <section className="compare-section">
       <span>차이가 나는 숫자</span>
       <h2>판단 기준별로 나눠서 볼게요</h2>
+      <table className="sr-only">
+        <caption>종목별 주요 비교 지표</caption>
+        <thead>
+          <tr>
+            <th scope="col">지표</th>
+            {items.map((item) => (
+              <th key={item.ticker} scope="col">{item.ticker}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <th scope="row">{row.label}</th>
+              {row.values.map((value) => (
+                <td key={`${row.label}-${value.ticker}`}>{value.value}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <div className="compare-group-list">
         {METRIC_GROUPS.map((group) => {
           const rows = METRIC_ROWS.filter((row) => row.group === group.key);
@@ -512,10 +560,39 @@ const COMPONENT_ROWS = [
 ];
 
 function ComponentMatrix({ items }: { items: CompareItem[] }) {
+  const rows = semanticMetricRows(
+    items,
+    COMPONENT_ROWS.map((row) => ({
+      label: row.label,
+      value: (item: CompareItem) => componentScore(item, row.key),
+      display: (value: number | undefined) => (value === undefined ? "-" : value.toFixed(1)),
+    }))
+  );
   return (
     <section className="compare-section">
       <span>항목별 점수</span>
       <h2>무엇이 강하고 약한지 보여요</h2>
+      <table className="sr-only">
+        <caption>종목별 항목 점수</caption>
+        <thead>
+          <tr>
+            <th scope="col">항목</th>
+            {items.map((item) => (
+              <th key={item.ticker} scope="col">{item.ticker}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <th scope="row">{row.label}</th>
+              {row.values.map((value) => (
+                <td key={`${row.label}-${value.ticker}`}>{value.value}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <div className="component-compare-list">
         {COMPONENT_ROWS.map((row) => (
           <article key={row.key}>

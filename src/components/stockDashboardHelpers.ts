@@ -237,6 +237,29 @@ export function dailyChangeText(data: StockScoreResponse, quote: StockQuoteRespo
   return "-";
 }
 
+export function dailyToneClass(text: string): "price-up" | "price-down" | "price-neutral" {
+  const value = text.trim();
+  if (!value || value === "-" || value.startsWith("0")) return "price-neutral";
+  if (value.startsWith("-") || value.startsWith("−")) return "price-down";
+  if (value.startsWith("+")) return "price-up";
+  return "price-neutral";
+}
+
+export function chartSummary(points: UsableChartPoint[]): string {
+  if (points.length < 2) return "가격 차트 데이터가 충분하지 않아요.";
+  const first = points[0];
+  const last = points[points.length - 1];
+  const closes = points.map((point) => point.close);
+  const high = Math.max(...closes);
+  const low = Math.min(...closes);
+  const change = first.close !== 0 ? (last.close / first.close) - 1 : undefined;
+  return `${first.date}부터 ${last.date}까지 ${points.length}개 가격 지점입니다. 시작 ${compactChartNumber(first.close)}, 마지막 ${compactChartNumber(last.close)}, 기간 변화 ${formatPercent(change)}, 최고 ${compactChartNumber(high)}, 최저 ${compactChartNumber(low)}.`;
+}
+
+function compactChartNumber(value: number): string {
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value);
+}
+
 export function refreshCooldownMessage(nextAllowedAt: string | undefined): string | undefined {
   if (!nextAllowedAt || Date.parse(nextAllowedAt) <= Date.now()) return undefined;
   return `${new Date(nextAllowedAt).toLocaleTimeString("ko-KR")} 이후 새로고침 가능`;

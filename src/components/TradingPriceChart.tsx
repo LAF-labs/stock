@@ -22,9 +22,10 @@ function priceLabel(value: number | undefined, currency: string) {
   return `${currency} ${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)}`;
 }
 
-export default function TradingPriceChart({ points, mode }: { points: ChartPoint[]; mode: "line" | "candle" }) {
+export default function TradingPriceChart({ points, mode, describedBy }: { points: ChartPoint[]; mode: "line" | "candle"; describedBy?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; price: string } | null>(null);
+  const [renderState, setRenderState] = useState<"loading" | "ready" | "error">("loading");
 
   const chartData = useMemo(() => {
     const lineData: LineData<Time>[] = [];
@@ -59,14 +60,17 @@ export default function TradingPriceChart({ points, mode }: { points: ChartPoint
     let disposed = false;
     let resizeObserver: ResizeObserver | undefined;
     let chartApi: { remove: () => void } | undefined;
+    setRenderState("loading");
 
     async function renderChart() {
-      const { createChart, LineSeries, CandlestickSeries, HistogramSeries, ColorType, CrosshairMode } = await import("lightweight-charts");
       const currentContainer = containerRef.current;
-      if (disposed || !currentContainer) return;
+      if (!currentContainer) return;
+      try {
+        const { createChart, LineSeries, CandlestickSeries, HistogramSeries, ColorType, CrosshairMode } = await import("lightweight-charts");
+        if (disposed || !containerRef.current) return;
 
-      currentContainer.innerHTML = "";
-      const chart = createChart(currentContainer, {
+        currentContainer.replaceChildren();
+        const chart = createChart(currentContainer, {
         width: Math.max(1, currentContainer.clientWidth),
         height: 360,
         layout: {
@@ -107,10 +111,10 @@ export default function TradingPriceChart({ points, mode }: { points: ChartPoint
         },
       });
 
-      chartApi = chart;
-      const priceSeries =
-        mode === "candle"
-          ? chart.addSeries(CandlestickSeries, {
+        chartApi = chart;
+        const priceSeries =
+          mode === "candle"
+            ? chart.addSeries(CandlestickSeries, {
               upColor: "#f04452",
               downColor: "#3182f6",
               borderUpColor: "#f04452",
@@ -118,56 +122,67 @@ export default function TradingPriceChart({ points, mode }: { points: ChartPoint
               wickUpColor: "#f04452",
               wickDownColor: "#3182f6",
             })
-          : chart.addSeries(LineSeries, {
+            : chart.addSeries(LineSeries, {
               color: "#3182f6",
               lineWidth: 3,
               crosshairMarkerVisible: true,
               crosshairMarkerRadius: 5,
             });
 
-      if (mode === "candle") {
-        priceSeries.setData(chartData.candleData);
-        const volumeSeries = chart.addSeries(HistogramSeries, {
+        if (mode === "candle") {
+          priceSeries.setData(chartData.candleData);
+          const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: "volume" },
           priceScaleId: "",
           lastValueVisible: false,
           priceLineVisible: false,
         });
-        volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
-        volumeSeries.setData(chartData.volumeData);
-      } else {
-        priceSeries.setData(chartData.lineData);
-      }
-
-      chart.subscribeCrosshairMove((param) => {
-        if (!containerRef.current || !param.point || param.point.x < 0 || param.point.y < 0 || !param.time) {
-          setTooltip(null);
-          return;
+          volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+          volumeSeries.setData(chartData.volumeData);
+        } else {
+          priceSeries.setData(chartData.lineData);
         }
 
-        const time = String(param.time);
-        const seriesValue = param.seriesData.get(priceSeries) as { value?: number; close?: number } | undefined;
-        const value = typeof seriesValue?.value === "number" ? seriesValue.value : seriesValue?.close;
-        if (typeof value !== "number" || !Number.isFinite(value)) {
-          setTooltip(null);
-          return;
-        }
+        const attributionLink = currentContainer.querySelector<HTMLAnchorElement>("#tv-attr-logo");
+        attributionLink?.setAttribute("aria-label", "TradingView 차트 제공");
+        attributionLink?.setAttribute("rel", "noopener noreferrer");
 
-        setTooltip({
-          x: param.point.x,
-          y: param.point.y,
-          date: time,
-          price: chartData.labels.get(time) || priceLabel(value, points[0]?.currency as string),
+        chart.subscribeCrosshairMove((param) => {
+          if (!containerRef.current || !param.point || param.point.x < 0 || param.point.y < 0 || !param.time) {
+            setTooltip(null);
+            return;
+          }
+
+          const time = String(param.time);
+          const seriesValue = param.seriesData.get(priceSeries) as { value?: number; close?: number } | undefined;
+          const value = typeof seriesValue?.value === "number" ? seriesValue.value : seriesValue?.close;
+          if (typeof value !== "number" || !Number.isFinite(value)) {
+            setTooltip(null);
+            return;
+          }
+
+          setTooltip({
+            x: param.point.x,
+            y: param.point.y,
+            date: time,
+            price: chartData.labels.get(time) || priceLabel(value, points[0]?.currency as string),
+          });
         });
-      });
 
-      chart.timeScale().fitContent();
+        chart.timeScale().fitContent();
 
-      resizeObserver = new ResizeObserver(() => {
-        if (!containerRef.current) return;
-        chart.applyOptions({ width: Math.max(1, containerRef.current.clientWidth) });
-      });
-      resizeObserver.observe(currentContainer);
+        resizeObserver = new ResizeObserver(() => {
+          if (!containerRef.current) return;
+          chart.applyOptions({ width: Math.max(1, containerRef.current.clientWidth) });
+        });
+        resizeObserver.observe(currentContainer);
+        setRenderState("ready");
+      } catch {
+        if (disposed) return;
+        currentContainer.replaceChildren();
+        setTooltip(null);
+        setRenderState("error");
+      }
     }
 
     renderChart();
@@ -176,13 +191,20 @@ export default function TradingPriceChart({ points, mode }: { points: ChartPoint
       disposed = true;
       resizeObserver?.disconnect();
       chartApi?.remove();
+      containerRef.current?.replaceChildren();
       setTooltip(null);
     };
   }, [chartData, mode, points]);
 
   return (
     <div className="chart-plot">
-      <div ref={containerRef} className="trading-chart" role="img" aria-label="가격 차트" />
+      <div ref={containerRef} className="trading-chart" role="img" aria-label={mode === "candle" ? "캔들 가격 차트" : "선 가격 차트"} aria-describedby={describedBy} />
+      {renderState === "loading" ? (
+        <p className="chart-fallback" role="status" aria-live="polite">차트를 그리는 중이에요.</p>
+      ) : null}
+      {renderState === "error" ? (
+        <p className="chart-fallback error" role="alert">차트를 표시하지 못했어요. 아래 가격 요약을 참고해주세요.</p>
+      ) : null}
       {tooltip ? (
         <div
           className="chart-floating-tip"

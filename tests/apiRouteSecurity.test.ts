@@ -114,3 +114,63 @@ test("judgment route rejects cross-site browser writes before reading stock payl
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error, "cross_site_request");
 });
+
+test("judgment route accepts same-origin browser writes with null origin and same-origin referer", async () => {
+  restoreEnv();
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+
+  const response = await postJudgment(
+    request("/api/judgment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "null",
+        Referer: "http://localhost/?ticker=US:KO",
+      },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "invalid_stock_payload");
+});
+
+test("judgment route accepts same-origin browser writes when request url and host use loopback aliases", async () => {
+  restoreEnv();
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+
+  const response = await postJudgment(
+    request("/api/judgment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Host: "127.0.0.1:3000",
+        Origin: "http://127.0.0.1:3000",
+        Referer: "http://127.0.0.1:3000/?ticker=US:KO",
+      },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "invalid_stock_payload");
+});
+
+test("judgment route rejects null-origin browser writes without same-origin referer", async () => {
+  restoreEnv();
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+
+  const response = await postJudgment(
+    request("/api/judgment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "null",
+      },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, "cross_site_request");
+});

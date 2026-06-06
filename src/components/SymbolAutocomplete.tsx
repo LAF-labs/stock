@@ -39,6 +39,8 @@ export default function SymbolAutocomplete({
   const [items, setItems] = useState<SymbolSearchItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [searchError, setSearchError] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -54,11 +56,15 @@ export default function SymbolAutocomplete({
       setItems([]);
       setIsOpen(false);
       setIsLoading(false);
+      setHasSearched(false);
+      setSearchError(false);
       return () => controller.abort();
     }
 
     setItems([]);
     setIsOpen(false);
+    setHasSearched(false);
+    setSearchError(false);
     const timer = window.setTimeout(() => {
       setIsLoading(true);
       fetch(`/api/symbols?q=${encodeURIComponent(query)}&limit=8`, {
@@ -74,12 +80,15 @@ export default function SymbolAutocomplete({
           if (controller.signal.aborted) return;
           setItems(nextItems);
           setActiveIndex(0);
+          setHasSearched(true);
           setIsOpen(Boolean(query && nextItems.length && document.activeElement === inputRef.current));
         })
         .catch(() => {
           if (controller.signal.aborted) return;
           setItems([]);
           setIsOpen(false);
+          setHasSearched(true);
+          setSearchError(true);
         })
         .finally(() => {
           if (!controller.signal.aborted) setIsLoading(false);
@@ -104,8 +113,18 @@ export default function SymbolAutocomplete({
   }, []);
 
   const listId = `${id}-list`;
+  const statusId = `${id}-status`;
   const activeItem = useMemo(() => items[activeIndex] || items[0], [activeIndex, items]);
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
+  const searchStatus = isLoading
+    ? "종목을 검색하고 있어요."
+    : searchError
+      ? "종목 검색에 실패했어요."
+      : hasSearched
+        ? items.length
+          ? `검색 결과 ${items.length}개`
+          : "검색 결과가 없어요."
+        : "";
 
   function directInputItem(): SymbolSearchItem {
     const ticker = normalizedQueryTicker;
@@ -142,6 +161,12 @@ export default function SymbolAutocomplete({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!isOpen && (event.key === "ArrowDown" || event.key === "ArrowUp") && items.length) {
+      event.preventDefault();
+      setIsOpen(true);
+      setActiveIndex(event.key === "ArrowUp" ? items.length - 1 : 0);
+      return;
+    }
     if (!isOpen && event.key !== "Enter") return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -149,6 +174,12 @@ export default function SymbolAutocomplete({
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(Math.max(0, items.length - 1));
     } else if (event.key === "Enter") {
       event.preventDefault();
       if (activeItem) {
@@ -183,6 +214,8 @@ export default function SymbolAutocomplete({
           aria-controls={listId}
           aria-activedescendant={activeOptionId}
           aria-autocomplete="list"
+          aria-describedby={statusId}
+          aria-busy={isLoading}
         />
         <button type="submit" disabled={!canSubmit}>
           {isLoading ? "찾는 중" : buttonLabel}
@@ -200,6 +233,7 @@ export default function SymbolAutocomplete({
                 onClick={() => selectItem(item)}
                 role="option"
                 aria-selected={index === activeIndex}
+                tabIndex={-1}
               >
                 <span>{item.displayName}</span>
                 <small>
@@ -210,6 +244,9 @@ export default function SymbolAutocomplete({
             ))}
           </div>
         ) : null}
+        <p id={statusId} className="sr-only" role="status" aria-live="polite">
+          {searchStatus}
+        </p>
       </div>
     </form>
   );

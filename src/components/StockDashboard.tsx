@@ -59,6 +59,7 @@ export default function StockDashboard() {
   const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
   const [judgmentState, setJudgmentState] = useState<JudgmentState>({ status: "idle" });
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
+  const [reloadVersion, setReloadVersion] = useState(0);
   const currentTickerRef = useRef(tickerParam);
   const quoteRefreshControllerRef = useRef<AbortController | null>(null);
 
@@ -97,7 +98,7 @@ export default function StockDashboard() {
       });
 
     return () => controller.abort();
-  }, [tickerParam]);
+  }, [tickerParam, reloadVersion]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,7 +141,7 @@ export default function StockDashboard() {
       });
 
     return () => controller.abort();
-  }, [tickerParam]);
+  }, [tickerParam, reloadVersion]);
 
   useEffect(() => {
     const nextAllowedAt = quoteRefreshState.nextAllowedAt;
@@ -200,6 +201,10 @@ export default function StockDashboard() {
 
   function selectSymbol(item: SymbolSearchItem) {
     router.push(`/?ticker=${encodeURIComponent(symbolRef(item))}`);
+  }
+
+  function retryLoad() {
+    setReloadVersion((version) => version + 1);
   }
 
   const data = state.status === "success" ? state.data : undefined;
@@ -305,6 +310,7 @@ export default function StockDashboard() {
 
   return (
     <main className="stock-app stock-detail-app">
+      <h1 className="sr-only">{displayTickerInput(tickerParam || "US:KO")} 주식 상세</h1>
       <section className="stock-search">
         <SymbolAutocomplete
           id="ticker"
@@ -326,8 +332,8 @@ export default function StockDashboard() {
       </section>
 
       {state.status === "loading" && <StockSkeleton />}
-      {state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} />}
-      {state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" />}
+      {state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={retryLoad} />}
+      {state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
 
       {data && (
         <>
@@ -411,11 +417,28 @@ function DetailSection({ id, children }: { id: DetailSectionId; children: ReactN
   );
 }
 
-function StatusCard({ title, body, tone = "default" }: { title: string; body: string; tone?: "default" | "error" }) {
+function StatusCard({
+  title,
+  body,
+  tone = "default",
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  body: string;
+  tone?: "default" | "error";
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <section className={`app-status ${tone}`} role={tone === "error" ? "alert" : "status"}>
       <strong>{title}</strong>
       <p>{body}</p>
+      {actionLabel && onAction ? (
+        <button type="button" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </section>
   );
 }

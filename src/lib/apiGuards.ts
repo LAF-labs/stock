@@ -95,20 +95,48 @@ export function sameOriginBrowserWriteGuard(request: Request): JsonReadResult {
     };
   }
 
-  const origin = request.headers.get("origin");
-  if (!origin) return { ok: true, value: {} };
-
-  try {
-    if (new URL(origin).origin === new URL(request.url).origin) return { ok: true, value: {} };
-  } catch {
-    return {
-      ok: false,
-      status: 403,
-      error: "cross_site_request",
-      message: "교차 사이트 요청은 허용되지 않아요.",
-    };
+  const origin = request.headers.get("origin")?.trim();
+  const referer = request.headers.get("referer")?.trim();
+  if (!origin) {
+    if (referer && !sameOriginRequestUrl(referer, request)) return crossSiteRequest();
+    return { ok: true, value: {} };
   }
 
+  if (origin.toLowerCase() === "null") {
+    return referer && sameOriginRequestUrl(referer, request) ? { ok: true, value: {} } : crossSiteRequest();
+  }
+
+  try {
+    if (requestOrigins(request).has(new URL(origin).origin)) return { ok: true, value: {} };
+  } catch {
+    return crossSiteRequest();
+  }
+
+  return crossSiteRequest();
+}
+
+function sameOriginRequestUrl(value: string, request: Request): boolean {
+  try {
+    return requestOrigins(request).has(new URL(value).origin);
+  } catch {
+    return false;
+  }
+}
+
+function requestOrigins(request: Request): Set<string> {
+  const origins = new Set<string>();
+  const requestUrl = new URL(request.url);
+  origins.add(requestUrl.origin);
+
+  const host = request.headers.get("host")?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim().toLowerCase();
+  const protocol = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto : requestUrl.protocol.replace(/:$/, "");
+  if (host && protocol) origins.add(`${protocol}://${host}`);
+
+  return origins;
+}
+
+function crossSiteRequest(): JsonReadResult {
   return {
     ok: false,
     status: 403,

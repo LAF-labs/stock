@@ -3,6 +3,7 @@
 import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   dailyChangeText,
+  dailyToneClass,
   formatKrwPrice,
   formatUsdPrice,
   metricValue,
@@ -87,7 +88,7 @@ export default function StockHeader({
             <p>{quote?.name || data.name}</p>
           </div>
         </div>
-        <em className={`daily-pill ${daily.startsWith("-") ? "price-down" : "price-up"}`}>{daily}</em>
+        <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
       </div>
 
       <div className="price-strip">
