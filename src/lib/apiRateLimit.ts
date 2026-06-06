@@ -85,6 +85,9 @@ export async function acquireRateLimit(identityKey: string, policy: RateLimitPol
     } catch {
       // Fall back to process-local protection if Supabase is unavailable.
     }
+    if (strictDistributedGuardRuntime()) return failClosedRateLimit(policy);
+  } else if (strictDistributedGuardRuntime()) {
+    return failClosedRateLimit(policy);
   }
 
   return acquireMemoryRateLimit(identityKey, policy);
@@ -121,6 +124,16 @@ function acquireMemoryRateLimit(identityKey: string, policy: RateLimitPolicy): R
   };
 }
 
+function failClosedRateLimit(policy: RateLimitPolicy): RateLimitResult {
+  return {
+    allowed: false,
+    limit: policy.limit,
+    remaining: 0,
+    resetAt: new Date(Date.now() + policy.windowSeconds * 1000).toISOString(),
+    source: "supabase",
+  };
+}
+
 function pruneMemoryRateLimits(now: number) {
   if (memoryRateLimits.size < 5_000) return;
   for (const [key, item] of memoryRateLimits) {
@@ -137,6 +150,7 @@ function firstHeaderValue(value: string | null): string | undefined {
 }
 
 export function trustedClientIp(request: Pick<NextRequest, "headers">): string | undefined {
+  if (!proxyHeadersTrusted()) return undefined;
   return firstHeaderValue(request.headers.get("cf-connecting-ip"))
     || firstHeaderValue(request.headers.get("x-real-ip"))
     || firstHeaderValue(request.headers.get("x-forwarded-for"));
@@ -158,4 +172,12 @@ function rateLimitSecret(): string {
 
 function strictSecretRuntime(): boolean {
   return process.env.NODE_ENV === "production" || Boolean(envValue("VERCEL_ENV"));
+}
+
+function proxyHeadersTrusted(): boolean {
+  return envValue("TRUST_PROXY_HEADERS") === "1" || envValue("VERCEL") === "1" || Boolean(envValue("VERCEL_ENV"));
+}
+
+function strictDistributedGuardRuntime(): boolean {
+  return envValue("STOCK_ALLOW_MEMORY_GUARD_FALLBACK") !== "1" && strictSecretRuntime();
 }

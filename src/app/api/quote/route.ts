@@ -7,13 +7,22 @@ import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
-import { normalizeTickerRef } from "@/lib/stockSnapshotCache";
+import { parseStrictTickerRef } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const ticker = normalizeTickerRef(request.nextUrl.searchParams.get("ticker"));
+  const tickerRef = parseStrictTickerRef(request.nextUrl.searchParams.get("ticker"));
+  if (!tickerRef.ok) {
+    return jsonError(
+      400,
+      tickerRef.error,
+      tickerRef.error === "missing_ticker" ? "조회할 티커를 입력해주세요." : "지원하지 않는 티커 형식이에요.",
+      privateNoStoreHeaders()
+    );
+  }
+  const ticker = tickerRef.ticker;
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
   const rateLimit = await acquireRateLimit(
     clientRateLimitKey(request),

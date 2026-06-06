@@ -3,9 +3,16 @@ import assert from "node:assert/strict";
 
 import { acquireStockRefreshLease } from "../src/lib/stockRefreshLease";
 
-const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_PUBLISHABLE_KEY"] as const;
+const ENV_KEYS = [
+  "VERCEL_ENV",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "STOCK_API_APP_KEY",
+] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
+const originalWarn = console.warn;
 
 function restore() {
   for (const key of ENV_KEYS) {
@@ -17,9 +24,38 @@ function restore() {
     }
   }
   globalThis.fetch = originalFetch;
+  console.warn = originalWarn;
 }
 
 test.afterEach(restore);
+
+test("acquireStockRefreshLease fails closed in production when Supabase guard is unavailable", async () => {
+  process.env.VERCEL_ENV = "production";
+  process.env.SUPABASE_URL = "https://example.supabase.co/";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "public-safe-key";
+  process.env.STOCK_API_APP_KEY = "secret-stock-app-key-value";
+  const warnings: unknown[][] = [];
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  globalThis.fetch = async () => {
+    throw new Error("network down secret-stock-app-key-value");
+  };
+
+  const result = await acquireStockRefreshLease({
+    kind: "quote",
+    ticker: `US:STRICTLEASE${Date.now()}`,
+    lockSeconds: 30,
+    owner: "test-worker",
+  });
+
+  assert.equal(result.acquired, false);
+  assert.equal(result.source, "supabase");
+  assert.equal(result.lockedBy, "guard_unavailable");
+  assert.equal(JSON.stringify(warnings).includes("secret-stock-app-key-value"), false);
+  assert.match(JSON.stringify(warnings), /\[redacted\]/);
+});
 
 test("acquireStockRefreshLease uses process memory when Supabase admin config is missing", async () => {
   delete process.env.SUPABASE_URL;

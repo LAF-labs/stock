@@ -40,3 +40,29 @@ test("Next config Python tracing includes score helper modules only", () => {
   assert.equal(config.outputFileTracingIncludes?.["/api/quote"], undefined);
   assert.deepEqual(config.outputFileTracingIncludes?.["/api/score"], undefined);
 });
+
+test("Next config emits strict production security headers", async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const env = process.env as Record<string, string | undefined>;
+  env.NODE_ENV = "production";
+  try {
+    const config = nextConfig as {
+      headers?: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>>;
+    };
+    const routes = await config.headers?.();
+    assert.ok(routes?.[0]?.headers);
+
+    const headers = Object.fromEntries(routes[0].headers.map((header) => [header.key, header.value]));
+    assert.equal(headers["Strict-Transport-Security"], "max-age=63072000; includeSubDomains; preload");
+    assert.equal(headers["Cross-Origin-Opener-Policy"], "same-origin");
+    assert.equal(headers["Cross-Origin-Resource-Policy"], "same-origin");
+    assert.match(headers["Content-Security-Policy"], /frame-ancestors 'none'/);
+    assert.doesNotMatch(headers["Content-Security-Policy"], /unsafe-eval/);
+  } finally {
+    if (originalNodeEnv === undefined) {
+      delete env.NODE_ENV;
+    } else {
+      env.NODE_ENV = originalNodeEnv;
+    }
+  }
+});

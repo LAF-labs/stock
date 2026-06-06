@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
 import { clientNetworkRateLimitKey } from "@/lib/apiRateLimit";
+import { safeErrorMessage } from "@/lib/errorSafety";
 import { envValue, fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 
 export type RefreshCooldownStatus = {
@@ -94,11 +95,21 @@ async function acquireCooldown(userKey: string, nowMs: number): Promise<{ blocke
         console.warn("stock_refresh_cooldown_acquire_failed", { status: response.status });
       }
     } catch (error) {
-      console.warn("stock_refresh_cooldown_acquire_failed", { error: error instanceof Error ? error.message : "unknown" });
+      console.warn("stock_refresh_cooldown_acquire_failed", { error: safeErrorMessage(error) });
     }
+    if (strictDistributedGuardRuntime()) return failClosedCooldown(nowMs);
+  } else if (strictDistributedGuardRuntime()) {
+    return failClosedCooldown(nowMs);
   }
 
   return acquireMemoryCooldown(userKey, nowMs);
+}
+
+function failClosedCooldown(nowMs: number): { blocked: boolean; nextAllowedAt: string } {
+  return {
+    blocked: true,
+    nextAllowedAt: new Date(nowMs + refreshCooldownSeconds() * 1000).toISOString(),
+  };
 }
 
 function acquireMemoryCooldown(userKey: string, nowMs: number): { blocked: boolean; nextAllowedAt: string } {
@@ -199,4 +210,8 @@ function networkBoundRefreshUserId(request: NextRequest): string {
 
 function strictSecretRuntime(): boolean {
   return process.env.NODE_ENV === "production" || Boolean(envValue("VERCEL_ENV"));
+}
+
+function strictDistributedGuardRuntime(): boolean {
+  return envValue("STOCK_ALLOW_MEMORY_GUARD_FALLBACK") !== "1" && strictSecretRuntime();
 }

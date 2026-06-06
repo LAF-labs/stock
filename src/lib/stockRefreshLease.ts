@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { safeErrorMessage } from "@/lib/errorSafety";
+import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, envValue } from "@/lib/supabaseRest";
 import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind } from "@/lib/stockDataRuntime";
 import { parseTickerRef } from "@/lib/tickerRef";
@@ -75,9 +76,12 @@ export async function acquireStockRefreshLease(input: AcquireStockRefreshLeaseIn
       console.warn("stock_refresh_lease_acquire_failed", {
         ticker: parsed.ticker,
         kind: input.kind,
-        error: error instanceof Error ? error.message : "unknown",
+        error: safeErrorMessage(error),
       });
     }
+    if (strictDistributedGuardRuntime()) return failClosedLease(owner);
+  } else if (strictDistributedGuardRuntime()) {
+    return failClosedLease(owner);
   }
 
   return acquireMemoryLease({
@@ -87,6 +91,16 @@ export async function acquireStockRefreshLease(input: AcquireStockRefreshLeaseIn
     lockSeconds,
     owner,
   });
+}
+
+function failClosedLease(owner: string): StockRefreshLeaseResult {
+  return {
+    acquired: false,
+    source: "supabase",
+    owner,
+    leaseUntil: new Date(Date.now() + clampLockSeconds(undefined) * 1000).toISOString(),
+    lockedBy: "guard_unavailable",
+  };
 }
 
 function acquireMemoryLease(input: {
@@ -136,4 +150,9 @@ function clampLockSeconds(value: number | undefined): number {
   const fallback = numericEnv("STOCK_REFRESH_LEASE_SECONDS", 30);
   const seconds = Number.isFinite(value) ? Number(value) : fallback;
   return Math.min(300, Math.max(5, Math.trunc(seconds)));
+}
+
+function strictDistributedGuardRuntime(): boolean {
+  return envValue("STOCK_ALLOW_MEMORY_GUARD_FALLBACK") !== "1"
+    && (process.env.NODE_ENV === "production" || Boolean(envValue("VERCEL_ENV")));
 }

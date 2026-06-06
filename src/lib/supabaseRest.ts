@@ -17,9 +17,12 @@ export function supabaseReadConfig(): SupabaseConfig | undefined {
   const url = envValue("SUPABASE_URL")?.replace(/\/$/, "");
   const publishableKey = envValue("SUPABASE_PUBLISHABLE_KEY");
   const serviceRoleKey = envValue("SUPABASE_SERVICE_ROLE_KEY");
-  const key = publishableKey || serviceRoleKey;
-  if (!url || !key) return undefined;
-  return { url, key, keySource: publishableKey ? "publishable" : "service_role" };
+  if (!url) return undefined;
+  if (publishableKey) return { url, key: publishableKey, keySource: "publishable" };
+  if (serviceRoleKey && serviceRoleReadFallbackAllowed()) {
+    return { url, key: serviceRoleKey, keySource: "service_role" };
+  }
+  return undefined;
 }
 
 export function supabaseAdminConfig(): SupabaseConfig | undefined {
@@ -50,6 +53,11 @@ export async function fetchWithTimeout(url: string, init: RequestInit = {}, time
     clearTimeout(timer);
     cleanup();
   }
+}
+
+function serviceRoleReadFallbackAllowed(): boolean {
+  if (envValue("SUPABASE_ALLOW_SERVICE_ROLE_READ_FALLBACK") === "1") return true;
+  return process.env.NODE_ENV !== "production" && !envValue("VERCEL_ENV");
 }
 
 function combineAbortSignals(callerSignal: AbortSignal | null | undefined, timeoutSignal: AbortSignal) {

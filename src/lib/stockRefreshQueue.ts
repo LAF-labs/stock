@@ -1,3 +1,4 @@
+import { safeErrorMessage } from "@/lib/errorSafety";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind, StockDataUnavailableReason } from "@/lib/stockDataRuntime";
@@ -62,7 +63,7 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
     console.warn("stock_refresh_enqueue_failed", {
       ticker: parsed.ticker,
       kind: input.kind,
-      error: error instanceof Error ? error.message : "unknown",
+      error: safeErrorMessage(error),
     });
     return { queued: false, reason: "enqueue_failed" };
   }

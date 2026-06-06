@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
-import { readJsonObjectWithLimit, jsonError } from "@/lib/apiGuards";
+import { readJsonObjectWithLimit, jsonError, sameOriginBrowserWriteGuard } from "@/lib/apiGuards";
 import { judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
 import { getIndustryBenchmarksForStock } from "@/lib/industryBenchmarks";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -114,6 +114,11 @@ async function saveCachedJudgment(ticker: string, cacheDate: string, judgment: R
 }
 
 export async function POST(request: NextRequest) {
+  const browserWrite = sameOriginBrowserWriteGuard(request);
+  if (!browserWrite.ok) {
+    return jsonError(browserWrite.status, browserWrite.error, browserWrite.message);
+  }
+
   const body = await readJsonObjectWithLimit(
     request,
     numericEnv("STOCK_JUDGMENT_BODY_MAX_BYTES", MAX_JUDGMENT_BODY_BYTES)

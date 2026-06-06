@@ -3,17 +3,18 @@ import assert from "node:assert/strict";
 
 import { fetchWithTimeout, supabaseAdminConfig, supabaseReadConfig } from "../src/lib/supabaseRest";
 
-const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const ENV_KEYS = ["NODE_ENV", "VERCEL_ENV", "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ALLOW_SERVICE_ROLE_READ_FALLBACK"] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 
 function restoreEnv() {
   for (const key of ENV_KEYS) {
     const value = originalEnv[key];
+    const env = process.env as Record<string, string | undefined>;
     if (value === undefined) {
-      delete process.env[key];
+      delete env[key];
     } else {
-      process.env[key] = value;
+      env[key] = value;
     }
   }
 }
@@ -40,6 +41,22 @@ test("Supabase read config can fall back to service role when no publishable key
   delete process.env.SUPABASE_PUBLISHABLE_KEY;
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
 
+  assert.deepEqual(supabaseReadConfig(), {
+    url: "https://example.supabase.co",
+    key: "service-role-key",
+    keySource: "service_role",
+  });
+});
+
+test("Supabase read config does not use service role fallback in production without explicit override", () => {
+  process.env.VERCEL_ENV = "production";
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  assert.equal(supabaseReadConfig(), undefined);
+
+  process.env.SUPABASE_ALLOW_SERVICE_ROLE_READ_FALLBACK = "1";
   assert.deepEqual(supabaseReadConfig(), {
     url: "https://example.supabase.co",
     key: "service-role-key",

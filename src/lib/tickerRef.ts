@@ -6,7 +6,12 @@ export type ParsedTickerRef = {
   symbol: string;
 };
 
+export type StrictTickerRefResult =
+  | ({ ok: true } & ParsedTickerRef)
+  | { ok: false; error: "missing_ticker" | "invalid_ticker" };
+
 const DOMESTIC_SYMBOL_RE = /^(?:\d{6}|Q\d{6})$/;
+const US_SYMBOL_RE = /^[A-Z0-9.-]{1,16}$/;
 
 export function cleanTickerSymbol(value: string): string {
   return value.trim().replace(/^!/, "").toUpperCase().replace(/[^A-Z0-9.-]/g, "");
@@ -37,4 +42,26 @@ export function parseTickerRef(value: string | null | undefined, fallback = "US:
     market,
     symbol,
   };
+}
+
+export function parseStrictTickerRef(value: string | null | undefined): StrictTickerRefResult {
+  const raw = value?.trim().replace(/^!/, "").toUpperCase();
+  if (!raw) return { ok: false, error: "missing_ticker" };
+
+  if (raw.includes(":")) {
+    const [marketPart, symbolPart] = raw.split(":", 2);
+    if (marketPart !== "US" && marketPart !== "KR") return { ok: false, error: "invalid_ticker" };
+    const symbol = symbolPart?.trim().toUpperCase() || "";
+    if (!validSymbolForMarket(marketPart, symbol)) return { ok: false, error: "invalid_ticker" };
+    return { ok: true, ticker: `${marketPart}:${symbol}`, market: marketPart, symbol };
+  }
+
+  if (DOMESTIC_SYMBOL_RE.test(raw)) return { ok: true, ticker: `KR:${raw}`, market: "KR", symbol: raw };
+  if (US_SYMBOL_RE.test(raw)) return { ok: true, ticker: `US:${raw}`, market: "US", symbol: raw };
+  return { ok: false, error: "invalid_ticker" };
+}
+
+function validSymbolForMarket(market: MarketCode, symbol: string): boolean {
+  if (market === "KR") return DOMESTIC_SYMBOL_RE.test(symbol);
+  return US_SYMBOL_RE.test(symbol);
 }

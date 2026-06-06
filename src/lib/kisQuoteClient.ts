@@ -1,4 +1,5 @@
 import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
+import { safeErrorMessage } from "@/lib/errorSafety";
 import {
   acquireSharedKisTokenIssueLock,
   isFreshKisToken,
@@ -196,7 +197,7 @@ async function fetchUsQuote(symbol: string): Promise<StockPayload> {
         },
       };
     } catch (error) {
-      errors.push(`${market.excd}: ${error instanceof Error ? error.message : "unknown"}`);
+      errors.push(`${market.excd}: ${safeErrorMessage(error)}`);
     }
   }
 

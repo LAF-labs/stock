@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cleanTickerSymbol, normalizeTickerRef, parseTickerRef } from "../src/lib/tickerRef";
+import { cleanTickerSymbol, normalizeTickerRef, parseStrictTickerRef, parseTickerRef } from "../src/lib/tickerRef";
 
 test("normalizeTickerRef canonicalizes market-prefixed, domestic, and fallback inputs", () => {
   assert.equal(normalizeTickerRef(" nvda "), "US:NVDA");
@@ -20,4 +20,20 @@ test("parseTickerRef returns canonical ticker, market, and sanitized symbol", ()
 test("cleanTickerSymbol strips unsafe characters without changing case semantics", () => {
   assert.equal(cleanTickerSymbol(" brk/b "), "BRKB");
   assert.equal(cleanTickerSymbol("005930.ks"), "005930.KS");
+});
+
+test("parseStrictTickerRef accepts only explicit safe API ticker inputs", () => {
+  assert.deepEqual(parseStrictTickerRef(" nvda "), { ok: true, ticker: "US:NVDA", market: "US", symbol: "NVDA" });
+  assert.deepEqual(parseStrictTickerRef("us:brk.b"), { ok: true, ticker: "US:BRK.B", market: "US", symbol: "BRK.B" });
+  assert.deepEqual(parseStrictTickerRef("005930"), { ok: true, ticker: "KR:005930", market: "KR", symbol: "005930" });
+  assert.deepEqual(parseStrictTickerRef("kr:005930"), { ok: true, ticker: "KR:005930", market: "KR", symbol: "005930" });
+});
+
+test("parseStrictTickerRef rejects missing, unsafe, and market-mismatched API tickers", () => {
+  assert.deepEqual(parseStrictTickerRef(""), { ok: false, error: "missing_ticker" });
+  assert.deepEqual(parseStrictTickerRef(null), { ok: false, error: "missing_ticker" });
+  assert.deepEqual(parseStrictTickerRef("bad spaces"), { ok: false, error: "invalid_ticker" });
+  assert.deepEqual(parseStrictTickerRef("KR:ABC"), { ok: false, error: "invalid_ticker" });
+  assert.deepEqual(parseStrictTickerRef("US:"), { ok: false, error: "invalid_ticker" });
+  assert.deepEqual(parseStrictTickerRef("###"), { ok: false, error: "invalid_ticker" });
 });

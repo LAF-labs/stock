@@ -5,14 +5,24 @@ import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
-import { cleanView, getStockScore, normalizeTickerRef, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
+import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
+import { parseStrictTickerRef } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const ticker = normalizeTickerRef(request.nextUrl.searchParams.get("ticker"));
+  const tickerRef = parseStrictTickerRef(request.nextUrl.searchParams.get("ticker"));
+  if (!tickerRef.ok) {
+    return jsonError(
+      400,
+      tickerRef.error,
+      tickerRef.error === "missing_ticker" ? "조회할 티커를 입력해주세요." : "지원하지 않는 티커 형식이에요.",
+      privateNoStoreHeaders()
+    );
+  }
+  const ticker = tickerRef.ticker;
   const view = cleanView(request.nextUrl.searchParams.get("view"));
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
   const rateLimit = await acquireRateLimit(

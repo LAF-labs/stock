@@ -46,19 +46,29 @@ test("subprocess output is bounded and marked when truncated", () => {
 });
 
 test("safe error message redacts configured secret values", () => {
-  const original = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const originalServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const originalAppKey = process.env.STOCK_API_APP_KEY;
   process.env.SUPABASE_SERVICE_ROLE_KEY = "secret-service-role-value";
+  process.env.STOCK_API_APP_KEY = "secret-stock-app-key-value";
   try {
-    const message = safeErrorMessage(new Error("failed with secret-service-role-value and Bearer abcdefghijklmnopqrstuvwxyz"));
+    const message = safeErrorMessage(
+      new Error("failed with secret-service-role-value secret-stock-app-key-value and Bearer abcdefghijklmnopqrstuvwxyz")
+    );
 
     assert.doesNotMatch(message, /secret-service-role-value/);
+    assert.doesNotMatch(message, /secret-stock-app-key-value/);
     assert.doesNotMatch(message, /abcdefghijklmnopqrstuvwxyz/);
     assert.match(message, /\[redacted\]/);
   } finally {
-    if (original === undefined) {
+    if (originalServiceRole === undefined) {
       delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     } else {
-      process.env.SUPABASE_SERVICE_ROLE_KEY = original;
+      process.env.SUPABASE_SERVICE_ROLE_KEY = originalServiceRole;
+    }
+    if (originalAppKey === undefined) {
+      delete process.env.STOCK_API_APP_KEY;
+    } else {
+      process.env.STOCK_API_APP_KEY = originalAppKey;
     }
   }
 });

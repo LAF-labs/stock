@@ -1,7 +1,7 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
-import { publicRefreshErrorCode } from "@/lib/errorSafety";
+import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
@@ -156,7 +156,7 @@ async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
     }
   } catch (error) {
     // Cache writes are best effort. The live collector remains the fallback.
-    console.warn("stock_score_cache_write_failed", { ticker: snapshot.ticker, view: snapshot.view, error: error instanceof Error ? error.message : "unknown" });
+    console.warn("stock_score_cache_write_failed", { ticker: snapshot.ticker, view: snapshot.view, error: safeErrorMessage(error) });
   }
 }
 

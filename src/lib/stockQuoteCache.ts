@@ -1,5 +1,5 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
-import { publicRefreshErrorCode } from "@/lib/errorSafety";
+import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
 import { StockDataUnavailableError } from "@/lib/stockDataRuntime";
@@ -118,7 +118,7 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
     }
   } catch (error) {
     // Quote cache writes are best effort.
-    console.warn("stock_quote_cache_write_failed", { ticker: snapshot.ticker, error: error instanceof Error ? error.message : "unknown" });
+    console.warn("stock_quote_cache_write_failed", { ticker: snapshot.ticker, error: safeErrorMessage(error) });
   }
 }
 
