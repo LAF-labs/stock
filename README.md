@@ -120,7 +120,7 @@ REDIS_URL=redis://127.0.0.1:6379
 운영 리포트는 refresh queue backlog, stale/dead job, score snapshot 모델 분포, 점수 동점률, 결측/저신뢰 고득점 위험을 한 번에 확인합니다.
 
 ```bash
-PYTHON_BIN=.venv/bin/python npm run ops:report
+npm run ops:report
 ```
 
 업종 리포트는 canonical 업종 mapping 누락, 표본 수가 작은 업종, 이름만 다른 유사 업종을 점검합니다. 업종이 비어 있는 행은 실제 보강 대상인 `asset_class=stock`과 ETF/ETN/스팩/우선주 등 없어도 되는 비단일주식 대상으로 나눠 보여줍니다.
@@ -221,7 +221,7 @@ PYTHON_BIN=.venv/bin/python npm run snapshots:drain:score-legacy -- --queue-limi
 
 GitHub Actions 스케줄러를 쓰려면 repository secrets에 `STOCK_API_APP_KEY`, `STOCK_API_APP_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 넣으세요. 선택적으로 repository variable `STOCK_WARM_TICKERS`에 warm ticker 목록을 넣을 수 있지만, 비워 두면 queue drain만 실행합니다. 기본 queue drain은 평일 5분마다, 주말 30분마다 최대 50개이고, workflow concurrency로 provider 호출이 겹치지 않게 합니다. quote refresh는 TypeScript worker가 처리하고, score refresh는 Rust/TS durable score worker가 완성될 때까지 `STOCK_LEGACY_SCORE_WORKER_ENABLED=1`의 legacy Python score worker가 `score` job만 분리 claim해서 처리합니다. `STOCK_SNAPSHOT_QUEUE_LIMIT`, `STOCK_SNAPSHOT_SLEEP_SECONDS`, `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS`로 처리량, provider 간격, 사용자 pending 재시도 안내를 조정합니다.
 
-업종 평균과 외부 업종 PER은 `.github/workflows/maintain-industry-benchmarks.yml`에서 미국 정규/애프터마켓 종료 후 하루 1번 갱신합니다. 이 workflow는 `scripts/sync_market_calendar.py`로 US/KR 시장 달력도 550일치 유지합니다. 배포 전에는 `npm run supabase:readiness`와 `npm run ops:check`로 필수 테이블/RPC와 운영 threshold를 확인하고, 운영 중에는 `npm run ops:report`로 큐, 점수 snapshot, 현재가 freshness, 업종 benchmark 만료, 시장 달력 커버리지를 함께 점검합니다.
+업종 평균과 외부 업종 PER은 `.github/workflows/maintain-industry-benchmarks.yml`에서 미국 정규/애프터마켓 종료 후 하루 1번 갱신합니다. 이 workflow는 `scripts/sync_market_calendar.py`로 US/KR 시장 달력도 550일치 유지합니다. 배포 전에는 Node 기반 `npm run supabase:readiness`와 `npm run ops:check`로 필수 테이블/RPC와 운영 threshold를 확인하고, 운영 중에는 `npm run ops:report`로 큐, 점수 snapshot, 현재가 freshness, 업종 benchmark 만료, 시장 달력 커버리지를 함께 점검합니다.
 
 Docker/VM 배포에서는 기존처럼 Python venv가 포함된 long-lived container를 사용할 수 있습니다.
 

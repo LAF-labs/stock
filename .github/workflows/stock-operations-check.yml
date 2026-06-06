@@ -28,20 +28,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
-          cache: "pip"
+          node-version: "24"
+          cache: "npm"
 
-      - name: Install operations dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+      - name: Install Node dependencies
+        run: npm ci
 
       - name: Run operations threshold check
         run: |
-          python scripts/stock_operations_report.py \
+          node --import tsx scripts/stock_operations_report.ts \
             --json \
             --fail-on-threshold \
             --sample-limit "$STOCK_OPS_SAMPLE_LIMIT" \

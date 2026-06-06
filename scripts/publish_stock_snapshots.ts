@@ -1,11 +1,13 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getStockQuote } from "@/lib/stockQuoteCache";
 import { getStockScore, type ScoreView, type StockPayload } from "@/lib/stockSnapshotCache";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
+import { loadLocalEnvFiles } from "./localEnv";
+
+export { loadLocalEnvFiles } from "./localEnv";
 
 type RefreshKind = "quote" | "score";
 type WorkerMode = "quote" | "score" | "all";
@@ -45,29 +47,6 @@ type Options = {
   timeoutMs: number;
   allowScorePythonFallback: boolean;
 };
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const LOCAL_ENV_FILES = [".env.local", ".env.supabase.local", ".env.vercel.local"];
-
-export function loadLocalEnvFiles() {
-  for (const name of LOCAL_ENV_FILES) {
-    const path = resolve(ROOT, name);
-    let text = "";
-    try {
-      text = readFileSync(path, "utf8");
-    } catch {
-      continue;
-    }
-    for (const rawLine of text.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith("#") || !line.includes("=")) continue;
-      const [rawKey, ...rest] = line.split("=");
-      const key = rawKey.trim();
-      const value = rest.join("=").trim().replace(/^['"]|['"]$/g, "");
-      if (key && process.env[key] === undefined) process.env[key] = value;
-    }
-  }
-}
 
 export function parseTickerArgs(values: string[]): string[] {
   const unique: string[] = [];
