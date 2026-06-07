@@ -56,6 +56,26 @@ test("TypeScript operations report catches duplicate scores and low-confidence h
   assert.equal(summary.top_duplicate_scores[0].score, 87.1);
 });
 
+test("TypeScript operations report summarizes technical snapshots separately", () => {
+  const rows = [
+    scoreRow("US:NVDA", 87.14, 87.14, 72.0, 0.91, "2026-06-05T23:30:00+00:00"),
+    technicalRow("US:NVDA", true, "2026-06-05T23:40:00+00:00", "2026-06-06T02:00:00+00:00"),
+    technicalRow("US:OLDTECH", false, "2026-06-04T20:00:00+00:00", "2026-06-05T02:00:00+00:00"),
+  ];
+
+  const summary = summarizeScoreSnapshots(rows, DEFAULT_SCORE_MODEL_VERSION, new Date("2026-06-06T00:00:00+00:00"), 24);
+
+  assert.equal(summary.total_snapshots, 3);
+  assert.equal(summary.by_view.detail, 1);
+  assert.equal(summary.by_view.technical, 2);
+  assert.equal(summary.technical_snapshots, 2);
+  assert.equal(summary.stale_technical_snapshots, 1);
+  assert.equal(summary.missing_technical_payload_count, 1);
+  assert.equal(summary.missing_technical_payload_rate, 0.5);
+  assert.equal(summary.score_snapshot_count, 1);
+  assert.equal(summary.duplicate_score_rate, 0);
+});
+
 test("TypeScript operations report summarizes quotes and industry benchmarks", () => {
   const now = new Date("2026-06-06T00:00:00+00:00");
   const quotes = summarizeQuoteSnapshots(
@@ -94,6 +114,7 @@ test("TypeScript operations report evaluates thresholds", () => {
         current_model_rate: 0.75,
         duplicate_score_rate: 0.42,
         low_confidence_high_score_count: 2,
+        missing_technical_payload_count: 1,
       },
       quote_freshness: { stale_rate: 0.1, missing_price_count: 0 },
       industry_benchmarks: { expired_rows: 0, low_sample_rows: 0 },
@@ -104,6 +125,7 @@ test("TypeScript operations report evaluates thresholds", () => {
       max_queued_refresh_jobs: 100,
       min_current_score_model_rate: 0.9,
       max_duplicate_score_rate: 0.5,
+      max_missing_technical_payloads: 0,
       max_market_calendar_thin_markets: 0,
     }
   );
@@ -111,7 +133,7 @@ test("TypeScript operations report evaluates thresholds", () => {
   assert.equal(result.ok, false);
   assert.deepEqual(
     result.violations.map((violation) => violation.key),
-    ["max_dead_refresh_jobs", "min_current_score_model_rate", "max_market_calendar_thin_markets"]
+    ["max_dead_refresh_jobs", "min_current_score_model_rate", "max_missing_technical_payloads", "max_market_calendar_thin_markets"]
   );
 });
 
@@ -216,7 +238,10 @@ test("TypeScript operations report fetches Supabase report through REST only", a
       return jsonResponse({ refresh_queue: [{ kind: "score", status: "queued", jobs: 2 }] });
     }
     if (url.includes("/rest/v1/stock_score_snapshots?")) {
-      return jsonResponse([scoreRow("US:NVDA", 88, 88, 70, 0.9, "2026-06-05T23:00:00+00:00")]);
+      return jsonResponse([
+        scoreRow("US:NVDA", 88, 88, 70, 0.9, "2026-06-05T23:00:00+00:00"),
+        technicalRow("US:NVDA", true, "2026-06-05T23:05:00+00:00", "2026-06-06T02:00:00+00:00"),
+      ]);
     }
     if (url.includes("/rest/v1/stock_quote_snapshots?")) {
       return jsonResponse([quoteRow("US:NVDA", 120.0, "2026-06-05T23:58:00+00:00", "2026-06-06T00:03:00+00:00")]);
@@ -235,7 +260,8 @@ test("TypeScript operations report fetches Supabase report through REST only", a
     const payload = await fetchSupabaseReport(config, 50, 24);
 
     assert.equal(payload.refresh_queue.queued_jobs, 2);
-    assert.equal(payload.score_calibration.total_snapshots, 1);
+    assert.equal(payload.score_calibration.total_snapshots, 2);
+    assert.equal(payload.score_calibration.technical_snapshots, 1);
     assert.equal(payload.quote_freshness.total_snapshots, 1);
     assert.equal(payload.industry_benchmarks.total_rows, 1);
     assert.equal(payload.market_calendar.total_rows, 1);
@@ -259,6 +285,8 @@ test("TypeScript operations option parser keeps threshold contract", () => {
     "0",
     "--min-current-score-model-rate",
     "0.95",
+    "--max-missing-technical-payloads",
+    "0",
   ]);
 
   assert.equal(options.json, true);
@@ -266,6 +294,7 @@ test("TypeScript operations option parser keeps threshold contract", () => {
   assert.equal(options.sampleLimit, 100);
   assert.equal(options.thresholds.max_dead_refresh_jobs, 0);
   assert.equal(options.thresholds.min_current_score_model_rate, 0.95);
+  assert.equal(options.thresholds.max_missing_technical_payloads, 0);
 });
 
 function scoreRow(ticker: string, score: number, quality: number, opportunity: number, confidence: number, fetchedAt: string, version = DEFAULT_SCORE_MODEL_VERSION) {
@@ -287,6 +316,21 @@ function scoreRow(ticker: string, score: number, quality: number, opportunity: n
         opportunity_score: opportunity,
         score_model_version: version,
       },
+    },
+  };
+}
+
+function technicalRow(ticker: string, hasPayload: boolean, fetchedAt: string, expiresAt: string) {
+  return {
+    ticker,
+    view_mode: "technical",
+    fetched_at: fetchedAt,
+    expires_at: expiresAt,
+    score_model_version: DEFAULT_SCORE_MODEL_VERSION,
+    payload: {
+      ok: true,
+      score_model_version: DEFAULT_SCORE_MODEL_VERSION,
+      ...(hasPayload ? { technical_analysis: { type: "technical_analysis", status: "ready" } } : {}),
     },
   };
 }

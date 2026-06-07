@@ -64,7 +64,7 @@ npm run ops:report
 node --import tsx scripts/stock_operations_report.ts --sample-limit 500 --json
 ```
 
-The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, quote freshness, industry benchmark expiry, market-calendar coverage, low-confidence high scores, rounded score duplicate buckets, and the Rust `market-data` service when `MARKET_DATA_SERVICE_URL` plus `MARKET_DATA_INTERNAL_TOKEN` are configured. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
+The report checks the refresh queue backlog, dead jobs, stale running jobs, score model rollout, stale score snapshots, technical snapshot coverage, quote freshness, industry benchmark expiry, market-calendar coverage, low-confidence high scores, rounded score duplicate buckets, and the Rust `market-data` service when `MARKET_DATA_SERVICE_URL` plus `MARKET_DATA_INTERNAL_TOKEN` are configured. Use this before recalibrating thresholds so score changes are judged by distribution and coverage, not by one ticker.
 
 Before a manual Vercel preview deployment, run the Supabase readiness check. The deploy script also runs it before uploading:
 
@@ -115,6 +115,8 @@ npm run ops:check
 
 `ops:check` fails on dead refresh jobs, stale running jobs, excessive backlog, stale score model versions, duplicate-score drift, missing quote prices, expired industry benchmarks, thin market calendars, or configured `market-data` health/metrics failures. `freshness_risks` is separate from `thresholds`: dormant quote snapshots can be stale in a demand-driven cache, so stale quote rate and old due queue age are surfaced as warnings even when the threshold gate passes. Rust `market-data` metrics include bounded memory cache sizes/capacities, refresh queue depth/capacity, cache event counters, provider request count, and provider error counts by stable class.
 
+Technical analysis snapshots use `view_mode='technical'` in the same score snapshot table. They are counted separately in `score_calibration.technical_snapshots`, `score_calibration.stale_technical_snapshots`, and `score_calibration.missing_technical_payload_count` because the compact technical payload may not contain the root quality/opportunity score fields used by score calibration. Score distribution and duplicate-score rates use `score_calibration.score_snapshot_count`, so technical rows cannot dilute calibration drift. After the technical-analysis release flag is enabled, add `--max-missing-technical-payloads 0` to the release gate or scheduled ops check. Before that flag is enabled, keep it as an observation metric only.
+
 The package `ops:check` script includes `--max-market-data-service-failures 0`, so release checks require `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN`. Use `npm run ops:report` for Supabase-only observation, or run the market-data Docker target locally before `ops:check`.
 
 Current release gate values:
@@ -128,6 +130,7 @@ Current release gate values:
 | `min_current_score_model_rate` | `score_calibration.current_model_rate` | `0.9` |
 | `max_duplicate_score_rate` | `score_calibration.duplicate_score_rate` | `0.5` |
 | `max_low_confidence_high_score` | `score_calibration.low_confidence_high_score_count` | `0` |
+| `max_missing_technical_payloads` | `score_calibration.missing_technical_payload_count` | enable at `0` after technical-analysis rollout |
 | `max_missing_quote_price` | `quote_freshness.missing_price_count` | `25` |
 | `max_expired_industry_benchmark_rows` | `industry_benchmarks.expired_rows` | `0` |
 | `max_market_calendar_thin_markets` | `market_calendar.missing_or_thin_markets` | `0` |
@@ -170,6 +173,8 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Serve score reads from memory first, then Supabase snapshots. In Vercel snapshot mode, never invoke Python from a request handler.
 - Vercel fails closed to snapshot mode. `STOCK_DATA_RUNTIME=python` is ignored on Vercel unless `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1` is explicitly set for a one-off emergency.
 - If a Supabase snapshot is missing in snapshot mode, enqueue `stock_refresh_jobs` and return `snapshot_pending` with `Retry-After`. The default retry hint is 300 seconds, matching the 5-minute GitHub Actions backstop. Tune it with `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS` if a faster external worker is configured.
+- Technical analysis is available on demand for every eligible single stock. Do not gate product eligibility by a warmup list or popularity list. The detail-page CTA and `/technical` route block ETFs, ETNs, leveraged/inverse wrappers, warrants, funds, and other derivative-like products; eligible single stocks enqueue `view_mode='technical'` snapshots when missing.
+- Newly listed eligible stocks should still render the technical page. The rule engine downgrades the page to a limited/starter interpretation and warns users that only the available daily bars were used.
 - The detail UI displays score `server_cache` freshness separately from quote refresh status. A fresh quote does not imply a fresh score; stale score snapshots should stay visible until the score worker writes a new snapshot.
 - In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.
 - Keep score detail/compare snapshots fresh for 30 minutes during market hours. The publisher default `STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS` is 1800.
@@ -177,7 +182,7 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Keep rule-based judgment cache in six-hour buckets.
 - Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days; user requests should read cache first and refresh under a file lock only on miss.
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.
-- Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval.
+- Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval. Prewarm lists are operational acceleration only; they must never define which single stocks can use technical analysis.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
 - Prefer Rust `market-data` for long-term serving. Python collector should remain a score fallback until Rust owns score, batch, and refresh jobs end to end. Keep `MARKET_DATA_SERVICE_ENABLE_SCORE=0` until the durable score refresh/cache path is present and reflected in `/readyz`, `/metrics`, and ops reports.
 

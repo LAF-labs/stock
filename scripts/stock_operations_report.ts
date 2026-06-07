@@ -24,6 +24,13 @@ export const THRESHOLD_RULES = [
     ["score_calibration", "low_confidence_high_score_count"],
     "number",
   ],
+  [
+    "max_missing_technical_payloads",
+    "max",
+    "score_calibration.missing_technical_payload_count",
+    ["score_calibration", "missing_technical_payload_count"],
+    "number",
+  ],
   ["max_stale_quote_rate", "max", "quote_freshness.stale_rate", ["quote_freshness", "stale_rate"], "number"],
   ["max_missing_quote_price", "max", "quote_freshness.missing_price_count", ["quote_freshness", "missing_price_count"], "number"],
   [
@@ -128,19 +135,31 @@ export function summarizeScoreSnapshots(
   let missingModel = 0;
   let currentModel = 0;
   let stale = 0;
+  let staleTechnical = 0;
+  let missingTechnicalPayload = 0;
   let lowConfidenceHighScore = 0;
+  const byView: Record<string, number> = {};
+  const staleByView: Record<string, number> = {};
 
   for (const row of rows) {
+    const view = scoreViewMode(row);
+    byView[view] = (byView[view] || 0) + 1;
     const payload = isRecord(row.payload) ? row.payload : {};
     const score = finiteNumber(payload.score);
     const quality = finiteNumber(payload.quality_score);
     const opportunity = finiteNumber(payload.opportunity_score);
     const confidence = payloadConfidence(payload);
     const model = scoreModelVersion(row, payload);
+    const rowIsStale = isStaleSnapshot(row, now, staleAfterHours);
 
     if (model === undefined) missingModel += 1;
     else if (model === expectedModelVersion) currentModel += 1;
-    if (isStaleSnapshot(row, now, staleAfterHours)) stale += 1;
+    if (rowIsStale) {
+      stale += 1;
+      staleByView[view] = (staleByView[view] || 0) + 1;
+      if (view === "technical") staleTechnical += 1;
+    }
+    if (view === "technical" && !isTechnicalPayload(payload)) missingTechnicalPayload += 1;
 
     if (score !== undefined) {
       scores.push(score);
@@ -166,6 +185,13 @@ export function summarizeScoreSnapshots(
     missing_model_count: missingModel,
     missing_model_rate: rows.length ? rounded(missingModel / rows.length, 3) : 0.0,
     stale_snapshots: stale,
+    by_view: byView,
+    stale_by_view: staleByView,
+    technical_snapshots: byView.technical || 0,
+    stale_technical_snapshots: staleTechnical,
+    missing_technical_payload_count: missingTechnicalPayload,
+    missing_technical_payload_rate: byView.technical ? rounded(missingTechnicalPayload / byView.technical, 3) : 0.0,
+    score_snapshot_count: scores.length,
     score_min: scores.length ? rounded(Math.min(...scores)) : null,
     score_max: scores.length ? rounded(Math.max(...scores)) : null,
     score_mean: scores.length ? rounded(mean(scores)) : null,
@@ -174,7 +200,7 @@ export function summarizeScoreSnapshots(
     confidence_mean: confidences.length ? rounded(mean(confidences), 3) : null,
     low_confidence_high_score_count: lowConfidenceHighScore,
     duplicate_score_bucket_count: duplicateItems.length,
-    duplicate_score_rate: rows.length ? rounded(duplicateMembers / rows.length, 3) : 0.0,
+    duplicate_score_rate: scores.length ? rounded(duplicateMembers / scores.length, 3) : 0.0,
     max_duplicate_bucket_size: duplicateItems[0]?.count || 0,
     top_duplicate_scores: duplicateItems.slice(0, 10),
   };
@@ -433,7 +459,6 @@ export function freshnessRiskSummary(payload: JsonRecord) {
 
 export async function fetchScoreSnapshotRows(config: SupabaseReportConfig, sampleLimit: number) {
   return fetchRows(config, "stock_score_snapshots", {
-    view_mode: "eq.detail",
     select: "ticker,view_mode,payload,fetched_at,expires_at,score_model_version",
     order: "fetched_at.desc",
     limit: boundedLimit(sampleLimit),
@@ -578,6 +603,15 @@ function scoreModelVersion(row: JsonRecord, payload: JsonRecord): string | undef
   if (direct) return direct;
   const snapshot = isRecord(payload.sia_snapshot) ? payload.sia_snapshot : {};
   return stringValue(snapshot.score_model_version);
+}
+
+function scoreViewMode(row: JsonRecord): string {
+  return stringValue(row.view_mode)?.toLowerCase() || "detail";
+}
+
+function isTechnicalPayload(payload: JsonRecord): boolean {
+  const technical = isRecord(payload.technical_analysis) ? payload.technical_analysis : undefined;
+  return technical?.type === "technical_analysis";
 }
 
 function payloadConfidence(payload: JsonRecord): number | undefined {
