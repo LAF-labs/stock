@@ -110,6 +110,23 @@ test("score route rejects missing and market-mismatched API ticker input", async
   assert.match(invalid.headers.get("Cache-Control") || "", /no-store/);
 });
 
+test("score route blocks technical analysis for derivative-like products before snapshot work", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+
+  const response = await getScore(request("/api/score?ticker=US:KORU&view=technical"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.error, "technical_unsupported_product");
+  assert.equal(payload.ticker, "US:KORU");
+  assert.equal(payload.redirect_to, "/?ticker=US%3AKORU");
+  assert.match(response.headers.get("Cache-Control") || "", /no-store/);
+});
+
 test("judgment route requires JSON content type", async () => {
   restoreEnv();
   process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);

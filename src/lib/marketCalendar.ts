@@ -54,13 +54,18 @@ export function quoteOpenTtlSeconds(market: MarketCode): number {
   return numericEnv(`STOCK_QUOTE_${market}_CACHE_OPEN_SECONDS`, base);
 }
 
-export function scoreOpenTtlSeconds(view: "detail" | "compare"): number {
+export function scoreOpenTtlSeconds(view: "detail" | "compare" | "technical"): number {
   const base = numericEnv("STOCK_SCORE_CACHE_FRESH_SECONDS", 1_800);
-  const name = view === "compare" ? "STOCK_SCORE_COMPARE_CACHE_SECONDS" : "STOCK_SCORE_DETAIL_CACHE_SECONDS";
+  const name =
+    view === "compare"
+      ? "STOCK_SCORE_COMPARE_CACHE_SECONDS"
+      : view === "technical"
+        ? "STOCK_SCORE_TECHNICAL_CACHE_SECONDS"
+        : "STOCK_SCORE_DETAIL_CACHE_SECONDS";
   return numericEnv(name, base);
 }
 
-export async function cacheExpiresAtForMarket(market: MarketCode, kind: "quote" | "score", nowMs = Date.now(), view: "detail" | "compare" = "detail") {
+export async function cacheExpiresAtForMarket(market: MarketCode, kind: "quote" | "score", nowMs = Date.now(), view: "detail" | "compare" | "technical" = "detail") {
   const session = await getMarketSession(market, nowMs);
   if (session.state !== "open" && session.cacheUntil) {
     return {

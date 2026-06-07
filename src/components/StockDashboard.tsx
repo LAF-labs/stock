@@ -16,6 +16,7 @@ import {
   symbolRef,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
+import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisEligibility";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
@@ -374,7 +375,7 @@ export default function StockDashboard() {
               />
             </DetailSection>
             <DetailSection id="detail-chart">
-              <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
+              <ChartStory points={data.chart_series} patterns={data.chart_patterns} technicalAnalysisHref={technicalAnalysisHrefForPayload(data)} />
             </DetailSection>
             <DetailSection id="detail-factors">
               <FactorStory components={data.components} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />

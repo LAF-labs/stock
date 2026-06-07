@@ -9,7 +9,7 @@ import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
 
 export { normalizeTickerRef } from "@/lib/tickerRef";
 
-export type ScoreView = "detail" | "compare";
+export type ScoreView = "detail" | "compare" | "technical";
 export type StockPayload = Record<string, unknown>;
 export type CacheState = "fresh" | "stale" | "miss";
 export type CacheSource = "memory" | "supabase" | "collector" | "market-data";
@@ -63,6 +63,7 @@ function staleTtlSeconds(): number {
 }
 
 export function cleanView(value: string | null): ScoreView {
+  if (value === "technical") return "technical";
   return value === "compare" ? "compare" : "detail";
 }
 

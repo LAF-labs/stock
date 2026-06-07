@@ -1,13 +1,14 @@
 export type StockDataRuntimeMode = "python" | "snapshot";
 export type StockDataKind = "score" | "quote";
 export type StockDataUnavailableReason = "snapshot_miss" | "refresh_background_only";
+export type StockDataScoreView = "detail" | "compare" | "technical";
 
 export type StockDataRuntimeEnv = Record<string, string | undefined>;
 
 export type StockDataUnavailableInput = {
   kind: StockDataKind;
   ticker: string;
-  view?: "detail" | "compare";
+  view?: StockDataScoreView;
   reason: StockDataUnavailableReason;
 };
 
@@ -17,7 +18,7 @@ export type StockDataUnavailablePayload = {
   message: string;
   kind: StockDataKind;
   ticker: string;
-  view?: "detail" | "compare";
+  view?: StockDataScoreView;
   reason: StockDataUnavailableReason;
 };
 
@@ -27,7 +28,7 @@ export type StockDataPendingPayload = {
   message: string;
   kind: StockDataKind;
   ticker: string;
-  view?: "detail" | "compare";
+  view?: StockDataScoreView;
   reason: StockDataUnavailableReason;
   retry_after_seconds: number;
   refresh_request: {

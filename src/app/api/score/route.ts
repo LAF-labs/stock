@@ -8,6 +8,7 @@ import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
+import { technicalEligibilityForTicker, technicalUnsupportedProductPayload } from "@/lib/technicalAnalysisEligibility";
 import { parseStrictTickerRef } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,13 @@ export async function GET(request: NextRequest) {
     "score"
   );
   if (!rateLimit.ok) return rateLimit.response;
+
+  if (view === "technical") {
+    const eligibility = await technicalEligibilityForTicker(ticker);
+    if (!eligibility.eligible) {
+      return NextResponse.json(technicalUnsupportedProductPayload(eligibility.ticker), { status: 400, headers: privateNoStoreHeaders() });
+    }
+  }
 
   let cooldown;
   try {

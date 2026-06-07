@@ -1139,6 +1139,26 @@ a:focus-visible {
   line-height: 1.65;
 }
 
+.technical-analysis-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 44px;
+  margin-top: 16px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.technical-analysis-link:hover {
+  background: #1f2937;
+}
+
 .factor-list {
   display: grid;
 }

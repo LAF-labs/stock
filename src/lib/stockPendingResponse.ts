@@ -4,18 +4,17 @@ import {
   stockDataPendingPayload,
   type StockDataKind,
   type StockDataPendingPayload,
+  type StockDataScoreView,
   type StockDataUnavailableReason,
 } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob, type EnqueueStockRefreshResult } from "@/lib/stockRefreshQueue";
-
-type ScoreView = "detail" | "compare";
 
 export type StockPendingInput = {
   kind: StockDataKind;
   ticker: string;
   reason: StockDataUnavailableReason;
   priority: number;
-  view?: ScoreView;
+  view?: StockDataScoreView;
 };
 
 export type StockRefreshQueueUnavailablePayload = Omit<StockDataPendingPayload, "error" | "message"> & {

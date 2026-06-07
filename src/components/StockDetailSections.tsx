@@ -24,9 +24,11 @@ import type { ChartPattern, ChartSeriesPoint, JsonValue, LabeledValue, NewsItem,
 export function ChartStory({
   points,
   patterns,
+  technicalAnalysisHref,
 }: {
   points: ChartSeriesPoint[] | undefined;
   patterns: ChartPattern[] | undefined;
+  technicalAnalysisHref?: string;
 }) {
   const usable = useMemo(() => usableChartPoints(points), [points]);
   const [chartMode, setChartMode] = useState<"line" | "candle">("line");
@@ -80,6 +82,11 @@ export function ChartStory({
           </article>
         ))}
       </div>
+      {technicalAnalysisHref ? (
+        <a className="technical-analysis-link" href={technicalAnalysisHref}>
+          기술적 분석 보러가기
+        </a>
+      ) : null}
     </section>
   );
 }

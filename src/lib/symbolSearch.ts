@@ -1,5 +1,6 @@
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 import type { SymbolListingStatus, SymbolMarket, SymbolMasterItem, SymbolSearchItem } from "@/lib/symbolTypes";
+import { parseTickerRef } from "@/lib/tickerRef";
 
 type SymbolSearchInput = {
   query?: string;
@@ -48,6 +49,12 @@ export async function searchSymbols(input: SymbolSearchInput): Promise<SymbolSea
 
 export async function searchLocalSymbolsForTests(items: SymbolMasterItem[], input: SymbolSearchInput): Promise<SymbolSearchItem[]> {
   return searchLocalIndex(buildIndex(items), input);
+}
+
+export async function findExactSymbol(tickerRef: string): Promise<SymbolSearchItem | undefined> {
+  const parsed = parseTickerRef(tickerRef);
+  const items = await searchSymbols({ query: parsed.symbol, market: parsed.market, limit: 20 });
+  return items.find((item) => item.market === parsed.market && item.ticker.toUpperCase() === parsed.symbol);
 }
 
 function searchLocalIndex(index: IndexedSymbol[], input: SymbolSearchInput): SymbolSearchItem[] {
