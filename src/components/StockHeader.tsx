@@ -192,11 +192,6 @@ export default function StockHeader({
         )}
         {stockJudgment?.watch ? <p className="verdict-watch">{stockJudgment.watch}</p> : null}
       </div>
-
-      <a className="compare-entry" href={`/compare?tickers=${encodeURIComponent(`${data.market === "KR" ? "KR" : "US"}:${symbol}`)}`}>
-        <span>나란히 비교하기</span>
-        <strong>{symbol} 기준으로 보기</strong>
-      </a>
     </section>
   );
 }

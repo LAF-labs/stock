@@ -597,7 +597,7 @@ export function stockHeaderIdentity(data: StockScoreResponse, quote?: StockQuote
   const dataName = stringFromUnknown(data.name);
   const name = meaningfulHeaderName(quoteName, symbol, data.requested_ticker) || meaningfulHeaderName(dataName, symbol, data.requested_ticker) || "";
 
-  if (/[가-힣]/.test(name) && !isDerivativeLikeDisplayName(name)) {
+  if (/[가-힣]/.test(name) && (!isDerivativeLikeDisplayName(name) || isDomesticMarket(data, quote))) {
     return { primary: name, secondary: symbol, primaryKind: "name" };
   }
 
@@ -636,6 +636,12 @@ function isDerivativeLikeDisplayName(name: string): boolean {
   const length = Array.from(name).length;
   if (length < 12) return false;
   return /(ETF|ETN|KODEX|TIGER|ACE|RISE|PLUS|SOL|HANARO|KOSEF|KBSTAR|WON|1Q|레버리지|인버스|선물|채권혼합|단일종목)/i.test(name);
+}
+
+function isDomesticMarket(data: StockScoreResponse, quote?: StockQuoteResponse): boolean {
+  const market = stringFromUnknown(quote?.market) || stringFromUnknown(data.market);
+  if (market === "KR") return true;
+  return /^KR:/i.test(stringFromUnknown(data.requested_ticker) || "");
 }
 
 function shortOpportunityLabel(value: string | undefined): string | undefined {

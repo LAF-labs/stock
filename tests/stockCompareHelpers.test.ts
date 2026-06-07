@@ -38,6 +38,8 @@ test("compare helpers build stable compare item fields", () => {
     score: 74.2,
     quality_score: 82.4,
     opportunity_score: 91.5,
+    market: "US",
+    usd_krw_rate: 1400,
     name: "Marvell Technology",
     components: [
       { key: "profitability", label: "수익성", score: 88 },
@@ -59,6 +61,7 @@ test("compare helpers build stable compare item fields", () => {
   assert.equal(item.opportunityScore, 91.5);
   assert.equal(item.per, 1234.5);
   assert.equal(item.forwardPer, 31.2);
+  assert.equal(item.marketCap, "91조원 ($65B)");
   assert.equal(item.strongest?.key, "profitability");
   assert.equal(item.weakest?.key, "valuation");
 });

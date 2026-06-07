@@ -166,15 +166,20 @@ test("scoreFreshnessTimeChip keeps only the KST time for compact header display"
   assert.equal(scoreFreshnessTimeChip(score), "18:08 기준");
 });
 
-test("stockHeaderIdentity prioritizes Korean names except long derivative-like products", () => {
+test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-first", () => {
   assert.deepEqual(stockHeaderIdentity({ symbol: "005930", name: "삼성전자" }), {
     primary: "삼성전자",
     secondary: "005930",
     primaryKind: "name",
   });
-  assert.deepEqual(stockHeaderIdentity({ symbol: "0194M0", name: "ACE 삼성전자단일종목레버리지" }), {
-    primary: "0194M0",
-    secondary: "ACE 삼성전자단일종목레버리지",
+  assert.deepEqual(stockHeaderIdentity({ market: "KR", symbol: "0194M0", name: "ACE 삼성전자단일종목레버리지" }), {
+    primary: "ACE 삼성전자단일종목레버리지",
+    secondary: "0194M0",
+    primaryKind: "name",
+  });
+  assert.deepEqual(stockHeaderIdentity({ market: "US", symbol: "KORU", name: "한국 단일종목 레버리지 ETF" }), {
+    primary: "KORU",
+    secondary: "한국 단일종목 레버리지 ETF",
     primaryKind: "ticker",
   });
   assert.deepEqual(stockHeaderIdentity({ symbol: "KO", name: "Coca-Cola Co" }), {

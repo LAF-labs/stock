@@ -19,17 +19,6 @@ import {
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
-const EXAMPLES = [
-  { key: "US:KO", label: "코카콜라" },
-  { key: "US:NVDA", label: "엔비디아" },
-  { key: "US:AAPL", label: "애플" },
-  { key: "US:MSFT", label: "마이크로소프트" },
-  { key: "KR:005930", label: "삼성전자" },
-  { key: "KR:000660", label: "SK하이닉스" },
-  { key: "KR:035420", label: "NAVER" },
-  { key: "KR:005380", label: "현대차" },
-];
-
 const DETAIL_SECTIONS = [
   { id: "detail-summary", label: "요약" },
   { id: "detail-chart", label: "가격 흐름" },
@@ -48,6 +37,36 @@ type LoadState =
   | { status: "success"; data: StockScoreResponse; error?: undefined }
   | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; data?: undefined; error: string };
+
+type ApiPayload = Record<string, unknown>;
+
+async function readApiPayload(response: Response): Promise<ApiPayload> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(response.ok ? "서버 응답이 비어 있어요." : `서버 응답이 비어 있어요. (HTTP ${response.status})`);
+  }
+
+  try {
+    const payload = JSON.parse(text) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("non_object_payload");
+    }
+    return payload as ApiPayload;
+  } catch {
+    throw new Error(response.ok ? "서버 응답 형식이 올바르지 않아요." : `서버 오류 응답을 읽지 못했어요. (HTTP ${response.status})`);
+  }
+}
+
+function apiPayloadMessage(payload: ApiPayload, fallback: string): string {
+  return stringFromUnknown(payload.message) || stringFromUnknown(payload.error) || fallback;
+}
+
+function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse | undefined, fallbackTicker: string): string {
+  const rawSymbol = stringFromUnknown(quote?.symbol) || stringFromUnknown(data.symbol) || stringFromUnknown(data.requested_ticker) || fallbackTicker;
+  const symbol = rawSymbol.replace(/^(US|KR):/i, "");
+  const market = stringFromUnknown(quote?.market) || stringFromUnknown(data.market) || (fallbackTicker.startsWith("KR:") ? "KR" : "US");
+  return `/compare?tickers=${encodeURIComponent(`${market === "KR" ? "KR" : "US"}:${symbol}`)}`;
+}
 
 export default function StockDashboard() {
   const router = useRouter();
@@ -76,14 +95,14 @@ export default function StockDashboard() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         const pending = snapshotPendingFromPayload(payload, tickerParam);
         if (pending) {
           setState({ status: "pending", pending });
           return undefined;
         }
         if (!response.ok) {
-          throw new Error(payload?.message || payload?.error || `HTTP ${response.status}`);
+          throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
         }
         return payload as StockScoreResponse;
       })
@@ -112,7 +131,7 @@ export default function StockDashboard() {
       cache: "no-store",
     })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         const pending = snapshotPendingFromPayload(payload, tickerParam);
         if (pending) {
           setQuoteState({ status: "pending", pending });
@@ -120,7 +139,7 @@ export default function StockDashboard() {
           return undefined;
         }
         if (!response.ok) {
-          throw new Error(payload?.message || payload?.error || `HTTP ${response.status}`);
+          throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
         }
         return payload as StockQuoteResponse;
       })
@@ -182,9 +201,9 @@ export default function StockDashboard() {
       body: JSON.stringify(stockJudgmentRequestPayload(state.data)),
     })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         if (!response.ok || !payload?.ok) {
-          throw new Error(payload?.message || "판단을 불러오지 못했어요.");
+          throw new Error(apiPayloadMessage(payload, "판단을 불러오지 못했어요."));
         }
         return payload.judgment as StockJudgment;
       })
@@ -210,6 +229,8 @@ export default function StockDashboard() {
 
   const data = state.status === "success" ? state.data : undefined;
   const visibleDetailSections = DETAIL_SECTIONS;
+  const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
+  const compareHref = data ? compareHrefForStock(data, quoteData, tickerParam) : "";
 
   useEffect(() => {
     if (!data || !visibleDetailSections.length) return;
@@ -265,7 +286,7 @@ export default function StockDashboard() {
 
     fetch(`/api/quote?${query.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         if (controller.signal.aborted || currentTickerRef.current !== requestedTicker) return undefined;
         const pending = snapshotPendingFromPayload(payload, requestedTicker);
         if (pending) {
@@ -274,7 +295,8 @@ export default function StockDashboard() {
           return undefined;
         }
         if (response.status === 429) {
-          const nextAllowedAt = stringFromUnknown(payload?.refresh_cooldown?.next_allowed_at);
+          const refreshCooldown = payload.refresh_cooldown && typeof payload.refresh_cooldown === "object" && !Array.isArray(payload.refresh_cooldown) ? payload.refresh_cooldown as Record<string, unknown> : undefined;
+          const nextAllowedAt = stringFromUnknown(refreshCooldown?.next_allowed_at);
           const message = refreshCooldownMessage(nextAllowedAt);
           if (!message) {
             setQuoteRefreshState({ status: "error", message: "잠시 후 다시 시도해주세요." });
@@ -288,7 +310,7 @@ export default function StockDashboard() {
           return undefined;
         }
         if (!response.ok) {
-          throw new Error(payload?.message || payload?.error || `HTTP ${response.status}`);
+          throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
         }
         return payload as StockQuoteResponse;
       })
@@ -323,13 +345,6 @@ export default function StockDashboard() {
           label="국내·미국 주식 검색"
           className="stock-search-form"
         />
-        <div className="ticker-chips" aria-label="예시 티커">
-          {EXAMPLES.map((example) => (
-            <button key={example.key} type="button" onClick={() => router.push(`/?ticker=${encodeURIComponent(example.key)}`)}>
-              {example.label}
-            </button>
-          ))}
-        </div>
       </section>
 
       {state.status === "loading" && <StockSkeleton />}
@@ -338,12 +353,20 @@ export default function StockDashboard() {
 
       {data && (
         <>
-          <DetailIndex sections={visibleDetailSections} activeSection={activeSection} onSelect={scrollToDetailSection} />
+          <DetailIndex
+            sections={visibleDetailSections}
+            activeSection={activeSection}
+            onSelect={scrollToDetailSection}
+            compareHref={compareHref}
+          />
+          <a className="stock-mobile-action" href={compareHref}>
+            다른 종목과 비교하기
+          </a>
           <div className="stock-feed">
             <DetailSection id="detail-summary">
               <StockHeader
                 data={data}
-                quote={quoteState.status === "success" ? quoteState.data : undefined}
+                quote={quoteData}
                 quoteState={quoteState}
                 quoteRefreshState={quoteRefreshState}
                 onRefreshQuote={refreshQuote}
@@ -385,10 +408,12 @@ function DetailIndex({
   sections,
   activeSection,
   onSelect,
+  compareHref,
 }: {
   sections: ReadonlyArray<{ id: DetailSectionId; label: string }>;
   activeSection: DetailSectionId;
   onSelect: (id: DetailSectionId) => void;
+  compareHref: string;
 }) {
   return (
     <nav className="stock-detail-index" aria-label="상세 화면 목차">
@@ -406,6 +431,9 @@ function DetailIndex({
           </button>
         ))}
       </div>
+      <a className="stock-detail-index-action" href={compareHref}>
+        다른 종목과 비교하기
+      </a>
     </nav>
   );
 }

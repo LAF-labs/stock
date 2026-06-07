@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
+import { apiLimitPolicy } from "@/lib/apiRateLimit";
+import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { readJsonObjectWithLimit, jsonError, sameOriginBrowserWriteGuard } from "@/lib/apiGuards";
 import { judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
 import { getIndustryBenchmarksForStock } from "@/lib/industryBenchmarks";
@@ -127,10 +128,13 @@ export async function POST(request: NextRequest) {
     return jsonError(body.status, body.error, body.message);
   }
 
-  const rateLimit = await acquireRateLimit(clientRateLimitKey(request), apiLimitPolicy("stock_rule_judgment", 600, 60));
-  if (!rateLimit.allowed) {
-    return jsonError(429, "rate_limited", "판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
-  }
+  const rateLimit = await guardedRateLimit(
+    request,
+    apiLimitPolicy("stock_rule_judgment", 600, 60),
+    "judgment",
+    "판단 요청이 너무 많아요. 잠시 후 다시 시도해주세요."
+  );
+  if (!rateLimit.ok) return rateLimit.response;
 
   const enrichedPayload = await enrichStockPayloadWithSymbolProfile(body.value);
   const stock = compactRuleJudgmentStock(enrichedPayload);

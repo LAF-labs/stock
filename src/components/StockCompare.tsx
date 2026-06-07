@@ -31,19 +31,6 @@ import type { StockScoreResponse } from "@/lib/types";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
 
-const SUGGESTIONS: Record<string, string[]> = {
-  KO: ["PEP", "MNST", "KDP", "PG"],
-  PEP: ["KO", "MNST", "KDP", "PG"],
-  NVDA: ["AMD", "AVGO", "TSM", "INTC"],
-  AMD: ["NVDA", "AVGO", "INTC", "QCOM"],
-  AAPL: ["MSFT", "GOOGL", "AMZN", "META"],
-  MSFT: ["AAPL", "GOOGL", "ORCL", "AMZN"],
-  TSLA: ["GM", "F", "RIVN", "NIO"],
-  AMZN: ["WMT", "COST", "SHOP", "MELI"],
-  META: ["GOOGL", "SNAP", "PINS", "NFLX"],
-  JPM: ["BAC", "WFC", "C", "MS"],
-};
-
 type LoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
   | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined }
@@ -52,6 +39,59 @@ type LoadState =
 
 function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[]) {
   router.push(`/compare?tickers=${encodeURIComponent(tickers.join(","))}`);
+}
+
+async function readComparePayload(response: Response): Promise<BatchScorePayload> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(response.ok ? "서버 응답이 비어 있어요." : `서버 응답이 비어 있어요. (HTTP ${response.status})`);
+  }
+
+  try {
+    const payload = JSON.parse(text) as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("non_object_payload");
+    return payload as BatchScorePayload;
+  } catch {
+    throw new Error(response.ok ? "서버 응답 형식이 올바르지 않아요." : `서버 오류 응답을 읽지 못했어요. (HTTP ${response.status})`);
+  }
+}
+
+function compareItemTitle(item: CompareItem): string {
+  return item.identity.primary || displayName(item.data) || item.ticker;
+}
+
+function compareItemSubtitle(item: CompareItem): string | undefined {
+  const subtitle = item.identity.secondary;
+  return subtitle && subtitle !== compareItemTitle(item) ? subtitle : undefined;
+}
+
+function subjectParticle(value: string): string {
+  const last = Array.from(value.trim()).pop();
+  if (!last) return "가";
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "가";
+  return (code - 0xac00) % 28 === 0 ? "가" : "이";
+}
+
+function topicParticle(value: string): string {
+  const last = Array.from(value.trim()).pop();
+  if (!last) return "는";
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "는";
+  return (code - 0xac00) % 28 === 0 ? "는" : "은";
+}
+
+function compareItemSummary(item: CompareItem): string {
+  const title = compareItemTitle(item);
+  const summary = item.data.summary || displayName(item.data);
+  if (!summary || !/[가-힣]/.test(title)) return summary;
+
+  const correctParticle = topicParticle(title);
+  const wrongParticle = correctParticle === "은" ? "는" : "은";
+  if (summary.startsWith(`${title}${wrongParticle}`)) {
+    return `${title}${correctParticle}${summary.slice(title.length + wrongParticle.length)}`;
+  }
+  return summary;
 }
 
 export default function StockCompare() {
@@ -72,7 +112,7 @@ export default function StockCompare() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as BatchScorePayload;
+        const payload = await readComparePayload(response);
         if (!response.ok) {
           throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
         }
@@ -121,10 +161,9 @@ export default function StockCompare() {
   );
   const isLoading = states.some((state) => state.status === "loading");
   const pendingStates = states.filter((state): state is Extract<LoadState, { status: "pending" }> => state.status === "pending");
-  const suggestions = (SUGGESTIONS[baseTickerLabel] || ["AAPL", "MSFT", "NVDA", "AMZN", "JPM"])
-    .map(normalizeTicker)
-    .filter((ticker) => !tickers.includes(ticker))
-    .slice(0, Math.max(0, MAX_COMPARE - tickers.length));
+  const selectedCount = tickers.length;
+  const baseItem = items.find((item) => item.ticker === baseTickerLabel);
+  const detailHref = `/?ticker=${encodeURIComponent(baseTicker)}`;
 
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
@@ -148,10 +187,39 @@ export default function StockCompare() {
 
   return (
     <main className="stock-app compare-app">
+      <nav className="compare-side-index" aria-label="비교 화면 이동">
+        <a href={detailHref}>상세 분석으로 돌아가기</a>
+      </nav>
+
+      <section className="compare-landing">
+        <section className="compare-hero">
+          <div>
+            <span>종목 비교</span>
+            <h1>선택한 종목을 함께 보기</h1>
+            <p>
+              {selectedCount === 1
+                ? `${baseItem ? compareItemTitle(baseItem) : baseTickerLabel}${subjectParticle(baseItem ? compareItemTitle(baseItem) : baseTickerLabel)} 선택되어 있어요. 비교할 종목을 추가하면 같은 기준으로 차이를 보여드릴게요.`
+                : `${selectedCount}개 종목을 점수, 가격 흐름, 재무 지표 기준으로 나란히 정리했어요.`}
+            </p>
+          </div>
+          <div className="compare-count">{selectedCount}/{MAX_COMPARE}</div>
+        </section>
+
+        <section className="compare-picks" aria-label="선택된 종목">
+          {tickers.map((ticker, index) => {
+            const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
+            const label = loaded ? compareItemTitle(loaded) : displayTickerRef(ticker);
+            return (
+              <span key={ticker} className={index === 0 ? "base" : ""}>
+                {label}
+                {index === 0 ? <b>선택됨</b> : <button type="button" onClick={() => removeTicker(ticker)} aria-label={`${label} 삭제`}>×</button>}
+              </span>
+            );
+          })}
+        </section>
+      </section>
+
       <section className="compare-toolbar">
-        <a href={`/?ticker=${encodeURIComponent(baseTicker)}`} className="compare-back">
-          상세로
-        </a>
         <SymbolAutocomplete
           id="compare-ticker"
           value={input}
@@ -164,34 +232,6 @@ export default function StockCompare() {
           className="compare-add-form"
         />
       </section>
-
-      <section className="compare-hero">
-        <div>
-          <span>비교하기</span>
-          <h1>{baseTickerLabel}와 나란히 보기</h1>
-          <p>{tickers.length === 1 ? "한 종목을 더 붙이면 차이가 보이기 시작해요." : `${tickers.length}개 종목을 같은 기준으로 맞춰봤어요.`}</p>
-        </div>
-        <div className="compare-count">{tickers.length}/{MAX_COMPARE}</div>
-      </section>
-
-      <section className="compare-picks" aria-label="선택된 종목">
-        {tickers.map((ticker, index) => (
-          <span key={ticker} className={index === 0 ? "base" : ""}>
-            {displayTickerRef(ticker)}
-            {index === 0 ? <b>기준</b> : <button type="button" onClick={() => removeTicker(ticker)} aria-label={`${displayTickerRef(ticker)} 삭제`}>×</button>}
-          </span>
-        ))}
-      </section>
-
-      {suggestions.length ? (
-        <section className="compare-suggestions" aria-label="추천 비교 종목">
-          {suggestions.map((ticker) => (
-            <button key={ticker} type="button" onClick={() => addTicker(ticker)} aria-label={`${displayTickerRef(ticker)} 비교에 추가`}>
-              + {displayTickerRef(ticker)}
-            </button>
-          ))}
-        </section>
-      ) : null}
 
       {states.some((state) => state.status === "error") ? (
         <section className="compare-errors" role="alert" aria-live="assertive">
@@ -221,7 +261,7 @@ export default function StockCompare() {
 
       {items.length ? (
         <div className="compare-feed">
-          <CompareBrief items={items} baseTicker={baseTickerLabel} />
+          <CompareBrief items={items} />
           <CompareCards items={items} baseTicker={baseTickerLabel} />
           {items.length >= 2 ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
@@ -253,32 +293,32 @@ function CompareSkeleton() {
   );
 }
 
-function CompareBrief({ items, baseTicker }: { items: CompareItem[]; baseTicker: string }) {
+function CompareBrief({ items }: { items: CompareItem[] }) {
   const bestScore = bestBy(items, (item) => item.score);
   const bestOpportunity = bestBy(items, (item) => item.opportunityScore);
   const bestMomentum = bestBy(items, (item) => item.return52w ?? item.return6m ?? item.return3m);
   const bestValue = bestBy(items, (item) => componentScore(item, "valuation"));
   const bestProfit = bestBy(items, (item) => componentScore(item, "profitability"));
   const weakestHealth = bestBy(items, (item) => componentScore(item, "health"), "low");
-  const base = items.find((item) => item.ticker === baseTicker) || items[0];
+  const base = items[0];
 
   return (
     <section className="compare-section compare-brief">
       <span>먼저 볼 차이</span>
-      <h2>{items.length === 1 ? "비교할 종목을 기다리고 있어요" : `${baseTicker} 기준으로 갈리는 부분이에요`}</h2>
+      <h2>{items.length === 1 ? "비교할 종목을 기다리고 있어요" : "종목별 차이가 나는 부분이에요"}</h2>
       <p>
         {items.length === 1
-          ? `${base.ticker}의 점수는 ${base.score.toFixed(1)}점이에요. 비교 종목을 붙이면 가격 흐름, 수익성, 재무 안정성이 같은 기준으로 정리돼요.`
-          : `${bestScore?.ticker || base.ticker}가 전체 점수에서 앞서고, ${bestMomentum?.ticker || base.ticker}는 최근 흐름이 가장 강해요. 가격 부담은 ${bestValue?.ticker || base.ticker}, 수익성은 ${bestProfit?.ticker || base.ticker}를 먼저 보면 좋아요.`}
+          ? `${compareItemTitle(base)}의 점수는 ${base.score.toFixed(1)}점이에요. 비교 종목을 붙이면 가격 흐름, 수익성, 재무 안정성이 같은 기준으로 정리돼요.`
+          : `${bestScore ? compareItemTitle(bestScore) : compareItemTitle(base)}가 전체 점수에서 앞서고, ${bestMomentum ? compareItemTitle(bestMomentum) : compareItemTitle(base)}는 최근 흐름이 가장 강해요. 가격 부담은 ${bestValue ? compareItemTitle(bestValue) : compareItemTitle(base)}, 수익성은 ${bestProfit ? compareItemTitle(bestProfit) : compareItemTitle(base)}를 먼저 보면 좋아요.`}
       </p>
       {items.length >= 2 ? (
         <div className="compare-insight-grid">
-          <Insight label="전체 균형" ticker={bestScore?.ticker} value={bestScore ? `${bestScore.score.toFixed(1)}점` : "-"} />
-          <Insight label="기회 점수" ticker={bestOpportunity?.ticker} value={bestOpportunity?.opportunityScore === undefined ? "-" : `${bestOpportunity.opportunityScore.toFixed(1)}점`} />
-          <Insight label="최근 흐름" ticker={bestMomentum?.ticker} value={percentText(bestMomentum?.return52w ?? bestMomentum?.return6m)} />
-          <Insight label="가격 부담" ticker={bestValue?.ticker} value={bestValue ? `${ratioText(componentScore(bestValue, "valuation"))}점` : "-"} />
-          <Insight label="수익성" ticker={bestProfit?.ticker} value={bestProfit ? `${ratioText(componentScore(bestProfit, "profitability"))}점` : "-"} />
-          <Insight label="먼저 확인" ticker={weakestHealth?.ticker} value={weakestHealth ? `${ratioText(componentScore(weakestHealth, "health"))}점` : "-"} />
+          <Insight label="전체 균형" ticker={bestScore ? compareItemTitle(bestScore) : undefined} value={bestScore ? `${bestScore.score.toFixed(1)}점` : "-"} />
+          <Insight label="기회 점수" ticker={bestOpportunity ? compareItemTitle(bestOpportunity) : undefined} value={bestOpportunity?.opportunityScore === undefined ? "-" : `${bestOpportunity.opportunityScore.toFixed(1)}점`} />
+          <Insight label="최근 흐름" ticker={bestMomentum ? compareItemTitle(bestMomentum) : undefined} value={percentText(bestMomentum?.return52w ?? bestMomentum?.return6m)} />
+          <Insight label="가격 부담" ticker={bestValue ? compareItemTitle(bestValue) : undefined} value={bestValue ? `${ratioText(componentScore(bestValue, "valuation"))}점` : "-"} />
+          <Insight label="수익성" ticker={bestProfit ? compareItemTitle(bestProfit) : undefined} value={bestProfit ? `${ratioText(componentScore(bestProfit, "profitability"))}점` : "-"} />
+          <Insight label="먼저 확인" ticker={weakestHealth ? compareItemTitle(weakestHealth) : undefined} value={weakestHealth ? `${ratioText(componentScore(weakestHealth, "health"))}점` : "-"} />
         </div>
       ) : null}
     </section>
@@ -296,21 +336,23 @@ function Insight({ label, ticker, value }: { label: string; ticker: string | und
 }
 
 function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker: string }) {
+  const slotCount = Math.max(2, items.length);
   return (
     <section className="compare-section">
       <span>종목 카드</span>
       <h2>각 종목의 현재 인상이에요</h2>
-      <div className="compare-card-grid" style={{ "--compare-count": items.length } as CSSProperties}>
+      <div className="compare-card-grid" style={{ "--compare-count": slotCount } as CSSProperties}>
         {items.map((item) => (
           <article className="compare-stock-card" key={item.ticker}>
             <div className="compare-card-top">
               <div>
-                <span>{item.ticker === baseTicker ? "기준 종목" : "비교 종목"}</span>
-                <strong>{item.ticker}</strong>
+                <span>{item.ticker === baseTicker ? "선택한 종목" : "비교 종목"}</span>
+                <strong className={item.identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{compareItemTitle(item)}</strong>
+                {compareItemSubtitle(item) ? <small>{compareItemSubtitle(item)}</small> : null}
               </div>
               <em className={comparePriceTone(item.daily)}>{percentText(item.daily)}</em>
             </div>
-            <p>{displayName(item.data)}</p>
+            <p>{compareItemSummary(item)}</p>
             <div className="compare-score-line">
               <strong>{item.score.toFixed(1)}점</strong>
               <span>품질 {scoreWord(item.score)}</span>
@@ -338,8 +380,21 @@ function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker:
             </dl>
           </article>
         ))}
+        {items.length < 2 ? <EmptyCompareCard /> : null}
       </div>
     </section>
+  );
+}
+
+function EmptyCompareCard() {
+  return (
+    <article className="compare-stock-card compare-empty-card" aria-label="비교할 종목 선택 안내">
+      <div>
+        <span>비교 종목</span>
+        <strong>종목을 선택해주세요</strong>
+        <p>아래 검색창에서 국내·미국 종목을 추가하면 같은 기준으로 나란히 볼 수 있어요.</p>
+      </div>
+    </article>
   );
 }
 

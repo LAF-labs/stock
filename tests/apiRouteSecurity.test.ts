@@ -4,11 +4,14 @@ import { NextRequest } from "next/server";
 
 import { GET as getQuote } from "../src/app/api/quote/route";
 import { GET as getScore } from "../src/app/api/score/route";
+import { GET as getBatchScore } from "../src/app/api/score/batch/route";
 import { POST as postJudgment } from "../src/app/api/judgment/route";
 
 const ENV_KEYS = [
   "VERCEL",
+  "VERCEL_ENV",
   "STOCK_DATA_RUNTIME",
+  "STOCK_ALLOW_MEMORY_GUARD_FALLBACK",
   "SUPABASE_URL",
   "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -44,6 +47,34 @@ function request(path: string, init: StrictRequestInit = {}): NextRequest {
 }
 
 test.afterEach(restoreEnv);
+
+test("stock API routes return JSON when production rate-limit secret is missing", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.VERCEL_ENV = "production";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  delete process.env.STOCK_RATE_LIMIT_SECRET;
+  delete process.env.STOCK_ALLOW_MEMORY_GUARD_FALLBACK;
+
+  const quote = await getQuote(request("/api/quote?ticker=US:KO"));
+  const score = await getScore(request("/api/score?ticker=US:KO"));
+  const batch = await getBatchScore(request("/api/score/batch?tickers=US:KO,US:NVDA"));
+  const judgment = await postJudgment(
+    request("/api/judgment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+
+  for (const response of [quote, score, batch, judgment]) {
+    assert.equal(response.status, 500);
+    assert.match(response.headers.get("content-type") || "", /application\/json/);
+    const payload = await response.json();
+    assert.equal(payload.error, "server_misconfigured");
+    assert.equal(payload.ok, false);
+  }
+});
 
 test("quote route rejects missing and invalid API ticker input", async () => {
   restoreEnv();

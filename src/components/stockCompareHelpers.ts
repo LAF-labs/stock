@@ -1,5 +1,5 @@
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
-import { usableChartPoints } from "@/components/stockDashboardHelpers";
+import { stockHeaderIdentity, stockMarketCapDisplay, usableChartPoints, type StockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
 
@@ -22,6 +22,7 @@ export type BatchScorePayload = {
 
 export type CompareItem = {
   ticker: string;
+  identity: StockHeaderIdentity;
   data: StockScoreResponse;
   score: number;
   opportunityScore?: number;
@@ -147,8 +148,10 @@ export function strongestAndWeakest(data: StockScoreResponse) {
 export function toCompareItem(data: StockScoreResponse, requestedTicker: string): CompareItem {
   const ticker = displayTickerRef(requestedTicker) || data.symbol || data.requested_ticker || "UNKNOWN";
   const { strongest, weakest } = strongestAndWeakest(data);
+  const marketCap = stockMarketCapDisplay(data);
   return {
     ticker,
+    identity: stockHeaderIdentity(data),
     data,
     score: clampScore(data.quality_score ?? data.score),
     opportunityScore: typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined,
@@ -163,7 +166,7 @@ export function toCompareItem(data: StockScoreResponse, requestedTicker: string)
     currentRatio: numberFromRecord(data.financials, "currentRatio"),
     per: valuationByLabel(data, "PER"),
     forwardPer: valuationByLabel(data, "Forward PER"),
-    marketCap: metricByLabel(data, "시가총액"),
+    marketCap: [marketCap.primary, marketCap.secondary].filter(Boolean).join(" "),
     strongest,
     weakest,
   };

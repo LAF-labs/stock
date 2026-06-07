@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
+import { apiLimitPolicy } from "@/lib/apiRateLimit";
 import { jsonError } from "@/lib/apiGuards";
+import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
@@ -25,15 +26,25 @@ export async function GET(request: NextRequest) {
   const ticker = tickerRef.ticker;
   const view = cleanView(request.nextUrl.searchParams.get("view"));
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
-  const rateLimit = await acquireRateLimit(
-    clientRateLimitKey(request),
-    forceRefresh ? apiLimitPolicy("stock_score_refresh", 6, 900) : apiLimitPolicy("stock_score", 180, 60)
+  const rateLimit = await guardedRateLimit(
+    request,
+    forceRefresh ? apiLimitPolicy("stock_score_refresh", 6, 900) : apiLimitPolicy("stock_score", 180, 60),
+    "score"
   );
-  if (!rateLimit.allowed) {
-    return jsonError(429, "rate_limited", "요청이 너무 많아요. 잠시 후 다시 시도해주세요.", rateLimitHeaders(rateLimit));
-  }
+  if (!rateLimit.ok) return rateLimit.response;
 
-  const cooldown = forceRefresh ? await acquireRefreshCooldown(request) : undefined;
+  let cooldown;
+  try {
+    cooldown = forceRefresh ? await acquireRefreshCooldown(request) : undefined;
+  } catch (error) {
+    console.error("score_refresh_cooldown_guard_failed", { error: safeErrorMessage(error) });
+    return jsonError(
+      500,
+      "server_misconfigured",
+      "서버 보안 설정을 확인해야 해요. 잠시 후 다시 시도해주세요.",
+      privateNoStoreHeaders()
+    );
+  }
 
   if (cooldown?.blocked) {
     const response = NextResponse.json(
