@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   clearIndustryBenchmarkCacheForTests,
   getIndustryBenchmark,
@@ -233,4 +235,17 @@ test("stock benchmark lookup includes forward valuation metrics by default", asy
 
   assert.deepEqual(requestedMetrics, ["forward_per", "per", "ev_revenue", "psr", "pbr"]);
   assert.deepEqual(benchmarks.map((item) => item.metric), requestedMetrics);
+});
+
+test("industry benchmark migration uses market calendar expiry instead of fixed one day TTL", () => {
+  const migration = readFileSync(
+    join(process.cwd(), "supabase/migrations/20260607060000_calendar_aware_industry_benchmark_expiry.sql"),
+    "utf8"
+  );
+
+  assert.match(migration, /create or replace function public\.stock_industry_benchmark_expires_at/);
+  assert.match(migration, /from public\.market_calendar/);
+  assert.match(migration, /close_at \+ grace_window/);
+  assert.match(migration, /public\.stock_industry_benchmark_expires_at\(scope, market\)/);
+  assert.doesNotMatch(migration, /now\(\) \+ interval '1 day'/);
 });

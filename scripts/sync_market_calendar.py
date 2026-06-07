@@ -23,6 +23,13 @@ MARKETS = {
     "KR": {"calendar": "XKRX", "timezone": "Asia/Seoul"},
 }
 
+EXTRA_CLOSED_DATES = {
+    "KR": {
+        date(2026, 6, 3): "2026_local_election_day",
+        date(2026, 7, 17): "2026_constitution_day",
+    },
+}
+
 
 def load_local_env_files() -> None:
     for name in (".env.local", ".env.supabase.local", ".env.vercel.local"):
@@ -65,7 +72,12 @@ def build_market_rows(market: str, start: date, end: date) -> list[dict[str, Any
     except Exception:
         early_dates = set()
 
-    schedule_by_date = {pd.Timestamp(index).date(): row for index, row in schedule.iterrows()}
+    forced_closed = EXTRA_CLOSED_DATES.get(market, {})
+    schedule_by_date = {
+        pd.Timestamp(index).date(): row
+        for index, row in schedule.iterrows()
+        if pd.Timestamp(index).date() not in forced_closed
+    }
     open_dates = sorted(schedule_by_date)
     rows: list[dict[str, Any]] = []
     cursor = start

@@ -39,11 +39,12 @@ jobs:
       - name: Sync exchange market calendars
         run: python scripts/sync_market_calendar.py --days 550
 
-      - name: Sync external industry benchmarks
-        run: python scripts/sync_external_industry_benchmarks.py
-
       - name: Refresh snapshot-derived industry benchmarks
         run: python scripts/run_industry_maintenance.py --refresh-benchmarks --benchmark-min-sample-count 8 --no-cli-service-role
+
+      - name: Sync external industry benchmarks
+        continue-on-error: true
+        run: python scripts/sync_external_industry_benchmarks.py
 
       - name: Audit industry classification quality
         run: python scripts/industry_quality_audit.py --json
