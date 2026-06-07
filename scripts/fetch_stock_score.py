@@ -41,6 +41,11 @@ except ModuleNotFoundError:
     )
 
 try:
+    from scripts.stock_score.technical_analysis import build_technical_analysis
+except ModuleNotFoundError:
+    from stock_score.technical_analysis import build_technical_analysis
+
+try:
     from scripts.stock_score.timeseries import (
         CHART_SERIES_TRADING_YEAR_ROWS,
         atr_percent,
@@ -604,6 +609,28 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     }
 
     chart_series = kis_chart_series(daily_rows, currency, usd_krw)
+    if view == "technical":
+        return build_technical_score_payload(
+            raw_ticker=raw_ticker,
+            market="US",
+            symbol=symbol,
+            name=name,
+            exchange=exchange,
+            currency=currency,
+            latest_price=latest_price,
+            latest_date=latest_date,
+            chart_series=chart_series,
+            price_metrics=price_metrics,
+            fetch_source="market_data",
+            fetch_extra={
+                "price_endpoint": "/uapi/overseas-price/v1/quotations/price",
+                "dailyprice_endpoint": "/uapi/overseas-price/v1/quotations/dailyprice",
+                "input_mode": "exact_ticker_only",
+                "market_scope": "US listed equity",
+                "exchange_code": excd,
+                "history_rows": len(daily_rows),
+            },
+        )
     news = [] if is_compare_view else kis_news(symbol, excd)
     summary = (
         f"{symbol}은 품질 점수 {total_score:.1f}/100점, 기회 점수 {opportunity.score:.1f}/100점이에요. "
@@ -1111,6 +1138,29 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     }
 
     chart_series = kis_domestic_chart_series(daily_rows)
+    if view == "technical":
+        return build_technical_score_payload(
+            raw_ticker=raw_ticker,
+            market="KR",
+            symbol=symbol,
+            name=name,
+            exchange=exchange,
+            currency=currency,
+            latest_price=latest_price,
+            latest_date=latest_date,
+            chart_series=chart_series,
+            price_metrics=price_metrics,
+            fetch_source="market_data",
+            fetch_extra={
+                "price_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-price",
+                "dailyprice_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+                "input_mode": "symbol_master_selection",
+                "market_scope": "KR listed equity",
+                "exchange_code": exchange,
+                "history_rows": len(daily_rows),
+                "history_source": history_source,
+            },
+        )
     news = [] if is_compare_view else kis_domestic_news(symbol)
     summary = (
         f"{name}은 품질 점수 {total_score:.1f}/100점, 기회 점수 {opportunity.score:.1f}/100점이에요. "
@@ -1220,6 +1270,52 @@ def fetch_score(raw_ticker: str, view: str = "detail", usd_krw_override: float |
     return fetch_score_kis_us(symbol, view=view, usd_krw_override=usd_krw_override, use_rate_override=use_rate_override)
 
 
+def build_technical_score_payload(
+    *,
+    raw_ticker: str,
+    market: str,
+    symbol: str,
+    name: str,
+    exchange: str,
+    currency: str,
+    latest_price: float | None,
+    latest_date: str,
+    chart_series: list[dict[str, Any]],
+    price_metrics: dict[str, Any],
+    fetch_source: str,
+    fetch_extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    technical_analysis = build_technical_analysis(chart_series)
+    technical_analysis["ticker"] = f"{market}:{symbol}"
+    technical_analysis["market"] = market
+    technical_analysis["symbol"] = symbol
+    return {
+        "ok": True,
+        "app": "Stock Score Reader",
+        "requested_ticker": raw_ticker,
+        "market": market,
+        "symbol": symbol,
+        "name": name,
+        "exchange": exchange,
+        "currency": currency,
+        "score_model_version": SCORE_MODEL_VERSION,
+        "latest_price": latest_price,
+        "latest_bar_date": latest_date,
+        "chart_series": chart_series,
+        "price_metrics": price_metrics,
+        "technical_analysis": technical_analysis,
+        "fetch": {
+            "source": fetch_source,
+            "score_model_version": SCORE_MODEL_VERSION,
+            "fetched_at": now.isoformat(),
+            "cache": "no-store",
+            "view": "technical",
+            **(fetch_extra or {}),
+        },
+    }
+
+
 def json_default(value: Any) -> Any:
     return finite_or_none(value)
 
@@ -1239,7 +1335,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch latest stock score data.")
     parser.add_argument("ticker", nargs="?")
     parser.add_argument("--tickers")
-    parser.add_argument("--view", choices=["detail", "compare"], default="detail")
+    parser.add_argument("--view", choices=["detail", "compare", "technical"], default="detail")
     args = parser.parse_args()
 
     tickers = parse_batch_tickers(args.tickers)

@@ -306,6 +306,35 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertEqual(rows[0]["change_pct"], 0.025)
         self.assertAlmostEqual(rows[1]["change_pct"], 12 / 11 - 1)
 
+    def test_technical_score_payload_is_compact_and_rule_based(self):
+        chart_series = [
+            {"date": f"2026-06-{(index % 28) + 1:02d}", "open": 100 + index, "high": 102 + index, "low": 99 + index, "close": 101 + index, "volume": 100000 + index * 1000}
+            for index in range(70)
+        ]
+
+        payload = score_module.build_technical_score_payload(
+            raw_ticker="US:NVDA",
+            market="US",
+            symbol="NVDA",
+            name="NVIDIA",
+            exchange="Nasdaq",
+            currency="USD",
+            latest_price=171.0,
+            latest_date="2026-06-28",
+            chart_series=chart_series,
+            price_metrics={"price": 171.0},
+            fetch_source="market_data",
+            fetch_extra={"history_rows": len(chart_series)},
+        )
+
+        self.assertEqual(payload["fetch"]["view"], "technical")
+        self.assertEqual(payload["technical_analysis"]["ticker"], "US:NVDA")
+        self.assertEqual(payload["technical_analysis"]["type"], "technical_analysis")
+        self.assertIn(payload["technical_analysis"]["status"], {"ready", "limited"})
+        self.assertNotIn("components", payload)
+        self.assertNotIn("financial_statement", payload)
+        self.assertNotIn("news", payload)
+
     def test_quality_adjusted_valuation_moderates_premium_growth_leaders(self):
         valuation = quality_adjusted_valuation(
             FactorScore(score=12.0, confidence=1.0),

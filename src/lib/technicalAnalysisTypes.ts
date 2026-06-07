@@ -1,5 +1,7 @@
 export type TechnicalAnalysisStatus = "ready" | "limited" | "unavailable";
 export type TechnicalAnalysisTone = "bullish" | "bearish" | "neutral" | "caution" | "insufficient";
+export type TechnicalCoverageTier = "insufficient" | "starter" | "short" | "standard" | "full" | "long_history";
+export type TechnicalSummaryTone = "positive" | "neutral" | "cautious" | "limited";
 export type TechnicalJsonPrimitive = string | number | boolean | null;
 export type TechnicalJsonValue = TechnicalJsonPrimitive | TechnicalJsonObject | TechnicalJsonValue[];
 export type TechnicalJsonObject = { [key: string]: TechnicalJsonValue };
@@ -61,22 +63,43 @@ export type TechnicalChartOverlay = {
 export type TechnicalAnalysisPayload = {
   type: "technical_analysis";
   version: string;
-  ticker: string;
+  timeframe?: "1d";
+  ticker?: string;
   market?: "US" | "KR";
   symbol?: string;
   status: TechnicalAnalysisStatus;
+  coverage_tier?: TechnicalCoverageTier;
+  bars?: number;
+  closed_bar_date?: string;
   generated_at?: string;
   data_window: TechnicalDataWindow;
   summary: {
     headline: string;
-    tone: TechnicalAnalysisTone;
+    tone: TechnicalAnalysisTone | TechnicalSummaryTone;
     bullets: string[];
   };
+  confluence?: {
+    score: number;
+    label: string;
+    groups: Array<{ key: string; label: string; score: -1 | 0 | 1; weight: number; reason: string }>;
+  };
+  signals?: Array<{
+    key: string;
+    title: string;
+    status: string;
+    tone?: TechnicalAnalysisTone;
+    plain: string;
+    evidence: string;
+    layer?: string;
+    rule: string;
+  }>;
   indicators: TechnicalIndicatorReading[];
-  chart: {
+  chart?: {
     points: TechnicalChartPoint[];
     overlays: TechnicalChartOverlay[];
   };
+  overlays?: TechnicalJsonObject;
+  warnings?: string[];
   glossary?: Array<{
     term: string;
     meaning: string;
