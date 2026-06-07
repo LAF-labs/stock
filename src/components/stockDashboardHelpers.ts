@@ -646,7 +646,7 @@ export function stockHeaderIdentity(data: StockScoreResponse, quote?: StockQuote
   const dataName = stringFromUnknown(data.name);
   const name = meaningfulHeaderName(quoteName, symbol, data.requested_ticker) || meaningfulHeaderName(dataName, symbol, data.requested_ticker) || "";
 
-  if (/[가-힣]/.test(name) && (!isDerivativeLikeDisplayName(name) || isDomesticMarket(data, quote))) {
+  if (name && (!isDerivativeLikeDisplayName(name) || isDomesticMarket(data, quote))) {
     return { primary: name, secondary: symbol, primaryKind: "name" };
   }
 

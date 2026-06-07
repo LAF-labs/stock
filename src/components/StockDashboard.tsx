@@ -12,6 +12,7 @@ import {
   refreshCooldownMessage,
   snapshotPendingFromPayload,
   stringFromUnknown,
+  stockHeaderIdentity,
   stockJudgmentRequestPayload,
   symbolRef,
   type SnapshotPendingState,
@@ -232,6 +233,8 @@ export default function StockDashboard() {
   const visibleDetailSections = DETAIL_SECTIONS;
   const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
   const compareHref = data ? compareHrefForStock(data, quoteData, tickerParam) : "";
+  const pageIdentity = data ? stockHeaderIdentity(data, quoteData) : undefined;
+  const pageTitle = `${pageIdentity?.primary || displayTickerInput(tickerParam || "US:KO")} 주식 상세`;
 
   useEffect(() => {
     if (!data || !visibleDetailSections.length) return;
@@ -334,7 +337,7 @@ export default function StockDashboard() {
 
   return (
     <main className="stock-app stock-detail-app">
-      <h1 className="sr-only">{displayTickerInput(tickerParam || "US:KO")} 주식 상세</h1>
+      <h1 className="sr-only">{pageTitle}</h1>
       <section className="stock-search">
         <SymbolAutocomplete
           id="ticker"

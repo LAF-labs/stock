@@ -184,9 +184,9 @@ test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-
     primaryKind: "ticker",
   });
   assert.deepEqual(stockHeaderIdentity({ symbol: "KO", name: "Coca-Cola Co" }), {
-    primary: "KO",
-    secondary: "Coca-Cola Co",
-    primaryKind: "ticker",
+    primary: "Coca-Cola Co",
+    secondary: "KO",
+    primaryKind: "name",
   });
 });
 

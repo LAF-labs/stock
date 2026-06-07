@@ -14,7 +14,7 @@ import {
   safeInternalRedirectPath,
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
-import { snapshotPendingFromPayload, stringFromUnknown, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
+import { displayTickerInput, snapshotPendingFromPayload, stringFromUnknown, stockHeaderIdentity, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
 import { formatValue } from "@/lib/format";
 import type { StockScoreResponse } from "@/lib/types";
 
@@ -88,6 +88,8 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
 
   const data = state.status === "success" ? state.data : undefined;
   const technical = isTechnicalAnalysisPayload(data?.technical_analysis) ? data.technical_analysis : undefined;
+  const identity = data ? stockHeaderIdentity(data) : undefined;
+  const displayTicker = identity?.secondary || displayTickerInput(ticker);
   const signals = useMemo(() => technicalSignals(technical), [technical]);
   const warnings = useMemo(() => technicalWarnings(technical), [technical]);
   const bullets = useMemo(() => technicalSummaryBullets(technical), [technical]);
@@ -98,7 +100,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
     <main className="stock-app stock-detail-app technical-analysis-app">
       <header className="technical-topbar">
         <a href={detailHref}>상세로 돌아가기</a>
-        <span>{ticker}</span>
+        <span>{displayTicker}</span>
       </header>
 
       {state.status === "loading" ? <TechnicalStatus title="기술적 분석 준비 중" body="차트 데이터를 확인하고 있어요." /> : null}
@@ -114,8 +116,8 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
           <section className={`technical-hero ${summaryTone}`}>
             <div className="technical-hero-heading">
               <span>기술적 분석</span>
-              <h1>{data.name || data.symbol || ticker}</h1>
-              <p>{data.exchange || data.market} · {data.symbol || ticker}</p>
+              <h1>{identity?.primary || data.name || data.symbol || displayTicker}</h1>
+              <p>{data.exchange || data.market} · {identity?.secondary || data.symbol || displayTicker}</p>
             </div>
             <div className="technical-hero-price">
               <span>현재가</span>
