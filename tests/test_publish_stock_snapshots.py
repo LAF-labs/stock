@@ -34,6 +34,9 @@ class PublishStockSnapshotsTests(unittest.TestCase):
 
         self.assertEqual(tickers, ["US:KO", "US:NVDA", "KR:005930"])
 
+    def test_parse_views_accepts_technical_score_view(self):
+        self.assertEqual(publisher.parse_views("detail,technical,compare,technical"), ["detail", "technical", "compare"])
+
     def test_ttl_expires_at_uses_utc_iso_seconds(self):
         now = datetime(2026, 6, 5, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -329,6 +332,45 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         self.assertEqual(calls[0]["job_id"], "job-1")
         self.assertEqual(calls[0]["permanent"], True)
         self.assertIn("unsupported score view", calls[0]["error"])
+
+    def test_publish_queue_job_accepts_technical_score_view(self):
+        calls = {"fetch": [], "upsert": [], "complete": []}
+
+        def fake_fetch_score(ticker, view="detail"):
+            calls["fetch"].append({"ticker": ticker, "view": view})
+            return {"ok": True, "requested_ticker": ticker, "technical_analysis": {"type": "technical_analysis"}}
+
+        def fake_upsert(_config, table, row, on_conflict):
+            calls["upsert"].append({"table": table, "row": row, "on_conflict": on_conflict})
+
+        def fake_complete(_config, worker_id, job_id):
+            calls["complete"].append({"worker_id": worker_id, "job_id": job_id})
+
+        original_fetch_score = publisher.fetch_score
+        original_upsert = publisher.upsert_snapshot
+        original_complete = publisher.complete_refresh_job
+        original_expiry = publisher.market_aware_snapshot_expires_at
+        publisher.fetch_score = fake_fetch_score
+        publisher.upsert_snapshot = fake_upsert
+        publisher.complete_refresh_job = fake_complete
+        publisher.market_aware_snapshot_expires_at = lambda *_args, **_kwargs: "2026-06-05T12:30:00+00:00"
+        try:
+            row = publisher.publish_queue_job(
+                {"id": "job-1", "kind": "score", "market": "US", "symbol": "NVDA", "view_mode": "technical", "attempts": 1},
+                SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7),
+                SimpleNamespace(score_ttl_seconds=1800),
+                "worker-1",
+            )
+        finally:
+            publisher.fetch_score = original_fetch_score
+            publisher.upsert_snapshot = original_upsert
+            publisher.complete_refresh_job = original_complete
+            publisher.market_aware_snapshot_expires_at = original_expiry
+
+        self.assertEqual(row["status"], "succeeded")
+        self.assertEqual(calls["fetch"], [{"ticker": "US:NVDA", "view": "technical"}])
+        self.assertEqual(calls["upsert"][0]["row"]["view_mode"], "technical")
+        self.assertEqual(calls["complete"], [{"worker_id": "worker-1", "job_id": "job-1"}])
 
 
 if __name__ == "__main__":

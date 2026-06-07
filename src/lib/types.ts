@@ -1,3 +1,5 @@
+import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
@@ -131,6 +133,7 @@ export type StockScoreResponse = {
   valuation_rows?: LabeledValue[];
   chart_patterns?: ChartPattern[];
   chart_series?: ChartSeriesPoint[];
+  technical_analysis?: TechnicalAnalysisPayload;
   history?: TopScore[];
   top_scores?: TopScore[];
   news?: NewsItem[];

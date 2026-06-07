@@ -31,7 +31,7 @@ test("TypeScript snapshot worker defaults to quote-only queue drain", () => {
 
 test("TypeScript snapshot worker parses canonical tickers and views", () => {
   assert.deepEqual(parseTickerArgs(["nvda, KR:005930", "US:NVDA"]), ["US:NVDA", "KR:005930"]);
-  assert.deepEqual(parseViews("detail,compare,detail"), ["detail", "compare"]);
+  assert.deepEqual(parseViews("detail,technical,compare,technical"), ["detail", "technical", "compare"]);
 });
 
 test("TypeScript snapshot worker claims quote jobs with kind-specific RPC", async () => {

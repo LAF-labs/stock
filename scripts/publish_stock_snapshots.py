@@ -312,8 +312,8 @@ def ok_payload(payload: dict[str, Any]) -> bool:
 def parse_views(raw: str) -> list[ScoreView]:
     unique: list[ScoreView] = []
     for part in raw.split(","):
-        view = part.strip()
-        if view not in {"detail", "compare"}:
+        view = part.strip().lower()
+        if view not in {"detail", "compare", "technical"}:
             raise ValueError(f"Unsupported score view: {view}")
         if view not in unique:
             unique.append(view)
@@ -361,7 +361,7 @@ def publish_queue_job(
         if not job_id:
             raise RuntimeError("claimed job is missing id")
         if kind == "score":
-            if view not in {"detail", "compare"}:
+            if view not in {"detail", "compare", "technical"}:
                 raise RuntimeError(f"unsupported score view: {view}")
             score = fetch_score(ticker, view=view)
             if not ok_payload(score):
@@ -401,7 +401,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ticker", action="append", help="Ticker to publish. Can be repeated or comma-separated.")
     parser.add_argument("--tickers", help="Comma-separated ticker list.")
     parser.add_argument("--tickers-file", help="Text file with one ticker per line. # comments are ignored.")
-    parser.add_argument("--views", default="detail,compare", help="Score views to publish: detail,compare.")
+    parser.add_argument("--views", default="detail,compare", help="Score views to publish: detail,compare,technical.")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and build rows without writing to Supabase.")
     parser.add_argument("--sleep-seconds", type=float, default=0.0, help="Delay between tickers to avoid provider bursts.")
     parser.add_argument("--timeout-seconds", type=float, default=15.0, help="Supabase REST timeout.")

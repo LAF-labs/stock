@@ -67,7 +67,7 @@ export function parseViews(raw: string): ScoreView[] {
   const unique: ScoreView[] = [];
   for (const part of raw.split(",")) {
     const view = part.trim().toLowerCase();
-    if (view !== "detail" && view !== "compare") {
+    if (view !== "detail" && view !== "compare" && view !== "technical") {
       throw new Error(`Unsupported score view: ${view}`);
     }
     if (!unique.includes(view)) unique.push(view);
@@ -379,7 +379,7 @@ function jobTicker(job: RefreshJob): string {
 }
 
 function scoreViewValue(value: unknown): ScoreView | undefined {
-  return value === "detail" || value === "compare" ? value : undefined;
+  return value === "detail" || value === "compare" || value === "technical" ? value : undefined;
 }
 
 function hasErrors(row: Record<string, unknown>): boolean {

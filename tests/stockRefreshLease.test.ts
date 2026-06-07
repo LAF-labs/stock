@@ -116,6 +116,31 @@ test("acquireStockRefreshLease calls Supabase RPC with normalized score target",
   });
 });
 
+test("acquireStockRefreshLease passes technical score view to Supabase", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co/";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  let capturedBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(
+      JSON.stringify([{ acquired: true, lease_until: "2026-06-05T12:00:30.000Z", locked_by: "api-worker" }]),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  const result = await acquireStockRefreshLease({
+    kind: "score",
+    ticker: "nvda",
+    view: "technical",
+    lockSeconds: 45,
+    owner: "api-worker",
+  });
+
+  assert.equal(result.acquired, true);
+  assert.equal(capturedBody?.p_view_mode, "technical");
+});
+
 test("acquireStockRefreshLease omits view mode for quote targets", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
