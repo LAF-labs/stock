@@ -82,6 +82,58 @@ const PERCENT_RECORD_KEYS = new Set([
   "opportunity_confidence",
 ]);
 
+const COMPACT_METRIC_LABELS = new Set([
+  "1개월 수익률",
+  "3개월 수익률",
+  "6개월 수익률",
+  "52주 수익률",
+  "52주 고점 거리",
+  "매출 성장률",
+  "이익 성장률",
+  "순이익률",
+  "영업이익률",
+  "OCF 마진",
+  "FCF 마진",
+  "ROE 추정",
+  "목표가 여지",
+  "애널리스트 수",
+  "투자의견 평균",
+  "신뢰도",
+  "ATR14",
+  "베타",
+  "EPS",
+  "BPS",
+]);
+
+const COMPACT_METRIC_BLOCKED_VALUE_RE = /[$₩€¥]|조|억|만|천|주|B|M|T|정상|확인|상한|,/i;
+
+const EN_US_INTEGER_FORMATTER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const EN_US_COMPACT_DECIMAL_FORMATTER = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
+const USD_AMOUNT_FORMATTER = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const KO_KR_INTEGER_FORMATTER = new Intl.NumberFormat("ko-KR");
+const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
+const KST_MINUTE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+const KST_TIME_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 const NOTE_COPY: Record<string, string> = {
   "TTM 이익 대비 가격": "지난 12개월 이익과 비교한 가격이에요.",
   "예상 이익 대비 가격": "앞으로 예상되는 이익과 비교한 가격이에요.",
@@ -248,14 +300,11 @@ function formatCompactUsd(value: number): string {
   if (abs >= 1_000_000_000_000) return `$${trimCompact(value / 1_000_000_000_000)}T`;
   if (abs >= 1_000_000_000) return `$${trimCompact(value / 1_000_000_000)}B`;
   if (abs >= 1_000_000) return `$${trimCompact(value / 1_000_000)}M`;
-  return `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value)}`;
+  return `$${EN_US_INTEGER_FORMATTER.format(value)}`;
 }
 
 function trimCompact(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-  }).format(value);
+  return EN_US_COMPACT_DECIMAL_FORMATTER.format(value);
 }
 
 function compactComponents(components: ScoreComponent[] | undefined): Array<Record<string, unknown>> | undefined {
@@ -288,22 +337,19 @@ function compactRecord<T extends Record<string, unknown>>(record: T): Record<str
 function formatUsdAmount(price: number | undefined, currency?: string): string | undefined {
   if (typeof price !== "number" || !Number.isFinite(price)) return undefined;
   const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
-  return `${prefix}${new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(price)}`;
+  return `${prefix}${USD_AMOUNT_FORMATTER.format(price)}`;
 }
 
 function formatKrwAmount(price: number | undefined, rate: number | undefined): string | undefined {
   if (typeof price !== "number" || !Number.isFinite(price) || typeof rate !== "number" || !Number.isFinite(rate)) return undefined;
-  return `약 ${new Intl.NumberFormat("ko-KR").format(Math.round(price * rate))}원`;
+  return `약 ${KO_KR_INTEGER_FORMATTER.format(Math.round(price * rate))}원`;
 }
 
 export function formatUsdPrice(data: StockScoreResponse, fallback: string): string {
   if (data.currency === "KRW") {
     if (fallback && fallback !== "-") return fallback;
     if (typeof data.latest_price === "number" && Number.isFinite(data.latest_price)) {
-      return `${new Intl.NumberFormat("ko-KR").format(Math.round(data.latest_price))}원`;
+      return `${KO_KR_INTEGER_FORMATTER.format(Math.round(data.latest_price))}원`;
     }
   }
   const price = formatUsdAmount(data.latest_price, data.currency);
@@ -437,15 +483,7 @@ function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string)
 function formatKstMinute(value: string): string | undefined {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return undefined;
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
+  const parts = KST_MINUTE_FORMATTER.formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
   const year = part("year");
   const month = part("month");
@@ -459,12 +497,7 @@ function formatKstMinute(value: string): string | undefined {
 function formatKstTime(value: string): string | undefined {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return undefined;
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
+  const parts = KST_TIME_FORMATTER.formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
   const hour = part("hour");
   const minute = part("minute");
@@ -494,20 +527,23 @@ export function chartSummary(points: UsableChartPoint[]): string {
   if (points.length < 2) return "가격 차트 데이터가 충분하지 않아요.";
   const first = points[0];
   const last = points[points.length - 1];
-  const closes = points.map((point) => point.close);
-  const high = Math.max(...closes);
-  const low = Math.min(...closes);
+  let high = first.close;
+  let low = first.close;
+  for (const point of points) {
+    if (point.close > high) high = point.close;
+    if (point.close < low) low = point.close;
+  }
   const change = first.close !== 0 ? (last.close / first.close) - 1 : undefined;
   return `${first.date}부터 ${last.date}까지 ${points.length}개 가격 지점입니다. 시작 ${compactChartNumber(first.close)}, 마지막 ${compactChartNumber(last.close)}, 기간 변화 ${formatPercent(change)}, 최고 ${compactChartNumber(high)}, 최저 ${compactChartNumber(low)}.`;
 }
 
 function compactChartNumber(value: number): string {
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value);
+  return KO_KR_CHART_FORMATTER.format(value);
 }
 
 export function refreshCooldownMessage(nextAllowedAt: string | undefined): string | undefined {
   if (!nextAllowedAt || Date.parse(nextAllowedAt) <= Date.now()) return undefined;
-  return `${new Date(nextAllowedAt).toLocaleTimeString("ko-KR")} 이후 새로고침 가능`;
+  return `${formatKstTime(nextAllowedAt) || new Date(nextAllowedAt).toLocaleTimeString("ko-KR")} 이후 새로고침 가능`;
 }
 
 function removeSourceText(text: string): string {
@@ -585,9 +621,22 @@ export function componentWord(score: number): string {
 }
 
 export function strongestAndWeakest(data: StockScoreResponse) {
-  const components = [...(data.components || [])];
-  const strongest = components.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
-  const weakest = [...components].sort((a, b) => (a.score ?? 101) - (b.score ?? 101))[0];
+  let strongest: ScoreComponent | undefined;
+  let weakest: ScoreComponent | undefined;
+  let strongestScore = -1;
+  let weakestScore = 101;
+  for (const component of data.components || []) {
+    const strongScore = component.score ?? -1;
+    const weakScore = component.score ?? 101;
+    if (!strongest || strongScore > strongestScore) {
+      strongest = component;
+      strongestScore = strongScore;
+    }
+    if (!weakest || weakScore < weakestScore) {
+      weakest = component;
+      weakestScore = weakScore;
+    }
+  }
   return { strongest, weakest };
 }
 
@@ -605,21 +654,37 @@ export function stockHeaderIdentity(data: StockScoreResponse, quote?: StockQuote
 }
 
 export function opportunityExtremes(components: ScoreComponent[] | undefined): OpportunityExtremes {
-  const scored = (components || [])
-    .map((component) => {
-      const score = numberFromUnknown(component.score);
-      const label = shortOpportunityLabel(component.label || component.key);
-      return score === undefined || !label ? undefined : { label, score };
-    })
-    .filter((component): component is OpportunityExtreme => !!component);
+  let best: OpportunityExtreme | undefined;
+  let worst: OpportunityExtreme | undefined;
+  let count = 0;
+  for (const component of components || []) {
+    const score = numberFromUnknown(component.score);
+    const label = shortOpportunityLabel(component.label || component.key);
+    if (score === undefined || !label) continue;
+    const current = { label, score };
+    count += 1;
+    if (!best || score > best.score) best = current;
+    if (!worst || score < worst.score) worst = current;
+  }
 
-  if (!scored.length) return {};
+  return { best, worst: count > 1 ? worst : undefined };
+}
 
-  const sorted = [...scored].sort((a, b) => b.score - a.score);
-  return {
-    best: sorted[0],
-    worst: sorted.length > 1 ? sorted[sorted.length - 1] : undefined,
-  };
+export function shouldUseCompactMetricGrid(component: ScoreComponent): boolean {
+  const metrics = component.metrics || [];
+  if (metrics.length < 2 || metrics.length > 3) return false;
+  return metrics.every((metric) => isCompactMetric(metric));
+}
+
+function isCompactMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim();
+  if (!label || !COMPACT_METRIC_LABELS.has(label)) return false;
+  if (label.length > 9) return false;
+
+  const value = formatValue(metric.value).trim();
+  if (!value || value.length > 8) return false;
+  if (COMPACT_METRIC_BLOCKED_VALUE_RE.test(value)) return false;
+  return true;
 }
 
 function meaningfulHeaderName(value: string | undefined, symbol: string, requestedTicker: string | undefined): string | undefined {

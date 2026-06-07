@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import nextConfig, { PYTHON_COLLECTOR_TRACE_INCLUDES, shouldIncludePythonCollector } from "../next.config";
+import nextConfig, { PYTHON_COLLECTOR_TRACE_INCLUDES, SYMBOL_SEARCH_TRACE_INCLUDES, shouldIncludePythonCollector } from "../next.config";
 
 test("Next config excludes Python collector by default", () => {
   assert.equal(shouldIncludePythonCollector({}), false);
@@ -25,12 +25,13 @@ test("Next config fails closed on Vercel unless Python runtime is explicitly all
   );
 });
 
-test("Next config Python tracing includes score helper modules only", () => {
+test("Next config traces Python helpers and symbol fallback assets", () => {
   assert.deepEqual(PYTHON_COLLECTOR_TRACE_INCLUDES, [
     "./scripts/fetch_stock_score.py",
     "./scripts/stock_score/**/*.py",
     "./requirements.txt",
   ]);
+  assert.deepEqual(SYMBOL_SEARCH_TRACE_INCLUDES, ["./src/data/symbols.generated.json"]);
 
   const config = nextConfig as {
     outputFileTracingIncludes?: Record<string, string[]>;
@@ -38,7 +39,9 @@ test("Next config Python tracing includes score helper modules only", () => {
   };
 
   assert.equal(config.outputFileTracingIncludes?.["/api/quote"], undefined);
-  assert.deepEqual(config.outputFileTracingIncludes?.["/api/score"], undefined);
+  assert.deepEqual(config.outputFileTracingIncludes?.["/api/symbols"], SYMBOL_SEARCH_TRACE_INCLUDES);
+  assert.deepEqual(config.outputFileTracingIncludes?.["/api/score"], SYMBOL_SEARCH_TRACE_INCLUDES);
+  assert.deepEqual(config.outputFileTracingIncludes?.["/technical"], SYMBOL_SEARCH_TRACE_INCLUDES);
 });
 
 test("Next config emits strict production security headers", async () => {

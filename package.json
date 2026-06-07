@@ -15,7 +15,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "market-calendar:sync": "bash scripts/run_python.sh scripts/sync_market_calendar.py",
-    "ops:check": "node --import tsx scripts/stock_operations_report.ts --json --fail-on-threshold --max-dead-refresh-jobs 0 --max-stale-running-refresh-jobs 0 --max-queued-refresh-jobs 1000 --max-stale-score-snapshots 100 --min-current-score-model-rate 0.9 --max-duplicate-score-rate 0.5 --max-low-confidence-high-score 0 --max-missing-quote-price 25 --max-expired-industry-benchmark-rows 0 --max-market-calendar-thin-markets 0 --max-market-data-service-failures 0",
+    "ops:check": "node --import tsx scripts/stock_operations_report.ts --json --fail-on-threshold --max-dead-refresh-jobs 0 --max-stale-running-refresh-jobs 0 --max-queued-refresh-jobs 1000 --max-stale-score-snapshots 100 --min-current-score-model-rate 0.9 --max-duplicate-score-rate 0.5 --max-low-confidence-high-score 0 --max-missing-technical-payloads 0 --max-missing-quote-price 25 --max-expired-industry-benchmark-rows 0 --max-market-calendar-thin-markets 0 --max-market-data-service-failures 0",
     "ops:report": "node --import tsx scripts/stock_operations_report.ts --json",
     "score:smoke": "bash scripts/run_python.sh scripts/score_smoke_check.py",
     "snapshots:drain": "npm run snapshots:drain:quote",

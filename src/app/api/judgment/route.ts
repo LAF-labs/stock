@@ -4,7 +4,7 @@ import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { readJsonObjectWithLimit, jsonError, sameOriginBrowserWriteGuard } from "@/lib/apiGuards";
 import { judgmentBenchmarkCacheToken, judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
 import { getIndustryBenchmarksForStock } from "@/lib/industryBenchmarks";
-import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
+import { enrichStockPayloadWithSymbolProfile, payloadHasUsableIndustryProfile } from "@/lib/symbolProfiles";
 import {
   buildRuleBasedJudgment,
   cachedRuleBasedJudgment,
@@ -136,7 +136,9 @@ export async function POST(request: NextRequest) {
   );
   if (!rateLimit.ok) return rateLimit.response;
 
-  const enrichedPayload = await enrichStockPayloadWithSymbolProfile(body.value);
+  const enrichedPayload = payloadHasUsableIndustryProfile(body.value)
+    ? body.value
+    : await enrichStockPayloadWithSymbolProfile(body.value);
   const stock = compactRuleJudgmentStock(enrichedPayload);
   const ticker = tickerFromRuleJudgmentStock(stock);
   if (!validRuleJudgmentStock(stock, ticker)) {

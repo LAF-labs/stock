@@ -21,12 +21,21 @@ type KisConfig = {
 };
 
 type KisPayload = Record<string, unknown>;
+type KisUsMarket = (typeof KIS_US_MARKETS)[number];
+type KisUsDiscoveryCacheEntry = {
+  market: KisUsMarket;
+  search: KisPayload;
+  expiresAtMs: number;
+};
 
 declare global {
   var __kisQuoteTokenCache: Map<string, KisTokenCacheEntry> | undefined;
+  var __kisQuoteDiscoveryCache: Map<string, KisUsDiscoveryCacheEntry> | undefined;
 }
 
 const tokenCache = (globalThis.__kisQuoteTokenCache ??= new Map<string, KisTokenCacheEntry>());
+const discoveryCache = (globalThis.__kisQuoteDiscoveryCache ??= new Map<string, KisUsDiscoveryCacheEntry>());
+const KIS_US_DISCOVERY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 class KisQuoteError extends Error {
   constructor(message: string) {
@@ -113,84 +122,121 @@ async function fetchUsQuote(symbol: string): Promise<StockPayload> {
   }
 
   const errors: string[] = [];
+  const cacheKey = `US:${symbol}`;
+  const cached = readUsDiscoveryCache(cacheKey);
+  if (cached) {
+    try {
+      const payload = await fetchUsQuoteForMarket(symbol, cached.market, cached.search);
+      delete (payload.fetch as { search_info_cache?: KisPayload } | undefined)?.search_info_cache;
+      return payload;
+    } catch (error) {
+      discoveryCache.delete(cacheKey);
+      errors.push(`${cached.market.excd} cached: ${safeErrorMessage(error)}`);
+    }
+  }
+
   for (const market of KIS_US_MARKETS) {
     try {
-      const detail = outputObject(
-        await kisGet("/uapi/overseas-price/v1/quotations/price-detail", "HHDFS76200200", {
-          AUTH: "",
-          EXCD: market.excd,
-          SYMB: symbol,
-        })
-      );
-      const latestPrice = asFloat(detail.last);
-      if (latestPrice === undefined) {
-        errors.push(`${market.excd}: empty price`);
-        continue;
-      }
-
-      let search: KisPayload = {};
-      try {
-        search = outputObject(
-          await kisGet("/uapi/overseas-price/v1/quotations/search-info", "CTPF1702R", {
-            PRDT_TYPE_CD: market.productType,
-            PDNO: symbol,
-          })
-        );
-      } catch {
-        search = {};
-      }
-
-      const now = new Date();
-      const currency = stringValue(detail.curr) || stringValue(search.tr_crcy_cd) || "USD";
-      const usdKrw = currency === "USD" ? asFloat(detail.t_rate) : undefined;
-      const previousClose = asFloat(detail.base);
-      const latestChange = kisPercent(detail.rate) ?? changeFrom(latestPrice, previousClose);
-      const volume = asInt(detail.tvol);
-      const name = stringValue(search.prdt_eng_name) || stringValue(search.ovrs_item_name) || stringValue(search.prdt_name) || symbol;
-      const exchange = stringValue(search.ovrs_excg_name) || market.label;
-      const latestDate = kisDate(detail.xymd) || now.toISOString().slice(0, 10);
-
-      return {
-        ok: true,
-        type: "quote",
-        requested_ticker: `US:${symbol}`,
-        market: "US",
-        symbol,
-        name,
-        exchange,
-        exchange_code: market.excd,
-        currency,
-        usd_krw_rate: usdKrw,
-        usd_krw_label: usdKrw ? `$1 = ${priceLabel(usdKrw, "KRW")}` : undefined,
-        latest_price: latestPrice,
-        latest_price_label: labeledMoney(latestPrice, currency, usdKrw),
-        latest_bar_date: latestDate,
-        previous_close: previousClose,
-        latest_change: latestChange,
-        latest_change_label: pct(latestChange),
-        volume,
-        volume_label: numLabel(volume),
-        price_metrics: {
-          price: latestPrice,
-          previous_close: previousClose,
-          latest_change: latestChange,
-          volume,
-        },
-        fetch: {
-          source: "market_data",
-          price_detail_endpoint: "/uapi/overseas-price/v1/quotations/price-detail",
-          search_info_endpoint: "/uapi/overseas-price/v1/quotations/search-info",
-          exchange_code: market.excd,
-          fetched_at: now.toISOString(),
-          cache: "server",
-        },
-      };
+      const payload = await fetchUsQuoteForMarket(symbol, market);
+      discoveryCache.set(cacheKey, {
+        market,
+        search: (payload.fetch as { search_info_cache?: KisPayload } | undefined)?.search_info_cache || {},
+        expiresAtMs: Date.now() + KIS_US_DISCOVERY_CACHE_TTL_MS,
+      });
+      delete (payload.fetch as { search_info_cache?: KisPayload } | undefined)?.search_info_cache;
+      return payload;
     } catch (error) {
       errors.push(`${market.excd}: ${safeErrorMessage(error)}`);
     }
   }
 
   throw new KisQuoteError(errors.slice(-3).join("; ") || `${symbol} quote was not found.`);
+}
+
+async function fetchUsQuoteForMarket(symbol: string, market: KisUsMarket, cachedSearch?: KisPayload): Promise<StockPayload> {
+  const detail = outputObject(
+    await kisGet("/uapi/overseas-price/v1/quotations/price-detail", "HHDFS76200200", {
+      AUTH: "",
+      EXCD: market.excd,
+      SYMB: symbol,
+    })
+  );
+  const latestPrice = asFloat(detail.last);
+  if (latestPrice === undefined) {
+    throw new KisQuoteError("empty price");
+  }
+
+  let search: KisPayload = cachedSearch || {};
+  if (!cachedSearch) {
+    try {
+      search = outputObject(
+        await kisGet("/uapi/overseas-price/v1/quotations/search-info", "CTPF1702R", {
+          PRDT_TYPE_CD: market.productType,
+          PDNO: symbol,
+        })
+      );
+    } catch {
+      search = {};
+    }
+  }
+
+  const now = new Date();
+  const currency = stringValue(detail.curr) || stringValue(search.tr_crcy_cd) || "USD";
+  const usdKrw = currency === "USD" ? asFloat(detail.t_rate) : undefined;
+  const previousClose = asFloat(detail.base);
+  const latestChange = kisPercent(detail.rate) ?? changeFrom(latestPrice, previousClose);
+  const volume = asInt(detail.tvol);
+  const name = stringValue(search.prdt_eng_name) || stringValue(search.ovrs_item_name) || stringValue(search.prdt_name) || symbol;
+  const exchange = stringValue(search.ovrs_excg_name) || market.label;
+  const latestDate = kisDate(detail.xymd) || now.toISOString().slice(0, 10);
+
+  return {
+    ok: true,
+    type: "quote",
+    requested_ticker: `US:${symbol}`,
+    market: "US",
+    symbol,
+    name,
+    exchange,
+    exchange_code: market.excd,
+    currency,
+    usd_krw_rate: usdKrw,
+    usd_krw_label: usdKrw ? `$1 = ${priceLabel(usdKrw, "KRW")}` : undefined,
+    latest_price: latestPrice,
+    latest_price_label: labeledMoney(latestPrice, currency, usdKrw),
+    latest_bar_date: latestDate,
+    previous_close: previousClose,
+    latest_change: latestChange,
+    latest_change_label: pct(latestChange),
+    volume,
+    volume_label: numLabel(volume),
+    price_metrics: {
+      price: latestPrice,
+      previous_close: previousClose,
+      latest_change: latestChange,
+      volume,
+    },
+    fetch: {
+      source: "market_data",
+      price_detail_endpoint: "/uapi/overseas-price/v1/quotations/price-detail",
+      search_info_endpoint: cachedSearch ? undefined : "/uapi/overseas-price/v1/quotations/search-info",
+      exchange_code: market.excd,
+      fetched_at: now.toISOString(),
+      cache: "server",
+      discovery_cache: cachedSearch ? "hit" : "miss",
+      search_info_cache: search,
+    },
+  };
+}
+
+function readUsDiscoveryCache(cacheKey: string): KisUsDiscoveryCacheEntry | undefined {
+  const cached = discoveryCache.get(cacheKey);
+  if (!cached) return undefined;
+  if (cached.expiresAtMs <= Date.now()) {
+    discoveryCache.delete(cacheKey);
+    return undefined;
+  }
+  return cached;
 }
 
 async function kisGet(path: string, trId: string, params: Record<string, string>): Promise<KisPayload> {

@@ -89,6 +89,15 @@ export async function enrichStockPayloadWithSymbolProfile<T extends Record<strin
   return mergeSymbolProfileIntoPayload(payload, profile, mapping);
 }
 
+export function payloadHasUsableIndustryProfile(raw: unknown): boolean {
+  const payload = recordFromUnknown(raw);
+  const profile = recordFromUnknown(payload.industry_profile);
+  return !!meaningfulText(payload.sector)
+    && !!meaningfulText(payload.industry)
+    && !!cleanString(profile.market)
+    && !!cleanString(profile.symbol);
+}
+
 export async function getSymbolIndustryProfile(target: SymbolProfileTarget): Promise<SymbolIndustryProfile | undefined> {
   const normalized = normalizeTarget(target);
   if (!normalized) return undefined;

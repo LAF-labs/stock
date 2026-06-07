@@ -110,6 +110,31 @@ export function isCurrentScorePayload(payload: StockPayload): boolean {
   return isCurrentScoreModelPayload(payload);
 }
 
+function approximateJsonBytes(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function maxMemoryPayloadBytes(): number {
+  return Math.max(0, numericEnv("STOCK_SCORE_MEMORY_CACHE_MAX_PAYLOAD_BYTES", 500_000));
+}
+
+function shouldRememberSnapshot(snapshot: StoredSnapshot): boolean {
+  return approximateJsonBytes(snapshot.payload) <= maxMemoryPayloadBytes();
+}
+
+function rememberMemorySnapshot(key: string, snapshot: StoredSnapshot, nowMs: number) {
+  if (!shouldRememberSnapshot(snapshot)) {
+    memoryCache.delete(key);
+    return;
+  }
+  memoryCache.set(key, snapshot);
+  pruneMemoryCache(nowMs);
+}
+
 async function readSupabaseSnapshot(ticker: string, view: ScoreView): Promise<StoredSnapshot | undefined> {
   const config = supabaseReadConfig();
   if (!config) return undefined;
@@ -180,8 +205,7 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
     };
 
     if (payload.ok !== false) {
-      memoryCache.set(key, snapshot);
-      pruneMemoryCache(nowMs);
+      rememberMemorySnapshot(key, snapshot, nowMs);
       await writeSupabaseSnapshot(snapshot);
     }
 
@@ -274,7 +298,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
   if (!freshCandidate) {
     const dbSnapshot = await readSupabaseSnapshot(ticker, view);
     if (dbSnapshot && isFresh(dbSnapshot, nowMs)) {
-      memoryCache.set(key, dbSnapshot);
+      rememberMemorySnapshot(key, dbSnapshot, nowMs);
       freshCandidate = dbSnapshot;
       freshSource = "supabase";
     }
@@ -288,7 +312,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
     if (freshCandidate) return decorate(freshCandidate, "fresh", freshSource);
 
     if (staleCandidate) {
-      memoryCache.set(key, staleCandidate);
+      rememberMemorySnapshot(key, staleCandidate, nowMs);
       if (pythonCollectorEnabled()) {
         scheduleRefresh(ticker, view);
         return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
@@ -342,3 +366,8 @@ export function responseCacheHeaders(result: StockScoreResult): HeadersInit {
     "Cache-Control": `public, max-age=10, s-maxage=${seconds}, stale-while-revalidate=300`,
   };
 }
+
+export const stockSnapshotCacheTestHooks = {
+  approximateJsonBytes,
+  shouldRememberSnapshot,
+};

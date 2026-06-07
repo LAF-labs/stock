@@ -12,6 +12,7 @@ import {
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
+  shouldUseCompactMetricGrid,
   snapshotPendingFromPayload,
   stockHeaderIdentity,
   stockJudgmentRequestPayload,
@@ -200,6 +201,48 @@ test("opportunityExtremes returns the highest and lowest scored opportunity labe
       best: { label: "유동성", score: 91 },
       worst: { label: "목표가", score: 44 },
     },
+  );
+});
+
+test("shouldUseCompactMetricGrid keeps only short numeric metric groups horizontal", () => {
+  assert.equal(
+    shouldUseCompactMetricGrid({
+      key: "momentum",
+      label: "모멘텀",
+      metrics: [
+        { label: "1개월 수익률", value: "+0.3%" },
+        { label: "3개월 수익률", value: "+3.9%" },
+        { label: "52주 고점 거리", value: "-3.9%" },
+      ],
+    }),
+    true,
+  );
+
+  assert.equal(
+    shouldUseCompactMetricGrid({
+      key: "valuation",
+      label: "밸류에이션",
+      metrics: [
+        { label: "Forward PER", value: "22.8x" },
+        { label: "업종 기준 PER", value: "12.8x" },
+        { label: "시가총액", value: "$264.2B" },
+      ],
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldUseCompactMetricGrid({
+      key: "growth",
+      label: "성장성",
+      metrics: [
+        { label: "매출 성장률", value: "+1.2%" },
+        { label: "이익 성장률", value: "+2.4%" },
+        { label: "52주 수익률", value: "+8.1%" },
+        { label: "영업현금흐름", value: "$10.1B" },
+      ],
+    }),
+    false,
   );
 });
 

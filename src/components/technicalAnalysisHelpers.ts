@@ -86,6 +86,17 @@ export function technicalWarnings(payload: TechnicalAnalysisPayload | undefined)
   return (Array.isArray(payload?.warnings) ? payload.warnings : []).map(text).filter(Boolean).slice(0, 3);
 }
 
+export function safeInternalRedirectPath(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed || !trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\")) return fallback;
+  try {
+    const url = new URL(trimmed, "https://stock.local");
+    return url.origin === "https://stock.local" ? `${url.pathname}${url.search}${url.hash}` : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function normalizedTone(value: string | undefined): TechnicalSignalView["tone"] {
   if (value === "bullish" || value === "positive") return "bullish";
   if (value === "bearish" || value === "cautious") return "bearish";

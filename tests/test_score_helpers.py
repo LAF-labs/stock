@@ -2,6 +2,7 @@ import unittest
 import tempfile
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 import scripts.fetch_stock_score as score_module
@@ -129,6 +130,27 @@ class ScoreHelperTests(unittest.TestCase):
                 self.assertTrue(provider_cache.yfinance_fundamental_cache_path("NVDA").exists())
             finally:
                 os.chdir(original_cwd)
+
+    def test_yfinance_fundamentals_can_skip_provider_fetch_on_cache_miss(self):
+        original_cwd = Path.cwd()
+        original_flag = os.environ.get("STOCK_YFINANCE_REQUEST_FETCH")
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                os.environ["STOCK_YFINANCE_REQUEST_FETCH"] = "0"
+                with patch.object(provider_cache.yf, "Ticker", return_value=object()) as ticker:
+                    values, meta = provider_cache.yfinance_fundamentals("NVDA")
+
+                self.assertEqual(values, {})
+                self.assertEqual(meta["cache"], "miss")
+                self.assertEqual(meta["provider_fetch"], "disabled")
+                ticker.assert_not_called()
+            finally:
+                os.chdir(original_cwd)
+                if original_flag is None:
+                    os.environ.pop("STOCK_YFINANCE_REQUEST_FETCH", None)
+                else:
+                    os.environ["STOCK_YFINANCE_REQUEST_FETCH"] = original_flag
 
     def test_yfinance_provider_helpers_normalize_fake_ticker_data(self):
         class FakeTicker:

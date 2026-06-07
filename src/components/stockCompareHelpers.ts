@@ -42,6 +42,8 @@ export type CompareItem = {
   weakest?: ScoreComponent;
 };
 
+const KO_KR_RATIO_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
+
 export function normalizeTicker(value: string): string {
   const text = value.trim().replace(/^!/, "").toUpperCase();
   if (text.includes(":")) {
@@ -118,7 +120,7 @@ export function comparePriceTone(value: number | undefined): "price-up" | "price
 
 export function ratioText(value: number | undefined, suffix = ""): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
-  return `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value)}${suffix}`;
+  return `${KO_KR_RATIO_FORMATTER.format(value)}${suffix}`;
 }
 
 export type SemanticMetricRow<T> = {
@@ -138,10 +140,25 @@ export function semanticMetricRows<T extends { ticker: string }>(items: T[], row
 }
 
 export function strongestAndWeakest(data: StockScoreResponse) {
-  const components = [...(data.components || [])];
+  let strongest: ScoreComponent | undefined;
+  let weakest: ScoreComponent | undefined;
+  let strongestScore = -1;
+  let weakestScore = 101;
+  for (const component of data.components || []) {
+    const strongScore = component.score ?? -1;
+    const weakScore = component.score ?? 101;
+    if (!strongest || strongScore > strongestScore) {
+      strongest = component;
+      strongestScore = strongScore;
+    }
+    if (!weakest || weakScore < weakestScore) {
+      weakest = component;
+      weakestScore = weakScore;
+    }
+  }
   return {
-    strongest: components.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0],
-    weakest: [...components].sort((a, b) => (a.score ?? 101) - (b.score ?? 101))[0],
+    strongest,
+    weakest,
   };
 }
 
@@ -173,13 +190,17 @@ export function toCompareItem(data: StockScoreResponse, requestedTicker: string)
 }
 
 export function bestBy(items: CompareItem[], value: (item: CompareItem) => number | undefined, direction: "high" | "low" = "high") {
-  const usable = items.filter((item) => typeof value(item) === "number");
-  if (!usable.length) return undefined;
-  return usable.sort((a, b) => {
-    const left = value(a) ?? 0;
-    const right = value(b) ?? 0;
-    return direction === "high" ? right - left : left - right;
-  })[0];
+  let best: CompareItem | undefined;
+  let bestValue: number | undefined;
+  for (const item of items) {
+    const current = value(item);
+    if (typeof current !== "number" || !Number.isFinite(current)) continue;
+    if (bestValue === undefined || (direction === "high" ? current > bestValue : current < bestValue)) {
+      best = item;
+      bestValue = current;
+    }
+  }
+  return best;
 }
 
 export function componentScore(item: CompareItem, key: string): number | undefined {

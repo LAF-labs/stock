@@ -78,6 +78,23 @@ test("compare helpers choose best values and normalize chart series", () => {
   ]);
 });
 
+test("compare bestBy evaluates each item once", () => {
+  let calls = 0;
+  const items = [
+    { ticker: "A", score: 70 },
+    { ticker: "B", score: 90 },
+    { ticker: "C", score: undefined },
+  ] as any;
+
+  const best = bestBy(items, (item) => {
+    calls += 1;
+    return item.score;
+  });
+
+  assert.equal(best?.ticker, "B");
+  assert.equal(calls, items.length);
+});
+
 test("compare pending message includes retry hint when available", () => {
   assert.match(pendingMessage({ retry_after_seconds: 300 } as any), /300초/);
   assert.doesNotMatch(pendingMessage(undefined), /초 안에/);

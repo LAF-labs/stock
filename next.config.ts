@@ -8,6 +8,8 @@ export const PYTHON_COLLECTOR_TRACE_INCLUDES = [
   "./requirements.txt",
 ];
 
+export const SYMBOL_SEARCH_TRACE_INCLUDES = ["./src/data/symbols.generated.json"];
+
 export function shouldIncludePythonCollector(env: BuildEnv = process.env): boolean {
   const requested =
     env.INCLUDE_PYTHON_COLLECTOR === "1"
@@ -19,6 +21,9 @@ export function shouldIncludePythonCollector(env: BuildEnv = process.env): boole
 }
 
 const includePythonCollector = shouldIncludePythonCollector();
+const scoreTraceIncludes = includePythonCollector
+  ? [...SYMBOL_SEARCH_TRACE_INCLUDES, ...PYTHON_COLLECTOR_TRACE_INCLUDES]
+  : SYMBOL_SEARCH_TRACE_INCLUDES;
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -71,11 +76,19 @@ const nextConfig: NextConfig = {
   ...(includePythonCollector
     ? {
         outputFileTracingIncludes: {
-          "/api/score": PYTHON_COLLECTOR_TRACE_INCLUDES,
+          "/api/symbols": SYMBOL_SEARCH_TRACE_INCLUDES,
+          "/api/score": scoreTraceIncludes,
           "/api/score/batch": PYTHON_COLLECTOR_TRACE_INCLUDES,
+          "/technical": SYMBOL_SEARCH_TRACE_INCLUDES,
         },
       }
-    : {}),
+    : {
+        outputFileTracingIncludes: {
+          "/api/symbols": SYMBOL_SEARCH_TRACE_INCLUDES,
+          "/api/score": scoreTraceIncludes,
+          "/technical": SYMBOL_SEARCH_TRACE_INCLUDES,
+        },
+      }),
   outputFileTracingExcludes: {
     "/api/quote": ["./next.config.ts"],
     "/api/score": ["./next.config.ts"],

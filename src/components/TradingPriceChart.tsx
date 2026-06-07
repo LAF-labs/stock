@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { formatMonthLabel } from "@/components/stockDashboardHelpers";
 import type { ChartSeriesPoint } from "@/lib/types";
 import type { CandlestickData, HistogramData, IChartApi, LineData, Time } from "lightweight-charts";
 
 type ChartPoint = ChartSeriesPoint & { close: number; date: string };
+type MonthAxisPoint = { index: number; date: string; monthKey: string; label: string };
 
 const MOVING_AVERAGES = [
   { period: 5, color: "#f59f00" },
@@ -13,6 +14,10 @@ const MOVING_AVERAGES = [
   { period: 60, color: "#7c3aed" },
   { period: 120, color: "#475569" },
 ] as const;
+
+const KRW_PRICE_FORMATTER = new Intl.NumberFormat("ko-KR");
+const USD_PRICE_FORMATTER = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const GENERIC_PRICE_FORMATTER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
 function chartPriceLabel(point: ChartPoint) {
   if (point.close_label) return point.close_label;
@@ -22,16 +27,17 @@ function chartPriceLabel(point: ChartPoint) {
 
 function priceLabel(value: number | undefined, currency: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
-  if (currency === "KRW") return `${new Intl.NumberFormat("ko-KR").format(Math.round(value))}원`;
+  if (currency === "KRW") return `${KRW_PRICE_FORMATTER.format(Math.round(value))}원`;
   if (currency === "USD") {
-    return `$${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
+    return `$${USD_PRICE_FORMATTER.format(value)}`;
   }
-  return `${currency} ${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)}`;
+  return `${currency} ${GENERIC_PRICE_FORMATTER.format(value)}`;
 }
 
 export default function TradingPriceChart({ points, mode, describedBy }: { points: ChartPoint[]; mode: "line" | "candle"; describedBy?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const activeScrollbarDragRef = useRef<(() => void) | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; price: string } | null>(null);
   const [renderState, setRenderState] = useState<"loading" | "ready" | "error">("loading");
   const [scrollRange, setScrollRange] = useState<{ start: number; span: number; maxStart: number } | null>(null);
@@ -41,9 +47,11 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
     const candleData: CandlestickData<Time>[] = [];
     const volumeData: HistogramData<Time>[] = [];
     const labels = new Map<string, string>();
+    const monthAxisPoints: MonthAxisPoint[] = [];
 
-    points.forEach((point) => {
+    points.forEach((point, index) => {
       const time = point.date as Time;
+      const monthKey = point.date.slice(0, 7);
       const open = typeof point.open === "number" && Number.isFinite(point.open) ? point.open : point.close;
       const high = typeof point.high === "number" && Number.isFinite(point.high) ? point.high : Math.max(open, point.close);
       const low = typeof point.low === "number" && Number.isFinite(point.low) ? point.low : Math.min(open, point.close);
@@ -58,6 +66,7 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
         color: isUp ? "rgba(240, 68, 82, 0.24)" : "rgba(49, 130, 246, 0.24)",
       });
       labels.set(point.date, chartPriceLabel(point));
+      if (monthKey) monthAxisPoints.push({ index, date: point.date, monthKey, label: formatMonthLabel(point.date) });
     });
 
     const movingAverages = MOVING_AVERAGES.map((average) => ({
@@ -65,7 +74,7 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
       data: movingAverageData(points, average.period),
     }));
 
-    return { lineData, candleData, volumeData, labels, movingAverages };
+    return { lineData, candleData, volumeData, labels, monthAxisPoints, movingAverages };
   }, [points]);
 
   useEffect(() => {
@@ -76,8 +85,10 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
     let chartApi: IChartApi | undefined;
     let wheelHandler: ((event: WheelEvent) => void) | undefined;
     let visibleRangeHandler: ((range: { from: number; to: number } | null) => void) | undefined;
+    let crosshairHandler: Parameters<IChartApi["subscribeCrosshairMove"]>[0] | undefined;
     setRenderState("loading");
     setScrollRange(null);
+    setTooltip(null);
 
     async function renderChart() {
       const currentContainer = containerRef.current;
@@ -111,7 +122,7 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
           fixLeftEdge: true,
           fixRightEdge: true,
           minBarSpacing: 2,
-          tickMarkFormatter: (time: Time) => (typeof time === "string" ? formatMonthLabel(time) : ""),
+          tickMarkFormatter: () => "",
         },
         crosshair: {
           mode: CrosshairMode.Normal,
@@ -179,7 +190,7 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
         attributionLink?.setAttribute("aria-label", "TradingView 차트 제공");
         attributionLink?.setAttribute("rel", "noopener noreferrer");
 
-        chart.subscribeCrosshairMove((param) => {
+        crosshairHandler = (param) => {
           if (!containerRef.current || !param.point || param.point.x < 0 || param.point.y < 0 || !param.time) {
             setTooltip(null);
             return;
@@ -199,7 +210,8 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
             date: time,
             price: chartData.labels.get(time) || priceLabel(value, points[0]?.currency as string),
           });
-        });
+        };
+        chart.subscribeCrosshairMove(crosshairHandler);
 
         chart.timeScale().fitContent();
         visibleRangeHandler = (range: { from: number; to: number } | null) => {
@@ -247,31 +259,101 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
 
     return () => {
       disposed = true;
+      activeScrollbarDragRef.current?.();
       resizeObserver?.disconnect();
+      if (chartApi && crosshairHandler) chartApi.unsubscribeCrosshairMove(crosshairHandler);
       if (chartApi && visibleRangeHandler) chartApi.timeScale().unsubscribeVisibleLogicalRangeChange(visibleRangeHandler);
       if (wheelHandler) containerRef.current?.removeEventListener("wheel", wheelHandler);
       chartApi?.remove();
       if (chartRef.current === chartApi) chartRef.current = null;
       containerRef.current?.replaceChildren();
-      setTooltip(null);
-      setScrollRange(null);
     };
   }, [chartData, mode, points]);
 
-  function scrollChart(value: string) {
-    const nextStart = Number(value);
+  function scrollChartToStart(nextStart: number) {
     if (!Number.isFinite(nextStart) || !scrollRange || !chartRef.current) return;
+    const clampedStart = Math.max(0, Math.min(scrollRange.maxStart, nextStart));
     chartRef.current.timeScale().setVisibleLogicalRange({
-      from: nextStart,
-      to: nextStart + scrollRange.span,
+      from: clampedStart,
+      to: clampedStart + scrollRange.span,
     });
   }
 
   const showRangeScrollbar = !!scrollRange && scrollRange.maxStart > 0.5;
+  const scrollbarThumb = scrollRange ? scrollbarThumbMetrics(scrollRange) : null;
+  const monthAxisMarkers = visibleMonthAxisMarkers(
+    chartData.monthAxisPoints,
+    scrollRange,
+    chartData.lineData.length
+  );
+
+  function onScrollbarPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!scrollRange || !chartRef.current) return;
+    activeScrollbarDragRef.current?.();
+    const track = event.currentTarget;
+    const rect = track.getBoundingClientRect();
+    const thumb = scrollbarThumbMetrics(scrollRange);
+    const thumbWidthPx = rect.width * (thumb.width / 100);
+    const maxLeftPx = rect.width - thumbWidthPx;
+    if (maxLeftPx <= 0) return;
+
+    const targetIsThumb = event.target instanceof HTMLElement && event.target.classList.contains("chart-range-scrollbar-thumb");
+    const currentLeftPx = maxLeftPx * (scrollRange.start / Math.max(1, scrollRange.maxStart));
+    const pointerOffset = targetIsThumb ? event.clientX - rect.left - currentLeftPx : thumbWidthPx / 2;
+    const applyClientX = (clientX: number) => {
+      const leftPx = Math.max(0, Math.min(maxLeftPx, clientX - rect.left - pointerOffset));
+      scrollChartToStart((leftPx / maxLeftPx) * scrollRange.maxStart);
+    };
+    if (!targetIsThumb) applyClientX(event.clientX);
+
+    event.preventDefault();
+    const ownerDocument = track.ownerDocument;
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      applyClientX(moveEvent.clientX);
+    };
+    const clearDragListeners = () => {
+      ownerDocument.removeEventListener("pointermove", handleMove);
+      ownerDocument.removeEventListener("pointerup", clearDragListeners);
+      ownerDocument.removeEventListener("pointercancel", clearDragListeners);
+      if (activeScrollbarDragRef.current === clearDragListeners) activeScrollbarDragRef.current = null;
+    };
+    activeScrollbarDragRef.current = clearDragListeners;
+    ownerDocument.addEventListener("pointermove", handleMove);
+    ownerDocument.addEventListener("pointerup", clearDragListeners);
+    ownerDocument.addEventListener("pointercancel", clearDragListeners);
+  }
+
+  function onScrollbarKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!scrollRange) return;
+    const step = Math.max(1, scrollRange.span * 0.12);
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      event.preventDefault();
+      scrollChartToStart(scrollRange.start - step);
+    } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      event.preventDefault();
+      scrollChartToStart(scrollRange.start + step);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      scrollChartToStart(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      scrollChartToStart(scrollRange.maxStart);
+    }
+  }
 
   return (
-    <div className="chart-plot">
+    <div className={`chart-plot${showRangeScrollbar ? " has-range-scrollbar" : ""}`}>
       <div ref={containerRef} className="trading-chart" role="img" aria-label={mode === "candle" ? "캔들 가격 차트" : "선 가격 차트"} aria-describedby={describedBy} />
+      {monthAxisMarkers.length ? (
+        <div className="chart-month-axis" aria-hidden="true">
+          {monthAxisMarkers.map((marker) => (
+            <span key={`${marker.monthKey}-${marker.index}`} style={{ left: `${marker.left}%` }}>
+              {marker.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
       {mode === "candle" ? (
         <div className="chart-ma-legend" aria-label="이동평균선">
           {MOVING_AVERAGES.map((average) => (
@@ -283,16 +365,20 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
         </div>
       ) : null}
       {showRangeScrollbar ? (
-        <input
+        <div
           className="chart-range-scrollbar"
-          type="range"
-          min="0"
-          max={scrollRange.maxStart}
-          step="0.1"
-          value={Math.min(scrollRange.start, scrollRange.maxStart)}
+          role="scrollbar"
           aria-label="차트 표시 구간 이동"
-          onChange={(event) => scrollChart(event.currentTarget.value)}
-        />
+          aria-orientation="horizontal"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(scrollRange.maxStart)}
+          aria-valuenow={Math.round(Math.min(scrollRange.start, scrollRange.maxStart))}
+          tabIndex={0}
+          onPointerDown={onScrollbarPointerDown}
+          onKeyDown={onScrollbarKeyDown}
+        >
+          <span className="chart-range-scrollbar-thumb" style={scrollbarThumb?.style} />
+        </div>
       ) : null}
       {renderState === "loading" ? (
         <p className="chart-fallback" role="status" aria-live="polite">차트를 그리는 중이에요.</p>
@@ -314,6 +400,45 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
       ) : null}
     </div>
   );
+}
+
+function scrollbarThumbMetrics(range: { start: number; span: number; maxStart: number }): { left: number; width: number; style: CSSProperties } {
+  const total = Math.max(1, range.maxStart + range.span);
+  const width = Math.max(12, Math.min(100, (range.span / total) * 100));
+  const left = range.maxStart > 0 ? Math.min(100 - width, (range.start / range.maxStart) * (100 - width)) : 0;
+  return {
+    left,
+    width,
+    style: {
+      "--chart-scroll-thumb-left": `${left}%`,
+      "--chart-scroll-thumb-width": `${width}%`,
+    } as CSSProperties,
+  };
+}
+
+function visibleMonthAxisMarkers(
+  points: MonthAxisPoint[],
+  range: { start: number; span: number; maxStart: number } | null,
+  length: number
+): Array<MonthAxisPoint & { left: number }> {
+  if (!points.length || length < 2) return [];
+  const visibleStart = range ? range.start : 0;
+  const visibleSpan = range ? range.span : length - 1;
+  const visibleEnd = visibleStart + visibleSpan;
+  const seen = new Set<string>();
+  const markers: Array<MonthAxisPoint & { left: number }> = [];
+
+  for (const point of points) {
+    if (point.index < Math.floor(visibleStart) || point.index > Math.ceil(visibleEnd)) continue;
+    if (seen.has(point.monthKey)) continue;
+    seen.add(point.monthKey);
+    markers.push({
+      ...point,
+      left: Math.max(0, Math.min(100, ((point.index - visibleStart) / Math.max(1, visibleSpan)) * 100)),
+    });
+  }
+
+  return markers;
 }
 
 function movingAverageData(points: ChartPoint[], period: number): LineData<Time>[] {

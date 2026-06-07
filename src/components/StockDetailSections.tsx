@@ -1,8 +1,8 @@
 "use client";
 
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
-import { useEffect, useId, useMemo, useState } from "react";
-import TradingPriceChart from "@/components/TradingPriceChart";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   SOURCE_VENDOR_TEXT,
   chartSummary,
@@ -14,12 +14,24 @@ import {
   humanizeRecordKey,
   isRecordValue,
   isSourceOnlyLabel,
+  shouldUseCompactMetricGrid,
   termTipFor,
   usableChartPoints,
   visibleRecordEntries,
 } from "@/components/stockDashboardHelpers";
 import { clampScore, formatDateTimeFromEpoch, formatValue } from "@/lib/format";
 import type { ChartPattern, ChartSeriesPoint, JsonValue, LabeledValue, NewsItem, ScoreComponent } from "@/lib/types";
+
+type TradingPriceChartProps = {
+  points: Array<ChartSeriesPoint & { close: number; date: string }>;
+  mode: "line" | "candle";
+  describedBy?: string;
+};
+
+const TradingPriceChart = dynamic<TradingPriceChartProps>(() => import("@/components/TradingPriceChart"), {
+  ssr: false,
+  loading: () => <ChartLoadingPlaceholder />,
+});
 
 export function ChartStory({
   points,
@@ -69,7 +81,7 @@ export function ChartStory({
       <p id={summaryId} className="sr-only">
         {chartSummary(oneYearPoints)}
       </p>
-      <TradingPriceChart points={oneYearPoints} mode={chartMode} describedBy={summaryId} />
+      <LazyTradingPriceChart points={oneYearPoints} mode={chartMode} describedBy={summaryId} />
       <div className="pattern-chips">
         {(patterns || []).slice(0, 3).map((pattern) => (
           <article key={pattern.name}>
@@ -88,6 +100,47 @@ export function ChartStory({
         </a>
       ) : null}
     </section>
+  );
+}
+
+function LazyTradingPriceChart(props: TradingPriceChartProps) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [shouldLoad, setShouldLoad] = useState(false);
+
+  useEffect(() => {
+    if (shouldLoad) return undefined;
+    const element = frameRef.current;
+    if (!element || typeof window === "undefined") return undefined;
+    if (!("IntersectionObserver" in window)) {
+      setShouldLoad(true);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setShouldLoad(true);
+        observer.disconnect();
+      },
+      { rootMargin: "320px 0px" }
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  return (
+    <div ref={frameRef}>
+      {shouldLoad ? <TradingPriceChart {...props} /> : <ChartLoadingPlaceholder />}
+    </div>
+  );
+}
+
+function ChartLoadingPlaceholder() {
+  return (
+    <div className="chart-plot">
+      <div className="trading-chart" aria-hidden="true" />
+      <p className="chart-fallback" role="status" aria-live="polite">차트를 준비하고 있어요.</p>
+    </div>
   );
 }
 
@@ -125,7 +178,7 @@ export function FactorStory({
                 <b style={{ width: `${score}%` }} />
               </i>
               <p>{factorSummary(component)}</p>
-              <ul>
+              <ul className={shouldUseCompactMetricGrid(component) ? "compact-metric-grid" : undefined}>
                 {(component.metrics || []).map((metric) => (
                   <li key={`${component.key}-${metric.label}`}>
                     <span>

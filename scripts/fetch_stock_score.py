@@ -239,10 +239,170 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 
+def technical_price_metrics_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    close_key: str,
+    high_key: str,
+    low_key: str,
+    volume_key: str,
+    latest_price: float | None,
+    previous_close: float | None,
+) -> dict[str, Any]:
+    closes = [float(row[close_key]) for row in rows if as_float(row.get(close_key)) is not None]
+    highs = [as_float(row.get(high_key)) for row in rows]
+    lows = [as_float(row.get(low_key)) for row in rows]
+    year_high = max([value for value in highs[-252:] if value is not None], default=None)
+    year_low = min([value for value in lows[-252:] if value is not None], default=None)
+    ma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
+    ma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+    ret_1m = return_between(closes, 21)
+    ret_3m = return_between(closes, 63)
+    ret_6m = return_between(closes, 126)
+    ret_52w = return_between(closes, min(251, len(closes) - 1)) if len(closes) > 2 else None
+    rsi14 = simple_rsi(closes, 14)
+    history_df = pd.DataFrame(
+        [{"High": as_float(row.get(high_key)), "Low": as_float(row.get(low_key)), "Close": as_float(row.get(close_key))} for row in rows]
+    )
+    atr14, atr14_pct = atr_percent(history_df.dropna(subset=["Close"]) if not history_df.empty else history_df, 14)
+    distance_52w_high = ((latest_price / year_high) - 1.0) if latest_price and year_high else None
+    return {
+        "price": latest_price,
+        "previous_close": previous_close,
+        "latest_change": (((latest_price / previous_close) - 1.0) if latest_price and previous_close else None),
+        "return_1m": ret_1m,
+        "return_3m": ret_3m,
+        "return_6m": ret_6m,
+        "return_52w": ret_52w,
+        "distance_from_52w_high": distance_52w_high,
+        "high_52w": year_high,
+        "low_52w": year_low,
+        "sma50": ma50,
+        "sma200": ma200,
+        "rsi14": rsi14,
+        "atr14": atr14,
+        "atr14_pct": atr14_pct,
+        "avg_volume_20": average([as_float(row.get(volume_key)) for row in rows[-20:]]) if rows else None,
+        "avg_volume_60": average([as_float(row.get(volume_key)) for row in rows[-60:]]) if rows else None,
+    }
+
+
+def fetch_technical_score_kis_us(raw_ticker: str) -> dict[str, Any]:
+    symbol = clean_ticker(raw_ticker)
+    if not symbol or not TICKER_RE.match(symbol):
+        return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "정확한 미국 주식 티커만 입력하세요."}
+
+    cached = read_kis_discovery_cache(symbol)
+    discovered: dict[str, Any] | None = None
+    if cached:
+        market = cached["market"]
+        search = cached.get("search") if isinstance(cached.get("search"), dict) else {}
+        detail: dict[str, Any] = {}
+    else:
+        try:
+            discovered = discover_kis_stock(symbol)
+        except KisApiError as exc:
+            return kis_error_payload(exc)
+        market = discovered["market"]
+        search = discovered.get("search") if isinstance(discovered.get("search"), dict) else {}
+        detail = discovered.get("detail") if isinstance(discovered.get("detail"), dict) else {}
+
+    excd = str(market["excd"])
+    try:
+        daily_rows = kis_daily_rows(excd, symbol)
+    except Exception:
+        daily_rows = []
+
+    currency = str(detail.get("curr") or search.get("tr_crcy_cd") or "USD")
+    usd_krw = as_float(detail.get("t_rate")) if currency == "USD" else None
+    latest_row = daily_rows[-1] if daily_rows else {}
+    previous_row = daily_rows[-2] if len(daily_rows) >= 2 else {}
+    latest_price = as_float(latest_row.get("clos")) or as_float(detail.get("last"))
+    previous_close = as_float(previous_row.get("clos")) or as_float(detail.get("base"))
+    latest_date = kis_date(latest_row.get("xymd")) if latest_row else datetime.now(timezone.utc).date().isoformat()
+    name = str(search.get("prdt_eng_name") or search.get("ovrs_item_name") or search.get("prdt_name") or symbol)
+    exchange = str(search.get("ovrs_excg_name") or market.get("label") or excd)
+    price_metrics = technical_price_metrics_from_rows(
+        daily_rows,
+        close_key="clos",
+        high_key="high",
+        low_key="low",
+        volume_key="tvol",
+        latest_price=latest_price,
+        previous_close=previous_close,
+    )
+    return build_technical_score_payload(
+        raw_ticker=raw_ticker,
+        market="US",
+        symbol=symbol,
+        name=name,
+        exchange=exchange,
+        currency=currency,
+        latest_price=latest_price,
+        latest_date=latest_date,
+        chart_series=kis_chart_series(daily_rows, currency, usd_krw),
+        price_metrics=price_metrics,
+        fetch_source="market_data",
+        fetch_extra={
+            "daily_price_endpoint": "/uapi/overseas-price/v1/quotations/dailyprice",
+            "provider_mode": "technical_fast_path",
+            "exchange_code": excd,
+            "history_rows": len(daily_rows),
+            "discovery_cache": "hit" if cached else "miss",
+        },
+    )
+
+
+def fetch_technical_score_kis_domestic(raw_ticker: str) -> dict[str, Any]:
+    symbol = clean_ticker(raw_ticker)
+    if not symbol or not KR_TICKER_RE.match(symbol):
+        return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "정확한 국내 주식 종목코드만 입력하세요."}
+
+    try:
+        daily_rows = kis_domestic_daily_rows(symbol)
+    except Exception:
+        daily_rows = []
+
+    latest_row = daily_rows[-1] if daily_rows else {}
+    previous_row = daily_rows[-2] if len(daily_rows) >= 2 else {}
+    latest_price = as_float(latest_row.get("stck_clpr"))
+    previous_close = as_float(previous_row.get("stck_clpr"))
+    latest_date = kis_date(latest_row.get("stck_bsop_date")) if latest_row else datetime.now(timezone.utc).date().isoformat()
+    price_metrics = technical_price_metrics_from_rows(
+        daily_rows,
+        close_key="stck_clpr",
+        high_key="stck_hgpr",
+        low_key="stck_lwpr",
+        volume_key="acml_vol",
+        latest_price=latest_price,
+        previous_close=previous_close,
+    )
+    return build_technical_score_payload(
+        raw_ticker=raw_ticker,
+        market="KR",
+        symbol=symbol,
+        name=symbol,
+        exchange="KRX",
+        currency="KRW",
+        latest_price=latest_price,
+        latest_date=latest_date,
+        chart_series=kis_domestic_chart_series(daily_rows),
+        price_metrics=price_metrics,
+        fetch_source="market_data",
+        fetch_extra={
+            "daily_price_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+            "provider_mode": "technical_fast_path",
+            "history_rows": len(daily_rows),
+        },
+    )
+
+
 def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: float | None = None, use_rate_override: bool = False) -> dict[str, Any]:
     symbol = clean_ticker(raw_ticker)
     if not symbol or not TICKER_RE.match(symbol):
         return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "정확한 미국 주식 티커만 입력하세요."}
+    if view == "technical":
+        return fetch_technical_score_kis_us(raw_ticker)
 
     try:
         discovered = discover_kis_stock(symbol)
@@ -735,6 +895,8 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     symbol = clean_ticker(raw_ticker)
     if not symbol or not KR_TICKER_RE.match(symbol):
         return {"ok": False, "status": 400, "error": "invalid_ticker", "message": "정확한 국내 주식 종목코드만 입력하세요."}
+    if view == "technical":
+        return fetch_technical_score_kis_domestic(raw_ticker)
 
     try:
         price = kis_domestic_price(symbol, KIS_DOMESTIC_SCORE_MARKET_DIV_CODE)

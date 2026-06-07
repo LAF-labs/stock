@@ -11,6 +11,7 @@ import {
   technicalToneLabel,
   technicalWarnings,
   normalizedTone,
+  safeInternalRedirectPath,
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
 import { snapshotPendingFromPayload, stringFromUnknown, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
@@ -59,7 +60,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
         const payload = await readApiPayload(response);
         const redirectTo = stringFromUnknown(payload.redirect_to);
         if (!response.ok && payload.error === "technical_unsupported_product" && redirectTo) {
-          window.location.assign(redirectTo);
+          window.location.assign(safeInternalRedirectPath(redirectTo, detailHref));
           return undefined;
         }
         const pending = snapshotPendingFromPayload(payload, ticker);
@@ -88,9 +89,9 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const data = state.status === "success" ? state.data : undefined;
   const technical = isTechnicalAnalysisPayload(data?.technical_analysis) ? data.technical_analysis : undefined;
   const signals = useMemo(() => technicalSignals(technical), [technical]);
-  const warnings = technicalWarnings(technical);
-  const bullets = technicalSummaryBullets(technical);
-  const summaryTone = normalizedTone(String(technical?.summary?.tone || ""));
+  const warnings = useMemo(() => technicalWarnings(technical), [technical]);
+  const bullets = useMemo(() => technicalSummaryBullets(technical), [technical]);
+  const summaryTone = useMemo(() => normalizedTone(String(technical?.summary?.tone || "")), [technical]);
   const confluenceScore = typeof technical?.confluence?.score === "number" ? Math.max(0, Math.min(100, technical.confluence.score)) : undefined;
 
   return (

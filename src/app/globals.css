@@ -295,7 +295,9 @@ a:focus-visible {
 }
 
 .stock-feed {
-  display: block;
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .stock-feed-section {
@@ -906,6 +908,15 @@ a:focus-visible {
   border-top: 12px solid #f2f4f6;
 }
 
+.stock-detail-app .app-status,
+.stock-detail-app .empty-card,
+.stock-detail-app .chart-story,
+.stock-detail-app .factor-card,
+.stock-detail-app .accordion-card,
+.stock-detail-app .static-card {
+  border-top: 0;
+}
+
 .app-status strong,
 .empty-card strong {
   display: block;
@@ -1027,6 +1038,39 @@ a:focus-visible {
   touch-action: pan-y;
 }
 
+.chart-month-axis {
+  position: absolute;
+  left: 18px;
+  right: 64px;
+  bottom: 8px;
+  z-index: 2;
+  height: 18px;
+  pointer-events: none;
+}
+
+.chart-plot.has-range-scrollbar .chart-month-axis {
+  bottom: 28px;
+}
+
+.chart-month-axis span {
+  position: absolute;
+  top: 0;
+  color: #8b95a1;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.chart-month-axis span:first-child:not(:last-child) {
+  transform: translateX(0);
+}
+
+.chart-month-axis span:last-child {
+  transform: translateX(-100%);
+}
+
 .chart-ma-legend {
   position: absolute;
   left: 12px;
@@ -1061,14 +1105,42 @@ a:focus-visible {
 
 .chart-range-scrollbar {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 10px;
+  left: 14px;
+  right: 14px;
+  bottom: 9px;
   z-index: 3;
-  width: calc(100% - 24px);
-  height: 14px;
+  height: 18px;
   margin: 0;
-  accent-color: var(--accent);
+  touch-action: none;
+  cursor: grab;
+}
+
+.chart-range-scrollbar:active {
+  cursor: grabbing;
+}
+
+.chart-range-scrollbar-thumb {
+  position: absolute;
+  top: 50%;
+  left: var(--chart-scroll-thumb-left);
+  width: var(--chart-scroll-thumb-width);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(71, 85, 105, 0.48);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14);
+  transform: translateY(-50%);
+  transition: background-color 160ms ease, height 160ms ease;
+}
+
+.chart-range-scrollbar:hover .chart-range-scrollbar-thumb,
+.chart-range-scrollbar:focus-visible .chart-range-scrollbar-thumb {
+  height: 7px;
+  background: rgba(71, 85, 105, 0.62);
+}
+
+.chart-range-scrollbar:focus-visible {
+  outline: 2px solid rgba(49, 130, 246, 0.36);
+  outline-offset: 2px;
 }
 
 .trading-chart #tv-attr-logo {
@@ -1682,6 +1754,46 @@ a:focus-visible {
   font-size: 16px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.factor-list ul.compact-metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.factor-list ul.compact-metric-grid li {
+  min-width: 0;
+  min-height: 68px;
+  display: grid;
+  align-content: center;
+  padding: 12px 7px;
+}
+
+.factor-list ul.compact-metric-grid li > span,
+.factor-list ul.compact-metric-grid .label-with-term {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.factor-list ul.compact-metric-grid li > span {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.25;
+  overflow: hidden;
+}
+
+.factor-list ul.compact-metric-grid .info-tip-wrap {
+  display: none;
+}
+
+.factor-list ul.compact-metric-grid li strong {
+  margin-top: 6px;
+  font-size: 17px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .accordion-card {
@@ -2643,6 +2755,10 @@ a:focus-visible {
     padding: 0 14px;
   }
 
+  .stock-mobile-action.stock-verdict-action {
+    margin: 12px 0 0;
+  }
+
   .compare-side-index {
     display: block;
     margin: 12px 16px 0;
@@ -2809,9 +2925,9 @@ a:focus-visible {
   .stock-detail-app .stock-feed {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
+    gap: 8px;
     align-items: start;
-    margin-top: 16px;
+    margin-top: 8px;
   }
 
   .stock-detail-app .stock-title-card,
@@ -3259,6 +3375,10 @@ body {
 
 .stock-detail-app .factor-list ul {
   grid-template-columns: 1fr;
+}
+
+.stock-detail-app .factor-list ul.compact-metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .pattern-chips article,

@@ -366,6 +366,17 @@ def yfinance_cache_meta(store: str, state: str, **extra: Any) -> dict[str, Any]:
     }
 
 
+def yfinance_request_fetch_enabled() -> bool:
+    raw = (env_value("STOCK_YFINANCE_REQUEST_FETCH") or "").strip().lower()
+    if raw:
+        return raw in {"1", "true", "yes", "on", "enabled"}
+
+    runtime = ((env_value("STOCK_DATA_RUNTIME") or env_value("STOCK_DATA_BACKEND") or "")).strip().lower()
+    if runtime == "snapshot" or env_value("VERCEL"):
+        return False
+    return True
+
+
 def cached_payload_state(cached: dict[str, Any], now: float) -> str | None:
     if cached.get("version") != YFINANCE_FUNDAMENTAL_CACHE_VERSION:
         return None
@@ -423,6 +434,10 @@ def yfinance_fundamentals(symbol: str, market: str = "US") -> tuple[dict[str, An
         if local_values and local_state == "stale"
         else None
     )
+    if not yfinance_request_fetch_enabled():
+        if stale_values:
+            return stale_values, {**(stale_meta or yfinance_cache_meta("unknown", "stale")), "provider_fetch": "disabled"}
+        return {}, yfinance_cache_meta("provider", "miss", provider_fetch="disabled")
 
     lock_path = yfinance_fundamental_cache_path(symbol).with_suffix(".lock")
     with one_byte_file_lock(lock_path):

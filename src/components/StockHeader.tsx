@@ -42,6 +42,7 @@ export default function StockHeader({
   quoteRefreshState,
   onRefreshQuote,
   judgmentState,
+  compareHref,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
@@ -49,6 +50,7 @@ export default function StockHeader({
   quoteRefreshState: QuoteRefreshState;
   onRefreshQuote: () => void;
   judgmentState: JudgmentState;
+  compareHref?: string;
 }) {
   const displayData = scoreDataWithQuote(data, quote);
   const qualityScore = clampScore(data.quality_score ?? data.score);
@@ -191,6 +193,11 @@ export default function StockHeader({
           <p>{stockJudgment?.body || (judgmentState.status === "error" ? "잠시 후 다시 검색해보세요." : "가격, 점수, 재무 지표를 묶어서 해석하는 중이에요.")}</p>
         )}
         {stockJudgment?.watch ? <p className="verdict-watch">{stockJudgment.watch}</p> : null}
+        {compareHref ? (
+          <a className="stock-mobile-action stock-verdict-action" href={compareHref}>
+            다른 종목과 비교하기
+          </a>
+        ) : null}
       </div>
     </section>
   );

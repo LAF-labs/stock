@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   isTechnicalAnalysisPayload,
+  safeInternalRedirectPath,
   technicalCoverageLabel,
   technicalSignals,
   technicalStatusCopy,
@@ -35,4 +36,14 @@ test("technical analysis helpers normalize beginner-facing copy", () => {
   assert.deepEqual(technicalSummaryBullets(payload), ["이평선 계산 전이에요."]);
   assert.deepEqual(technicalWarnings(payload), ["상장 초기 또는 데이터 부족 구간이에요."]);
   assert.equal(technicalSignals(payload)[0].tone, "insufficient");
+});
+
+test("safeInternalRedirectPath accepts only same-site relative redirects", () => {
+  assert.equal(safeInternalRedirectPath("/?ticker=US%3AKO", "/?ticker=US%3AKO"), "/?ticker=US%3AKO");
+  assert.equal(safeInternalRedirectPath("/technical?ticker=KR%3A005930#chart", "/"), "/technical?ticker=KR%3A005930#chart");
+
+  assert.equal(safeInternalRedirectPath("https://evil.example/path", "/?ticker=US%3AKO"), "/?ticker=US%3AKO");
+  assert.equal(safeInternalRedirectPath("//evil.example/path", "/?ticker=US%3AKO"), "/?ticker=US%3AKO");
+  assert.equal(safeInternalRedirectPath("javascript:alert(1)", "/?ticker=US%3AKO"), "/?ticker=US%3AKO");
+  assert.equal(safeInternalRedirectPath("/\\evil.example", "/?ticker=US%3AKO"), "/?ticker=US%3AKO");
 });

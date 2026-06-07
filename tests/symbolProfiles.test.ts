@@ -4,6 +4,7 @@ import {
   clearSymbolProfileCacheForTests,
   getSymbolIndustryProfile,
   mergeSymbolProfileIntoPayload,
+  payloadHasUsableIndustryProfile,
   targetFromStockPayload,
   type SymbolIndustryProfile,
 } from "../src/lib/symbolProfiles";
@@ -135,6 +136,19 @@ test("symbol industry profile enriches top-level and display profile fields", ()
   assert.equal(industryProfile.display_industry, "반도체");
   assert.equal(industryProfile.canonical_industry_name, "반도체");
   assert.equal(industryProfile.classification_status, "verified");
+});
+
+test("symbol payload can skip profile enrich only when industry fields are already usable", () => {
+  assert.equal(
+    payloadHasUsableIndustryProfile({
+      sector: "필수소비재",
+      industry: "음료",
+      industry_profile: { market: "US", symbol: "KO" },
+    }),
+    true
+  );
+  assert.equal(payloadHasUsableIndustryProfile({ sector: "필수소비재", industry: "-", industry_profile: { market: "US", symbol: "KO" } }), false);
+  assert.equal(payloadHasUsableIndustryProfile({ sector: "필수소비재", industry: "음료" }), false);
 });
 
 test("symbol profile replaces quote ticker-name placeholders but keeps meaningful provider names", () => {

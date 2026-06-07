@@ -16,7 +16,7 @@ import {
   symbolRef,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
-import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisEligibility";
+import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
@@ -360,9 +360,6 @@ export default function StockDashboard() {
             onSelect={scrollToDetailSection}
             compareHref={compareHref}
           />
-          <a className="stock-mobile-action" href={compareHref}>
-            다른 종목과 비교하기
-          </a>
           <div className="stock-feed">
             <DetailSection id="detail-summary">
               <StockHeader
@@ -372,6 +369,7 @@ export default function StockDashboard() {
                 quoteRefreshState={quoteRefreshState}
                 onRefreshQuote={refreshQuote}
                 judgmentState={judgmentState}
+                compareHref={compareHref}
               />
             </DetailSection>
             <DetailSection id="detail-chart">

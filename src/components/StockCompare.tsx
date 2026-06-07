@@ -159,10 +159,11 @@ export default function StockCompare() {
     () => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
     [states]
   );
-  const isLoading = states.some((state) => state.status === "loading");
-  const pendingStates = states.filter((state): state is Extract<LoadState, { status: "pending" }> => state.status === "pending");
+  const isLoading = useMemo(() => states.some((state) => state.status === "loading"), [states]);
+  const pendingStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "pending" }> => state.status === "pending"), [states]);
+  const errorStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "error" }> => state.status === "error"), [states]);
   const selectedCount = tickers.length;
-  const baseItem = items.find((item) => item.ticker === baseTickerLabel);
+  const baseItem = useMemo(() => items.find((item) => item.ticker === baseTickerLabel), [items, baseTickerLabel]);
   const detailHref = `/?ticker=${encodeURIComponent(baseTicker)}`;
 
   function addTicker(value: string) {
@@ -233,15 +234,13 @@ export default function StockCompare() {
         />
       </section>
 
-      {states.some((state) => state.status === "error") ? (
+      {errorStates.length ? (
         <section className="compare-errors" role="alert" aria-live="assertive">
-          {states
-            .filter((state): state is Extract<LoadState, { status: "error" }> => state.status === "error")
-            .map((state) => (
-              <p key={state.ticker}>
-                <strong>{state.ticker}</strong> {state.error}
-              </p>
-            ))}
+          {errorStates.map((state) => (
+            <p key={state.ticker}>
+              <strong>{state.ticker}</strong> {state.error}
+            </p>
+          ))}
           <button type="button" onClick={retryCompare}>다시 시도</button>
         </section>
       ) : null}
@@ -294,12 +293,15 @@ function CompareSkeleton() {
 }
 
 function CompareBrief({ items }: { items: CompareItem[] }) {
-  const bestScore = bestBy(items, (item) => item.score);
-  const bestOpportunity = bestBy(items, (item) => item.opportunityScore);
-  const bestMomentum = bestBy(items, (item) => item.return52w ?? item.return6m ?? item.return3m);
-  const bestValue = bestBy(items, (item) => componentScore(item, "valuation"));
-  const bestProfit = bestBy(items, (item) => componentScore(item, "profitability"));
-  const weakestHealth = bestBy(items, (item) => componentScore(item, "health"), "low");
+  const insights = useMemo(() => ({
+    bestScore: bestBy(items, (item) => item.score),
+    bestOpportunity: bestBy(items, (item) => item.opportunityScore),
+    bestMomentum: bestBy(items, (item) => item.return52w ?? item.return6m ?? item.return3m),
+    bestValue: bestBy(items, (item) => componentScore(item, "valuation")),
+    bestProfit: bestBy(items, (item) => componentScore(item, "profitability")),
+    weakestHealth: bestBy(items, (item) => componentScore(item, "health"), "low"),
+  }), [items]);
+  const { bestScore, bestOpportunity, bestMomentum, bestValue, bestProfit, weakestHealth } = insights;
   const base = items[0];
 
   return (
@@ -483,6 +485,14 @@ type MetricRow = {
   best?: "high" | "low";
 };
 
+type PreparedMetricRow = {
+  row: MetricRow;
+  best?: CompareItem;
+  min?: number;
+  max?: number;
+  values: Map<string, number | undefined>;
+};
+
 const METRIC_GROUPS = [
   {
     key: "price",
@@ -519,19 +529,44 @@ const METRIC_ROWS: MetricRow[] = [
   { group: "valuation", label: "Forward PER", description: "낮을수록 예상 이익 대비 부담이 덜해요", value: (item) => item.forwardPer, display: ratioText, best: "low" },
 ];
 
-function metricFill(items: CompareItem[], row: MetricRow, item: CompareItem): number {
-  const current = row.value(item);
-  const values = items.map(row.value).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  if (typeof current !== "number" || !Number.isFinite(current) || !values.length) return 0;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+function prepareMetricRow(items: CompareItem[], row: MetricRow): PreparedMetricRow {
+  const values = new Map<string, number | undefined>();
+  let best: CompareItem | undefined;
+  let bestValue: number | undefined;
+  let min: number | undefined;
+  let max: number | undefined;
+
+  for (const item of items) {
+    const current = row.value(item);
+    values.set(item.ticker, current);
+    if (typeof current !== "number" || !Number.isFinite(current)) continue;
+    if (min === undefined || current < min) min = current;
+    if (max === undefined || current > max) max = current;
+    if (row.best && (bestValue === undefined || (row.best === "low" ? current < bestValue : current > bestValue))) {
+      best = item;
+      bestValue = current;
+    }
+  }
+
+  return { row, best, min, max, values };
+}
+
+function metricFill(value: number | undefined, row: MetricRow, min: number | undefined, max: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || min === undefined || max === undefined) return 0;
   if (max === min) return 100;
-  const fill = row.best === "low" ? ((max - current) / (max - min)) * 100 : ((current - min) / (max - min)) * 100;
+  const fill = row.best === "low" ? ((max - value) / (max - min)) * 100 : ((value - min) / (max - min)) * 100;
   return Math.max(6, Math.min(100, fill));
 }
 
 function CompareMatrix({ items }: { items: CompareItem[] }) {
-  const rows = semanticMetricRows(items, METRIC_ROWS);
+  const rows = useMemo(() => semanticMetricRows(items, METRIC_ROWS), [items]);
+  const groupedRows = useMemo(
+    () => METRIC_GROUPS.map((group) => ({
+      group,
+      rows: METRIC_ROWS.filter((row) => row.group === group.key).map((row) => prepareMetricRow(items, row)),
+    })),
+    [items]
+  );
   return (
     <section className="compare-section">
       <span>차이가 나는 숫자</span>
@@ -558,8 +593,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
         </tbody>
       </table>
       <div className="compare-group-list">
-        {METRIC_GROUPS.map((group) => {
-          const rows = METRIC_ROWS.filter((row) => row.group === group.key);
+        {groupedRows.map(({ group, rows }) => {
           return (
             <section key={group.key} className="compare-metric-group">
               <div className="compare-group-heading">
@@ -567,8 +601,8 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                 <span>{group.description}</span>
               </div>
               <div className="compare-metric-list">
-                {rows.map((row) => {
-                  const best = row.best ? bestBy(items, row.value, row.best) : undefined;
+                {rows.map((prepared) => {
+                  const { row, best, min, max, values } = prepared;
                   return (
                     <article key={row.label} className="compare-metric-row">
                       <header>
@@ -577,7 +611,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                       </header>
                       <div className="compare-metric-values">
                         {items.map((item) => {
-                          const value = row.value(item);
+                          const value = values.get(item.ticker);
                           const isBest = best?.ticker === item.ticker;
                           return (
                             <div
@@ -587,7 +621,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                               <span>{item.ticker}</span>
                               <strong>{row.display(value)}</strong>
                               <i aria-hidden="true">
-                                <em style={{ width: `${metricFill(items, row, item)}%` }} />
+                                <em style={{ width: `${metricFill(value, row, min, max)}%` }} />
                               </i>
                               {isBest ? <small>{row.best === "low" ? "부담 낮음" : "가장 높음"}</small> : null}
                             </div>
@@ -615,13 +649,22 @@ const COMPONENT_ROWS = [
 ];
 
 function ComponentMatrix({ items }: { items: CompareItem[] }) {
-  const rows = semanticMetricRows(
-    items,
-    COMPONENT_ROWS.map((row) => ({
+  const componentMetricRows = useMemo(
+    () => COMPONENT_ROWS.map((row) => ({
       label: row.label,
       value: (item: CompareItem) => componentScore(item, row.key),
       display: (value: number | undefined) => (value === undefined ? "-" : value.toFixed(1)),
-    }))
+    })),
+    []
+  );
+  const rows = useMemo(() => semanticMetricRows(items, componentMetricRows), [items, componentMetricRows]);
+  const visualRows = useMemo(
+    () => COMPONENT_ROWS.map((row) => ({
+      ...row,
+      best: bestBy(items, (item) => componentScore(item, row.key)),
+      values: new Map(items.map((item) => [item.ticker, componentScore(item, row.key)])),
+    })),
+    [items]
   );
   return (
     <section className="compare-section">
@@ -649,30 +692,27 @@ function ComponentMatrix({ items }: { items: CompareItem[] }) {
         </tbody>
       </table>
       <div className="component-compare-list">
-        {COMPONENT_ROWS.map((row) => (
+        {visualRows.map((row) => (
           <article key={row.key}>
             <header>
               <strong>{row.label}</strong>
               <span>높을수록 유리해요</span>
             </header>
             <div>
-              {(() => {
-                const best = bestBy(items, (item) => componentScore(item, row.key));
-                return items.map((item) => {
-                  const score = componentScore(item, row.key);
-                  const isBest = best?.ticker === item.ticker;
-                  return (
-                    <span key={`${row.key}-${item.ticker}`} className={isBest ? "best" : ""}>
-                      <b>{item.ticker}</b>
-                      <i>
-                        <em style={{ width: `${score ?? 0}%` }} />
-                      </i>
-                      <strong>{score === undefined ? "-" : score.toFixed(1)}</strong>
-                      {isBest ? <small>최고</small> : null}
-                    </span>
-                  );
-                });
-              })()}
+              {items.map((item) => {
+                const score = row.values.get(item.ticker);
+                const isBest = row.best?.ticker === item.ticker;
+                return (
+                  <span key={`${row.key}-${item.ticker}`} className={isBest ? "best" : ""}>
+                    <b>{item.ticker}</b>
+                    <i>
+                      <em style={{ width: `${score ?? 0}%` }} />
+                    </i>
+                    <strong>{score === undefined ? "-" : score.toFixed(1)}</strong>
+                    {isBest ? <small>최고</small> : null}
+                  </span>
+                );
+              })}
             </div>
           </article>
         ))}

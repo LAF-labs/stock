@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 import type { SymbolListingStatus, SymbolMarket, SymbolMasterItem, SymbolSearchItem } from "@/lib/symbolTypes";
 import { parseTickerRef } from "@/lib/tickerRef";
@@ -34,9 +36,14 @@ type IndexedSymbol = {
   displaySearch: string;
 };
 
+type LocalSymbolIndex = {
+  entries: IndexedSymbol[];
+  resultCache: Map<string, SymbolSearchItem[]>;
+};
+
 const DEFAULT_SYMBOLS = ["US:KO", "US:NVDA", "US:AAPL", "US:MSFT", "KR:005930", "KR:000660", "KR:035420", "KR:005380"];
 
-let localIndexPromise: Promise<IndexedSymbol[]> | undefined;
+let localIndexPromise: Promise<LocalSymbolIndex> | undefined;
 
 export async function searchSymbols(input: SymbolSearchInput): Promise<SymbolSearchItem[]> {
   const query = input.query || "";
@@ -44,7 +51,7 @@ export async function searchSymbols(input: SymbolSearchInput): Promise<SymbolSea
   const market = normalizeMarket(input.market);
   const rpcItems = await searchSupabaseSymbols({ query, limit, market });
   if (rpcItems) return rpcItems;
-  return searchLocalIndex(await localSymbolIndex(), { query, limit, market });
+  return searchCachedLocalIndex(await localSymbolIndex(), { query, limit, market });
 }
 
 export async function searchLocalSymbolsForTests(items: SymbolMasterItem[], input: SymbolSearchInput): Promise<SymbolSearchItem[]> {
@@ -62,17 +69,29 @@ function searchLocalIndex(index: IndexedSymbol[], input: SymbolSearchInput): Sym
   const limit = clampLimit(input.limit);
   const market = normalizeMarket(input.market);
   const normalizedQuery = normalize(query);
-  return index
-    .filter((entry) => {
-      if (market && entry.item.market !== market) return false;
-      if (entry.item.listingStatus === "delisted") return false;
-      if (!normalizedQuery) return DEFAULT_SYMBOLS.includes(entry.key);
-      return rank(entry, normalizedQuery) < 999;
-    })
-    .map((entry) => ({ entry, score: rank(entry, normalizedQuery) }))
+
+  const scored: Array<{ entry: IndexedSymbol; score: number }> = [];
+  for (const entry of index) {
+    if (market && entry.item.market !== market) continue;
+    if (entry.item.listingStatus === "delisted") continue;
+    const score = normalizedQuery ? rank(entry, normalizedQuery) : DEFAULT_SYMBOLS.includes(entry.key) ? 0 : 999;
+    if (score < 999) scored.push({ entry, score });
+  }
+
+  return scored
     .sort((left, right) => left.score - right.score || left.entry.item.market.localeCompare(right.entry.item.market) || left.entry.item.ticker.localeCompare(right.entry.item.ticker))
     .slice(0, limit)
     .map(({ entry }) => toSearchItem(entry.item));
+}
+
+function searchCachedLocalIndex(store: LocalSymbolIndex, input: SymbolSearchInput): SymbolSearchItem[] {
+  const key = localSearchCacheKey(input);
+  const cached = store.resultCache.get(key);
+  if (cached) return [...cached];
+
+  const items = searchLocalIndex(store.entries, input);
+  rememberLocalSearch(store.resultCache, key, items);
+  return items;
 }
 
 async function searchSupabaseSymbols(input: { query: string; limit: number; market?: SymbolMarket }): Promise<SymbolSearchItem[] | undefined> {
@@ -103,11 +122,34 @@ async function searchSupabaseSymbols(input: { query: string; limit: number; mark
   }
 }
 
-async function localSymbolIndex(): Promise<IndexedSymbol[]> {
+async function localSymbolIndex(): Promise<LocalSymbolIndex> {
   if (!localIndexPromise) {
-    localIndexPromise = import("@/data/symbols.generated.json").then((module) => buildIndex(module.default as SymbolMasterItem[]));
+    localIndexPromise = readLocalSymbolItems().then((items) => ({
+      entries: buildIndex(items),
+      resultCache: new Map<string, SymbolSearchItem[]>(),
+    }));
   }
   return localIndexPromise;
+}
+
+async function readLocalSymbolItems(): Promise<SymbolMasterItem[]> {
+  const raw = await readFile(path.join(process.cwd(), "src", "data", "symbols.generated.json"), "utf8");
+  const parsed = JSON.parse(raw) as unknown;
+  return Array.isArray(parsed) ? parsed as SymbolMasterItem[] : [];
+}
+
+function localSearchCacheKey(input: SymbolSearchInput): string {
+  return [normalizeMarket(input.market) || "", clampLimit(input.limit), normalize(input.query || "")].join("\u0000");
+}
+
+function rememberLocalSearch(cache: Map<string, SymbolSearchItem[]>, key: string, items: SymbolSearchItem[]) {
+  const limit = Math.max(0, numericEnv("STOCK_SYMBOL_LOCAL_QUERY_CACHE_MAX", 250));
+  if (limit <= 0) return;
+  if (cache.size >= limit) {
+    const first = cache.keys().next().value;
+    if (typeof first === "string") cache.delete(first);
+  }
+  cache.set(key, [...items]);
 }
 
 function buildIndex(items: SymbolMasterItem[]): IndexedSymbol[] {

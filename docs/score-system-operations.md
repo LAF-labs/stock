@@ -174,13 +174,14 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Vercel fails closed to snapshot mode. `STOCK_DATA_RUNTIME=python` is ignored on Vercel unless `STOCK_ALLOW_VERCEL_PYTHON_RUNTIME=1` is explicitly set for a one-off emergency.
 - If a Supabase snapshot is missing in snapshot mode, enqueue `stock_refresh_jobs` and return `snapshot_pending` with `Retry-After`. The default retry hint is 300 seconds, matching the 5-minute GitHub Actions backstop. Tune it with `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS` if a faster external worker is configured.
 - Technical analysis is available on demand for every eligible single stock. Do not gate product eligibility by a warmup list or popularity list. The detail-page CTA and `/technical` route block ETFs, ETNs, leveraged/inverse wrappers, warrants, funds, and other derivative-like products; eligible single stocks enqueue `view_mode='technical'` snapshots when missing.
+- Technical analysis collection must use the technical fast path. It should fetch daily chart rows and minimal identity data only; yfinance fundamentals, news, analyst data, and broad KIS search/detail enrichment belong to detail/compare or background jobs.
 - Newly listed eligible stocks should still render the technical page. The rule engine downgrades the page to a limited/starter interpretation and warns users that only the available daily bars were used.
 - The detail UI displays score `server_cache` freshness separately from quote refresh status. A fresh quote does not imply a fresh score; stale score snapshots should stay visible until the score worker writes a new snapshot.
 - In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.
 - Keep score detail/compare snapshots fresh for 30 minutes during market hours. The publisher default `STOCK_SCORE_SNAPSHOT_EXPIRES_SECONDS` is 1800.
 - Keep `market_calendar` seeded ahead for both `US` and `KR`. The publisher extends quote and score expiry to the next open when the market is closed, so stale/off-hours behavior depends on this table.
 - Keep rule-based judgment cache in six-hour buckets.
-- Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days; user requests should read cache first and refresh under a file lock only on miss.
+- Keep yfinance fundamentals in the shared fundamental snapshot cache. The default fresh window is 12 hours with stale fallback up to 7 days. Production snapshot serving should set `STOCK_YFINANCE_REQUEST_FETCH=0`, or rely on the Vercel/snapshot default, so user requests never call Yahoo on cache miss. Scheduled enrichment jobs may opt in with `STOCK_YFINANCE_REQUEST_FETCH=1` and bounded worker concurrency.
 - yfinance fundamental cache version `2` includes target price, analyst count, recommendation mean, beta, and average volume fields for opportunity scoring.
 - Prewarm only a small hot set: major US names, top domestic names, and symbols currently shown in comparisons. Expand the set using search logs and `snapshot_unavailable` logs, not by refreshing the whole universe on every interval. Prewarm lists are operational acceleration only; they must never define which single stocks can use technical analysis.
 - Keep industry benchmark calculation offline. Request handlers should only read benchmark rows.
@@ -194,6 +195,14 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - Vercel must not point `MARKET_DATA_SERVICE_URL` at localhost. Use a reachable service URL/token pair or leave Rust service integration disabled for that environment.
 - Public Supabase reads should use `SUPABASE_PUBLISHABLE_KEY`. Production service-role fallback for reads requires an explicit unsafe override; `SUPABASE_SERVICE_ROLE_KEY` remains server-only for writes, queue claims, and cache persistence.
 - Rust `market-data` uses bounded memory cache/queue unless a durable backend is configured. Do not infer durable score refresh from `REDIS_URL`; `/readyz` is the source of truth for active backend modes and `durable_refresh_available`.
+
+Before enabling the technical-analysis CTA in production, apply `supabase/migrations/20260607093000_technical_analysis_score_view.sql` and run:
+
+```bash
+npm run ops:check
+```
+
+The default gate includes `--max-missing-technical-payloads 0`, so an unapplied `view_mode='technical'` migration or malformed technical snapshot blocks release instead of silently causing repeated provider work.
 
 ## Calibration Rules
 

@@ -17,7 +17,10 @@ const ENV_KEYS = [
 ] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
-const globalWithKisCache = globalThis as typeof globalThis & { __kisQuoteTokenCache?: Map<string, { accessToken: string; expiresAtMs: number }> };
+const globalWithKisCache = globalThis as typeof globalThis & {
+  __kisQuoteTokenCache?: Map<string, { accessToken: string; expiresAtMs: number }>;
+  __kisQuoteDiscoveryCache?: Map<string, unknown>;
+};
 
 function setupEnv() {
   process.env.STOCK_API_APP_KEY = "app-key";
@@ -30,6 +33,7 @@ function setupEnv() {
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;
   globalWithKisCache.__kisQuoteTokenCache?.clear();
+  globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
 }
 
 function restore() {
@@ -43,6 +47,7 @@ function restore() {
   }
   globalThis.fetch = originalFetch;
   globalWithKisCache.__kisQuoteTokenCache?.clear();
+  globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
 }
 
 test.afterEach(restore);
@@ -134,6 +139,53 @@ test("fetchKisQuote maps US KIS quote payload into public quote shape", async ()
   assert.equal(payload.latest_change, 0.0217);
   assert.equal(payload.usd_krw_rate, 1370);
   assert.equal(payload.latest_bar_date, "2026-06-05");
+});
+
+test("fetchKisQuote reuses successful US discovery inside the server instance", async () => {
+  setupEnv();
+
+  let priceDetailCalls = 0;
+  let searchInfoCalls = 0;
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-2", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      priceDetailCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "70.50",
+          base: "69.00",
+          rate: "2.17",
+          tvol: "1000",
+          curr: "USD",
+          t_rate: "1370",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      searchInfoCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Coca-Cola",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  await fetchKisQuote("US:KO");
+  const payload = await fetchKisQuote("US:KO");
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.exchange_code, "NAS");
+  assert.equal(priceDetailCalls, 2);
+  assert.equal(searchInfoCalls, 1);
 });
 
 test("fetchKisQuote reuses a valid Supabase KIS token cache entry", async () => {
