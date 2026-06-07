@@ -4,7 +4,7 @@ import re
 
 
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,11}$")
-KR_TICKER_RE = re.compile(r"^(?:\d{6}|Q\d{6})$")
+KR_TICKER_RE = re.compile(r"^(?:[0-9][A-Z0-9]{5}|Q\d{6})$")
 
 
 def clean_ticker(raw: str) -> str:

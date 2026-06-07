@@ -3,6 +3,7 @@
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
+import { symbolDisplayName } from "@/lib/symbolDisplay";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
 type SymbolSearchPayload = {
@@ -23,7 +24,11 @@ type SymbolAutocompleteProps = {
 };
 
 function displayInputValue(item: SymbolSearchItem): string {
-  return item.market === "KR" ? item.koreanName || item.ticker : item.displayName || item.ticker;
+  return symbolDisplayName(item);
+}
+
+function displaySubtitle(item: SymbolSearchItem): string {
+  return [item.market === "US" ? "미장" : "국장", item.exchangeName || item.exchange].filter(Boolean).join(" · ");
 }
 
 export default function SymbolAutocomplete({
@@ -220,11 +225,8 @@ export default function SymbolAutocomplete({
                 aria-selected={index === activeIndex}
                 tabIndex={-1}
               >
-                <span>{item.displayName}</span>
-                <small>
-                  <strong>{item.ticker}</strong>
-                  <em>{item.market === "US" ? "미장" : "국장"} · {item.exchangeName}</em>
-                </small>
+                <span>{symbolDisplayName(item)}</span>
+                <small>{displaySubtitle(item)}</small>
               </button>
             ))}
           </div>

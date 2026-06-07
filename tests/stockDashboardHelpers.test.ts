@@ -3,11 +3,16 @@ import assert from "node:assert/strict";
 
 import {
   chartSummary,
+  chartPointPriceLabel,
   dailyChangeText,
   dailyToneClass,
   directInputSymbolItem,
   displayTickerInput,
+  formatMetricDisplayValue,
+  formatPrimaryPrice,
+  formatPriceWithContext,
   formatRecordValue,
+  formatSecondaryPrice,
   opportunityExtremes,
   scoreDataWithQuote,
   scoreFreshnessSummary,
@@ -183,6 +188,21 @@ test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-
     secondary: "한국 단일종목 레버리지 ETF",
     primaryKind: "ticker",
   });
+  assert.deepEqual(stockHeaderIdentity({ market: "US", symbol: "KO", name: "COCA-COLA CO", display_name: "코카콜라", instrument_type: "STOCK" }), {
+    primary: "코카콜라",
+    secondary: "KO",
+    primaryKind: "name",
+  });
+  assert.deepEqual(stockHeaderIdentity({ market: "US", requested_ticker: "US:KO", display_name: "코카콜라", instrument_type: "STOCK" }), {
+    primary: "코카콜라",
+    secondary: "KO",
+    primaryKind: "name",
+  });
+  assert.deepEqual(stockHeaderIdentity({ market: "US", symbol: "TSLL", display_name: "TSLL", english_name: "테슬라 2배 ETF", instrument_type: "ETF" }), {
+    primary: "TSLL",
+    secondary: "테슬라 2배 ETF",
+    primaryKind: "ticker",
+  });
   assert.deepEqual(stockHeaderIdentity({ symbol: "KO", name: "Coca-Cola Co" }), {
     primary: "Coca-Cola Co",
     secondary: "KO",
@@ -269,6 +289,50 @@ test("stockMarketCapDisplay formats US caps in KRW with compact dollar context",
   );
 });
 
+test("dashboard price displays split trading currency and KRW conversion consistently", () => {
+  const usScore = {
+    market: "US",
+    currency: "USD",
+    latest_price: 79.48,
+    latest_price_label: "$79.48 / 123,456원",
+    usd_krw_rate: 1553.3,
+  } satisfies StockScoreResponse;
+  const krScore = {
+    market: "KR",
+    currency: "KRW",
+    latest_price: 23500,
+  } satisfies StockScoreResponse;
+
+  assert.equal(formatPrimaryPrice(usScore), "$79.48");
+  assert.equal(formatSecondaryPrice(usScore), "약 123,456원");
+  assert.equal(formatPriceWithContext(usScore), "$79.48 (약 123,456원)");
+  assert.equal(formatPrimaryPrice(krScore), "23,500원");
+  assert.equal(formatSecondaryPrice(krScore), "국내 원화 기준");
+  assert.equal(formatPriceWithContext(krScore), "23,500원");
+});
+
+test("dashboard metric display formats money labels with stock context", () => {
+  const usScore = {
+    market: "US",
+    currency: "USD",
+    latest_price: 79.48,
+    usd_krw_rate: 1553.3,
+    key_metrics: [{ label: "시가총액", value: "$341.96B (약 531.2조원)" }],
+  } satisfies StockScoreResponse;
+  const krScore = {
+    market: "KR",
+    currency: "KRW",
+    latest_price: 23500,
+    key_metrics: [{ label: "시가총액", value: "₩91.70B" }],
+  } satisfies StockScoreResponse;
+
+  assert.equal(formatMetricDisplayValue({ label: "현재가", value: "$79.48 (약 12.3만원)" }, usScore), "$79.48 (약 123,456원)");
+  assert.equal(formatMetricDisplayValue({ label: "평균 목표가", value: "$86.06" }, usScore), "$86.06");
+  assert.equal(formatMetricDisplayValue({ label: "시가총액", value: "$341.96B (약 531.2조원)" }, usScore), "531조 1665억원 ($342B)");
+  assert.equal(formatMetricDisplayValue({ label: "현재가", value: "23,500원" }, krScore), "23,500원");
+  assert.equal(formatMetricDisplayValue({ label: "시가총액", value: "₩91.70B" }, krScore), "917억원");
+});
+
 test("dailyChangeText prefers quote label, then quote value, then cached score value", () => {
   const score = { price_metrics: { latest_change: -0.0123 } } satisfies StockScoreResponse;
 
@@ -287,6 +351,10 @@ test("dailyToneClass separates neutral missing and flat price states", () => {
 test("dashboard record formatting hides provider-only fields and formats ratio fields", () => {
   assert.equal(formatRecordValue("return_1m", 0.123), "+12.3%");
   assert.equal(formatRecordValue("debtToEquity", 55.432), "55.4%");
+  assert.equal(formatRecordValue("targetMeanPrice", 86.06, { market: "US", currency: "USD" }), "$86.06");
+  assert.equal(formatRecordValue("targetMeanPrice", 86.06), "86.06");
+  assert.equal(formatRecordValue("totalRevenue", 49_284_001_792, { market: "US", currency: "USD", usd_krw_rate: 1370 }), "67조 5191억원 ($49.3B)");
+  assert.equal(formatRecordValue("totalCash", 147_378_078_220_288, { market: "KR", currency: "KRW" }), "147조 3781억원");
   assert.deepEqual(visibleRecordEntries({ source: "provider", price: 123, market_scope: "US" }), [["price", 123]]);
 });
 
@@ -323,6 +391,18 @@ test("directInputSymbolItem only creates direct ticker entries for ticker-like i
     englishName: "BRK.B",
     instrumentType: "STOCK",
   });
+  assert.deepEqual(directInputSymbolItem("0194M0"), {
+    key: "0194M0",
+    market: "KR",
+    ticker: "0194M0",
+    displayName: "0194M0",
+    subtitle: "0194M0",
+    exchange: "",
+    exchangeName: "직접 입력",
+    koreanName: "",
+    englishName: "0194M0",
+    instrumentType: "STOCK",
+  });
 });
 
 test("usableChartPoints sorts valid daily points and keeps the latest duplicate date", () => {
@@ -338,6 +418,18 @@ test("usableChartPoints sorts valid daily points and keeps the latest duplicate 
       { date: "2026-06-01", close: 100 },
       { date: "2026-06-02", close: 103, close_label: "$103.00" },
     ],
+  );
+});
+
+test("chart summary uses currency labels instead of bare numbers", () => {
+  assert.equal(chartPointPriceLabel({ close: 70.5, currency: "USD", close_label: "$70.50 (약 96,585원)" }), "$70.50");
+  assert.equal(chartPointPriceLabel({ close: 72000, currency: "KRW", close_label: "72,000원" }), "72,000원");
+  assert.equal(
+    chartSummary([
+      { date: "2026-06-01", close: 70.5, currency: "USD", close_label: "$70.50" },
+      { date: "2026-06-02", close: 79.48, currency: "USD", close_label: "$79.48" },
+    ]),
+    "2026-06-01부터 2026-06-02까지 2개 가격 지점입니다. 시작 $70.50, 마지막 $79.48, 기간 변화 +12.7%, 최고 $79.48, 최저 $70.50.",
   );
 });
 

@@ -9,6 +9,7 @@ import {
   componentWord,
   easySentence,
   factorSummary,
+  formatMetricDisplayValue,
   formatNote,
   formatRecordValue,
   humanizeRecordKey,
@@ -19,8 +20,8 @@ import {
   usableChartPoints,
   visibleRecordEntries,
 } from "@/components/stockDashboardHelpers";
-import { clampScore, formatDateTimeFromEpoch, formatValue } from "@/lib/format";
-import type { ChartPattern, ChartSeriesPoint, JsonValue, LabeledValue, NewsItem, ScoreComponent } from "@/lib/types";
+import { clampScore, formatDateTimeFromEpoch } from "@/lib/format";
+import type { ChartPattern, ChartSeriesPoint, JsonValue, LabeledValue, NewsItem, ScoreComponent, StockScoreResponse } from "@/lib/types";
 
 type TradingPriceChartProps = {
   points: Array<ChartSeriesPoint & { close: number; date: string }>;
@@ -146,10 +147,12 @@ function ChartLoadingPlaceholder() {
 
 export function FactorStory({
   components,
+  stock,
   eyebrow = "점수 이유",
   title = "좋은 점과 아쉬운 점",
 }: {
   components: ScoreComponent[] | undefined;
+  stock?: StockScoreResponse;
   eyebrow?: string;
   title?: string;
 }) {
@@ -184,7 +187,7 @@ export function FactorStory({
                     <span>
                       <LabelWithTerm label={metric.label || "항목"} />
                     </span>
-                    <strong>{formatValue(metric.value)}</strong>
+                    <strong>{formatMetricDisplayValue(metric, stock)}</strong>
                   </li>
                 ))}
               </ul>
@@ -200,12 +203,14 @@ export function SimpleList({
   title,
   description,
   items,
+  stock,
   defaultOpen = false,
   desktopOpen = false,
 }: {
   title: string;
   description: string;
   items: LabeledValue[] | undefined;
+  stock?: StockScoreResponse;
   defaultOpen?: boolean;
   desktopOpen?: boolean;
 }) {
@@ -220,7 +225,7 @@ export function SimpleList({
               <LabelWithTerm label={item.label || `항목 ${index + 1}`} />
             </dt>
             <dd>
-              <strong>{formatValue(item.value)}</strong>
+              <strong>{formatMetricDisplayValue(item, stock)}</strong>
               {formatNote(item.note) ? <span>{formatNote(item.note)}</span> : null}
             </dd>
           </div>
@@ -234,22 +239,24 @@ export function RecordCard({
   title,
   description,
   record,
+  stock,
   desktopOpen = false,
 }: {
   title: string;
   description: string;
   record: Record<string, JsonValue> | undefined;
+  stock?: StockScoreResponse;
   desktopOpen?: boolean;
 }) {
   if (!record || !visibleRecordEntries(record).length) return <EmptyCard title={title} body="표시할 데이터가 없어요." />;
   return (
     <AccordionCard title={title} description={description} desktopOpen={desktopOpen}>
-      <RecordRows record={record} />
+      <RecordRows record={record} stock={stock} />
     </AccordionCard>
   );
 }
 
-function RecordRows({ record }: { record: Record<string, JsonValue> | undefined }) {
+function RecordRows({ record, stock }: { record: Record<string, JsonValue> | undefined; stock?: StockScoreResponse }) {
   if (!record) return null;
   return (
     <dl className="record-feed">
@@ -266,12 +273,12 @@ function RecordRows({ record }: { record: Record<string, JsonValue> | undefined 
                     <dt>
                       <LabelWithTerm label={humanizeRecordKey(nestedKey)} />
                     </dt>
-                    <dd>{formatRecordValue(nestedKey, nestedValue)}</dd>
+                    <dd>{formatRecordValue(nestedKey, nestedValue, stock)}</dd>
                   </div>
                 ))}
               </dl>
             ) : (
-              formatRecordValue(key, value)
+              formatRecordValue(key, value, stock)
             )}
           </dd>
         </div>

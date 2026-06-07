@@ -105,6 +105,10 @@ export type StockScoreResponse = {
   market?: "US" | "KR";
   symbol?: string;
   name?: string;
+  display_name?: string;
+  korean_name?: string;
+  english_name?: string;
+  instrument_type?: string;
   exchange?: string;
   currency?: string;
   score_model_version?: string;
@@ -120,6 +124,7 @@ export type StockScoreResponse = {
   benchmark?: string;
   benchmark_label?: string;
   latest_price?: number;
+  latest_price_label?: string;
   latest_bar_date?: string;
   usd_krw_rate?: number;
   usd_krw_label?: string;

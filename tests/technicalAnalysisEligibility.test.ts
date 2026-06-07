@@ -55,6 +55,7 @@ test("technical analysis blocks product-like names even when symbol master marks
 test("technical forced entry redirects to the detail page", () => {
   assert.equal(detailPathForTicker("KR:0194M0"), "/?ticker=KR%3A0194M0");
   assert.equal(detailPathForTicker("bad ticker"), "/?ticker=US%3AKO");
+  assert.equal(detailPathForTicker("KR:F70100026"), "/?ticker=US%3AKO");
   assert.deepEqual(technicalUnsupportedProductPayload("KR:0194M0"), {
     ok: false,
     error: "technical_unsupported_product",

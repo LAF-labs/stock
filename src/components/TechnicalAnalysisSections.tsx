@@ -11,9 +11,8 @@ import {
   technicalWarnings,
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
-import { formatValue } from "@/lib/format";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
-import type { StockHeaderIdentity } from "@/components/stockDashboardHelpers";
+import { formatPrimaryPrice, formatSecondaryPrice, type StockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import type { StockScoreResponse } from "@/lib/types";
 
 export function TechnicalAnalysisTopbar({ detailHref, displayTicker }: { detailHref: string; displayTicker: string }) {
@@ -104,6 +103,7 @@ function TechnicalHero({
   summaryTone: string;
   confluenceScore: number | undefined;
 }) {
+  const priceMeta = [formatSecondaryPrice(data), data.latest_bar_date || technical.closed_bar_date || "-"].filter(Boolean).join(" · ");
   return (
     <section className={`technical-hero ${summaryTone}`}>
       <div className="technical-hero-heading">
@@ -113,8 +113,8 @@ function TechnicalHero({
       </div>
       <div className="technical-hero-price">
         <span>현재가</span>
-        <strong>{formatValue(data.latest_price)}</strong>
-        <small>{data.latest_bar_date || technical.closed_bar_date || "-"}</small>
+        <strong>{formatPrimaryPrice(data)}</strong>
+        <small>{priceMeta}</small>
       </div>
       <div className="technical-summary">
         <span>{technicalCoverageLabel(technical)}</span>

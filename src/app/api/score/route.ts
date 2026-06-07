@@ -7,6 +7,7 @@ import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privat
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
+import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { technicalEligibilityForTicker, technicalUnsupportedProductPayload } from "@/lib/technicalAnalysisEligibility";
 import { parseStrictTickerRef } from "@/lib/tickerRef";
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getStockScore(ticker, view, { forceRefresh });
-    const enrichedPayload = await enrichStockPayloadWithSymbolProfile(result.payload);
+    const enrichedPayload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(result.payload));
     const payload = forceRefresh
       ? {
           ...enrichedPayload,

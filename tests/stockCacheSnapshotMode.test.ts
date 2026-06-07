@@ -100,7 +100,11 @@ test("quote force refresh serves existing snapshot when a provider refresh lease
       requested_ticker: ticker,
       market: "US",
       symbol: "LEASEBUSY",
+      currency: "USD",
       latest_price: 123.45,
+      latest_price_label: "$123.45 / 169,127원",
+      usd_krw_rate: 1370,
+      usd_krw_label: "$1 = 1,370원",
     },
     fetched_at: new Date(nowMs - 30_000).toISOString(),
     expires_at: new Date(nowMs + 270_000).toISOString(),
@@ -131,6 +135,8 @@ test("quote force refresh serves existing snapshot when a provider refresh lease
 
   assert.equal(result.payload.ok, true);
   assert.equal(result.payload.latest_price, 123.45);
+  assert.equal(result.payload.latest_price_label, "$123.45");
+  assert.equal(result.payload.usd_krw_label, "$1 = 약 1,370원");
   assert.equal(result.cache.state, "fresh");
   assert.equal(result.cache.source, "supabase");
 });

@@ -6,8 +6,8 @@ import {
   safeInternalRedirectPath,
 } from "@/components/technicalAnalysisHelpers";
 import { TechnicalAnalysisFeed, TechnicalAnalysisTopbar, TechnicalStatus } from "@/components/TechnicalAnalysisSections";
-import { displayTickerInput, snapshotPendingFromPayload, stringFromUnknown, stockHeaderIdentity, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
-import type { StockScoreResponse } from "@/lib/types";
+import { displayTickerInput, scoreDataWithQuote, snapshotPendingFromPayload, stringFromUnknown, stockHeaderIdentity, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
+import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 type LoadState =
   | { status: "loading"; data?: undefined; error?: undefined; pending?: undefined }
@@ -36,6 +36,18 @@ function apiPayloadMessage(payload: ApiPayload, fallback: string): string {
   return stringFromUnknown(payload.message) || stringFromUnknown(payload.error) || fallback;
 }
 
+async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promise<StockQuoteResponse | undefined> {
+  try {
+    const query = new URLSearchParams({ ticker });
+    const response = await fetch(`/api/quote?${query.toString()}`, { cache: "no-store", signal });
+    if (!response.ok) return undefined;
+    const payload = await readApiPayload(response);
+    return payload as StockQuoteResponse;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -62,12 +74,14 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
         if (!response.ok) throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
         return payload as StockScoreResponse;
       })
-      .then((data) => {
+      .then(async (data) => {
         if (!data) return;
         if (!isTechnicalAnalysisPayload(data.technical_analysis)) {
           throw new Error("기술적 분석 데이터를 찾지 못했어요.");
         }
-        setState({ status: "success", data });
+        const quote = await quoteForTechnicalPage(ticker, controller.signal);
+        if (controller.signal.aborted) return;
+        setState({ status: "success", data: scoreDataWithQuote(data, quote) });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -80,7 +94,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const data = state.status === "success" ? state.data : undefined;
   const technical = isTechnicalAnalysisPayload(data?.technical_analysis) ? data.technical_analysis : undefined;
   const identity = data ? stockHeaderIdentity(data) : undefined;
-  const displayTicker = identity?.secondary || displayTickerInput(ticker);
+  const displayTicker = identity?.primary || displayTickerInput(ticker);
 
   return (
     <main className="stock-app stock-detail-app technical-analysis-app">

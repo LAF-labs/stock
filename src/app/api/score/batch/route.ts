@@ -7,6 +7,7 @@ import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload } from "@/lib/stockPendingResponse";
 import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
+import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
       tickers.map(async (ticker): Promise<{ payload: StockPayload; cache?: StockScoreResult["cache"] }> => {
         try {
           const result = await getStockScore(ticker, "compare");
-          const payload = await enrichStockPayloadWithSymbolProfile(result.payload);
+          const payload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(result.payload));
           return { payload, cache: result.cache };
         } catch (error) {
           if (isStockDataUnavailableError(error)) {

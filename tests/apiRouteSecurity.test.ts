@@ -110,6 +110,27 @@ test("score route rejects missing and market-mismatched API ticker input", async
   assert.match(invalid.headers.get("Cache-Control") || "", /no-store/);
 });
 
+test("stock API routes accept domestic alphanumeric master tickers", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const score = await getScore(request("/api/score?ticker=KR:0194M0"));
+  const quote = await getQuote(request("/api/quote?ticker=KR:0194M0"));
+  const scorePayload = await score.json();
+  const quotePayload = await quote.json();
+
+  assert.notEqual(scorePayload.error, "invalid_ticker");
+  assert.notEqual(quotePayload.error, "invalid_ticker");
+  assert.equal(scorePayload.ticker, "KR:0194M0");
+  assert.equal(quotePayload.ticker, "KR:0194M0");
+});
+
 test("score route blocks technical analysis for derivative-like products before snapshot work", async () => {
   restoreEnv();
   process.env.VERCEL = "1";
@@ -124,6 +145,23 @@ test("score route blocks technical analysis for derivative-like products before 
   assert.equal(payload.error, "technical_unsupported_product");
   assert.equal(payload.ticker, "US:KORU");
   assert.equal(payload.redirect_to, "/?ticker=US%3AKORU");
+  assert.match(response.headers.get("Cache-Control") || "", /no-store/);
+});
+
+test("score route blocks technical analysis for domestic derivative master tickers before snapshot work", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+
+  const response = await getScore(request("/api/score?ticker=KR:0194M0&view=technical"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.error, "technical_unsupported_product");
+  assert.equal(payload.ticker, "KR:0194M0");
+  assert.equal(payload.redirect_to, "/?ticker=KR%3A0194M0");
   assert.match(response.headers.get("Cache-Control") || "", /no-store/);
 });
 

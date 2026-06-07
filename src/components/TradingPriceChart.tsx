@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { formatMonthLabel } from "@/components/stockDashboardHelpers";
+import { chartPointPriceLabel, formatMonthLabel } from "@/components/stockDashboardHelpers";
 import type { ChartSeriesPoint } from "@/lib/types";
 import type { CandlestickData, HistogramData, IChartApi, LineData, Time } from "lightweight-charts";
 
@@ -15,23 +15,8 @@ const MOVING_AVERAGES = [
   { period: 120, color: "#475569" },
 ] as const;
 
-const KRW_PRICE_FORMATTER = new Intl.NumberFormat("ko-KR");
-const USD_PRICE_FORMATTER = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const GENERIC_PRICE_FORMATTER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-
 function chartPriceLabel(point: ChartPoint) {
-  if (point.close_label) return point.close_label;
-  const currency = typeof point.currency === "string" ? point.currency : "USD";
-  return priceLabel(point.close, currency);
-}
-
-function priceLabel(value: number | undefined, currency: string) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
-  if (currency === "KRW") return `${KRW_PRICE_FORMATTER.format(Math.round(value))}원`;
-  if (currency === "USD") {
-    return `$${USD_PRICE_FORMATTER.format(value)}`;
-  }
-  return `${currency} ${GENERIC_PRICE_FORMATTER.format(value)}`;
+  return chartPointPriceLabel(point);
 }
 
 export default function TradingPriceChart({ points, mode, describedBy }: { points: ChartPoint[]; mode: "line" | "candle"; describedBy?: string }) {
@@ -208,7 +193,7 @@ export default function TradingPriceChart({ points, mode, describedBy }: { point
             x: param.point.x,
             y: param.point.y,
             date: time,
-            price: chartData.labels.get(time) || priceLabel(value, points[0]?.currency as string),
+            price: chartData.labels.get(time) || chartPointPriceLabel({ close: value, currency: points[0]?.currency }),
           });
         };
         chart.subscribeCrosshairMove(crosshairHandler);

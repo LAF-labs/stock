@@ -5,8 +5,8 @@ import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   dailyChangeText,
   dailyToneClass,
-  formatKrwPrice,
-  formatUsdPrice,
+  formatPrimaryPrice,
+  formatSecondaryPrice,
   opportunityExtremes,
   scoreDataWithQuote,
   scoreFreshnessTimeChip,
@@ -15,7 +15,7 @@ import {
   stockHeaderIdentity,
   stockMarketCapDisplay,
 } from "@/components/stockDashboardHelpers";
-import { clampScore, formatValue } from "@/lib/format";
+import { clampScore } from "@/lib/format";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export type QuoteState =
@@ -57,9 +57,8 @@ export default function StockHeader({
   const opportunityScore = typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined;
   const symbol = quote?.symbol || data.symbol || data.requested_ticker || "KO";
   const identity = stockHeaderIdentity(data, quote);
-  const current = stringFromUnknown(quote?.latest_price_label) || formatValue(data.latest_price);
-  const usdPrice = stringFromUnknown(quote?.latest_price_label) || formatUsdPrice(displayData, current);
-  const krwPrice = formatKrwPrice(displayData);
+  const primaryPrice = formatPrimaryPrice(displayData);
+  const secondaryPrice = formatSecondaryPrice(displayData);
   const daily = dailyChangeText(data, quote);
   const latestBarDate = stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date;
   const refreshDisabled = quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending";
@@ -109,8 +108,8 @@ export default function StockHeader({
 
       <div className="price-strip">
         <div className="price-block">
-          <strong>{usdPrice}</strong>
-          <span>{krwPrice}</span>
+          <strong>{primaryPrice}</strong>
+          <span>{secondaryPrice}</span>
         </div>
         <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
       </div>

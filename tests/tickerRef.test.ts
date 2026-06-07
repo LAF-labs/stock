@@ -8,6 +8,7 @@ test("normalizeTickerRef canonicalizes market-prefixed, domestic, and fallback i
   assert.equal(normalizeTickerRef("us:brk.b"), "US:BRK.B");
   assert.equal(normalizeTickerRef("005930"), "KR:005930");
   assert.equal(normalizeTickerRef("Q123456"), "KR:Q123456");
+  assert.equal(normalizeTickerRef("0194m0"), "KR:0194M0");
   assert.equal(normalizeTickerRef("", "US:KO"), "US:KO");
 });
 
@@ -27,13 +28,14 @@ test("parseStrictTickerRef accepts only explicit safe API ticker inputs", () => 
   assert.deepEqual(parseStrictTickerRef("us:brk.b"), { ok: true, ticker: "US:BRK.B", market: "US", symbol: "BRK.B" });
   assert.deepEqual(parseStrictTickerRef("005930"), { ok: true, ticker: "KR:005930", market: "KR", symbol: "005930" });
   assert.deepEqual(parseStrictTickerRef("kr:005930"), { ok: true, ticker: "KR:005930", market: "KR", symbol: "005930" });
+  assert.deepEqual(parseStrictTickerRef("kr:0194m0"), { ok: true, ticker: "KR:0194M0", market: "KR", symbol: "0194M0" });
 });
 
 test("parseStrictTickerRef rejects missing, unsafe, and market-mismatched API tickers", () => {
   assert.deepEqual(parseStrictTickerRef(""), { ok: false, error: "missing_ticker" });
   assert.deepEqual(parseStrictTickerRef(null), { ok: false, error: "missing_ticker" });
   assert.deepEqual(parseStrictTickerRef("bad spaces"), { ok: false, error: "invalid_ticker" });
-  assert.deepEqual(parseStrictTickerRef("KR:ABC"), { ok: false, error: "invalid_ticker" });
+  assert.deepEqual(parseStrictTickerRef("KR:ABC123"), { ok: false, error: "invalid_ticker" });
   assert.deepEqual(parseStrictTickerRef("US:"), { ok: false, error: "invalid_ticker" });
   assert.deepEqual(parseStrictTickerRef("###"), { ok: false, error: "invalid_ticker" });
 });

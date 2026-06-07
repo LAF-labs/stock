@@ -1,6 +1,7 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
+import { formatCurrencyAmount } from "@/lib/format";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
 import { QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { StockDataUnavailableError } from "@/lib/stockDataRuntime";
@@ -176,10 +177,10 @@ async function refreshQuoteSnapshot(
     const staleExpiresAt = fallbackStaleExpiresAt(fetchedAt, expiresAt);
     const snapshot: StoredQuoteSnapshot = {
       ticker,
-      payload: {
+      payload: normalizeQuotePayloadLabels({
         ...payload,
         market_session: session,
-      },
+      }),
       fetchedAt,
       expiresAt,
       staleExpiresAt,
@@ -224,7 +225,7 @@ function decorate(
 
   return {
     payload: {
-      ...snapshot.payload,
+      ...normalizeQuotePayloadLabels(snapshot.payload),
       server_cache: serverCache,
     },
     cache: {
@@ -317,7 +318,7 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
 
   try {
     const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: options.forceRefresh });
-    if (marketDataResult) return marketDataResult;
+    if (marketDataResult) return normalizeStockQuoteResult(marketDataResult);
 
     if (!inlineQuoteRefreshAvailable()) {
       throw new StockDataUnavailableError({
@@ -353,6 +354,39 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
     }
     throw error;
   }
+}
+
+function normalizeStockQuoteResult(result: StockQuoteResult): StockQuoteResult {
+  return {
+    ...result,
+    payload: normalizeQuotePayloadLabels(result.payload),
+  };
+}
+
+function normalizeQuotePayloadLabels(payload: StockPayload): StockPayload {
+  if (payload.ok === false) return payload;
+  const latestPrice = numberValue(payload.latest_price);
+  const currency = quoteCurrency(payload);
+  const usdKrwRate = numberValue(payload.usd_krw_rate);
+  return {
+    ...payload,
+    ...(latestPrice === undefined ? {} : { latest_price_label: formatCurrencyAmount(latestPrice, currency) }),
+    ...(currency === "USD" && usdKrwRate !== undefined ? { usd_krw_label: `$1 = 약 ${formatCurrencyAmount(usdKrwRate, "KRW")}` } : {}),
+  };
+}
+
+function quoteCurrency(payload: StockPayload): string {
+  const currency = stringValue(payload.currency);
+  if (currency) return currency;
+  return payload.market === "KR" ? "KRW" : "USD";
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 export function quoteResponseCacheHeaders(result: StockQuoteResult): HeadersInit {

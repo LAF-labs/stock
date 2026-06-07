@@ -145,11 +145,14 @@ a:focus-visible {
 .sr-only {
   position: absolute;
   width: 1px;
+  max-width: 1px;
   height: 1px;
+  max-height: 1px;
   padding: 0;
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -2307,7 +2310,9 @@ a:focus-visible {
   display: block;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.28;
   font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .compare-insight-grid strong {
@@ -2534,12 +2539,16 @@ a:focus-visible {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
-  padding: 0 10px;
+  max-width: 100%;
+  padding: 6px 10px;
   border-radius: 999px;
   background: #f2f4f6;
   color: var(--text);
   font-weight: 750;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .compare-legend i {
@@ -2693,7 +2702,7 @@ a:focus-visible {
 
 .component-compare-list article > div > span {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 46px 44px;
+  grid-template-columns: minmax(72px, 0.34fr) minmax(0, 1fr) 46px 44px;
   gap: 10px;
   align-items: center;
   padding: 8px;
@@ -2707,7 +2716,9 @@ a:focus-visible {
 .component-compare-list b {
   color: var(--text);
   font-size: 13px;
+  line-height: 1.25;
   font-weight: 760;
+  overflow-wrap: anywhere;
 }
 
 .component-compare-list i {
@@ -3269,7 +3280,7 @@ a:focus-visible {
   }
 
   .component-compare-list article > div > span {
-    grid-template-columns: 52px minmax(0, 1fr) 42px 40px;
+    grid-template-columns: minmax(72px, 0.38fr) minmax(0, 1fr) 42px 40px;
   }
 }
 
@@ -3566,6 +3577,83 @@ body {
     min-height: 26px;
     padding-inline: 8px;
     font-size: 11px;
+  }
+}
+
+/* Factor section layout refinement */
+.stock-detail-app .factor-list {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.stock-detail-app .factor-list article,
+.stock-detail-app .factor-list article:first-child,
+.stock-detail-app .factor-list article:last-child {
+  align-items: stretch;
+  padding: 18px;
+}
+
+.stock-detail-app .factor-list ul,
+.stock-detail-app .factor-list ul.compact-metric-grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.stock-detail-app .factor-list ul.compact-metric-grid li {
+  min-height: auto;
+  align-content: start;
+  padding: 14px;
+}
+
+.stock-detail-app .factor-list ul.compact-metric-grid li > span,
+.stock-detail-app .factor-list ul.compact-metric-grid .label-with-term {
+  white-space: normal;
+}
+
+.stock-detail-app .factor-list ul.compact-metric-grid li > span {
+  overflow: visible;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.stock-detail-app .factor-list ul.compact-metric-grid .info-tip-wrap {
+  display: inline-flex;
+}
+
+.stock-detail-app .factor-list ul.compact-metric-grid li strong {
+  font-size: 16px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 641px) {
+  .stock-detail-app .factor-list article,
+  .stock-detail-app .factor-list article:first-child,
+  .stock-detail-app .factor-list article:last-child {
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+    gap: 10px 20px;
+  }
+
+  .stock-detail-app .factor-heading,
+  .stock-detail-app .factor-list i,
+  .stock-detail-app .factor-list p {
+    grid-column: 1;
+  }
+
+  .stock-detail-app .factor-list ul,
+  .stock-detail-app .factor-list ul.compact-metric-grid {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-self: stretch;
+  }
+
+  .stock-detail-app .factor-list li,
+  .stock-detail-app .factor-list ul.compact-metric-grid li {
+    min-height: 72px;
+    display: grid;
+    align-content: center;
   }
 }
 

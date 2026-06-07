@@ -4,7 +4,11 @@ import assert from "node:assert/strict";
 import { scoreCollectorCommand } from "../src/lib/pythonStockCollector";
 
 test("score collector uses project Python runner when Python env is not configured", () => {
-  assert.deepEqual(scoreCollectorCommand({}), ["bash", "scripts/run_python.sh", "scripts/fetch_stock_score.py"]);
+  assert.deepEqual(scoreCollectorCommand({}, "linux"), ["bash", "scripts/run_python.sh", "scripts/fetch_stock_score.py"]);
+});
+
+test("score collector uses Python directly on Windows when Python env is not configured", () => {
+  assert.deepEqual(scoreCollectorCommand({}, "win32"), ["python", "scripts/fetch_stock_score.py"]);
 });
 
 test("score collector honors explicit PYTHON_BIN", () => {

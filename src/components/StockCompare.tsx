@@ -7,9 +7,11 @@ import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import {
   MAX_COMPARE,
   bestBy,
+  compareItemSubtitle,
+  compareItemSummary,
+  compareItemTitle,
   comparePriceTone,
   componentScore,
-  displayName,
   displayTickerRef,
   isSnapshotPending,
   normalizeTicker,
@@ -56,42 +58,12 @@ async function readComparePayload(response: Response): Promise<BatchScorePayload
   }
 }
 
-function compareItemTitle(item: CompareItem): string {
-  return item.identity.primary || displayName(item.data) || item.ticker;
-}
-
-function compareItemSubtitle(item: CompareItem): string | undefined {
-  const subtitle = item.identity.secondary;
-  return subtitle && subtitle !== compareItemTitle(item) ? subtitle : undefined;
-}
-
 function subjectParticle(value: string): string {
   const last = Array.from(value.trim()).pop();
   if (!last) return "가";
   const code = last.charCodeAt(0);
   if (code < 0xac00 || code > 0xd7a3) return "가";
   return (code - 0xac00) % 28 === 0 ? "가" : "이";
-}
-
-function topicParticle(value: string): string {
-  const last = Array.from(value.trim()).pop();
-  if (!last) return "는";
-  const code = last.charCodeAt(0);
-  if (code < 0xac00 || code > 0xd7a3) return "는";
-  return (code - 0xac00) % 28 === 0 ? "는" : "은";
-}
-
-function compareItemSummary(item: CompareItem): string {
-  const title = compareItemTitle(item);
-  const summary = item.data.summary || displayName(item.data);
-  if (!summary || !/[가-힣]/.test(title)) return summary;
-
-  const correctParticle = topicParticle(title);
-  const wrongParticle = correctParticle === "은" ? "는" : "은";
-  if (summary.startsWith(`${title}${wrongParticle}`)) {
-    return `${title}${correctParticle}${summary.slice(title.length + wrongParticle.length)}`;
-  }
-  return summary;
 }
 
 export default function StockCompare() {
@@ -434,7 +406,7 @@ function CompareChart({ items }: { items: CompareItem[] }) {
   const chartSummary = series
     .map((entry) => {
       const latest = entry.points[entry.points.length - 1]?.value;
-      return `${entry.item.ticker} ${Number.isFinite(latest) ? `${(latest - 100).toFixed(1)}%` : "-"}`;
+      return `${compareItemTitle(entry.item)} ${Number.isFinite(latest) ? `${(latest - 100).toFixed(1)}%` : "-"}`;
     })
     .join(", ");
   const summaryId = "compare-chart-summary";
@@ -466,7 +438,7 @@ function CompareChart({ items }: { items: CompareItem[] }) {
           return (
             <span key={entry.item.ticker}>
               <i style={{ background: entry.color }} />
-              {entry.item.ticker}
+              {compareItemTitle(entry.item)}
               <b>{Number.isFinite(latest) ? `${(latest - 100).toFixed(1)}%` : "-"}</b>
             </span>
           );
@@ -571,27 +543,29 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
     <section className="compare-section">
       <span>차이가 나는 숫자</span>
       <h2>판단 기준별로 나눠서 볼게요</h2>
-      <table className="sr-only">
-        <caption>종목별 주요 비교 지표</caption>
-        <thead>
-          <tr>
-            <th scope="col">지표</th>
-            {items.map((item) => (
-              <th key={item.ticker} scope="col">{item.ticker}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.label}>
-              <th scope="row">{row.label}</th>
-              {row.values.map((value) => (
-                <td key={`${row.label}-${value.ticker}`}>{value.value}</td>
+      <div className="sr-only">
+        <table>
+          <caption>종목별 주요 비교 지표</caption>
+          <thead>
+            <tr>
+              <th scope="col">지표</th>
+              {items.map((item) => (
+                <th key={item.ticker} scope="col">{compareItemTitle(item)}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <th scope="row">{row.label}</th>
+                {row.values.map((value) => (
+                  <td key={`${row.label}-${value.ticker}`}>{value.value}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="compare-group-list">
         {groupedRows.map(({ group, rows }) => {
           return (
@@ -618,7 +592,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                               key={`${row.label}-${item.ticker}`}
                               className={`${isBest ? "best" : ""} ${typeof value === "number" && value < 0 ? "negative" : ""}`}
                             >
-                              <span>{item.ticker}</span>
+                              <span>{compareItemTitle(item)}</span>
                               <strong>{row.display(value)}</strong>
                               <i aria-hidden="true">
                                 <em style={{ width: `${metricFill(value, row, min, max)}%` }} />
@@ -670,27 +644,29 @@ function ComponentMatrix({ items }: { items: CompareItem[] }) {
     <section className="compare-section">
       <span>항목별 점수</span>
       <h2>무엇이 강하고 약한지 보여요</h2>
-      <table className="sr-only">
-        <caption>종목별 항목 점수</caption>
-        <thead>
-          <tr>
-            <th scope="col">항목</th>
-            {items.map((item) => (
-              <th key={item.ticker} scope="col">{item.ticker}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.label}>
-              <th scope="row">{row.label}</th>
-              {row.values.map((value) => (
-                <td key={`${row.label}-${value.ticker}`}>{value.value}</td>
+      <div className="sr-only">
+        <table>
+          <caption>종목별 항목 점수</caption>
+          <thead>
+            <tr>
+              <th scope="col">항목</th>
+              {items.map((item) => (
+                <th key={item.ticker} scope="col">{compareItemTitle(item)}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <th scope="row">{row.label}</th>
+                {row.values.map((value) => (
+                  <td key={`${row.label}-${value.ticker}`}>{value.value}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="component-compare-list">
         {visualRows.map((row) => (
           <article key={row.key}>
@@ -704,7 +680,7 @@ function ComponentMatrix({ items }: { items: CompareItem[] }) {
                 const isBest = row.best?.ticker === item.ticker;
                 return (
                   <span key={`${row.key}-${item.ticker}`} className={isBest ? "best" : ""}>
-                    <b>{item.ticker}</b>
+                    <b>{compareItemTitle(item)}</b>
                     <i>
                       <em style={{ width: `${score ?? 0}%` }} />
                     </i>

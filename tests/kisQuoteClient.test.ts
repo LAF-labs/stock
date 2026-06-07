@@ -85,6 +85,7 @@ test("fetchKisQuote maps domestic KIS quote payload into public quote shape", as
   assert.equal(payload.symbol, "005930");
   assert.equal(payload.name, "삼성전자");
   assert.equal(payload.latest_price, 70000);
+  assert.equal(payload.latest_price_label, "70,000원");
   assert.equal(payload.previous_close, 69000);
   assert.equal(payload.latest_change, 0.0145);
   assert.equal(payload.latest_bar_date, "2026-06-05");
@@ -135,9 +136,11 @@ test("fetchKisQuote maps US KIS quote payload into public quote shape", async ()
   assert.equal(payload.name, "Coca-Cola");
   assert.equal(payload.exchange_code, "NAS");
   assert.equal(payload.latest_price, 70.5);
+  assert.equal(payload.latest_price_label, "$70.50");
   assert.equal(payload.previous_close, 69);
   assert.equal(payload.latest_change, 0.0217);
   assert.equal(payload.usd_krw_rate, 1370);
+  assert.equal(payload.usd_krw_label, "$1 = 약 1,370원");
   assert.equal(payload.latest_bar_date, "2026-06-05");
 });
 

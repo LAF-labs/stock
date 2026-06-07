@@ -38,6 +38,12 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(score_module.parse_symbol_ref, symbols.parse_symbol_ref)
         self.assertIs(score_module.domestic_yfinance_symbol, symbols.domestic_yfinance_symbol)
 
+    def test_symbol_ref_accepts_domestic_alphanumeric_master_codes(self):
+        self.assertEqual(symbols.parse_symbol_ref("005930"), ("KR", "005930"))
+        self.assertEqual(symbols.parse_symbol_ref("Q123456"), ("KR", "Q123456"))
+        self.assertEqual(symbols.parse_symbol_ref("0194m0"), ("KR", "0194M0"))
+        self.assertEqual(symbols.parse_symbol_ref("ABC123"), ("US", "ABC123"))
+
     def test_formatting_helpers_are_extracted_through_score_entrypoint(self):
         self.assertIs(score_module.as_float, formatting.as_float)
         self.assertIs(score_module.price_label, formatting.price_label)

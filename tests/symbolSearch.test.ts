@@ -125,3 +125,90 @@ test("local symbol search excludes delisted rows and keeps newly listed rows sea
   assert.equal(items.some((item) => item.key === "US:DEAD"), false);
   assert.equal(items.some((item) => item.key === "KR:123456"), true);
 });
+
+test("symbol search display names prefer Korean labels except US derivative products", async () => {
+  const universe = [
+    {
+      market: "US" as const,
+      ticker: "KO",
+      exchange: "NYS",
+      exchangeName: "뉴욕",
+      koreanName: "코카콜라",
+      englishName: "COCA-COLA CO",
+      instrumentType: "STOCK" as const,
+    },
+    {
+      market: "KR" as const,
+      ticker: "0194M0",
+      exchange: "KOSPI",
+      exchangeName: "코스피",
+      koreanName: "ACE 삼성전자단일종목레버리지",
+      englishName: "",
+      instrumentType: "ETF" as const,
+    },
+    {
+      market: "US" as const,
+      ticker: "TSLL",
+      exchange: "NASDAQ",
+      exchangeName: "나스닥",
+      koreanName: "",
+      englishName: "테슬라 2배 ETF",
+      instrumentType: "ETF" as const,
+    },
+  ];
+
+  const [coke] = await searchLocalSymbolsForTests(universe, { query: "KO", limit: 10 });
+  const [domesticDerivative] = await searchLocalSymbolsForTests(universe, { query: "삼성전자", limit: 10 });
+  const [usDerivative] = await searchLocalSymbolsForTests(universe, { query: "TSLL", limit: 10 });
+
+  assert.equal(coke?.displayName, "코카콜라");
+  assert.equal(coke?.subtitle, "미국 · 뉴욕");
+  assert.equal(domesticDerivative?.displayName, "ACE 삼성전자단일종목레버리지");
+  assert.equal(domesticDerivative?.subtitle, "국내 · 코스피");
+  assert.equal(usDerivative?.displayName, "TSLL");
+  assert.equal(usDerivative?.subtitle, "미국 · 나스닥");
+});
+
+test("symbol search filters master rows that the score API cannot accept", async () => {
+  const items = await searchLocalSymbolsForTests(
+    [
+      {
+        market: "KR",
+        ticker: "F70100026",
+        exchange: "KOSPI",
+        exchangeName: "코스피",
+        koreanName: "한투글로벌넥스트웨이브1(A)",
+        englishName: "",
+        instrumentType: "STOCK",
+      },
+      {
+        market: "KR",
+        ticker: "0194M0",
+        exchange: "KOSPI",
+        exchangeName: "코스피",
+        koreanName: "ACE 삼성전자단일종목레버리지",
+        englishName: "",
+        instrumentType: "ETF",
+      },
+    ],
+    { query: "한투", limit: 10 }
+  );
+  const derivative = await searchLocalSymbolsForTests(
+    [
+      {
+        market: "KR",
+        ticker: "0194M0",
+        exchange: "KOSPI",
+        exchangeName: "코스피",
+        koreanName: "ACE 삼성전자단일종목레버리지",
+        englishName: "",
+        instrumentType: "ETF",
+      },
+    ],
+    { query: "삼성전자", limit: 10 }
+  );
+
+  assert.deepEqual(items, []);
+  assert.equal(derivative[0]?.key, "KR:0194M0");
+  assert.equal(derivative[0]?.displayName, "ACE 삼성전자단일종목레버리지");
+});

@@ -1,6 +1,7 @@
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
 import { stockHeaderIdentity, stockMarketCapDisplay, usableChartPoints, type StockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
+import { validTickerSymbolForMarket } from "@/lib/tickerRef";
 import type { JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
 
 export const MAX_COMPARE = 5;
@@ -49,10 +50,11 @@ export function normalizeTicker(value: string): string {
   if (text.includes(":")) {
     const [market, rawSymbol] = text.split(":", 2);
     const symbol = rawSymbol.replace(/[^A-Z0-9.-]/g, "");
-    if ((market === "US" || market === "KR") && symbol) return `${market}:${symbol}`;
+    if ((market === "US" || market === "KR") && symbol && validTickerSymbolForMarket(market, symbol)) return `${market}:${symbol}`;
+    return "";
   }
   const symbol = text.replace(/[^A-Z0-9.-]/g, "");
-  if (/^(?:\d{6}|Q\d{6})$/.test(symbol)) return `KR:${symbol}`;
+  if (/^(?:[0-9][A-Z0-9]{5}|Q\d{6})$/.test(symbol)) return `KR:${symbol}`;
   return symbol ? `US:${symbol}` : "";
 }
 
@@ -209,7 +211,96 @@ export function componentScore(item: CompareItem, key: string): number | undefin
 }
 
 export function displayName(data: StockScoreResponse): string {
-  return data.name || data.symbol || data.requested_ticker || "-";
+  return stockHeaderIdentity(data).primary || data.name || data.symbol || data.requested_ticker || "-";
+}
+
+export function compareItemTitle(item: CompareItem): string {
+  return item.identity.primary || displayName(item.data) || item.ticker;
+}
+
+export function compareItemSubtitle(item: CompareItem): string | undefined {
+  const subtitle = item.identity.secondary;
+  return subtitle && subtitle !== compareItemTitle(item) ? subtitle : undefined;
+}
+
+export function compareItemSummary(item: CompareItem): string {
+  const title = compareItemTitle(item);
+  let summary = item.data.summary || displayName(item.data);
+  if (!summary || !/[가-힣]/.test(title)) return summary;
+
+  summary = replaceTickerPrefix(summary, title, [
+    item.ticker,
+    item.identity.secondary,
+    item.data.symbol,
+    item.data.requested_ticker,
+    item.data.requested_ticker ? displayTickerRef(item.data.requested_ticker) : undefined,
+  ]);
+
+  return fixKoreanTopicParticle(summary, title);
+}
+
+function replaceTickerPrefix(summary: string, title: string, candidates: Array<string | undefined>): string {
+  for (const candidate of uniqueCandidates(candidates)) {
+    if (candidate === title) continue;
+    if (summary.startsWith(`${candidate}은`) || summary.startsWith(`${candidate}는`)) {
+      return `${title}${topicParticle(title)}${summary.slice(candidate.length + 1)}`;
+    }
+    if (summary.startsWith(`${candidate}이`) || summary.startsWith(`${candidate}가`)) {
+      return `${title}${subjectParticle(title)}${summary.slice(candidate.length + 1)}`;
+    }
+    if (summary.startsWith(`${candidate}을`) || summary.startsWith(`${candidate}를`)) {
+      return `${title}${objectParticle(title)}${summary.slice(candidate.length + 1)}`;
+    }
+    if (summary.startsWith(`${candidate} `)) {
+      return `${title} ${summary.slice(candidate.length + 1)}`;
+    }
+  }
+  return summary;
+}
+
+function fixKoreanTopicParticle(summary: string, title: string): string {
+  const correctParticle = topicParticle(title);
+  const wrongParticle = correctParticle === "은" ? "는" : "은";
+  if (summary.startsWith(`${title}${wrongParticle}`)) {
+    return `${title}${correctParticle}${summary.slice(title.length + wrongParticle.length)}`;
+  }
+  return summary;
+}
+
+function uniqueCandidates(candidates: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const candidate of candidates) {
+    const value = typeof candidate === "string" ? candidate.trim() : "";
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    values.push(value);
+  }
+  return values;
+}
+
+function subjectParticle(value: string): string {
+  const last = Array.from(value.trim()).pop();
+  if (!last) return "가";
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "가";
+  return (code - 0xac00) % 28 === 0 ? "가" : "이";
+}
+
+function topicParticle(value: string): string {
+  const last = Array.from(value.trim()).pop();
+  if (!last) return "는";
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "는";
+  return (code - 0xac00) % 28 === 0 ? "는" : "은";
+}
+
+function objectParticle(value: string): string {
+  const last = Array.from(value.trim()).pop();
+  if (!last) return "를";
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "를";
+  return (code - 0xac00) % 28 === 0 ? "를" : "을";
 }
 
 export function isSnapshotPending(result: BatchScoreResult | undefined): boolean {

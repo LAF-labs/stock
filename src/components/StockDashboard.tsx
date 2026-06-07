@@ -123,6 +123,12 @@ export default function StockDashboard() {
   }, [tickerParam, reloadVersion]);
 
   useEffect(() => {
+    if (state.status !== "success") return;
+    const identity = stockHeaderIdentity(state.data);
+    setTickerInput(identity.primary || displayTickerInput(tickerParam));
+  }, [state, tickerParam]);
+
+  useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker: tickerParam || "US:KO" });
 
@@ -379,25 +385,25 @@ export default function StockDashboard() {
               <ChartStory points={data.chart_series} patterns={data.chart_patterns} technicalAnalysisHref={technicalAnalysisHrefForPayload(data)} />
             </DetailSection>
             <DetailSection id="detail-factors">
-              <FactorStory components={data.components} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
+              <FactorStory components={data.components} stock={data} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
               {data.opportunity_components?.length ? (
-                <FactorStory components={data.opportunity_components} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" />
+                <FactorStory components={data.opportunity_components} stock={data} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" />
               ) : null}
             </DetailSection>
             <DetailSection id="detail-key-metrics">
-              <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={data.key_metrics} defaultOpen />
+              <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={data.key_metrics} stock={data} defaultOpen />
             </DetailSection>
             <DetailSection id="detail-news">
               <NewsFeed news={data.news} />
             </DetailSection>
             <DetailSection id="detail-profile">
-              <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={data.stock_profile} desktopOpen />
+              <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={data.stock_profile} stock={data} desktopOpen />
             </DetailSection>
             <DetailSection id="detail-valuation">
-              <SimpleList title="가격 부담" description="좋은 회사라도 너무 비싸면 부담이 될 수 있어요." items={data.valuation_rows} desktopOpen />
+              <SimpleList title="가격 부담" description="좋은 회사라도 너무 비싸면 부담이 될 수 있어요." items={data.valuation_rows} stock={data} desktopOpen />
             </DetailSection>
             <DetailSection id="detail-financials">
-              <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} desktopOpen />
+              <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} stock={data} desktopOpen />
             </DetailSection>
           </div>
         </>

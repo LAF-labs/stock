@@ -10,7 +10,7 @@ export type StrictTickerRefResult =
   | ({ ok: true } & ParsedTickerRef)
   | { ok: false; error: "missing_ticker" | "invalid_ticker" };
 
-const DOMESTIC_SYMBOL_RE = /^(?:\d{6}|Q\d{6})$/;
+const DOMESTIC_SYMBOL_RE = /^(?:[0-9][A-Z0-9]{5}|Q\d{6})$/;
 const US_SYMBOL_RE = /^[A-Z0-9.-]{1,16}$/;
 
 export function cleanTickerSymbol(value: string): string {
@@ -52,7 +52,7 @@ export function parseStrictTickerRef(value: string | null | undefined): StrictTi
     const [marketPart, symbolPart] = raw.split(":", 2);
     if (marketPart !== "US" && marketPart !== "KR") return { ok: false, error: "invalid_ticker" };
     const symbol = symbolPart?.trim().toUpperCase() || "";
-    if (!validSymbolForMarket(marketPart, symbol)) return { ok: false, error: "invalid_ticker" };
+    if (!validTickerSymbolForMarket(marketPart, symbol)) return { ok: false, error: "invalid_ticker" };
     return { ok: true, ticker: `${marketPart}:${symbol}`, market: marketPart, symbol };
   }
 
@@ -61,7 +61,8 @@ export function parseStrictTickerRef(value: string | null | undefined): StrictTi
   return { ok: false, error: "invalid_ticker" };
 }
 
-function validSymbolForMarket(market: MarketCode, symbol: string): boolean {
-  if (market === "KR") return DOMESTIC_SYMBOL_RE.test(symbol);
-  return US_SYMBOL_RE.test(symbol);
+export function validTickerSymbolForMarket(market: MarketCode, symbol: string): boolean {
+  const clean = cleanTickerSymbol(symbol);
+  if (market === "KR") return DOMESTIC_SYMBOL_RE.test(clean);
+  return US_SYMBOL_RE.test(clean);
 }

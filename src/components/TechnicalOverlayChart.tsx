@@ -1,4 +1,5 @@
-import { usableChartPoints } from "@/components/stockDashboardHelpers";
+import { chartPointPriceLabel, usableChartPoints } from "@/components/stockDashboardHelpers";
+import { formatCurrencyAmount } from "@/lib/format";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
 import type { ChartSeriesPoint } from "@/lib/types";
 
@@ -9,7 +10,7 @@ type FibLevel = { label: string; price: number };
 
 const SVG_WIDTH = 760;
 const SVG_HEIGHT = 340;
-const PAD = { top: 18, right: 18, bottom: 34, left: 48 };
+const PAD = { top: 18, right: 18, bottom: 34, left: 76 };
 
 export default function TechnicalOverlayChart({
   points,
@@ -38,6 +39,7 @@ export default function TechnicalOverlayChart({
   const orderBlocks = overlayZones(technical, "order_blocks");
   const fibLevels = fibonacciLevels(technical);
   const yDomain = priceDomain(chartPoints, [ema20, ema50, sma200], fvgZones, orderBlocks, fibLevels);
+  const chartCurrency = typeof chartPoints[0]?.currency === "string" ? chartPoints[0].currency : undefined;
   const indexByDate = new Map(chartPoints.map((point, index) => [point.date, index]));
   const x = (index: number) => PAD.left + (index / Math.max(1, chartPoints.length - 1)) * (SVG_WIDTH - PAD.left - PAD.right);
   const y = (value: number) => PAD.top + ((yDomain.max - value) / Math.max(1, yDomain.max - yDomain.min)) * (SVG_HEIGHT - PAD.top - PAD.bottom);
@@ -55,7 +57,7 @@ export default function TechnicalOverlayChart({
           {gridValues(yDomain).map((value) => (
             <g key={value}>
               <line x1={PAD.left} x2={SVG_WIDTH - PAD.right} y1={y(value)} y2={y(value)} className="technical-grid-line" />
-              <text x={PAD.left - 8} y={y(value) + 4} textAnchor="end" className="technical-axis-label">{axisLabel(value)}</text>
+              <text x={PAD.left - 8} y={y(value) + 4} textAnchor="end" className="technical-axis-label">{axisLabel(value, chartCurrency)}</text>
             </g>
           ))}
           {fvgZones.map((zone, index) => zoneRect(zone, indexByDate, x, y, "fvg", index))}
@@ -170,9 +172,9 @@ function pathFor(points: Array<{ x: number; y: number }>) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
 }
 
-function axisLabel(value: number) {
-  if (Math.abs(value) >= 1000) return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value);
+function axisLabel(value: number, currency: string | undefined) {
+  if (currency) return formatCurrencyAmount(value, currency);
+  return chartPointPriceLabel({ close: value });
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

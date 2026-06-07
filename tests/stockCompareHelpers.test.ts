@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   MAX_COMPARE,
   bestBy,
+  compareItemSummary,
+  compareItemTitle,
   comparePriceTone,
   normalizeTicker,
   normalizedPoints,
@@ -18,6 +20,8 @@ import type { StockScoreResponse } from "../src/lib/types";
 test("compare helpers normalize and cap ticker lists", () => {
   assert.equal(normalizeTicker("005930"), "KR:005930");
   assert.equal(normalizeTicker("kr:q123456"), "KR:Q123456");
+  assert.equal(normalizeTicker("0194m0"), "KR:0194M0");
+  assert.equal(normalizeTicker("KR:F70100026"), "");
   assert.equal(normalizeTicker("! nvda "), "US:NVDA");
   assert.equal(normalizeTicker("US:BRK.B"), "US:BRK.B");
   assert.deepEqual(parseTickers("KO, US:KO,005930,TSLA,NVDA,AAPL,MSFT"), ["US:KO", "KR:005930", "US:TSLA", "US:NVDA", "US:AAPL"]);
@@ -64,6 +68,26 @@ test("compare helpers build stable compare item fields", () => {
   assert.equal(item.marketCap, "91조원 ($65B)");
   assert.equal(item.strongest?.key, "profitability");
   assert.equal(item.weakest?.key, "valuation");
+});
+
+test("compare display helpers keep internal tickers but write Korean names", () => {
+  const data = {
+    ok: true,
+    symbol: "0194M0",
+    requested_ticker: "KR:0194M0",
+    market: "KR",
+    name: "ACE 삼성전자단일종목레버리지",
+    summary: "0194M0은 품질 점수 48.1/100점이에요.",
+    score: 48.1,
+    quality_score: 48.1,
+    components: [],
+  } as unknown as StockScoreResponse;
+
+  const item = toCompareItem(data, "KR:0194M0");
+
+  assert.equal(item.ticker, "0194M0");
+  assert.equal(compareItemTitle(item), "ACE 삼성전자단일종목레버리지");
+  assert.equal(compareItemSummary(item), "ACE 삼성전자단일종목레버리지는 품질 점수 48.1/100점이에요.");
 });
 
 test("compare helpers choose best values and normalize chart series", () => {

@@ -18,9 +18,10 @@ async function acquireScoreCollectorSlot() {
   }
 }
 
-export function scoreCollectorCommand(env: Record<string, string | undefined> = process.env): string[] {
+export function scoreCollectorCommand(env: Record<string, string | undefined> = process.env, platform = process.platform): string[] {
   const configuredPython = env.PYTHON_BIN || env.PYTHON;
   if (configuredPython) return [configuredPython, SCRIPT_PATH];
+  if (platform === "win32") return ["python", SCRIPT_PATH];
   return ["bash", PYTHON_RUNNER_PATH, SCRIPT_PATH];
 }
 
@@ -34,7 +35,8 @@ async function runPythonCollector(
   const { spawn } = await import("node:child_process");
 
   return new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/env", [...scoreCollectorCommand(process.env), ...args], {
+    const [command, ...commandArgs] = scoreCollectorCommand(process.env);
+    const child = spawn(command, [...commandArgs, ...args], {
       env: {
         ...process.env,
         PYTHONUTF8: "1",

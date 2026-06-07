@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { symbolDisplayName } from "@/lib/symbolDisplay";
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 import type { SymbolListingStatus, SymbolMarket, SymbolMasterItem, SymbolSearchItem } from "@/lib/symbolTypes";
-import { parseTickerRef } from "@/lib/tickerRef";
+import { parseTickerRef, validTickerSymbolForMarket } from "@/lib/tickerRef";
 
 type SymbolSearchInput = {
   query?: string;
@@ -62,6 +63,26 @@ export async function findExactSymbol(tickerRef: string): Promise<SymbolSearchIt
   const parsed = parseTickerRef(tickerRef);
   const items = await searchSymbols({ query: parsed.symbol, market: parsed.market, limit: 20 });
   return items.find((item) => item.market === parsed.market && item.ticker.toUpperCase() === parsed.symbol);
+}
+
+export async function enrichStockPayloadWithSymbolDisplay<T extends Record<string, unknown>>(payload: T): Promise<T & Record<string, unknown>> {
+  const tickerRef = tickerRefFromPayload(payload);
+  if (!tickerRef) return payload as T & Record<string, unknown>;
+
+  const item = await findExactSymbol(tickerRef);
+  if (!item) return payload as T & Record<string, unknown>;
+
+  const displayName = item.displayName || cleanString(payload.display_name);
+  const koreanName = item.koreanName || cleanString(payload.korean_name) || (hasHangul(displayName) ? displayName : "");
+  const englishName = item.englishName || cleanString(payload.english_name);
+
+  return {
+    ...payload,
+    display_name: displayName,
+    korean_name: koreanName || undefined,
+    english_name: englishName || undefined,
+    instrument_type: item.instrumentType || cleanString(payload.instrument_type) || undefined,
+  };
 }
 
 function searchLocalIndex(index: IndexedSymbol[], input: SymbolSearchInput): SymbolSearchItem[] {
@@ -153,7 +174,7 @@ function rememberLocalSearch(cache: Map<string, SymbolSearchItem[]>, key: string
 }
 
 function buildIndex(items: SymbolMasterItem[]): IndexedSymbol[] {
-  return items.map((item) => {
+  return items.filter(isApiSearchableSymbol).map((item) => {
     const displayName = displayNameFor(item);
     return {
       item,
@@ -173,7 +194,7 @@ function toSearchItem(item: SymbolMasterItem): SymbolSearchItem {
     ...item,
     key,
     displayName: displayNameFor(item),
-    subtitle: `${item.market === "US" ? "미국" : "국내"} · ${item.exchangeName} · ${item.ticker}`,
+    subtitle: [item.market === "US" ? "미국" : "국내", item.exchangeName || item.exchange].filter(Boolean).join(" · "),
   };
 }
 
@@ -181,6 +202,7 @@ function itemFromRpcRow(row: RpcSymbolSearchRow): SymbolSearchItem | undefined {
   const market = normalizeMarket(row.market);
   const ticker = cleanString(row.ticker);
   if (!market || !ticker) return undefined;
+  if (!validTickerSymbolForMarket(market, ticker)) return undefined;
   const item: SymbolMasterItem = {
     market,
     ticker,
@@ -199,9 +221,24 @@ function itemFromRpcRow(row: RpcSymbolSearchRow): SymbolSearchItem | undefined {
   return toSearchItem(item);
 }
 
+function isApiSearchableSymbol(item: SymbolMasterItem): boolean {
+  return validTickerSymbolForMarket(item.market, item.ticker);
+}
+
 function displayNameFor(item: SymbolMasterItem): string {
-  if (item.instrumentType === "ETF" && item.englishName) return item.englishName;
-  return item.koreanName || item.englishName || item.ticker;
+  return symbolDisplayName(item);
+}
+
+function tickerRefFromPayload(payload: Record<string, unknown>): string | undefined {
+  const requestedTicker = cleanString(payload.requested_ticker);
+  if (/^(US|KR):/i.test(requestedTicker)) return parseTickerRef(requestedTicker).ticker;
+
+  const market = normalizeMarket(cleanString(payload.market));
+  const symbol = cleanString(payload.symbol) || requestedTicker || cleanString(payload.ticker);
+  if (!symbol) return undefined;
+  if (market) return `${market}:${symbol.toUpperCase()}`;
+
+  return parseTickerRef(symbol).ticker;
 }
 
 function rank(entry: IndexedSymbol, normalizedQuery: string): number {
@@ -249,4 +286,8 @@ function clampLimit(value: number | undefined): number {
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function hasHangul(value: string): boolean {
+  return /[가-힣]/.test(value);
 }

@@ -65,7 +65,7 @@ async function acquireKisQuoteSlot() {
 }
 
 async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
-  if (!/^\d{6}$/.test(symbol)) {
+  if (!/^(?:[0-9][A-Z0-9]{5}|Q\d{6})$/.test(symbol)) {
     return { ok: false, status: 400, error: "invalid_ticker", message: "Invalid KR ticker." };
   }
 
@@ -201,9 +201,9 @@ async function fetchUsQuoteForMarket(symbol: string, market: KisUsMarket, cached
     exchange_code: market.excd,
     currency,
     usd_krw_rate: usdKrw,
-    usd_krw_label: usdKrw ? `$1 = ${priceLabel(usdKrw, "KRW")}` : undefined,
+    usd_krw_label: usdKrw ? `$1 = 약 ${priceLabel(usdKrw, "KRW")}` : undefined,
     latest_price: latestPrice,
-    latest_price_label: labeledMoney(latestPrice, currency, usdKrw),
+    latest_price_label: labeledMoney(latestPrice, currency),
     latest_bar_date: latestDate,
     previous_close: previousClose,
     latest_change: latestChange,
@@ -397,14 +397,12 @@ function stringValue(value: unknown): string | undefined {
 function priceLabel(value: number | undefined, currency: string): string {
   if (value === undefined) return "-";
   if (currency === "KRW") return `${Math.round(value).toLocaleString("ko-KR")}원`;
+  if (currency === "USD") return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return `${currency} ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-function labeledMoney(value: number | undefined, currency: string, usdKrw: number | undefined): string {
+function labeledMoney(value: number | undefined, currency: string): string {
   if (value === undefined) return "-";
-  if (currency === "USD" && usdKrw) {
-    return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} / ${priceLabel(value * usdKrw, "KRW")}`;
-  }
   return priceLabel(value, currency);
 }
 

@@ -1,4 +1,5 @@
-import { formatPercent, formatValue, recordEntries } from "@/lib/format";
+import { formatApproxKrwAmount, formatCompactUsd, formatCurrencyAmount, formatKoreanWonLarge, formatPercent, formatValue, recordEntries } from "@/lib/format";
+import { displayTicker, isUsDerivativeSymbol } from "@/lib/symbolDisplay";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import { cleanTickerSymbol } from "@/lib/tickerRef";
 import type { ChartSeriesPoint, JsonValue, LabeledValue, ScoreComponent, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
@@ -106,17 +107,10 @@ const COMPACT_METRIC_LABELS = new Set([
 ]);
 
 const COMPACT_METRIC_BLOCKED_VALUE_RE = /[$₩€¥]|조|억|만|천|주|B|M|T|정상|확인|상한|,/i;
+const PRICE_METRIC_LABELS = new Set(["현재가", "평균 목표가", "EPS", "BPS", "52주 고가", "52주 저가", "50일 평균", "200일 평균"]);
+const LARGE_MONEY_RECORD_KEYS = new Set(["totalRevenue", "operatingCashflow", "freeCashflow", "totalCash", "totalDebt"]);
+const PRICE_RECORD_KEYS = new Set(["price", "previous_close", "high_52w", "low_52w", "sma50", "sma200", "targetMeanPrice"]);
 
-const EN_US_INTEGER_FORMATTER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const EN_US_COMPACT_DECIMAL_FORMATTER = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 1,
-});
-const USD_AMOUNT_FORMATTER = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const KO_KR_INTEGER_FORMATTER = new Intl.NumberFormat("ko-KR");
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const KST_MINUTE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Seoul",
@@ -269,6 +263,23 @@ export function stockMarketCapDisplay(data: StockScoreResponse): MarketCapDispla
   };
 }
 
+export function formatMetricDisplayValue(item: LabeledValue, data?: StockScoreResponse): string {
+  if (!data) return formatValue(item.value);
+  const label = item.label?.trim() || "";
+  if (label === "현재가") return formatPriceWithContext(data);
+  if (label === "시가총액") return marketCapInlineDisplay(data);
+  if (PRICE_METRIC_LABELS.has(label)) {
+    const parsed = moneyNumber(item.value);
+    if (parsed !== undefined) return formatCurrencyAmount(parsed, priceCurrency(data));
+  }
+  return formatValue(item.value);
+}
+
+function marketCapInlineDisplay(data: StockScoreResponse): string {
+  const display = stockMarketCapDisplay(data);
+  return [display.primary, display.secondary].filter(Boolean).join(" ");
+}
+
 function marketCapNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return undefined;
@@ -284,27 +295,21 @@ function marketCapNumber(value: unknown): number | undefined {
   return base * multiplier;
 }
 
-function formatKoreanWonLarge(value: number): string {
-  if (!Number.isFinite(value)) return "-";
-  const totalEok = Math.max(0, Math.round(value / 100_000_000));
-  const jo = Math.floor(totalEok / 10_000);
-  const eok = totalEok % 10_000;
-  if (jo > 0 && eok > 0) return `${jo}조 ${eok}억원`;
-  if (jo > 0) return `${jo}조원`;
-  return `${totalEok}억원`;
+function moneyNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const compact = value.trim().replaceAll(",", "");
+  const match = compact.match(/[-+]?\d+(?:\.\d+)?/);
+  if (!match) return undefined;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function formatCompactUsd(value: number): string {
-  if (!Number.isFinite(value)) return "$-";
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000_000) return `$${trimCompact(value / 1_000_000_000_000)}T`;
-  if (abs >= 1_000_000_000) return `$${trimCompact(value / 1_000_000_000)}B`;
-  if (abs >= 1_000_000) return `$${trimCompact(value / 1_000_000)}M`;
-  return `$${EN_US_INTEGER_FORMATTER.format(value)}`;
-}
-
-function trimCompact(value: number): string {
-  return EN_US_COMPACT_DECIMAL_FORMATTER.format(value);
+function financialMoneyDisplay(value: number, data: StockScoreResponse | undefined): string {
+  if (!data || data.market === "KR" || data.currency === "KRW") return formatKoreanWonLarge(value);
+  const converted = typeof data.usd_krw_rate === "number" && Number.isFinite(data.usd_krw_rate) ? formatKoreanWonLarge(value * data.usd_krw_rate) : undefined;
+  const source = formatCompactUsd(value);
+  return converted && converted !== "-" ? `${converted} (${source})` : source;
 }
 
 function compactComponents(components: ScoreComponent[] | undefined): Array<Record<string, unknown>> | undefined {
@@ -334,32 +339,43 @@ function compactRecord<T extends Record<string, unknown>>(record: T): Record<str
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
-function formatUsdAmount(price: number | undefined, currency?: string): string | undefined {
-  if (typeof price !== "number" || !Number.isFinite(price)) return undefined;
-  const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
-  return `${prefix}${USD_AMOUNT_FORMATTER.format(price)}`;
+export function formatPrimaryPrice(data: StockScoreResponse, fallback = "-"): string {
+  const currency = priceCurrency(data);
+  const providerLabel = providerPrimaryPriceLabel(stringFromUnknown(data.latest_price_label), currency);
+  if (providerLabel) return providerLabel;
+  const price = formatCurrencyAmount(numberFromUnknown(data.latest_price), currency);
+  if (price !== "-") return price;
+  return providerPrimaryPriceLabel(fallback, currency) || fallback.replace(/\s*\(.+\)$/, "").trim() || "-";
 }
 
-function formatKrwAmount(price: number | undefined, rate: number | undefined): string | undefined {
-  if (typeof price !== "number" || !Number.isFinite(price) || typeof rate !== "number" || !Number.isFinite(rate)) return undefined;
-  return `약 ${KO_KR_INTEGER_FORMATTER.format(Math.round(price * rate))}원`;
+export function formatSecondaryPrice(data: StockScoreResponse): string {
+  if (priceCurrency(data) === "KRW") return "국내 원화 기준";
+  return formatApproxKrwAmount(numberFromUnknown(data.latest_price), numberFromUnknown(data.usd_krw_rate)) || "원화 환산 정보가 없어요";
 }
 
-export function formatUsdPrice(data: StockScoreResponse, fallback: string): string {
-  if (data.currency === "KRW") {
-    if (fallback && fallback !== "-") return fallback;
-    if (typeof data.latest_price === "number" && Number.isFinite(data.latest_price)) {
-      return `${KO_KR_INTEGER_FORMATTER.format(Math.round(data.latest_price))}원`;
-    }
-  }
-  const price = formatUsdAmount(data.latest_price, data.currency);
-  if (price) return price;
-  return fallback.replace(/\s*\(.+\)$/, "");
+export function formatPriceWithContext(data: StockScoreResponse): string {
+  const primary = formatPrimaryPrice(data);
+  const secondary = formatSecondaryPrice(data);
+  if (!secondary || secondary === "국내 원화 기준" || secondary === "원화 환산 정보가 없어요") return primary;
+  return `${primary} (${secondary})`;
 }
 
-export function formatKrwPrice(data: StockScoreResponse): string {
-  if (data.currency === "KRW") return "국내 원화 기준";
-  return formatKrwAmount(data.latest_price, data.usd_krw_rate) || "원화 환산 정보가 없어요";
+export const formatUsdPrice = formatPrimaryPrice;
+export const formatKrwPrice = formatSecondaryPrice;
+
+function priceCurrency(data: StockScoreResponse): string {
+  return stringFromUnknown(data.currency) || (data.market === "KR" ? "KRW" : "USD");
+}
+
+function providerPrimaryPriceLabel(value: string | undefined, currency: string): string | undefined {
+  const label = value?.trim();
+  if (!label || label === "-") return undefined;
+  const primary = label.split("/")[0]?.replace(/\s*\(.+\)$/, "").trim();
+  if (!primary || primary === "-") return undefined;
+  if (currency === "USD" && primary.startsWith("$")) return primary;
+  if (currency === "KRW" && primary.includes("원")) return primary;
+  if (currency !== "USD" && currency !== "KRW" && primary.toUpperCase().startsWith(`${currency} `)) return primary;
+  return undefined;
 }
 
 function numberFromUnknown(value: unknown): number | undefined {
@@ -402,13 +418,18 @@ function numberFromJsonRecord(record: Record<string, JsonValue> | undefined, key
 export function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteResponse | undefined): StockScoreResponse {
   const latestPrice = numberFromUnknown(quote?.latest_price);
   if (latestPrice === undefined) return data;
-  return {
+  const nextData: StockScoreResponse = {
     ...data,
     currency: stringFromUnknown(quote?.currency) || data.currency,
     latest_price: latestPrice,
     latest_bar_date: stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date,
     usd_krw_rate: numberFromUnknown(quote?.usd_krw_rate) ?? data.usd_krw_rate,
   };
+  const latestPriceLabel = stringFromUnknown(quote?.latest_price_label) || data.latest_price_label;
+  const usdKrwLabel = stringFromUnknown(quote?.usd_krw_label) || data.usd_krw_label;
+  if (latestPriceLabel) nextData.latest_price_label = latestPriceLabel;
+  if (usdKrwLabel) nextData.usd_krw_label = usdKrwLabel;
+  return nextData;
 }
 
 export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessSummary {
@@ -527,17 +548,28 @@ export function chartSummary(points: UsableChartPoint[]): string {
   if (points.length < 2) return "가격 차트 데이터가 충분하지 않아요.";
   const first = points[0];
   const last = points[points.length - 1];
-  let high = first.close;
-  let low = first.close;
+  let high = first;
+  let low = first;
   for (const point of points) {
-    if (point.close > high) high = point.close;
-    if (point.close < low) low = point.close;
+    if (point.close > high.close) high = point;
+    if (point.close < low.close) low = point;
   }
   const change = first.close !== 0 ? (last.close / first.close) - 1 : undefined;
-  return `${first.date}부터 ${last.date}까지 ${points.length}개 가격 지점입니다. 시작 ${compactChartNumber(first.close)}, 마지막 ${compactChartNumber(last.close)}, 기간 변화 ${formatPercent(change)}, 최고 ${compactChartNumber(high)}, 최저 ${compactChartNumber(low)}.`;
+  return `${first.date}부터 ${last.date}까지 ${points.length}개 가격 지점입니다. 시작 ${chartPointPriceLabel(first)}, 마지막 ${chartPointPriceLabel(last)}, 기간 변화 ${formatPercent(change)}, 최고 ${chartPointPriceLabel(high)}, 최저 ${chartPointPriceLabel(low)}.`;
 }
 
-function compactChartNumber(value: number): string {
+export function chartPointPriceLabel(point: Pick<UsableChartPoint, "close" | "close_label" | "currency">): string {
+  const currency = typeof point.currency === "string" ? point.currency : undefined;
+  const providerLabel = providerPrimaryPriceLabel(point.close_label, currency || "");
+  if (providerLabel) return providerLabel;
+  if (currency) return formatCurrencyAmount(point.close, currency);
+  const label = point.close_label?.trim();
+  const primaryLabel = label?.split("/")[0]?.replace(/\s*\(.+\)$/, "").trim();
+  if (primaryLabel) return primaryLabel;
+  return formatCurrencyAmount(point.close, undefined);
+}
+
+export function compactChartNumber(value: number): string {
   return KO_KR_CHART_FORMATTER.format(value);
 }
 
@@ -581,7 +613,7 @@ export function directInputSymbolItem(value: string): SymbolSearchItem | undefin
   if (!ticker) return undefined;
   return {
     key: ticker,
-    market: /^\d{6}$/.test(ticker) ? "KR" : "US",
+    market: /^(?:[0-9][A-Z0-9]{5}|Q\d{6})$/.test(ticker) ? "KR" : "US",
     ticker,
     displayName: ticker,
     subtitle: ticker,
@@ -597,10 +629,12 @@ export function humanizeRecordKey(key: string): string {
   return RECORD_LABELS[key] || key.replaceAll("_", " ");
 }
 
-export function formatRecordValue(key: string, value: JsonValue | undefined): string {
+export function formatRecordValue(key: string, value: JsonValue | undefined, data?: StockScoreResponse): string {
   if (typeof value === "number") {
     if (PERCENT_RECORD_KEYS.has(key)) return formatPercent(value);
     if (key === "debtToEquity") return `${value.toFixed(1)}%`;
+    if (LARGE_MONEY_RECORD_KEYS.has(key)) return financialMoneyDisplay(value, data);
+    if (data && PRICE_RECORD_KEYS.has(key)) return formatCurrencyAmount(value, priceCurrency(data));
   }
   return formatValue(value);
 }
@@ -642,15 +676,28 @@ export function strongestAndWeakest(data: StockScoreResponse) {
 
 export function stockHeaderIdentity(data: StockScoreResponse, quote?: StockQuoteResponse): StockHeaderIdentity {
   const symbol = stringFromUnknown(quote?.symbol) || stringFromUnknown(data.symbol) || stringFromUnknown(data.requested_ticker) || "KO";
+  const symbolLabel = displayTicker({ ticker: symbol }) || symbol;
+  const market = stringFromUnknown(quote?.market) || stringFromUnknown(data.market);
+  const instrumentType = stringFromUnknown(data.instrument_type) || stringFromUnknown(recordFromUnknown(data.industry_profile)?.asset_class);
   const quoteName = stringFromUnknown(quote?.name);
   const dataName = stringFromUnknown(data.name);
-  const name = meaningfulHeaderName(quoteName, symbol, data.requested_ticker) || meaningfulHeaderName(dataName, symbol, data.requested_ticker) || "";
+  const name =
+    meaningfulHeaderName(stringFromUnknown(data.korean_name), symbolLabel, data.requested_ticker)
+    || meaningfulHeaderName(stringFromUnknown(data.display_name), symbolLabel, data.requested_ticker)
+    || meaningfulHeaderName(stringFromUnknown(data.english_name), symbolLabel, data.requested_ticker)
+    || meaningfulHeaderName(quoteName, symbolLabel, data.requested_ticker)
+    || meaningfulHeaderName(dataName, symbolLabel, data.requested_ticker)
+    || "";
 
-  if (name && (!isDerivativeLikeDisplayName(name) || isDomesticMarket(data, quote))) {
-    return { primary: name, secondary: symbol, primaryKind: "name" };
+  if (isUsDerivativeSymbol({ ...data, ticker: symbol, market, instrument_type: instrumentType, name })) {
+    return { primary: symbolLabel, secondary: name, primaryKind: "ticker" };
   }
 
-  return { primary: symbol, secondary: name, primaryKind: "ticker" };
+  if (name) {
+    return { primary: name, secondary: symbolLabel, primaryKind: "name" };
+  }
+
+  return { primary: symbolLabel, secondary: name, primaryKind: "ticker" };
 }
 
 export function opportunityExtremes(components: ScoreComponent[] | undefined): OpportunityExtremes {
@@ -695,18 +742,6 @@ function meaningfulHeaderName(value: string | undefined, symbol: string, request
   const comparableRequested = (requestedTicker || "").toUpperCase().replace(/[^A-Z0-9가-힣]/g, "");
   if (comparableName === comparableSymbol || comparableName === comparableRequested) return undefined;
   return name;
-}
-
-function isDerivativeLikeDisplayName(name: string): boolean {
-  const length = Array.from(name).length;
-  if (length < 12) return false;
-  return /(ETF|ETN|KODEX|TIGER|ACE|RISE|PLUS|SOL|HANARO|KOSEF|KBSTAR|WON|1Q|레버리지|인버스|선물|채권혼합|단일종목)/i.test(name);
-}
-
-function isDomesticMarket(data: StockScoreResponse, quote?: StockQuoteResponse): boolean {
-  const market = stringFromUnknown(quote?.market) || stringFromUnknown(data.market);
-  if (market === "KR") return true;
-  return /^KR:/i.test(stringFromUnknown(data.requested_ticker) || "");
 }
 
 function shortOpportunityLabel(value: string | undefined): string | undefined {

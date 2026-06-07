@@ -1,4 +1,4 @@
-import { cleanTickerSymbol, parseStrictTickerRef } from "@/lib/tickerRef";
+import { cleanTickerSymbol, parseStrictTickerRef, validTickerSymbolForMarket } from "@/lib/tickerRef";
 
 export type TechnicalEligibility =
   | { eligible: true; ticker: string }
@@ -41,7 +41,7 @@ export function tickerFromInput(value: string | undefined): string | undefined {
     const [marketPart, symbolPart] = raw.split(":", 2);
     if (marketPart !== "US" && marketPart !== "KR") return undefined;
     const symbol = cleanTickerSymbol(symbolPart || "");
-    return symbol ? `${marketPart}:${symbol}` : undefined;
+    return symbol && validTickerSymbolForMarket(marketPart, symbol) ? `${marketPart}:${symbol}` : undefined;
   }
 
   const parsed = parseStrictTickerRef(raw);
