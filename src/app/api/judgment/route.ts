@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiLimitPolicy } from "@/lib/apiRateLimit";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { readJsonObjectWithLimit, jsonError, sameOriginBrowserWriteGuard } from "@/lib/apiGuards";
-import { judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
+import { judgmentBenchmarkCacheToken, judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
 import { getIndustryBenchmarksForStock } from "@/lib/industryBenchmarks";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import {
@@ -40,8 +40,8 @@ function todayKey(): string {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
-function cacheKeyFor(model: string, date: Date): string {
-  return judgmentCacheKeyFor(model, date, PROMPT_VERSION);
+function cacheKeyFor(model: string, date: Date, benchmarkToken: string): string {
+  return judgmentCacheKeyFor(model, date, PROMPT_VERSION, benchmarkToken);
 }
 
 async function getCachedJudgment(
@@ -147,13 +147,14 @@ export async function POST(request: NextRequest) {
   const model = RULE_MODEL;
   const now = new Date();
   const cacheBucketStart = judgmentBucketStart(now);
-  const cacheKey = cacheKeyFor(model, now);
+  const benchmarks = await getIndustryBenchmarksForStock(stock);
+  const benchmarkToken = judgmentBenchmarkCacheToken(benchmarks);
+  const cacheKey = cacheKeyFor(model, now, benchmarkToken);
   const cached = await getCachedJudgment(ticker, cacheDate, cacheKey, model, cacheBucketStart);
   if (cached) {
     return judgmentResponse(cached);
   }
 
-  const benchmarks = await getIndustryBenchmarksForStock(stock);
   const judgment = buildRuleBasedJudgment(stock, {
     benchmarks,
     model,

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { judgmentCacheKeyFor, judgmentBucketStart } from "../src/lib/judgmentCache";
+import { judgmentBenchmarkCacheToken, judgmentCacheKeyFor, judgmentBucketStart } from "../src/lib/judgmentCache";
 import { batchStatusFromResults } from "../src/lib/apiGuards";
 import { safeErrorMessage } from "../src/lib/errorSafety";
 import { appendBoundedOutput } from "../src/lib/subprocessGuards";
@@ -18,6 +18,28 @@ test("judgment cache key changes on the next six-hour bucket", () => {
   const after = new Date("2026-06-05T06:00:00.000Z");
 
   assert.notEqual(judgmentCacheKeyFor("rule-v1", before), judgmentCacheKeyFor("rule-v1", after));
+});
+
+test("judgment cache key changes when industry benchmark coverage changes", () => {
+  const date = new Date("2026-06-05T00:10:00.000Z");
+  const emptyToken = judgmentBenchmarkCacheToken([]);
+  const benchmarkToken = judgmentBenchmarkCacheToken([
+    {
+      scope: "OVERSEAS",
+      market: "US",
+      sector: "필수소비재",
+      industry: "음식료·외식",
+      metric: "per",
+      period: "quarter",
+      median: 22.74,
+      sampleCount: 23,
+      source: "score_snapshot",
+    },
+  ]);
+
+  assert.equal(emptyToken, "bench:none");
+  assert.match(benchmarkToken, /^bench:OVERSEAS:US:quarter:per:필수소비재:음식료·외식:22\.74:23$/);
+  assert.notEqual(judgmentCacheKeyFor("rule-v1", date, "stock-rule-judge-v3", emptyToken), judgmentCacheKeyFor("rule-v1", date, "stock-rule-judge-v3", benchmarkToken));
 });
 
 test("batch status reports total collector outage as 502", () => {

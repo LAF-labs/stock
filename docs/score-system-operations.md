@@ -154,7 +154,7 @@ The default smoke set is `NVDA`, `TSLA`, `IONQ`, `MRVL`, `005930`, `000660`, `25
 - low-confidence names do not get aggressive high scores
 - NVDA-like premium growth leaders stay above the configured minimum, default `80`
 
-Industry valuation benchmark refresh runs once per day through `.github/workflows/maintain-industry-benchmarks.yml`, after the US regular/after-hours window. Run it manually only when validating a migration or recovering data:
+Industry valuation benchmark refresh runs once per day through `.github/workflows/maintain-industry-benchmarks.yml`, after the US regular/after-hours window. Benchmark rows expire at the next relevant market close plus a maintenance grace window, so Friday/holiday refreshes remain usable until the next trading session can be refreshed. Snapshot-derived benchmarks run before external provider sync; Finviz/provider failures should not block the snapshot fallback from refreshing. Run the workflow manually only when validating a migration or recovering data:
 
 ```bash
 python scripts/sync_market_calendar.py --days 550

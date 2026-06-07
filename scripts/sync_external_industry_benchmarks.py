@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 import json
 import os
@@ -11,14 +11,22 @@ import subprocess
 import time
 from typing import Any
 from urllib import error, parse, request
+import warnings
 
+import pandas as pd
+import pandas_market_calendars as mcal
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_TABLE = "stock_industry_benchmarks"
 ENV_FILES = (".env.local", ".env.supabase.local")
+BENCHMARK_EXPIRY_GRACE_HOURS = 12
 
 FINVIZ_SOURCE = "finviz_industry"
 FINVIZ_BASE_URL = "https://finviz.com/groups.ashx"
+MARKET_CALENDARS = {
+    "US": "XNYS",
+    "KR": "XKRX",
+}
 FINVIZ_SECTORS = {
     "basicmaterials": "Basic Materials",
     "communicationservices": "Communication Services",
@@ -155,8 +163,13 @@ def parse_finviz_group_rows(html: str) -> list[dict[str, Any]]:
     return rows
 
 
-def build_finviz_benchmark_rows(raw_rows: list[dict[str, Any]], as_of_date: str | None = None) -> list[dict[str, Any]]:
+def build_finviz_benchmark_rows(
+    raw_rows: list[dict[str, Any]],
+    as_of_date: str | None = None,
+    generated_at: datetime | None = None,
+) -> list[dict[str, Any]]:
     benchmark_date = as_of_date or date.today().isoformat()
+    expires_at = benchmark_expires_at("US", generated_at)
     rows: list[dict[str, Any]] = []
     for raw in raw_rows:
         provider_sector = clean_text(raw.get("sector"))
@@ -190,9 +203,31 @@ def build_finviz_benchmark_rows(raw_rows: list[dict[str, Any]], as_of_date: str 
                     "calculation_method": "provider_group_value",
                     "confidence": confidence,
                     "as_of_date": benchmark_date,
+                    "expires_at": expires_at,
                 }
             )
     return rows
+
+
+def benchmark_expires_at(market: str, generated_at: datetime | None = None, grace_hours: int = BENCHMARK_EXPIRY_GRACE_HOURS) -> str:
+    now_ts = generated_at or datetime.now(timezone.utc)
+    if now_ts.tzinfo is None:
+        now_ts = now_ts.replace(tzinfo=timezone.utc)
+    now_ts = now_ts.astimezone(timezone.utc)
+    calendar_name = MARKET_CALENDARS.get(clean_text(market).upper(), "XNYS")
+    start = now_ts.date()
+    end = start + timedelta(days=14)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        schedule = mcal.get_calendar(calendar_name).schedule(start_date=start.isoformat(), end_date=end.isoformat())
+    for _, row in schedule.iterrows():
+        close_at = pd.Timestamp(row["market_close"])
+        if close_at.tzinfo is None:
+            close_at = close_at.tz_localize(timezone.utc)
+        close_at = close_at.tz_convert(timezone.utc)
+        if close_at.to_pydatetime() > now_ts:
+            return (close_at.to_pydatetime() + timedelta(hours=grace_hours)).isoformat()
+    return (now_ts + timedelta(days=4)).isoformat()
 
 
 def fetch_finviz_industry_rows(timeout_seconds: int, pause_seconds: float = 1.0, sectors: list[str] | None = None) -> list[dict[str, Any]]:

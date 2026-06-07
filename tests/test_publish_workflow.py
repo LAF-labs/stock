@@ -51,6 +51,8 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("industry_quality_audit.py --json", text)
         self.assertIn("SUPABASE_PUBLISHABLE_KEY", text)
         self.assertIn("supabase_runtime_readiness.py --json", text)
+        self.assertLess(text.index("run_industry_maintenance.py --refresh-benchmarks"), text.index("sync_external_industry_benchmarks.py"))
+        self.assertIn("continue-on-error: true", text)
 
     def test_operations_check_runs_on_schedule_with_thresholds(self):
         text = OPERATIONS_WORKFLOW_PATH.read_text(encoding="utf-8")

@@ -1,6 +1,11 @@
+from datetime import datetime, timezone
 import unittest
 
-from scripts.sync_external_industry_benchmarks import build_finviz_benchmark_rows, parse_finviz_group_rows
+from scripts.sync_external_industry_benchmarks import (
+    benchmark_expires_at,
+    build_finviz_benchmark_rows,
+    parse_finviz_group_rows,
+)
 
 
 class FinvizIndustryBenchmarkTests(unittest.TestCase):
@@ -34,6 +39,7 @@ class FinvizIndustryBenchmarkTests(unittest.TestCase):
                 }
             ],
             as_of_date="2026-06-05",
+            generated_at=datetime(2026, 6, 6, 15, 0, tzinfo=timezone.utc),
         )
 
         self.assertEqual(len(rows), 2)
@@ -47,7 +53,17 @@ class FinvizIndustryBenchmarkTests(unittest.TestCase):
         self.assertEqual(per["median"], 46.62)
         self.assertEqual(per["source"], "finviz_industry")
         self.assertEqual(per["provider_group_name"], "Semiconductors")
+        self.assertEqual(per["expires_at"], "2026-06-09T08:00:00+00:00")
         self.assertEqual(forward["median"], 36.22)
+
+    def test_benchmark_expiry_crosses_weekends_and_us_holidays(self):
+        saturday_after_friday_close = datetime(2026, 6, 6, 15, 0, tzinfo=timezone.utc)
+        juneteenth_holiday = datetime(2026, 6, 19, 15, 0, tzinfo=timezone.utc)
+        thanksgiving_early_close = datetime(2026, 11, 27, 15, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(benchmark_expires_at("US", saturday_after_friday_close), "2026-06-09T08:00:00+00:00")
+        self.assertEqual(benchmark_expires_at("US", juneteenth_holiday), "2026-06-23T08:00:00+00:00")
+        self.assertEqual(benchmark_expires_at("US", thanksgiving_early_close), "2026-11-28T06:00:00+00:00")
 
 
 if __name__ == "__main__":
