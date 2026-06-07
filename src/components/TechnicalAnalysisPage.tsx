@@ -12,6 +12,7 @@ import {
   technicalWarnings,
   normalizedTone,
 } from "@/components/technicalAnalysisHelpers";
+import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
 import { snapshotPendingFromPayload, stringFromUnknown, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
 import { formatValue } from "@/lib/format";
 import type { StockScoreResponse } from "@/lib/types";
@@ -145,6 +146,8 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
               {warnings.map((warning) => <p key={warning}>{warning}</p>)}
             </section>
           ) : null}
+
+          <TechnicalOverlayChart points={data.chart_series} technical={technical} />
 
           <section className="technical-rule-section">
             <div className="section-title">

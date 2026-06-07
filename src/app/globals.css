@@ -1206,6 +1206,7 @@ a:focus-visible {
 
 .technical-hero,
 .technical-warning,
+.technical-chart-panel,
 .technical-rule-section,
 .technical-glossary {
   padding: 30px 20px;
@@ -1330,6 +1331,152 @@ a:focus-visible {
   color: #8a5a00;
   font-size: 16px;
   font-weight: 800;
+}
+
+.technical-chart-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.technical-chart-shell {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.technical-chart-shell svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 260px;
+}
+
+.technical-chart-bg {
+  fill: #f8fafc;
+}
+
+.technical-grid-line {
+  stroke: rgba(222, 228, 235, 0.86);
+  stroke-width: 1;
+}
+
+.technical-axis-label,
+.technical-fib-label {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.technical-price-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.technical-last-price-dot {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.technical-ma {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.technical-ema20 {
+  stroke: #18a976;
+}
+
+.technical-ema50 {
+  stroke: #f59f00;
+}
+
+.technical-sma200 {
+  stroke: #64748b;
+  stroke-dasharray: 5 5;
+}
+
+.technical-zone-fvg {
+  fill: rgba(49, 130, 246, 0.14);
+  stroke: rgba(49, 130, 246, 0.36);
+  stroke-width: 1;
+}
+
+.technical-zone-ob {
+  fill: rgba(240, 68, 82, 0.12);
+  stroke: rgba(240, 68, 82, 0.32);
+  stroke-width: 1;
+}
+
+.technical-fib-line {
+  stroke: rgba(124, 58, 237, 0.52);
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+}
+
+.technical-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.technical-chart-legend span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--subtext);
+  font-size: 12px;
+  font-weight: 750;
+  background: #fff;
+}
+
+.technical-chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.technical-chart-legend .price {
+  background: var(--accent);
+}
+
+.technical-chart-legend .ema20 {
+  background: #18a976;
+}
+
+.technical-chart-legend .ema50 {
+  background: #f59f00;
+}
+
+.technical-chart-legend .fvg {
+  background: rgba(49, 130, 246, 0.38);
+}
+
+.technical-chart-legend .ob {
+  background: rgba(240, 68, 82, 0.35);
+}
+
+.technical-chart-legend .fib {
+  background: #7c3aed;
+}
+
+.technical-chart-empty {
+  margin: 0;
+  color: var(--subtext);
+  font-size: 15px;
+  line-height: 1.6;
+  font-weight: 500;
 }
 
 .technical-signal-grid {
@@ -2610,6 +2757,7 @@ a:focus-visible {
 
   .technical-analysis-app .technical-hero,
   .technical-analysis-app .technical-warning,
+  .technical-analysis-app .technical-chart-panel,
   .technical-analysis-app .technical-rule-section,
   .technical-analysis-app .technical-glossary {
     border-top: 0;
@@ -2632,6 +2780,7 @@ a:focus-visible {
 
   .technical-analysis-app .technical-rule-section,
   .technical-analysis-app .technical-glossary,
+  .technical-analysis-app .technical-chart-panel,
   .technical-analysis-app .technical-warning {
     padding: 30px 28px;
   }
