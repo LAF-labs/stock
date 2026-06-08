@@ -47,6 +47,26 @@ test("dashboard pending payload maps queue state into user-facing retry guidance
   });
 });
 
+test("dashboard pending payload explains stale refresh work as an update", () => {
+  const pending = snapshotPendingFromPayload(
+    {
+      error: "snapshot_pending",
+      reason: "stale_refresh",
+      ticker: "US:NVDA",
+      retry_after_seconds: 60,
+      refresh_request: { queued: true },
+    },
+    "US:KO",
+  );
+
+  assert.deepEqual(pending, {
+    message: "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요. 보통 60초 안에 다시 확인할 수 있어요.",
+    ticker: "US:NVDA",
+    queued: true,
+    retryAfterSeconds: 60,
+  });
+});
+
 test("dashboard pending payload ignores unrelated errors", () => {
   assert.equal(snapshotPendingFromPayload({ error: "provider_timeout" }, "US:KO"), undefined);
   assert.equal(snapshotPendingFromPayload({ error: "refresh_queue_unavailable" }, "US:KO"), undefined);

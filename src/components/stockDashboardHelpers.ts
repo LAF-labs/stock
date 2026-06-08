@@ -399,9 +399,13 @@ export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: str
   const queued = refreshRequest?.queued === true;
   const retryAfterSeconds = numberFromUnknown(record?.retry_after_seconds);
   const ticker = stringFromUnknown(record?.ticker) || fallbackTicker;
-  const message = queued
-    ? "처음 조회하는 종목이라 데이터를 준비하고 있어요. 수집이 끝나면 점수와 현재가가 표시됩니다."
-    : "이 종목 데이터가 아직 준비되지 않았어요. 잠시 후 다시 조회해주세요.";
+  const reason = stringFromUnknown(record?.reason);
+  let message = "이 종목 데이터가 아직 준비되지 않았어요. 잠시 후 다시 조회해주세요.";
+  if (queued && reason === "stale_refresh") {
+    message = "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요.";
+  } else if (queued) {
+    message = "처음 조회하는 종목이라 데이터를 준비하고 있어요. 수집이 끝나면 점수와 현재가가 표시됩니다.";
+  }
 
   return {
     message: retryAfterSeconds ? `${message} 보통 ${retryAfterSeconds}초 안에 다시 확인할 수 있어요.` : message,

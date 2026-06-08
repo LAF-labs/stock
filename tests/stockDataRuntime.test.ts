@@ -122,6 +122,20 @@ test("snapshot pending payload exposes queued refresh metadata", () => {
   });
 });
 
+test("snapshot pending payload can describe stale refresh work", () => {
+  const payload = stockDataPendingPayload({
+    kind: "quote",
+    ticker: "US:KO",
+    reason: "stale_refresh",
+    retryAfterSeconds: 90,
+    refreshRequest: { queued: true, job_id: "job-stale", status: "queued" },
+  });
+
+  assert.equal(payload.reason, "stale_refresh");
+  assert.equal(payload.refresh_request.job_id, "job-stale");
+  assert.equal(payload.retry_after_seconds, 90);
+});
+
 test("snapshot pending payload defaults to the queue worker cadence", () => {
   delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
 

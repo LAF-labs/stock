@@ -53,3 +53,21 @@ test("stock pending response keeps retry headers only for queued refresh work", 
   assert.equal(response.status, 202);
   assert.equal(response.headers.get("retry-after"), "120");
 });
+
+test("stock pending response preserves stale refresh reasons", async () => {
+  const response = stockPendingJsonResponse({
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "quote",
+    ticker: "US:KO",
+    reason: "stale_refresh",
+    retry_after_seconds: 90,
+    refresh_request: { queued: true, job_id: "job-stale", status: "queued" },
+  });
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 202);
+  assert.equal(body.reason, "stale_refresh");
+  assert.equal(response.headers.get("retry-after"), "90");
+});

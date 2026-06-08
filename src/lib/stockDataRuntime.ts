@@ -1,6 +1,6 @@
 export type StockDataRuntimeMode = "python" | "snapshot";
 export type StockDataKind = "score" | "quote";
-export type StockDataUnavailableReason = "snapshot_miss" | "refresh_background_only";
+export type StockDataUnavailableReason = "snapshot_miss" | "refresh_background_only" | "stale_refresh";
 export type StockDataScoreView = "detail" | "compare" | "technical";
 
 export type StockDataRuntimeEnv = Record<string, string | undefined>;

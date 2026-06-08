@@ -4,7 +4,7 @@ import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { formatCurrencyAmount } from "@/lib/format";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
 import { QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
-import { StockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
@@ -138,7 +138,7 @@ async function collectLiveQuotePayload(ticker: string): Promise<StockPayload> {
 
 async function refreshQuoteSnapshot(
   ticker: string,
-  options: { fallbackSnapshot?: StoredQuoteSnapshot; unavailableReason?: "snapshot_miss" | "refresh_background_only" } = {}
+  options: { fallbackSnapshot?: StoredQuoteSnapshot; unavailableReason?: StockDataUnavailableReason } = {}
 ): Promise<{ snapshot: StoredQuoteSnapshot; refreshed: boolean; lease?: StockRefreshLeaseResult }> {
   const existing = inflightRefreshes.get(ticker);
   if (existing) return { snapshot: await existing, refreshed: true };
@@ -249,18 +249,18 @@ function fallbackStaleExpiresAt(fetchedAt: string, expiresAt: string): string {
   return new Date(fallbackMs || Date.now()).toISOString();
 }
 
-function scheduleQueuedRefresh(ticker: string, priority: number, reason: "snapshot_miss" | "refresh_background_only") {
+function scheduleQueuedRefresh(ticker: string, priority: number, reason: StockDataUnavailableReason) {
   void enqueueStockRefreshJob({ kind: "quote", ticker, priority, reason }).catch(() => undefined);
 }
 
 function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredQuoteSnapshot) {
-  scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
+  scheduleQueuedRefresh(ticker, 70, "stale_refresh");
   void (async () => {
     const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: true });
     if (marketDataResult) return;
     await refreshQuoteSnapshot(ticker, {
       fallbackSnapshot,
-      unavailableReason: "snapshot_miss",
+      unavailableReason: "stale_refresh",
     });
   })().catch(() => undefined);
 }
@@ -310,7 +310,7 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
       if (inlineQuoteRefreshAvailable()) {
         scheduleInlineRefresh(ticker, staleCandidate);
       } else {
-        scheduleQueuedRefresh(ticker, 70, "snapshot_miss");
+        scheduleQueuedRefresh(ticker, 70, "stale_refresh");
       }
       return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
     }

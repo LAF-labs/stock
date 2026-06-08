@@ -2,7 +2,7 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSe
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
-import { pythonCollectorEnabled, StockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
@@ -272,7 +272,7 @@ function scheduleRefresh(ticker: string, view: ScoreView) {
   void refreshSnapshot(ticker, view).catch(() => undefined);
 }
 
-function scheduleQueuedRefresh(ticker: string, view: ScoreView, priority: number, reason: "snapshot_miss" | "refresh_background_only") {
+function scheduleQueuedRefresh(ticker: string, view: ScoreView, priority: number, reason: StockDataUnavailableReason) {
   void enqueueStockRefreshJob({ kind: "score", ticker, view, priority, reason }).catch(() => undefined);
 }
 
@@ -317,7 +317,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
         scheduleRefresh(ticker, view);
         return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
       }
-      scheduleQueuedRefresh(ticker, view, 60, "snapshot_miss");
+      scheduleQueuedRefresh(ticker, view, 60, "stale_refresh");
       return decorate(staleCandidate, "stale", staleSource, { refreshStarted: false });
     }
   }

@@ -208,6 +208,85 @@ test("score force refresh serves existing snapshot when refresh is unavailable",
   assert.equal(result.cache.refreshError, "refresh_failed");
 });
 
+test("score stale snapshot enqueues stale refresh work instead of a snapshot miss", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_SCORE_CACHE_STALE_SECONDS = "86400";
+
+  const ticker = "US:SCORESTALE";
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker,
+    view_mode: "detail",
+    payload: {
+      ok: true,
+      type: "score",
+      requested_ticker: ticker,
+      market: "US",
+      symbol: "SCORESTALE",
+      score: 69,
+      quality_score: 69,
+      opportunity_score: 64,
+      opportunity_confidence: 0.82,
+      components: [
+        { key: "profitability", label: "Profitability", score: 72 },
+        { key: "growth", label: "Growth", score: 66 },
+        { key: "health", label: "Health", score: 70 },
+        { key: "momentum", label: "Momentum", score: 68 },
+        { key: "valuation", label: "Valuation", score: 67 },
+      ],
+      opportunity_components: [
+        { key: "opportunity_momentum", label: "Momentum setup", score: 63 },
+        { key: "opportunity_growth", label: "Growth setup", score: 65 },
+        { key: "opportunity_analyst", label: "Analyst upside", score: 61 },
+        { key: "opportunity_liquidity", label: "Liquidity", score: 77 },
+        { key: "opportunity_risk", label: "Risk control", score: 52 },
+      ],
+      score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      sia_snapshot: {
+        confidence: 0.82,
+        quality_score: 0.69,
+        opportunity_score: 0.64,
+        score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      },
+    },
+    fetched_at: new Date(nowMs - 10 * 60_000).toISOString(),
+    expires_at: new Date(nowMs - 5 * 60_000).toISOString(),
+  };
+  let enqueueBody: Record<string, unknown> | undefined;
+
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_score_snapshots")) {
+      return new Response(JSON.stringify([snapshot]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (text.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      enqueueBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({ id: "job-stale-score", status: "queued" });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore(ticker, "detail");
+  await sleep(20);
+
+  assert.equal(result.cache.state, "stale");
+  assert.equal(result.cache.source, "supabase");
+  assert.deepEqual(enqueueBody, {
+    p_kind: "score",
+    p_market: "US",
+    p_symbol: "SCORESTALE",
+    p_view_mode: "detail",
+    p_priority: 60,
+    p_payload: { reason: "stale_refresh", requested_ticker: ticker },
+  });
+});
+
 test("quote force refresh can use Node KIS quote client in Vercel snapshot mode", async () => {
   useSnapshotOnlyRuntime();
   process.env.STOCK_API_APP_KEY = "app-key";
@@ -447,7 +526,7 @@ test("quote stale snapshot also enqueues a refresh backstop when Supabase admin 
     p_symbol: "008888",
     p_view_mode: null,
     p_priority: 70,
-    p_payload: { reason: "snapshot_miss", requested_ticker: ticker },
+    p_payload: { reason: "stale_refresh", requested_ticker: ticker },
   });
 });
 

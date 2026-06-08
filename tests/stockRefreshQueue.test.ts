@@ -100,6 +100,37 @@ test("enqueueStockRefreshJob queues technical score jobs with on-demand priority
   });
 });
 
+test("enqueueStockRefreshJob preserves stale refresh reasons", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  let capturedBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({ id: "job-stale", status: "queued" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const result = await enqueueStockRefreshJob({
+    kind: "score",
+    ticker: "US:NVDA",
+    view: "detail",
+    reason: "stale_refresh",
+  });
+
+  assert.equal(result.queued, true);
+  assert.deepEqual(capturedBody, {
+    p_kind: "score",
+    p_market: "US",
+    p_symbol: "NVDA",
+    p_view_mode: "detail",
+    p_priority: 20,
+    p_payload: { reason: "stale_refresh", requested_ticker: "US:NVDA" },
+  });
+});
+
 test("enqueueStockRefreshJob sends quote jobs without a view mode", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co/";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";

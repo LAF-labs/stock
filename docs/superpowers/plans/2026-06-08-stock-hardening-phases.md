@@ -134,11 +134,11 @@ Goal: Ensure pending payloads describe the actual refresh reason before client p
 
 Tasks:
 
-- [ ] Extend stock data unavailable reasons with `stale_refresh`.
-- [ ] Use `stale_refresh` when serving stale score or quote snapshots while queueing background refresh work.
-- [ ] Update queue payload and pending-response tests for the new reason.
-- [ ] Keep `snapshot_miss` for true cache misses only.
-- [ ] Review user-facing copy so stale refresh does not read like missing data.
+- [x] Extend stock data unavailable reasons with `stale_refresh`.
+- [x] Use `stale_refresh` when serving stale score or quote snapshots while queueing background refresh work.
+- [x] Update queue payload and pending-response tests for the new reason.
+- [x] Keep `snapshot_miss` for true cache misses only.
+- [x] Review user-facing copy so stale refresh does not read like missing data.
 
 Verification:
 
@@ -146,6 +146,26 @@ Verification:
 npm test -- tests/stockCacheSnapshotMode.test.ts tests/stockPendingResponse.test.ts tests/stockDashboardHelpers.test.ts tests/stockRefreshQueue.test.ts
 npm run typecheck
 ```
+
+Actual verification:
+
+```bash
+node --import tsx --test tests/stockDataRuntime.test.ts tests/stockRefreshQueue.test.ts tests/stockCacheSnapshotMode.test.ts tests/stockPendingResponse.test.ts tests/stockDashboardHelpers.test.ts
+# pass 51 / fail 0
+
+npm test -- tests/stockDataRuntime.test.ts tests/stockRefreshQueue.test.ts tests/stockCacheSnapshotMode.test.ts tests/stockPendingResponse.test.ts tests/stockDashboardHelpers.test.ts
+# pass 202 / fail 0
+
+npm run typecheck
+# exit 0
+```
+
+Reflection:
+
+- `stale_refresh` now separates "we have stale data and are updating it" from a true `snapshot_miss`, which should make queue analytics and future polling behavior less misleading.
+- The first RED test caught that stale score fixtures must satisfy the current dual-score model contract; otherwise the test silently exercises a miss path instead of a stale path.
+- User-facing pending copy now branches on the reason code, so a stale refresh does not read like a first-time lookup.
+- The change is intentionally narrow: force-refresh failures and true missing snapshots still keep the existing `refresh_background_only` and `snapshot_miss` meanings.
 
 ## Phase 4: Market-Data Observability
 
