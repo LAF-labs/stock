@@ -584,6 +584,14 @@ export function scoreFreshnessTimeChip(data: StockScoreResponse): string | undef
   return time ? `${time} 기준` : undefined;
 }
 
+export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string | undefined {
+  const scoreFetchedAt = cacheTimestamp(recordFromUnknown(data.server_cache), "fetched_at");
+  const quoteFetchedAt = cacheTimestamp(recordFromUnknown(quote?.server_cache), "fetched_at");
+  const fetchedAt = newestTimestamp(scoreFetchedAt, quoteFetchedAt);
+  const time = fetchedAt ? formatKstTime(fetchedAt) : undefined;
+  return time ? `${time} 기준` : undefined;
+}
+
 function scoreFreshnessSourceLabel(source: string | undefined): string {
   if (source === "supabase") return "Supabase";
   if (source === "market-data") return "Rust market-data";
@@ -599,6 +607,19 @@ function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string)
   const millis = numberFromUnknown(cache?.[`${key}_ms`]);
   if (millis === undefined) return undefined;
   return new Date(millis).toISOString();
+}
+
+function newestTimestamp(...values: Array<string | undefined>): string | undefined {
+  let newest: string | undefined;
+  let newestMs = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const millis = Date.parse(value);
+    if (!Number.isFinite(millis) || millis <= newestMs) continue;
+    newest = value;
+    newestMs = millis;
+  }
+  return newest;
 }
 
 function formatKstMinute(value: string): string | undefined {

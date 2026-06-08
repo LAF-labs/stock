@@ -9,7 +9,7 @@ import {
   formatSecondaryPrice,
   opportunityExtremes,
   scoreDataWithQuote,
-  scoreFreshnessTimeChip,
+  stockHeaderFreshnessTimeChip,
   strongestAndWeakest,
   stringFromUnknown,
   stockHeaderIdentity,
@@ -82,7 +82,7 @@ export default function StockHeader({
   const { strongest, weakest } = strongestAndWeakest(data);
   const opportunity = opportunityExtremes(data.opportunity_components);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
-  const scoreTime = scoreFreshnessTimeChip(data);
+  const headerTime = stockHeaderFreshnessTimeChip(data, quote);
   const qualityScoreStyle = { "--score-angle": `${qualityScore * 3.6}deg` } as CSSProperties;
   const opportunityScoreStyle = { "--score-angle": `${(opportunityScore ?? 0) * 3.6}deg` } as CSSProperties;
 
@@ -99,7 +99,7 @@ export default function StockHeader({
           </div>
         </div>
         <div className="stock-header-toolbar">
-          {scoreTime ? <span className="score-time-chip">{scoreTime}</span> : null}
+          {headerTime ? <span className="score-time-chip">{headerTime}</span> : null}
           <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
             ↻
           </button>

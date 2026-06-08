@@ -21,6 +21,7 @@ import {
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
+  stockHeaderFreshnessTimeChip,
   shouldShowStockSkeleton,
   shouldPreservePendingViewDuringRetry,
   isPartialStockSnapshotPayload,
@@ -294,6 +295,27 @@ test("scoreFreshnessTimeChip keeps only the KST time for compact header display"
   } satisfies StockScoreResponse;
 
   assert.equal(scoreFreshnessTimeChip(score), "18:08 기준");
+});
+
+test("stockHeaderFreshnessTimeChip uses the newest score or quote update time", () => {
+  const score = {
+    server_cache: {
+      fetched_at: "2026-06-06T09:08:00.000Z",
+    },
+  } satisfies StockScoreResponse;
+  const olderQuote = {
+    server_cache: {
+      fetched_at: "2026-06-06T08:59:00.000Z",
+    },
+  } satisfies StockQuoteResponse;
+  const refreshedQuote = {
+    server_cache: {
+      fetched_at: "2026-06-06T09:12:00.000Z",
+    },
+  } satisfies StockQuoteResponse;
+
+  assert.equal(stockHeaderFreshnessTimeChip(score, olderQuote), "18:08 기준");
+  assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "18:12 기준");
 });
 
 test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-first", () => {
