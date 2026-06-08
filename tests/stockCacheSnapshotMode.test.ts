@@ -69,6 +69,56 @@ test("score cache does not invoke Python collector when Vercel snapshot mode has
   );
 });
 
+test("technical score cache serves current technical-only snapshots in snapshot mode", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+
+  const ticker = "US:TECHONLY";
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker,
+    view_mode: "technical",
+    payload: {
+      ok: true,
+      score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      requested_ticker: "TECHONLY",
+      market: "US",
+      symbol: "TECHONLY",
+      name: "TECH ONLY INC",
+      technical_analysis: {
+        type: "technical_analysis",
+        version: "technical-v1",
+        status: "ready",
+        data_window: { available_days: 100, required_days: 60 },
+        summary: { headline: "기술 신호 확인", tone: "neutral", bullets: [] },
+        indicators: [],
+      },
+    },
+    fetched_at: new Date(nowMs - 30_000).toISOString(),
+    expires_at: new Date(nowMs + 270_000).toISOString(),
+  };
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_score_snapshots")) {
+      return new Response(JSON.stringify([snapshot]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore(ticker, "technical");
+
+  assert.equal(result.payload.ok, true);
+  assert.equal((result.payload.technical_analysis as Record<string, unknown>).type, "technical_analysis");
+  assert.equal(result.cache.state, "fresh");
+  assert.equal(result.cache.source, "supabase");
+  assert.equal(result.cache.view, "technical");
+});
+
 test("quote cache reports background-only refresh in Vercel snapshot mode", async () => {
   useSnapshotOnlyRuntime();
 

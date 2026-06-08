@@ -1,6 +1,6 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
-import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
+import { isCurrentScoreModelPayload, scoreModelVersionFromPayload, SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
@@ -104,11 +104,22 @@ function isServeableStale(snapshot: StoredSnapshot, nowMs: number): boolean {
 }
 
 function isCurrentScoreSnapshot(snapshot: StoredSnapshot): boolean {
+  if (snapshot.view === "technical") return isCurrentTechnicalScoreSnapshotPayload(snapshot.payload);
   return isCurrentScorePayload(snapshot.payload);
 }
 
 export function isCurrentScorePayload(payload: StockPayload): boolean {
   return isCurrentScoreModelPayload(payload);
+}
+
+function isCurrentTechnicalScoreSnapshotPayload(payload: StockPayload): boolean {
+  if (payload.ok === false) return false;
+  if (scoreModelVersionFromPayload(payload) !== SCORE_MODEL_VERSION) return false;
+  const technical = payload.technical_analysis;
+  return Boolean(technical)
+    && typeof technical === "object"
+    && !Array.isArray(technical)
+    && (technical as Record<string, unknown>).type === "technical_analysis";
 }
 
 function approximateJsonBytes(value: unknown): number {
