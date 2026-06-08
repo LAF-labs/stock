@@ -7,13 +7,6 @@ export type PendingRetryTarget = {
   retryAfterSeconds?: number;
 };
 
-export function pendingRetryDelayMs(retryAfterSeconds: number | undefined, random: () => number = Math.random): number {
-  const baseSeconds = typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : 30;
-  const boundedSeconds = Math.max(5, Math.min(300, baseSeconds));
-  const jitter = 0.85 + Math.max(0, Math.min(1, random())) * 0.3;
-  return Math.round(boundedSeconds * 1000 * jitter);
-}
-
 export function technicalPendingRetryDelayMs(
   retryAfterSeconds: number | undefined,
   attempt: number,
@@ -25,6 +18,14 @@ export function technicalPendingRetryDelayMs(
   const baseSeconds = retrySecondsByAttempt[Math.min(safeAttempt, retrySecondsByAttempt.length - 1)] ?? 15;
   const jitter = 0.85 + Math.max(0, Math.min(1, random())) * 0.3;
   return Math.round(baseSeconds * 1000 * jitter);
+}
+
+export function pendingRetryDelayMs(
+  retryAfterSeconds: number | undefined,
+  attempt = 0,
+  random: () => number = Math.random
+): number {
+  return technicalPendingRetryDelayMs(retryAfterSeconds, attempt, random);
 }
 
 export function canSchedulePendingRetry({
@@ -43,8 +44,8 @@ export function usePendingRetry({
   pending,
   retryKey,
   onRetry,
-  maxAttempts = 3,
-  delayMs = (target) => pendingRetryDelayMs(target.retryAfterSeconds),
+  maxAttempts = 24,
+  delayMs = (target, attempt) => pendingRetryDelayMs(target.retryAfterSeconds, attempt),
 }: {
   pending: PendingRetryTarget | undefined;
   retryKey: string;

@@ -25,11 +25,12 @@ test("readClientApiPayload parses object payloads and extracts safe messages", a
   assert.equal(apiPayloadMessage({}, "fallback"), "fallback");
 });
 
-test("pending retry delay respects retry hints, bounds, and jitter", () => {
-  assert.equal(pendingRetryDelayMs(60, () => 0.5), 60_000);
-  assert.equal(pendingRetryDelayMs(1, () => 0.5), 5_000);
-  assert.equal(pendingRetryDelayMs(999, () => 0.5), 300_000);
-  assert.equal(pendingRetryDelayMs(undefined, () => 0), 25_500);
+test("pending retry delay uses short interactive polling instead of queue retry hints", () => {
+  assert.equal(pendingRetryDelayMs(300, 0, () => 0.5), 5_000);
+  assert.equal(pendingRetryDelayMs(300, 1, () => 0.5), 8_000);
+  assert.equal(pendingRetryDelayMs(300, 2, () => 0.5), 13_000);
+  assert.equal(pendingRetryDelayMs(300, 9, () => 0.5), 15_000);
+  assert.equal(pendingRetryDelayMs(undefined, 0, () => 0), 4_250);
 });
 
 test("technical pending retry uses short polling instead of the queue retry hint", () => {

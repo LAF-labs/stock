@@ -415,13 +415,15 @@ export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: str
   const reason = stringFromUnknown(record?.reason);
   let message = "이 종목 데이터가 아직 준비되지 않았어요. 잠시 후 다시 조회해주세요.";
   if (queued && reason === "stale_refresh") {
-    message = "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요.";
+    message = "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 최신 점수와 현재가를 바로 표시합니다.";
   } else if (queued) {
-    message = "처음 조회하는 종목이라 데이터를 준비하고 있어요. 수집이 끝나면 점수와 현재가가 표시됩니다.";
+    message = "처음 조회하는 종목이라 데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 점수와 현재가를 바로 표시합니다.";
+  } else {
+    message = "이 종목 데이터가 아직 준비되지 않았어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 바로 표시합니다.";
   }
 
   return {
-    message: retryAfterSeconds ? `${message} 보통 ${retryAfterSeconds}초 안에 다시 확인할 수 있어요.` : message,
+    message,
     ticker,
     queued,
     retryAfterSeconds,

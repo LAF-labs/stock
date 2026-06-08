@@ -121,8 +121,10 @@ test("compare bestBy evaluates each item once", () => {
   assert.equal(calls, items.length);
 });
 
-test("compare pending message includes retry hint when available", () => {
-  assert.match(pendingMessage({ retry_after_seconds: 300 } as any), /300초/);
+test("compare pending message never exposes queue retry seconds", () => {
+  const message = pendingMessage({ retry_after_seconds: 300 } as any);
+  assert.match(message, /자동으로 다시 확인/);
+  assert.doesNotMatch(message, /300초|\d+초 안에/);
   assert.doesNotMatch(pendingMessage(undefined), /초 안에/);
 });
 

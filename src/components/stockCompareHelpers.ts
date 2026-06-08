@@ -300,9 +300,8 @@ export function isSnapshotPending(result: BatchScoreResult | undefined): boolean
 }
 
 export function pendingMessage(result: BatchScoreResult | undefined): string {
-  const retryAfter = typeof result?.retry_after_seconds === "number" && Number.isFinite(result.retry_after_seconds) ? result.retry_after_seconds : undefined;
-  const message = "데이터를 준비하고 있어요. 수집이 끝나면 비교 점수가 표시됩니다.";
-  return retryAfter ? `${message} 보통 ${retryAfter}초 안에 다시 확인할 수 있어요.` : message;
+  void result;
+  return "데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 비교 점수를 바로 표시합니다.";
 }
 
 export function normalizedPoints(item: CompareItem) {

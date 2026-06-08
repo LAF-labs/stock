@@ -56,11 +56,12 @@ test("dashboard pending payload maps queue state into user-facing retry guidance
   );
 
   assert.deepEqual(pending, {
-    message: "처음 조회하는 종목이라 데이터를 준비하고 있어요. 수집이 끝나면 점수와 현재가가 표시됩니다. 보통 42초 안에 다시 확인할 수 있어요.",
+    message: "처음 조회하는 종목이라 데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 점수와 현재가를 바로 표시합니다.",
     ticker: "US:NVDA",
     queued: true,
     retryAfterSeconds: 42,
   });
+  assert.doesNotMatch(pending?.message || "", /\d+초/);
 });
 
 test("dashboard pending payload explains stale refresh work as an update", () => {
@@ -76,11 +77,12 @@ test("dashboard pending payload explains stale refresh work as an update", () =>
   );
 
   assert.deepEqual(pending, {
-    message: "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요. 보통 60초 안에 다시 확인할 수 있어요.",
+    message: "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 최신 점수와 현재가를 바로 표시합니다.",
     ticker: "US:NVDA",
     queued: true,
     retryAfterSeconds: 60,
   });
+  assert.doesNotMatch(pending?.message || "", /\d+초/);
 });
 
 test("dashboard pending payload ignores unrelated errors", () => {
