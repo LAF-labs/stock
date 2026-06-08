@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { apiPayloadMessage, readClientApiPayload } from "../src/components/clientApi";
-import { canSchedulePendingRetry, pendingRetryDelayMs } from "../src/components/usePendingRetry";
+import { canSchedulePendingRetry, pendingRetryDelayMs, technicalPendingRetryDelayMs } from "../src/components/usePendingRetry";
 
 test("readClientApiPayload rejects empty and malformed payloads with user-facing messages", async () => {
   await assert.rejects(
@@ -30,6 +30,14 @@ test("pending retry delay respects retry hints, bounds, and jitter", () => {
   assert.equal(pendingRetryDelayMs(1, () => 0.5), 5_000);
   assert.equal(pendingRetryDelayMs(999, () => 0.5), 300_000);
   assert.equal(pendingRetryDelayMs(undefined, () => 0), 25_500);
+});
+
+test("technical pending retry uses short polling instead of the queue retry hint", () => {
+  assert.equal(technicalPendingRetryDelayMs(300, 0, () => 0.5), 5_000);
+  assert.equal(technicalPendingRetryDelayMs(300, 1, () => 0.5), 8_000);
+  assert.equal(technicalPendingRetryDelayMs(300, 2, () => 0.5), 13_000);
+  assert.equal(technicalPendingRetryDelayMs(300, 9, () => 0.5), 15_000);
+  assert.equal(technicalPendingRetryDelayMs(1, 0, () => 0), 4_250);
 });
 
 test("pending retry scheduler caps attempts and pauses while hidden", () => {

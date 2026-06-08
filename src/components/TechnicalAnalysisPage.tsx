@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   isTechnicalAnalysisPayload,
   safeInternalRedirectPath,
@@ -8,7 +8,7 @@ import {
 import { TechnicalAnalysisFeed, TechnicalAnalysisTopbar, TechnicalStatus } from "@/components/TechnicalAnalysisSections";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import { displayTickerInput, scoreDataWithQuote, snapshotPendingFromPayload, stringFromUnknown, stockHeaderIdentity, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
-import { usePendingRetry } from "@/components/usePendingRetry";
+import { technicalPendingRetryDelayMs, usePendingRetry } from "@/components/usePendingRetry";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 type LoadState =
@@ -31,7 +31,9 @@ async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promi
 
 export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [quote, setQuote] = useState<StockQuoteResponse | undefined>();
   const [reloadVersion, setReloadVersion] = useState(0);
+  const quoteRef = useRef<StockQuoteResponse | undefined>(undefined);
   const detailHref = `/?ticker=${encodeURIComponent(ticker)}`;
   const pending = state.status === "pending" ? state.pending : undefined;
 
@@ -39,7 +41,38 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
     setReloadVersion((version) => version + 1);
   }
 
-  usePendingRetry({ pending, retryKey: `technical:${ticker}`, onRetry: retryTechnical });
+  usePendingRetry({
+    pending,
+    retryKey: `technical:${ticker}`,
+    onRetry: retryTechnical,
+    maxAttempts: 24,
+    delayMs: (target, attempt) => technicalPendingRetryDelayMs(target.retryAfterSeconds, attempt),
+  });
+
+  useEffect(() => {
+    quoteRef.current = quote;
+  }, [quote]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setQuote(undefined);
+    quoteRef.current = undefined;
+
+    quoteForTechnicalPage(ticker, controller.signal).then((nextQuote) => {
+      if (controller.signal.aborted) return;
+      setQuote(nextQuote);
+    });
+
+    return () => controller.abort();
+  }, [ticker]);
+
+  useEffect(() => {
+    if (!quote) return;
+    setState((current) => {
+      if (current.status !== "success") return current;
+      return { status: "success", data: scoreDataWithQuote(current.data, quote) };
+    });
+  }, [quote]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,9 +100,8 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
         if (!isTechnicalAnalysisPayload(data.technical_analysis)) {
           throw new Error("기술적 분석 데이터를 찾지 못했어요.");
         }
-        const quote = await quoteForTechnicalPage(ticker, controller.signal);
         if (controller.signal.aborted) return;
-        setState({ status: "success", data: scoreDataWithQuote(data, quote) });
+        setState({ status: "success", data: scoreDataWithQuote(data, quoteRef.current) });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -82,7 +114,11 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const data = state.status === "success" ? state.data : undefined;
   const technical = isTechnicalAnalysisPayload(data?.technical_analysis) ? data.technical_analysis : undefined;
   const identity = data ? stockHeaderIdentity(data) : undefined;
-  const displayTicker = identity?.primary || displayTickerInput(ticker);
+  const displayTicker = identity?.primary || stringFromUnknown(quote?.name) || stringFromUnknown(quote?.symbol) || displayTickerInput(ticker);
+  const pendingBody =
+    state.status === "pending"
+      ? "차트 분석 작업이 대기열에 등록됐어요. 작업이 시작되면 보통 10초 안에 완료되고, 화면은 자동으로 다시 확인합니다."
+      : undefined;
 
   return (
     <main className="stock-app stock-detail-app technical-analysis-app">
@@ -90,7 +126,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
 
       {state.status === "loading" ? <TechnicalStatus title="기술적 분석 준비 중" body="차트 데이터를 확인하고 있어요." /> : null}
       {state.status === "pending" ? (
-        <TechnicalStatus title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={retryTechnical} />
+        <TechnicalStatus title="데이터 준비 중" body={pendingBody || state.pending.message} actionLabel="다시 확인" onAction={retryTechnical} />
       ) : null}
       {state.status === "error" ? (
         <TechnicalStatus title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryTechnical} />

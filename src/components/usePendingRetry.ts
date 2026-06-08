@@ -14,6 +14,19 @@ export function pendingRetryDelayMs(retryAfterSeconds: number | undefined, rando
   return Math.round(boundedSeconds * 1000 * jitter);
 }
 
+export function technicalPendingRetryDelayMs(
+  retryAfterSeconds: number | undefined,
+  attempt: number,
+  random: () => number = Math.random
+): number {
+  void retryAfterSeconds;
+  const retrySecondsByAttempt = [5, 8, 13, 15];
+  const safeAttempt = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  const baseSeconds = retrySecondsByAttempt[Math.min(safeAttempt, retrySecondsByAttempt.length - 1)] ?? 15;
+  const jitter = 0.85 + Math.max(0, Math.min(1, random())) * 0.3;
+  return Math.round(baseSeconds * 1000 * jitter);
+}
+
 export function canSchedulePendingRetry({
   attempt,
   maxAttempts,
@@ -31,18 +44,25 @@ export function usePendingRetry({
   retryKey,
   onRetry,
   maxAttempts = 3,
+  delayMs = (target) => pendingRetryDelayMs(target.retryAfterSeconds),
 }: {
   pending: PendingRetryTarget | undefined;
   retryKey: string;
   onRetry: () => void;
   maxAttempts?: number;
+  delayMs?: (pending: PendingRetryTarget, attempt: number) => number;
 }) {
   const retryRef = useRef(onRetry);
+  const delayRef = useRef(delayMs);
   const attemptRef = useRef({ key: "", attempts: 0 });
 
   useEffect(() => {
     retryRef.current = onRetry;
   }, [onRetry]);
+
+  useEffect(() => {
+    delayRef.current = delayMs;
+  }, [delayMs]);
 
   useEffect(() => {
     if (!pending) return;
@@ -65,7 +85,7 @@ export function usePendingRetry({
         if (!canSchedulePendingRetry({ attempt: attemptRef.current.attempts, maxAttempts, visibilityState: document.visibilityState })) return;
         attemptRef.current.attempts += 1;
         retryRef.current();
-      }, pendingRetryDelayMs(pending.retryAfterSeconds));
+      }, delayRef.current(pending, attemptRef.current.attempts));
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
