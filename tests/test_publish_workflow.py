@@ -12,12 +12,16 @@ VERCEL_PREVIEW_DEPLOY_PATH = ROOT / "scripts" / "vercel_preview_deploy.sh"
 
 
 class PublishWorkflowTests(unittest.TestCase):
-    def test_refresh_queue_worker_runs_on_five_minute_backstop(self):
+    def test_refresh_queue_worker_runs_on_ten_minute_calendar_guarded_backstop(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-        self.assertIn('- cron: "*/5 * * * 1-5"', text)
-        self.assertIn('- cron: "*/30 * * * 0,6"', text)
-        self.assertNotIn('- cron: "*/30 * * * 1-5"', text)
+        self.assertIn('- cron: "*/10 * * * *"', text)
+        self.assertNotIn('- cron: "*/5 * * * 1-5"', text)
+        self.assertNotIn('- cron: "*/30 * * * 0,6"', text)
+        self.assertIn("market_guard:", text)
+        self.assertIn("node --import tsx scripts/stock_market_open_guard.ts", text)
+        self.assertIn("needs: market_guard", text)
+        self.assertIn("needs.market_guard.outputs.run == '1'", text)
 
     def test_refresh_queue_worker_serializes_overlapping_runs(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -29,12 +33,14 @@ class PublishWorkflowTests(unittest.TestCase):
     def test_refresh_queue_worker_keeps_score_job_independent_from_quote_failures(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("jobs:\n  quote:", text)
+        self.assertIn("jobs:\n  market_guard:", text)
+        self.assertIn("\n  quote:", text)
         self.assertIn("\n  score:", text)
         score_block = text.split("\n  score:", 1)[1]
         score_header = score_block.split("\n    env:", 1)[0]
         self.assertNotIn("needs: quote", score_block)
-        self.assertNotIn("if:", score_header)
+        self.assertIn("needs: market_guard", score_header)
+        self.assertIn("needs.market_guard.outputs.run == '1'", score_header)
         self.assertIn("Check due legacy score refresh jobs", score_block)
         self.assertIn("Drain legacy score refresh queue", score_block)
 
@@ -52,6 +58,11 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("steps.legacy_score_queue.outputs.run == '1'", text)
         self.assertIn("--queue-kind score", text)
         self.assertIn("github-score-${{ github.run_id }}-${{ github.run_attempt }}", text)
+        self.assertIn("STOCK_WARM_BATCH_SIZE", text)
+        self.assertIn("STOCK_WARM_POOL_LIMIT", text)
+        self.assertIn("STOCK_WARM_FROM_DEMAND", text)
+        self.assertIn("--warm-batch-size", text)
+        self.assertIn("--warm-pool-limit", text)
 
     def test_industry_benchmark_worker_runs_once_after_us_aftermarket(self):
         text = BENCHMARK_WORKFLOW_PATH.read_text(encoding="utf-8")

@@ -10,7 +10,10 @@ import {
   permanentRefreshFailure,
   publishQueueJob,
   retryAfterSeconds,
+  resolveWarmTickers,
   rowHasBlockingErrors,
+  selectWarmTickerBatch,
+  mergeWarmTickerPool,
   upsertChartSnapshot,
   run,
   upsertQuoteSnapshot,
@@ -34,6 +37,40 @@ test("TypeScript snapshot worker defaults to quote-only queue drain", () => {
 test("TypeScript snapshot worker parses canonical tickers and views", () => {
   assert.deepEqual(parseTickerArgs(["nvda, KR:005930", "US:NVDA"]), ["US:NVDA", "KR:005930"]);
   assert.deepEqual(parseViews("detail,technical,compare,technical"), ["detail", "technical", "compare"]);
+});
+
+test("TypeScript snapshot worker selects one rotating warm batch from a capped pool", () => {
+  const tickers = Array.from({ length: 500 }, (_, index) => `US:T${String(index + 1).padStart(3, "0")}`);
+
+  assert.deepEqual(selectWarmTickerBatch(tickers, { warmPoolLimit: 500, warmBatchSize: 50, warmShardKey: "0" }), tickers.slice(0, 50));
+  assert.deepEqual(selectWarmTickerBatch(tickers, { warmPoolLimit: 500, warmBatchSize: 50, warmShardKey: "1" }), tickers.slice(50, 100));
+  assert.deepEqual(selectWarmTickerBatch(tickers, { warmPoolLimit: 500, warmBatchSize: 50, warmShardKey: "10" }), tickers.slice(0, 50));
+});
+
+test("TypeScript snapshot worker prioritizes demand tickers before static warm tickers", () => {
+  const demand = ["US:NVDA", "KR:005930", "US:KO"];
+  const configured = ["US:KO", "US:TSLA", "US:NVDA", "US:MSFT"];
+
+  assert.deepEqual(mergeWarmTickerPool(demand, configured, 5), ["US:NVDA", "KR:005930", "US:KO", "US:TSLA", "US:MSFT"]);
+});
+
+test("TypeScript snapshot worker resolves demand warm tickers from recent succeeded jobs", async () => {
+  let requestedUrl = "";
+  globalThis.fetch = (async (input) => {
+    requestedUrl = String(input);
+    return Response.json([
+      { market: "US", symbol: "NVDA" },
+      { market: "KR", symbol: "005930" },
+      { market: "US", symbol: "KO" },
+    ]);
+  }) as typeof fetch;
+
+  const options = parseOptions(["--dry-run", "--tickers", "TSLA,KO", "--warm-batch-size", "3", "--warm-shard-key", "0"], {});
+  const tickers = await resolveWarmTickers(options, { url: "https://example.supabase.co", key: "service-role-key" });
+
+  assert.match(requestedUrl, /stock_refresh_jobs/);
+  assert.match(requestedUrl, /status=eq\.succeeded/);
+  assert.deepEqual(tickers, ["US:NVDA", "KR:005930", "US:KO"]);
 });
 
 test("TypeScript snapshot worker claims quote jobs with kind-specific RPC", async () => {

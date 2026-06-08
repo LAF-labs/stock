@@ -52,6 +52,10 @@ export type Options = {
   sleepSeconds: number;
   timeoutMs: number;
   allowScorePythonFallback: boolean;
+  warmBatchSize: number;
+  warmPoolLimit: number;
+  warmShardKey: string;
+  warmFromDemand: boolean;
 };
 
 export function parseTickerArgs(values: string[]): string[] {
@@ -77,6 +81,35 @@ export function parseViews(raw: string): ScoreView[] {
     if (!unique.includes(view)) unique.push(view);
   }
   return unique;
+}
+
+export function mergeWarmTickerPool(demandTickers: string[], configuredTickers: string[], poolLimit: number): string[] {
+  const unique: string[] = [];
+  for (const ticker of [...demandTickers, ...configuredTickers]) {
+    const parsed = parseTickerRef(ticker).ticker;
+    if (!unique.includes(parsed)) unique.push(parsed);
+    if (unique.length >= poolLimit) break;
+  }
+  return unique;
+}
+
+export function selectWarmTickerBatch(tickers: string[], options: Pick<Options, "warmBatchSize" | "warmPoolLimit" | "warmShardKey">): string[] {
+  const pool = mergeWarmTickerPool([], tickers, options.warmPoolLimit);
+  if (!pool.length || options.warmBatchSize >= pool.length) return pool;
+  const batchSize = Math.max(1, options.warmBatchSize);
+  const shardCount = Math.ceil(pool.length / batchSize);
+  const shardIndex = warmShardIndex(options.warmShardKey, shardCount);
+  const start = shardIndex * batchSize;
+  return pool.slice(start, start + batchSize);
+}
+
+function warmShardIndex(key: string, shardCount: number): number {
+  if (shardCount <= 1) return 0;
+  const numeric = Number(key);
+  if (Number.isFinite(numeric)) return Math.abs(Math.trunc(numeric)) % shardCount;
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % shardCount;
 }
 
 export function retryAfterSeconds(job: RefreshJob): number {
@@ -352,6 +385,47 @@ export async function drainRefreshQueue(config: SupabaseConfig, options: Options
   return rows;
 }
 
+async function fetchDemandWarmTickers(config: SupabaseConfig, options: Options): Promise<string[]> {
+  const query = new URLSearchParams({
+    select: "market,symbol,updated_at",
+    status: "eq.succeeded",
+    order: "updated_at.desc",
+    limit: String(Math.max(options.warmPoolLimit * 3, options.warmPoolLimit)),
+  });
+  const response = await fetchWithTimeout(
+    `${config.url}/rest/v1/stock_refresh_jobs?${query.toString()}`,
+    { headers: supabaseHeaders(config.key) },
+    options.timeoutMs
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase warm demand query failed: HTTP ${response.status} ${text.slice(0, 300)}`);
+  }
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) return [];
+  const tickers: string[] = [];
+  for (const row of payload) {
+    if (!isRecord(row)) continue;
+    const market = stringValue(row.market) || "US";
+    const symbol = stringValue(row.symbol);
+    if (!symbol) continue;
+    try {
+      const ticker = parseTickerRef(`${market}:${symbol}`).ticker;
+      if (!tickers.includes(ticker)) tickers.push(ticker);
+      if (tickers.length >= options.warmPoolLimit) break;
+    } catch {
+      continue;
+    }
+  }
+  return tickers;
+}
+
+export async function resolveWarmTickers(options: Options, config?: SupabaseConfig): Promise<string[]> {
+  const demandTickers = config && options.warmFromDemand ? await fetchDemandWarmTickers(config, options) : [];
+  const pool = mergeWarmTickerPool(demandTickers, options.tickers, options.warmPoolLimit);
+  return selectWarmTickerBatch(pool, options);
+}
+
 export async function run(options: Options): Promise<PublishSummary> {
   if (!options.allowScorePythonFallback) {
     process.env.STOCK_DATA_RUNTIME = "snapshot";
@@ -365,17 +439,18 @@ export async function run(options: Options): Promise<PublishSummary> {
 
   if (options.drainQueue && config) await assertRefreshWorkerReadiness(config, options);
   const queueRows = options.drainQueue && config ? await drainRefreshQueue(config, options) : [];
+  const warmTickers = await resolveWarmTickers(options, config);
   const rows: Array<Record<string, unknown>> = [];
-  for (let index = 0; index < options.tickers.length; index += 1) {
+  for (let index = 0; index < warmTickers.length; index += 1) {
     if (index > 0 && options.sleepSeconds > 0) await sleep(options.sleepSeconds * 1000);
-    rows.push(await publishTicker(options.tickers[index], options, config));
+    rows.push(await publishTicker(warmTickers[index], options, config));
   }
 
   return {
     ok: !rows.some(rowHasBlockingErrors) && !queueRows.some(hasErrors),
     dry_run: options.dryRun,
     mode: options.mode,
-    tickers: options.tickers.length,
+    tickers: warmTickers.length,
     rows,
     queue_jobs: queueRows.length,
     queue_rows: queueRows,
@@ -399,6 +474,10 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
     sleepSeconds: positiveNumber(env.STOCK_SNAPSHOT_SLEEP_SECONDS, 0),
     timeoutMs: positiveInteger(env.STOCK_SNAPSHOT_SUPABASE_TIMEOUT_MS, 15_000),
     allowScorePythonFallback: false,
+    warmBatchSize: positiveInteger(env.STOCK_WARM_BATCH_SIZE, 50),
+    warmPoolLimit: positiveInteger(env.STOCK_WARM_POOL_LIMIT, 500),
+    warmShardKey: env.STOCK_WARM_SHARD_KEY || String(Math.floor(Date.now() / 600_000)),
+    warmFromDemand: env.STOCK_WARM_FROM_DEMAND !== "0",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -426,6 +505,11 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
     else if (arg === "--worker-id") options.workerId = next();
     else if (arg === "--sleep-seconds") options.sleepSeconds = positiveNumber(next(), options.sleepSeconds);
     else if (arg === "--timeout-ms") options.timeoutMs = positiveInteger(next(), options.timeoutMs);
+    else if (arg === "--warm-batch-size") options.warmBatchSize = positiveInteger(next(), options.warmBatchSize);
+    else if (arg === "--warm-pool-limit") options.warmPoolLimit = positiveInteger(next(), options.warmPoolLimit);
+    else if (arg === "--warm-shard-key") options.warmShardKey = next();
+    else if (arg === "--warm-from-demand") options.warmFromDemand = true;
+    else if (arg === "--no-warm-from-demand") options.warmFromDemand = false;
     else throw new Error(`Unsupported argument: ${arg}`);
   }
 
@@ -485,6 +569,10 @@ function publicError(error: unknown): string {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function positiveInteger(value: unknown, fallback: number): number {
