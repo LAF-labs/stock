@@ -1,30 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiLimitPolicy } from "@/lib/apiRateLimit";
-import { batchStatusFromResults, jsonError } from "@/lib/apiGuards";
+import { batchStatusFromResults } from "@/lib/apiGuards";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload } from "@/lib/stockPendingResponse";
-import { getStockScore, parseTickerList, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
+import { getStockScore, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
+import { parseStrictTickerRef } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MAX_TICKERS = 5;
+const BATCH_CONCURRENCY = 2;
+
+type ParsedBatchTicker =
+  | { ok: true; ticker: string }
+  | { ok: false; requestedTicker: string; payload: StockPayload };
 
 export async function GET(request: NextRequest) {
-  const tickers = parseTickerList(request.nextUrl.searchParams.get("tickers"), MAX_TICKERS);
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
-  const rateLimit = await guardedRateLimit(request, apiLimitPolicy("stock_score_batch", 45, 60), "score_batch");
-  if (!rateLimit.ok) return rateLimit.response;
-
-  if (!tickers.length) {
-    return NextResponse.json({ ok: false, error: "missing_tickers", message: "비교할 티커를 입력해주세요." }, { status: 400 });
-  }
-
   if (forceRefresh) {
     return NextResponse.json(
       {
@@ -36,9 +35,27 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const parsedTickers = parseBatchTickerItems(request.nextUrl.searchParams.get("tickers"), MAX_TICKERS);
+  if (!parsedTickers.length) {
+    return NextResponse.json({ ok: false, error: "missing_tickers", message: "비교할 티커를 입력해주세요." }, { status: 400 });
+  }
+
+  const validTickers = parsedTickers.filter((item): item is Extract<ParsedBatchTicker, { ok: true }> => item.ok);
+  if (!validTickers.length) {
+    const results = parsedTickers
+      .filter((item): item is Extract<ParsedBatchTicker, { ok: false }> => !item.ok)
+      .map((item) => item.payload);
+    return NextResponse.json({ ok: false, results }, { status: batchStatusFromResults(results), headers: privateNoStoreHeaders() });
+  }
+
+  const rateLimit = await guardedRateLimit(request, apiLimitPolicy("stock_score_batch", 45, 60), "score_batch");
+  if (!rateLimit.ok) return rateLimit.response;
+
   try {
-    const resultItems = await Promise.all(
-      tickers.map(async (ticker): Promise<{ payload: StockPayload; cache?: StockScoreResult["cache"] }> => {
+    const validResultItems = await mapWithConcurrency(
+      validTickers,
+      BATCH_CONCURRENCY,
+      async ({ ticker }): Promise<{ payload: StockPayload; cache?: StockScoreResult["cache"] }> => {
         try {
           const result = await getStockScore(ticker, "compare");
           const payload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(result.payload));
@@ -67,8 +84,15 @@ export async function GET(request: NextRequest) {
             },
           };
         }
-      })
+      }
     );
+    let validIndex = 0;
+    const resultItems = parsedTickers.map((item): { payload: StockPayload; cache?: StockScoreResult["cache"] } => {
+      if (!item.ok) return { payload: item.payload };
+      const result = validResultItems[validIndex];
+      validIndex += 1;
+      return result;
+    });
     const results = resultItems.map((item) => item.payload);
 
     const payload = {
@@ -81,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(payload, { status: batchStatusFromResults(results), headers });
   } catch (error) {
-    console.warn("batch_stock_collector_unreachable", { tickers, error: safeErrorMessage(error) });
+    console.warn("batch_stock_collector_unreachable", { tickers: validTickers.map((item) => item.ticker), error: safeErrorMessage(error) });
     return NextResponse.json(
       {
         ok: false,
@@ -91,6 +115,40 @@ export async function GET(request: NextRequest) {
       { status: 502, headers: privateNoStoreHeaders() }
     );
   }
+}
+
+function parseBatchTickerItems(value: string | null, maxTickers: number): ParsedBatchTicker[] {
+  const unique = new Set<string>();
+  const items: ParsedBatchTicker[] = [];
+
+  for (const raw of (value || "").split(",")) {
+    const requestedTicker = raw.trim();
+    if (!requestedTicker) continue;
+
+    const parsed = parseStrictTickerRef(requestedTicker);
+    const key = parsed.ok ? parsed.ticker : `invalid:${requestedTicker.toUpperCase()}`;
+    if (unique.has(key)) continue;
+    unique.add(key);
+
+    items.push(
+      parsed.ok
+        ? { ok: true, ticker: parsed.ticker }
+        : {
+            ok: false,
+            requestedTicker,
+            payload: {
+              ok: false,
+              requested_ticker: requestedTicker,
+              error: parsed.error,
+              message: parsed.error === "missing_ticker" ? "비교할 티커를 입력해주세요." : "지원하지 않는 티커 형식이에요.",
+            },
+          }
+    );
+
+    if (items.length >= maxTickers) break;
+  }
+
+  return items;
 }
 
 function batchResponseCacheHeaders(items: Array<{ payload: StockPayload; cache: StockScoreResult["cache"] }>): HeadersInit {

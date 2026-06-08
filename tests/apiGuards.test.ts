@@ -60,6 +60,11 @@ test("batch status reports snapshot pending as accepted work", () => {
   assert.equal(batchStatusFromResults([{ ok: false, error: "refresh_queue_unavailable" }]), 502);
 });
 
+test("batch status keeps invalid ticker results client-correctable", () => {
+  assert.equal(batchStatusFromResults([{ ok: false, error: "invalid_ticker" }]), 400);
+  assert.equal(batchStatusFromResults([{ ok: false, error: "snapshot_pending" }, { ok: false, error: "invalid_ticker" }]), 202);
+});
+
 test("subprocess output is bounded and marked when truncated", () => {
   const result = appendBoundedOutput("abc", "defgh", 6);
 

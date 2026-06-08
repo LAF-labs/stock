@@ -95,11 +95,11 @@ Goal: Make batch score requests no looser or more expensive than single score re
 
 Tasks:
 
-- [ ] Add route tests proving `refresh=1` returns `batch_refresh_unsupported` before rate-limit acquisition.
-- [ ] Add strict batch ticker parsing that returns per-item invalid ticker errors instead of silently normalizing bad input.
-- [ ] Add route tests for mixed valid/invalid batch requests.
-- [ ] Limit internal batch fan-out concurrency to a small fixed value.
-- [ ] Keep response cache headers private/no-store when any batch item is invalid or pending.
+- [x] Add route tests proving `refresh=1` returns `batch_refresh_unsupported` before rate-limit acquisition.
+- [x] Add strict batch ticker parsing that returns per-item invalid ticker errors instead of silently normalizing bad input.
+- [x] Add route tests for mixed valid/invalid batch requests.
+- [x] Limit internal batch fan-out concurrency to a small fixed value.
+- [x] Keep response cache headers private/no-store when any batch item is invalid or pending.
 
 Verification:
 
@@ -107,6 +107,26 @@ Verification:
 npm test -- tests/apiRouteSecurity.test.ts tests/stockCompareHelpers.test.ts
 npm run typecheck
 ```
+
+Verification recorded:
+
+```text
+npm test -- tests/apiRouteSecurity.test.ts tests/apiGuards.test.ts tests/concurrency.test.ts
+tests 197
+pass 197
+fail 0
+
+npm run typecheck
+tsc --noEmit
+exit 0
+```
+
+Reflection:
+
+- Moving `refresh=1` ahead of the rate-limit guard avoids charging unsupported requests and avoids production secret failures on a known-invalid operation.
+- Batch parsing now preserves invalid raw user input for per-item errors while only valid strict tickers enter score/cache work.
+- A small shared `mapWithConcurrency()` helper keeps the route readable and gives the batch fan-out limit a focused unit test.
+- Test review found that route tests with global `fetch` mocks can interfere with the full Node runner; the mock now delegates unknown URLs to the original fetch instead of throwing.
 
 ## Phase 3: Queue And Pending Semantics
 

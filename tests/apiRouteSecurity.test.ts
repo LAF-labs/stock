@@ -20,6 +20,7 @@ const ENV_KEYS = [
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+const originalFetch = globalThis.fetch;
 
 function restoreEnv() {
   for (const key of ENV_KEYS) {
@@ -30,6 +31,7 @@ function restoreEnv() {
       process.env[key] = value;
     }
   }
+  globalThis.fetch = originalFetch;
 }
 
 type StrictRequestInit = Omit<RequestInit, "headers" | "signal"> & {
@@ -162,6 +164,66 @@ test("score route blocks technical analysis for domestic derivative master ticke
   assert.equal(payload.error, "technical_unsupported_product");
   assert.equal(payload.ticker, "KR:0194M0");
   assert.equal(payload.redirect_to, "/?ticker=KR%3A0194M0");
+  assert.match(response.headers.get("Cache-Control") || "", /no-store/);
+});
+
+test("batch score rejects unsupported refresh before production rate limit guard", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.VERCEL_ENV = "production";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  delete process.env.STOCK_RATE_LIMIT_SECRET;
+  delete process.env.STOCK_ALLOW_MEMORY_GUARD_FALLBACK;
+
+  const response = await getBatchScore(request("/api/score/batch?tickers=US:KO&refresh=1"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.error, "batch_refresh_unsupported");
+  assert.match(response.headers.get("Cache-Control") || "", /no-store/);
+});
+
+test("batch score reports invalid tickers per item without normalizing aliases", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) {
+      return Response.json([]);
+    }
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      return Response.json({ id: "job-1", status: "queued" });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const response = await getBatchScore(request("/api/score/batch?tickers=US:KO,bad%20spaces,US:BRK%2FB"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 202);
+  assert.equal(payload.ok, false);
+  assert.deepEqual(
+    payload.results.map((item: Record<string, unknown>) => ({
+      requested_ticker: item.requested_ticker,
+      error: item.error,
+      ticker: item.ticker,
+    })),
+    [
+      { requested_ticker: undefined, error: "snapshot_pending", ticker: "US:KO" },
+      { requested_ticker: "bad spaces", error: "invalid_ticker", ticker: undefined },
+      { requested_ticker: "US:BRK/B", error: "invalid_ticker", ticker: undefined },
+    ]
+  );
   assert.match(response.headers.get("Cache-Control") || "", /no-store/);
 });
 

@@ -7,7 +7,8 @@ export type JsonReadResult =
 export function batchStatusFromResults(results: Array<{ ok?: unknown; error?: unknown }>): number {
   if (!results.length) return 400;
   if (results.some((result) => result.ok === true)) return 200;
-  if (results.every((result) => result.error === "snapshot_pending" || result.error === "snapshot_unavailable")) return 202;
+  if (results.some((result) => result.error === "snapshot_pending" || result.error === "snapshot_unavailable")) return 202;
+  if (results.every((result) => result.error === "invalid_ticker")) return 400;
   return 502;
 }
 
