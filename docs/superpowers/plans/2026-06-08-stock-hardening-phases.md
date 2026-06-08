@@ -294,10 +294,10 @@ Goal: Apply only low-risk cleanup with measurable or policy value.
 
 Tasks:
 
-- [ ] Add `cargo fmt --check` and `cargo clippy -- -D warnings` CI gates if the Rust service already passes them cleanly or can be fixed narrowly.
-- [ ] Add chart/scroll performance changes only if a focused measurement or test demonstrates the issue.
-- [ ] Keep large component splitting out of scope unless required by a previous phase.
-- [ ] Document any deferred performance items with evidence.
+- [x] Add `cargo fmt --check` and `cargo clippy -- -D warnings` CI gates if the Rust service already passes them cleanly or can be fixed narrowly.
+- [x] Add chart/scroll performance changes only if a focused measurement or test demonstrates the issue.
+- [x] Keep large component splitting out of scope unless required by a previous phase.
+- [x] Document any deferred performance items with evidence.
 
 Verification:
 
@@ -308,12 +308,44 @@ npm run test:python
 npm run test:rust
 ```
 
+Actual verification:
+
+```bash
+cargo fmt --manifest-path services/market-data/Cargo.toml --check
+# exit 0
+
+cargo clippy --manifest-path services/market-data/Cargo.toml -- -D warnings
+# exit 0
+
+npm run test:rust
+# pass 36 / fail 0
+```
+
+Reflection:
+
+- Rust fmt already passed; clippy initially found two narrow warnings (`collapsible_if`, `needless_borrow`) and both were fixed without behavioral changes.
+- CI now runs rustfmt and clippy before Rust tests, so the market-data service has a stable style/lint gate.
+- No chart/scroll performance code was changed because there was no focused failing measurement or test in this phase.
+- Large component splitting remains intentionally deferred; Phase 5 reduced duplicated client API parsing without broad component churn.
+- `npm run check:all` still reports a Turbopack warning around dynamic `pythonStockCollector` spawn tracing. Build succeeds, but fixing that warning should be a separate tracing/bundling task with its own test or build-size evidence.
+
 ## Final Gate
 
-- [ ] Run full verification:
+- [x] Run full verification:
 
 ```bash
 npm run check:all
+```
+
+Actual verification:
+
+```bash
+npm run check:all
+# npm test: pass 219 / fail 0
+# npm run test:python: Ran 87 tests, OK
+# npm run test:rust: pass 36 / fail 0
+# npm run check: typecheck exit 0, next build exit 0
+# Note: next build emitted the existing dynamic spawn tracing warning for pythonStockCollector.ts.
 ```
 
 - [ ] Inspect git history and working tree.

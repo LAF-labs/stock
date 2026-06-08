@@ -533,7 +533,7 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
         .operating_margin
         .is_some_and(|margin| margin.is_finite() && margin < 0.0);
     let weak_cashflow =
-        cashflow_margin(&input).is_some_and(|margin| margin.is_finite() && margin < 0.0);
+        cashflow_margin(input).is_some_and(|margin| margin.is_finite() && margin < 0.0);
     if sales_multiple.is_some_and(|multiple| multiple >= 20.0) && (weak_profit || weak_cashflow) {
         score = score.min(72.0);
         caps.push("speculative_expensive_sales");

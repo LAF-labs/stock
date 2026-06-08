@@ -296,14 +296,14 @@ fn insert_bounded<K>(
     if capacity == 0 {
         return;
     }
-    if !records.contains_key(&key) && records.len() >= capacity {
-        if let Some(oldest_key) = records
+    if !records.contains_key(&key)
+        && records.len() >= capacity
+        && let Some(oldest_key) = records
             .iter()
             .min_by_key(|(_, value)| value.fetched_at_ms)
             .map(|(key, _)| key.clone())
-        {
-            records.remove(&oldest_key);
-        }
+    {
+        records.remove(&oldest_key);
     }
     records.insert(key, record);
 }
