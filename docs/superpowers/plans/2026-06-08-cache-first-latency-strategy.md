@@ -547,7 +547,7 @@ Classify each provider as:
 - add as primary paid provider
 - reject for production
 
-- [ ] **Step 3: Revisit after cache/load gates**
+- [x] **Step 3: Revisit after cache/load gates**
 
 After Phase 7, update the document with measured gaps:
 
@@ -557,13 +557,17 @@ After Phase 7, update the document with measured gaps:
 - user-visible pending rate by screen
 - paid-provider trial need/no-need decision
 
-- [ ] **Step 4: Verify no implementation dependency was added**
+Updated provider decision after Phase 7 measured p95 1311.2ms with provider guard passing. No paid provider adapter is needed before production measurement.
+
+- [x] **Step 4: Verify no implementation dependency was added**
 
 Run:
 
 ```bash
 git diff -- docs/provider-evaluation-2026-06.md docs/score-system-operations.md
 ```
+
+Verified no provider package or adapter was added in Phase 8; only documentation changed.
 
 Commit:
 

@@ -6,6 +6,29 @@
 
 유료 provider는 나중에 예산이 생긴 뒤 붙인다. 기술적 분석은 provider가 제공하는 indicator endpoint를 호출하지 않고, 신뢰 가능한 OHLCV를 저장한 뒤 자체 계산한다.
 
+## Post-Implementation Gate - 2026-06-08
+
+Phase 1-7 implementation kept the current KIS/yfinance posture and added cache policy, chart snapshots, partial responses, progressive UI, an always-on queue worker, field-class fundamentals retention, and a latency/cost gate.
+
+Local production latency gate result:
+
+| Scenario | Status | State | Duration |
+| --- | ---: | --- | ---: |
+| Hot detail | 200 | ready | 852.2ms |
+| Cold detail | 200 | ready | 454.5ms |
+| Hot technical | 200 | ready | 848.9ms |
+| Cold technical | 200 | ready | 1311.2ms |
+| Mixed compare | 200 | ready | 505.9ms |
+
+Summary:
+
+- p50: 848.9ms
+- p95: 1311.2ms
+- Provider guard: pass
+- Paid provider dependency added: no
+
+Decision after gate: keep KIS/yfinance for now. The measured local p95 is acceptable for the current stage once snapshots are warm and the always-on worker is available. The next bottleneck is not provider replacement; it is making cold technical queue creation, eligibility/profile lookup, and worker drain cadence consistently fast under production traffic.
+
 ## Current Providers
 
 | Provider | Keep/Change | Reason |
@@ -116,4 +139,4 @@ Sources:
 
 ## Next Action
 
-Do not add a paid-provider adapter yet. First finish the cache-first latency phases. After load/cost gates are in place, run a small trial comparing one US provider and one KR enrichment source against KIS/yfinance snapshots.
+Do not add a paid-provider adapter yet. Run the latency gate and operations report after production deployment. Reopen paid-provider evaluation only if production shows repeated provider-driven pending, quote/chart p95 regressions, or unacceptable yfinance enrichment miss rates after the always-on worker is stable.
