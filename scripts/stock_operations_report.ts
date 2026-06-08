@@ -144,6 +144,7 @@ export function summarizeScoreSnapshots(
   const opportunityScores: number[] = [];
   const confidences: number[] = [];
   const duplicateBuckets = new Map<number, number>();
+  const scoresByTicker = new Map<string, number>();
   let missingModel = 0;
   let currentModel = 0;
   let stale = 0;
@@ -155,6 +156,7 @@ export function summarizeScoreSnapshots(
 
   for (const row of rows) {
     const view = scoreViewMode(row);
+    const ticker = stringValue(row.ticker);
     byView[view] = (byView[view] || 0) + 1;
     const payload = isRecord(row.payload) ? row.payload : {};
     const score = finiteNumber(payload.score);
@@ -175,8 +177,7 @@ export function summarizeScoreSnapshots(
 
     if (score !== undefined) {
       scores.push(score);
-      const bucket = Number(score.toFixed(1));
-      duplicateBuckets.set(bucket, (duplicateBuckets.get(bucket) || 0) + 1);
+      if (ticker) scoresByTicker.set(ticker, score);
       if (confidence !== undefined && confidence < 0.5 && score > 60.0) lowConfidenceHighScore += 1;
     }
     if (quality !== undefined) qualityScores.push(quality);
@@ -184,6 +185,10 @@ export function summarizeScoreSnapshots(
     if (confidence !== undefined) confidences.push(confidence);
   }
 
+  for (const score of scoresByTicker.values()) {
+    const bucket = Number(score.toFixed(1));
+    duplicateBuckets.set(bucket, (duplicateBuckets.get(bucket) || 0) + 1);
+  }
   const duplicateItems = [...duplicateBuckets.entries()]
     .filter(([, count]) => count > 1)
     .sort((a, b) => b[1] - a[1] || a[0] - b[0])
@@ -212,7 +217,7 @@ export function summarizeScoreSnapshots(
     confidence_mean: confidences.length ? rounded(mean(confidences), 3) : null,
     low_confidence_high_score_count: lowConfidenceHighScore,
     duplicate_score_bucket_count: duplicateItems.length,
-    duplicate_score_rate: scores.length ? rounded(duplicateMembers / scores.length, 3) : 0.0,
+    duplicate_score_rate: scoresByTicker.size ? rounded(duplicateMembers / scoresByTicker.size, 3) : 0.0,
     max_duplicate_bucket_size: duplicateItems[0]?.count || 0,
     top_duplicate_scores: duplicateItems.slice(0, 10),
   };
@@ -591,6 +596,10 @@ export function parseOperationsOptions(argv: string[], env: Record<string, strin
   return options;
 }
 
+export function marketDataServiceRequired(options: OperationsOptions): boolean {
+  return options.marketDataRequired || Boolean(options.marketDataUrl?.trim() || options.marketDataToken?.trim());
+}
+
 export async function runOperationsReport(options: OperationsOptions) {
   const payload = await fetchSupabaseReport(supabaseReportConfig(options), options.sampleLimit, options.scoreStaleHours, options.expectedScoreModelVersion);
   const withService = {
@@ -599,7 +608,7 @@ export async function runOperationsReport(options: OperationsOptions) {
       url: options.marketDataUrl,
       token: options.marketDataToken,
       timeoutMs: options.marketDataTimeoutMs,
-      required: options.marketDataRequired || options.thresholds.max_market_data_service_failures !== undefined,
+      required: marketDataServiceRequired(options),
     }),
   };
   const thresholds = evaluateOperationsThresholds(withService, options.thresholds);

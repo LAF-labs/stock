@@ -7,6 +7,7 @@ import {
   fetchMarketDataServiceStatus,
   fetchSupabaseReport,
   freshnessRiskSummary,
+  marketDataServiceRequired,
   parseOperationsOptions,
   summarizeIndustryBenchmarks,
   summarizeQueueRows,
@@ -56,6 +57,21 @@ test("TypeScript operations report catches duplicate scores and low-confidence h
   assert.equal(summary.duplicate_score_bucket_count, 1);
   assert.equal(summary.max_duplicate_bucket_size, 2);
   assert.equal(summary.top_duplicate_scores[0].score, 87.1);
+});
+
+test("TypeScript operations report ignores same-ticker score duplicates across views", () => {
+  const rows = [
+    scoreRow("US:NVDA", 71.4, 71.4, 62.0, 0.9, "2026-06-05T23:30:00+00:00", DEFAULT_SCORE_MODEL_VERSION, "detail"),
+    scoreRow("US:NVDA", 71.4, 71.4, 62.0, 0.9, "2026-06-05T23:31:00+00:00", DEFAULT_SCORE_MODEL_VERSION, "compare"),
+    scoreRow("US:NVDA", 71.4, 71.4, 62.0, 0.9, "2026-06-05T23:32:00+00:00", DEFAULT_SCORE_MODEL_VERSION, "technical"),
+  ];
+
+  const summary = summarizeScoreSnapshots(rows, DEFAULT_SCORE_MODEL_VERSION, new Date("2026-06-06T00:00:00+00:00"), 24);
+
+  assert.equal(summary.score_snapshot_count, 3);
+  assert.equal(summary.duplicate_score_bucket_count, 0);
+  assert.equal(summary.duplicate_score_rate, 0);
+  assert.equal(summary.max_duplicate_bucket_size, 0);
 });
 
 test("TypeScript operations report summarizes technical snapshots separately", () => {
@@ -230,6 +246,18 @@ test("TypeScript operations report can threshold market-data service failures", 
   assert.deepEqual(result.violations.map((violation) => violation.key), ["max_market_data_service_failures"]);
 });
 
+test("TypeScript operations report does not require absent market-data config just because a threshold exists", () => {
+  const optional = parseOperationsOptions(["--max-market-data-service-failures", "0"], {});
+  const partial = parseOperationsOptions(["--max-market-data-service-failures", "0"], {
+    MARKET_DATA_SERVICE_URL: "https://market-data.example.internal",
+  });
+  const explicit = parseOperationsOptions(["--require-market-data-service"], {});
+
+  assert.equal(marketDataServiceRequired(optional), false);
+  assert.equal(marketDataServiceRequired(partial), true);
+  assert.equal(marketDataServiceRequired(explicit), true);
+});
+
 test("TypeScript operations report fetches Supabase report through REST only", async () => {
   const calls: Array<{ url: string; method: string; body?: string }> = [];
   const originalFetch = global.fetch;
@@ -299,10 +327,19 @@ test("TypeScript operations option parser keeps threshold contract", () => {
   assert.equal(options.thresholds.max_missing_technical_payloads, 0);
 });
 
-function scoreRow(ticker: string, score: number, quality: number, opportunity: number, confidence: number, fetchedAt: string, version = DEFAULT_SCORE_MODEL_VERSION) {
+function scoreRow(
+  ticker: string,
+  score: number,
+  quality: number,
+  opportunity: number,
+  confidence: number,
+  fetchedAt: string,
+  version = DEFAULT_SCORE_MODEL_VERSION,
+  viewMode = "detail"
+) {
   return {
     ticker,
-    view_mode: "detail",
+    view_mode: viewMode,
     fetched_at: fetchedAt,
     expires_at: "2026-06-06T02:00:00+00:00",
     score_model_version: version,
