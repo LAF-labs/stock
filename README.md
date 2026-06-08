@@ -17,9 +17,9 @@ Next.js 기반 주식 티커 조회 리더입니다.
 
 ## 티커 지원 정책
 
-API 입력과 자동완성 검색 결과는 provider별로 동일하게 조회할 수 있는 canonical ticker만 허용합니다. 현재 미국 종목은 영문/숫자와 `.` 또는 `-`가 포함된 표기만 지원하고, `BRK/B`, `XFLH/UN`처럼 `/`가 들어간 별칭은 지원하지 않습니다. 이런 별칭은 provider별 표준 표기와 1:1 매핑 테이블이 생기기 전까지 검색 결과와 strict API 입력에서 제외합니다.
+API 내부 경로는 provider별로 동일하게 조회할 수 있는 canonical ticker만 허용합니다. 사용자 입력 경로는 먼저 deterministic alias resolver를 통과한 뒤 strict ticker parser로 들어갑니다. 예를 들어 `BRK/B`, `US:BRK/B`, `BRK B`는 known class-share alias로 `US:BRK.B`가 되고, `삼전`, `하닉`, `엔비디아`, `온큐`처럼 인기 종목에 대해 1:1로 확정된 별칭은 canonical ticker로 자동 변환됩니다. 반대로 `XFLH/UN`처럼 매핑이 없는 slash ticker는 계속 거부합니다.
 
-국내 종목은 6자리 숫자 ticker와 거래소 master에 존재하는 6자리 영문/숫자 ticker를 허용합니다. `.KS`, `.KQ` 같은 provider suffix는 API 입력으로 받지 않습니다.
+국내 종목은 6자리 숫자 ticker와 거래소 master에 존재하는 6자리 영문/숫자 ticker를 허용합니다. `005930.KS`, `005930.KQ`, `KR:005930.KS`처럼 provider suffix가 붙은 국내 표기는 6자리 국내 ticker로 확정 가능한 경우 `KR:005930`처럼 자동 정규화합니다. `삼성`, `SK`, `LG`, `반도체`, `AI주` 같은 그룹명/테마어는 단일 종목으로 확정하지 않습니다.
 
 ## 설치
 

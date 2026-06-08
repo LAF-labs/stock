@@ -13,13 +13,13 @@ import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { technicalEligibilityForTicker, technicalUnsupportedProductPayload } from "@/lib/technicalAnalysisEligibility";
-import { parseStrictTickerRef } from "@/lib/tickerRef";
+import { resolveTickerAlias } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const tickerRef = parseStrictTickerRef(request.nextUrl.searchParams.get("ticker"));
+  const tickerRef = resolveTickerAlias(request.nextUrl.searchParams.get("ticker"));
   if (!tickerRef.ok) {
     return jsonError(
       400,

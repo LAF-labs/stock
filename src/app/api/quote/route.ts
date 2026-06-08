@@ -10,13 +10,13 @@ import { attachQuoteParts } from "@/lib/stockPartsResponse";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
-import { parseStrictTickerRef } from "@/lib/tickerRef";
+import { resolveTickerAlias } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const tickerRef = parseStrictTickerRef(request.nextUrl.searchParams.get("ticker"));
+  const tickerRef = resolveTickerAlias(request.nextUrl.searchParams.get("ticker"));
   if (!tickerRef.ok) {
     return jsonError(
       400,

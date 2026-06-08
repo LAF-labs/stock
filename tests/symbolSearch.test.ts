@@ -158,6 +158,49 @@ test("local symbol search excludes delisted rows and keeps newly listed rows sea
   assert.equal(items.some((item) => item.key === "KR:123456"), true);
 });
 
+test("local symbol search resolves deterministic popular aliases to canonical symbols", async () => {
+  const items = await searchLocalSymbolsForTests(
+    [
+      {
+        market: "KR",
+        ticker: "005930",
+        exchange: "KOSPI",
+        exchangeName: "코스피",
+        koreanName: "삼성전자",
+        englishName: "Samsung Electronics",
+        instrumentType: "STOCK",
+      },
+      {
+        market: "US",
+        ticker: "GOOGL",
+        exchange: "NASDAQ",
+        exchangeName: "나스닥",
+        koreanName: "알파벳",
+        englishName: "Alphabet Inc.",
+        instrumentType: "STOCK",
+      },
+    ],
+    { query: "삼전", limit: 10 }
+  );
+  const googleItems = await searchLocalSymbolsForTests(
+    [
+      {
+        market: "US",
+        ticker: "GOOGL",
+        exchange: "NASDAQ",
+        exchangeName: "나스닥",
+        koreanName: "알파벳",
+        englishName: "Alphabet Inc.",
+        instrumentType: "STOCK",
+      },
+    ],
+    { query: "구글", limit: 10 }
+  );
+
+  assert.deepEqual(items.map((item) => item.key), ["KR:005930"]);
+  assert.deepEqual(googleItems.map((item) => item.key), ["US:GOOGL"]);
+});
+
 test("symbol search display names prefer Korean labels except US derivative products", async () => {
   const universe = [
     {

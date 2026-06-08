@@ -1,4 +1,4 @@
-import { parseStrictTickerRef } from "@/lib/tickerRef";
+import { resolveTickerAlias } from "@/lib/tickerRef";
 
 export type TechnicalEligibility =
   | { eligible: true; ticker: string }
@@ -35,7 +35,7 @@ export function technicalUnsupportedProductPayload(ticker: string) {
 }
 
 export function tickerFromInput(value: string | undefined): string | undefined {
-  const parsed = parseStrictTickerRef(value);
+  const parsed = resolveTickerAlias(value);
   return parsed.ok ? parsed.ticker : undefined;
 }
 

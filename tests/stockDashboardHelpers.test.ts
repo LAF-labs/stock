@@ -551,8 +551,32 @@ test("displayTickerInput strips market prefixes only", () => {
   assert.equal(displayTickerInput("NVDA"), "NVDA");
 });
 
-test("directInputSymbolItem only creates direct ticker entries for ticker-like input", () => {
-  assert.equal(directInputSymbolItem("삼성전자"), undefined);
+test("directInputSymbolItem creates direct entries for ticker-like input and deterministic aliases", () => {
+  assert.deepEqual(directInputSymbolItem("삼전"), {
+    key: "KR:005930",
+    market: "KR",
+    ticker: "005930",
+    displayName: "삼전",
+    subtitle: "KR:005930",
+    exchange: "",
+    exchangeName: "직접 입력",
+    koreanName: "삼전",
+    englishName: "005930",
+    instrumentType: "STOCK",
+  });
+  assert.deepEqual(directInputSymbolItem("삼성전자"), {
+    key: "KR:005930",
+    market: "KR",
+    ticker: "005930",
+    displayName: "삼성전자",
+    subtitle: "KR:005930",
+    exchange: "",
+    exchangeName: "직접 입력",
+    koreanName: "삼성전자",
+    englishName: "005930",
+    instrumentType: "STOCK",
+  });
+  assert.equal(directInputSymbolItem("삼성"), undefined);
   assert.equal(directInputSymbolItem("###"), undefined);
   assert.deepEqual(directInputSymbolItem("005930"), {
     key: "005930",

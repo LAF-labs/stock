@@ -54,8 +54,9 @@ test("technical analysis blocks product-like names even when symbol master marks
 
 test("technical forced entry redirects to the detail page", () => {
   assert.equal(detailPathForTicker("KR:0194M0"), "/?ticker=KR%3A0194M0");
+  assert.equal(detailPathForTicker("삼전"), "/?ticker=KR%3A005930");
   assert.equal(detailPathForTicker("bad ticker"), "/?ticker=US%3AKO");
-  assert.equal(detailPathForTicker("US:BRK/B"), "/?ticker=US%3AKO");
+  assert.equal(detailPathForTicker("US:BRK/B"), "/?ticker=US%3ABRK.B");
   assert.equal(detailPathForTicker("KR:F70100026"), "/?ticker=US%3AKO");
   assert.deepEqual(technicalUnsupportedProductPayload("KR:0194M0"), {
     ok: false,

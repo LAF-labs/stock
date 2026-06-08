@@ -12,7 +12,7 @@ import { pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { getStockScore, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
-import { parseStrictTickerRef } from "@/lib/tickerRef";
+import { resolveTickerAlias } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -133,7 +133,7 @@ function parseBatchTickerItems(value: string | null, maxTickers: number): Parsed
     const requestedTicker = raw.trim();
     if (!requestedTicker) continue;
 
-    const parsed = parseStrictTickerRef(requestedTicker);
+    const parsed = resolveTickerAlias(requestedTicker);
     const key = parsed.ok ? parsed.ticker : `invalid:${requestedTicker.toUpperCase()}`;
     if (unique.has(key)) continue;
     unique.add(key);

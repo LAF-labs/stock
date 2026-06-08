@@ -113,6 +113,27 @@ test("score route rejects missing and market-mismatched API ticker input", async
   assert.match(invalid.headers.get("Cache-Control") || "", /no-store/);
 });
 
+test("stock API routes canonicalize deterministic aliases before rejecting strict input", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const score = await getScore(request("/api/score?ticker=BRK%2FB"));
+  const quote = await getQuote(request("/api/quote?ticker=005930.KS"));
+  const scorePayload = await score.json();
+  const quotePayload = await quote.json();
+
+  assert.notEqual(scorePayload.error, "invalid_ticker");
+  assert.notEqual(quotePayload.error, "invalid_ticker");
+  assert.equal(scorePayload.ticker, "US:BRK.B");
+  assert.equal(quotePayload.ticker, "KR:005930");
+});
+
 test("stock API routes accept domestic alphanumeric master tickers", async () => {
   restoreEnv();
   process.env.VERCEL = "1";
@@ -184,7 +205,7 @@ test("batch score rejects unsupported refresh before production rate limit guard
   assert.match(response.headers.get("Cache-Control") || "", /no-store/);
 });
 
-test("batch score reports invalid tickers per item without normalizing aliases", async () => {
+test("batch score canonicalizes deterministic aliases and reports only unresolved invalid tickers", async () => {
   restoreEnv();
   process.env.VERCEL = "1";
   process.env.STOCK_DATA_RUNTIME = "snapshot";
@@ -222,7 +243,7 @@ test("batch score reports invalid tickers per item without normalizing aliases",
     [
       { requested_ticker: undefined, error: "snapshot_pending", ticker: "US:KO" },
       { requested_ticker: "bad spaces", error: "invalid_ticker", ticker: undefined },
-      { requested_ticker: "US:BRK/B", error: "invalid_ticker", ticker: undefined },
+      { requested_ticker: undefined, error: "snapshot_pending", ticker: "US:BRK.B" },
     ]
   );
   assert.match(response.headers.get("Cache-Control") || "", /no-store/);

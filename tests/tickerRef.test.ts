@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cleanTickerSymbol, normalizeTickerRef, parseStrictTickerRef, parseTickerRef, validTickerSymbolForMarket } from "../src/lib/tickerRef";
+import {
+  cleanTickerSymbol,
+  normalizeTickerRef,
+  parseStrictTickerRef,
+  parseTickerRef,
+  resolveTickerAlias,
+  validTickerSymbolForMarket,
+} from "../src/lib/tickerRef";
 
 test("normalizeTickerRef canonicalizes market-prefixed, domestic, and fallback inputs", () => {
   assert.equal(normalizeTickerRef(" nvda "), "US:NVDA");
@@ -31,6 +38,29 @@ test("parseStrictTickerRef accepts only explicit safe API ticker inputs", () => 
   assert.deepEqual(parseStrictTickerRef("kr:0194m0"), { ok: true, ticker: "KR:0194M0", market: "KR", symbol: "0194M0" });
 });
 
+test("resolveTickerAlias canonicalizes deterministic public aliases before strict parsing", () => {
+  assert.deepEqual(resolveTickerAlias("BRK/B"), {
+    ok: true,
+    input: "BRK/B",
+    ticker: "US:BRK.B",
+    market: "US",
+    symbol: "BRK.B",
+    confidence: "deterministic",
+    source: "format_alias",
+  });
+  assert.equal(aliasTicker("US:BRK/B"), "US:BRK.B");
+  assert.equal(aliasTicker("005930.KS"), "KR:005930");
+  assert.equal(aliasTicker("KR:005930.KQ"), "KR:005930");
+  assert.equal(aliasTicker("삼전"), "KR:005930");
+  assert.equal(aliasTicker("엔비디아"), "US:NVDA");
+  assert.equal(aliasTicker("구글"), "US:GOOGL");
+  assert.equal(aliasTicker("온큐"), "US:IONQ");
+  assert.equal(aliasTicker("스트레티지"), "US:MSTR");
+  assert.equal(aliasTicker("스트래티지"), "US:MSTR");
+  assert.deepEqual(resolveTickerAlias("삼성"), { ok: false, input: "삼성", error: "ambiguous_ticker" });
+  assert.deepEqual(resolveTickerAlias("SK"), { ok: false, input: "SK", error: "ambiguous_ticker" });
+});
+
 test("parseStrictTickerRef rejects missing, unsafe, and market-mismatched API tickers", () => {
   assert.deepEqual(parseStrictTickerRef(""), { ok: false, error: "missing_ticker" });
   assert.deepEqual(parseStrictTickerRef(null), { ok: false, error: "missing_ticker" });
@@ -49,3 +79,8 @@ test("validTickerSymbolForMarket validates raw symbols instead of cleaned aliase
   assert.equal(validTickerSymbolForMarket("KR", "0194M0"), true);
   assert.equal(validTickerSymbolForMarket("KR", "005930.KS"), false);
 });
+
+function aliasTicker(value: string): string | undefined {
+  const result = resolveTickerAlias(value);
+  return result.ok ? result.ticker : undefined;
+}

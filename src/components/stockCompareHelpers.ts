@@ -8,7 +8,7 @@ import {
   type StockHeaderIdentity,
 } from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import { parseStrictTickerRef } from "@/lib/tickerRef";
+import { resolveTickerAlias } from "@/lib/tickerRef";
 import type { JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
 
 export const MAX_COMPARE = 5;
@@ -53,7 +53,7 @@ export type CompareItem = {
 const KO_KR_RATIO_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 
 export function normalizeTicker(value: string): string {
-  const parsed = parseStrictTickerRef(value.trim().replace(/^!\s*/, ""));
+  const parsed = resolveTickerAlias(value.trim().replace(/^!\s*/, ""));
   return parsed.ok ? parsed.ticker : "";
 }
 

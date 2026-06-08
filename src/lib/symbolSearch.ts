@@ -3,7 +3,7 @@ import path from "node:path";
 import { symbolDisplayName } from "@/lib/symbolDisplay";
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 import type { SymbolListingStatus, SymbolMarket, SymbolMasterItem, SymbolSearchItem } from "@/lib/symbolTypes";
-import { parseTickerRef, validTickerSymbolForMarket } from "@/lib/tickerRef";
+import { parseTickerRef, resolveTickerAlias, validTickerSymbolForMarket, type TickerAliasResolution } from "@/lib/tickerRef";
 
 type SymbolSearchInput = {
   query?: string;
@@ -50,6 +50,8 @@ export async function searchSymbols(input: SymbolSearchInput): Promise<SymbolSea
   const query = input.query || "";
   const limit = clampLimit(input.limit);
   const market = normalizeMarket(input.market);
+  const aliasItem = await exactAliasSearchItem(query, market);
+  if (aliasItem) return [aliasItem];
   const rpcItems = await searchSupabaseSymbols({ query, limit, market });
   if (rpcItems) return rpcItems;
   return searchCachedLocalIndex(await localSymbolIndex(), { query, limit, market });
@@ -90,6 +92,8 @@ function searchLocalIndex(index: IndexedSymbol[], input: SymbolSearchInput): Sym
   const limit = clampLimit(input.limit);
   const market = normalizeMarket(input.market);
   const normalizedQuery = normalize(query);
+  const aliasItem = exactAliasFromIndex(index, query, market);
+  if (aliasItem) return [aliasItem].slice(0, limit);
 
   const scored: Array<{ entry: IndexedSymbol; score: number }> = [];
   for (const entry of index) {
@@ -103,6 +107,30 @@ function searchLocalIndex(index: IndexedSymbol[], input: SymbolSearchInput): Sym
     .sort((left, right) => left.score - right.score || left.entry.item.market.localeCompare(right.entry.item.market) || left.entry.item.ticker.localeCompare(right.entry.item.ticker))
     .slice(0, limit)
     .map(({ entry }) => toSearchItem(entry.item));
+}
+
+async function exactAliasSearchItem(query: string, market: SymbolMarket | undefined): Promise<SymbolSearchItem | undefined> {
+  const alias = resolveTickerAlias(query);
+  if (!isDeterministicAlias(alias)) return undefined;
+  if (market && market !== alias.market) return undefined;
+
+  const rpcItems = await searchSupabaseSymbols({ query: alias.symbol, limit: 20, market: alias.market });
+  const rpcExact = rpcItems?.find((item) => item.market === alias.market && item.ticker.toUpperCase() === alias.symbol);
+  if (rpcExact) return rpcExact;
+
+  return exactAliasFromIndex((await localSymbolIndex()).entries, query, market);
+}
+
+function exactAliasFromIndex(index: IndexedSymbol[], query: string, market: SymbolMarket | undefined): SymbolSearchItem | undefined {
+  const alias = resolveTickerAlias(query);
+  if (!isDeterministicAlias(alias)) return undefined;
+  if (market && market !== alias.market) return undefined;
+  const entry = index.find((item) => item.item.market === alias.market && item.item.ticker.toUpperCase() === alias.symbol && item.item.listingStatus !== "delisted");
+  return entry ? toSearchItem(entry.item) : undefined;
+}
+
+function isDeterministicAlias(alias: TickerAliasResolution): alias is Extract<TickerAliasResolution, { ok: true }> {
+  return alias.ok && alias.source !== "symbol_master";
 }
 
 function searchCachedLocalIndex(store: LocalSymbolIndex, input: SymbolSearchInput): SymbolSearchItem[] {

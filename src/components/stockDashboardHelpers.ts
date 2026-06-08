@@ -1,7 +1,7 @@
 import { formatApproxKrwAmount, formatCompactUsd, formatCurrencyAmount, formatKoreanWonLarge, formatPercent, formatValue, recordEntries } from "@/lib/format";
 import { displayTicker, isUsDerivativeSymbol } from "@/lib/symbolDisplay";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import { cleanTickerSymbol } from "@/lib/tickerRef";
+import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
 import type { ChartSeriesPoint, JsonValue, LabeledValue, ScoreComponent, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 const RECORD_LABELS: Record<string, string> = {
@@ -214,6 +214,8 @@ export type PartialStockSnapshotPayload = StockScoreResponse & {
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function dashboardTickerFromSearchParam(value: string | null): string | undefined {
+  const resolved = resolveTickerAlias(value);
+  if (resolved.ok) return resolved.ticker;
   const ticker = value?.trim().toUpperCase();
   return ticker || undefined;
 }
@@ -737,6 +739,23 @@ export function symbolRef(item: SymbolSearchItem): string {
 }
 
 export function directInputSymbolItem(value: string): SymbolSearchItem | undefined {
+  const resolved = resolveTickerAlias(value);
+  if (resolved.ok && resolved.source !== "symbol_master") {
+    const label = value.trim();
+    return {
+      key: resolved.ticker,
+      market: resolved.market,
+      ticker: resolved.symbol,
+      displayName: label || resolved.symbol,
+      subtitle: resolved.ticker,
+      exchange: "",
+      exchangeName: "직접 입력",
+      koreanName: /[가-힣]/.test(label) ? label : "",
+      englishName: resolved.symbol,
+      instrumentType: "STOCK",
+    };
+  }
+
   const ticker = cleanTickerSymbol(value);
   if (!ticker) return undefined;
   return {
