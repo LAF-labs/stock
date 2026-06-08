@@ -463,9 +463,10 @@ git commit -m "feat: extend fundamentals cache by field class"
 - Modify: `package.json`
 - Modify: `scripts/stock_operations_report.ts`
 - Modify: `docs/score-system-operations.md`
+- Test: `tests/stockLatencyLoadTest.test.ts`
 - Test: `tests/stockOperationsReportTs.test.ts`
 
-- [ ] **Step 1: Add synthetic traffic script**
+- [x] **Step 1: Add synthetic traffic script**
 
 Traffic mix:
 
@@ -475,11 +476,11 @@ Traffic mix:
 - cold technical
 - compare with mixed ready/pending tickers
 
-- [ ] **Step 2: Add provider-call guard**
+- [x] **Step 2: Add provider-call guard**
 
 Fail the load gate if Vercel request-path tests call KIS, yfinance, or Python collector.
 
-- [ ] **Step 3: Add queue SLO checks**
+- [x] **Step 3: Add queue SLO checks**
 
 Report:
 
@@ -489,7 +490,7 @@ Report:
 - cold quote time-to-ready
 - cold chart/technical time-to-ready
 
-- [ ] **Step 4: Verify Phase 7**
+- [x] **Step 4: Verify Phase 7**
 
 Run:
 
@@ -498,6 +499,19 @@ npm run build
 npm run load:test:stock-latency
 node --import tsx --test tests/stockOperationsReportTs.test.ts
 ```
+
+Verified:
+
+- `node --import tsx --test tests/stockLatencyLoadTest.test.ts tests/stockOperationsReportTs.test.ts`
+- `npm run build`
+- `npm run load:test:stock-latency -- --base-url http://localhost:3002 --iterations 1`
+
+Measured local production gate on 2026-06-08:
+
+- p50: 848.9ms
+- p95: 1311.2ms
+- provider guard: pass
+- note: an earlier first-run cold technical check produced a slower pending response, so future speed passes should continue watching cold technical eligibility/profile/queue creation latency.
 
 Commit:
 

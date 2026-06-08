@@ -127,6 +127,16 @@ npm run ops:check
 
 `ops:check` fails on dead refresh jobs, stale running jobs, excessive backlog, stale score model versions, duplicate-score drift, missing quote prices, expired industry benchmarks, thin market calendars, or configured `market-data` health/metrics failures. `freshness_risks` is separate from `thresholds`: dormant quote snapshots can be stale in a demand-driven cache, so stale quote rate and old due queue age are surfaced as warnings even when the threshold gate passes. Rust `market-data` metrics include bounded memory cache sizes/capacities, refresh queue depth/capacity, cache event counters, provider request count, and provider error counts by stable class.
 
+Run the stock latency gate against a built server before production deployment:
+
+```bash
+npm run build
+STOCK_RATE_LIMIT_SECRET=local_load_test_secret_32_chars_minimum STOCK_ALLOW_MEMORY_GUARD_FALLBACK=1 npm run start -- -p 3002
+npm run load:test:stock-latency -- --base-url http://localhost:3002 --iterations 1
+```
+
+The latency gate hits hot detail, cold detail, hot technical, cold technical, and mixed compare API paths with `partial=1`. It fails on non-2xx responses and on explicit request-path provider execution markers. Use the p95 and per-scenario rows to decide whether the always-on worker is draining quickly enough; cold technical pending responses above a few seconds usually mean eligibility/profile lookup, Supabase readiness, or chart/technical queue creation is still too slow.
+
 Technical analysis snapshots use `view_mode='technical'` in the same score snapshot table. They are counted separately in `score_calibration.technical_snapshots`, `score_calibration.stale_technical_snapshots`, and `score_calibration.missing_technical_payload_count` because the compact technical payload may not contain the root quality/opportunity score fields used by score calibration. Score distribution and duplicate-score rates use `score_calibration.score_snapshot_count`, so technical rows cannot dilute calibration drift. After the technical-analysis release flag is enabled, add `--max-missing-technical-payloads 0` to the release gate or scheduled ops check. Before that flag is enabled, keep it as an observation metric only.
 
 The package `ops:check` script includes `--max-market-data-service-failures 0`, so release checks require `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN`. Use `npm run ops:report` for Supabase-only observation, or run the market-data Docker target locally before `ops:check`.

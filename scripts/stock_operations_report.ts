@@ -85,6 +85,7 @@ export type MarketDataServiceConfig = {
 export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
   const byStatus: Record<string, number> = {};
   const byKind: Record<string, number> = {};
+  const oldestRunAfterByKind: Record<string, string> = {};
   let oldestRunAfter: string | null = null;
   let total = 0;
   let staleRunning = 0;
@@ -99,12 +100,22 @@ export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
     staleRunning += intValue(row.stale_running_jobs);
     const runAfter = stringValue(row.oldest_run_after);
     if (runAfter && (oldestRunAfter === null || runAfter < oldestRunAfter)) oldestRunAfter = runAfter;
+    if (runAfter && (!oldestRunAfterByKind[kind] || runAfter < oldestRunAfterByKind[kind])) oldestRunAfterByKind[kind] = runAfter;
   }
 
   const oldestRunAfterDate = parseDateTime(oldestRunAfter);
   const oldestDueAgeMinutes = oldestRunAfterDate && oldestRunAfterDate.getTime() <= now.getTime()
     ? rounded((now.getTime() - oldestRunAfterDate.getTime()) / 60_000, 1)
     : null;
+  const oldestDueAgeMinutesByKind = Object.fromEntries(
+    Object.entries(oldestRunAfterByKind)
+      .map(([kind, runAfter]) => {
+        const date = parseDateTime(runAfter);
+        const age = date && date.getTime() <= now.getTime() ? rounded((now.getTime() - date.getTime()) / 60_000, 1) : null;
+        return [kind, age];
+      })
+      .filter((entry): entry is [string, number] => typeof entry[1] === "number")
+  );
 
   return {
     total_jobs: total,
@@ -116,6 +127,7 @@ export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
     stale_running_jobs: staleRunning,
     oldest_run_after: oldestRunAfter,
     oldest_due_age_minutes: oldestDueAgeMinutes,
+    oldest_due_age_minutes_by_kind: oldestDueAgeMinutesByKind,
     by_status: byStatus,
     by_kind: byKind,
   };
