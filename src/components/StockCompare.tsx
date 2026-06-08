@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
@@ -11,9 +12,11 @@ import {
   compareItemSubtitle,
   compareItemSummary,
   compareItemTitle,
+  comparePartialData,
   comparePriceTone,
   componentScore,
   displayTickerRef,
+  isPartialCompareResult,
   isSnapshotPending,
   normalizeTicker,
   normalizedPoints,
@@ -29,6 +32,7 @@ import {
   type BatchScorePayload,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
+import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import { usePendingRetry } from "@/components/usePendingRetry";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockScoreResponse } from "@/lib/types";
@@ -38,6 +42,7 @@ const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
 type LoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
   | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined }
+  | { status: "partial"; ticker: string; data: StockScoreResponse; error?: undefined; message: string; retryAfterSeconds?: number }
   | { status: "pending"; ticker: string; data?: undefined; error?: undefined; message: string; retryAfterSeconds?: number }
   | { status: "error"; ticker: string; data?: undefined; error: string };
 
@@ -67,8 +72,10 @@ export default function StockCompare() {
     const controller = new AbortController();
     setStates(tickers.map((ticker) => ({ status: "loading", ticker })));
 
-    fetch(`/api/score/batch?tickers=${encodeURIComponent(tickers.join(","))}`, {
+    const query = new URLSearchParams({ tickers: tickers.join(","), partial: "1" });
+    fetch(`/api/score/batch?${query.toString()}`, {
       signal: controller.signal,
+      cache: "no-store",
     })
       .then(async (response) => {
         const payload = (await readClientApiPayload(response)) as BatchScorePayload;
@@ -82,6 +89,18 @@ export default function StockCompare() {
         setStates(
           tickers.map((ticker, index) => {
             const result = results[index];
+            if (isPartialCompareResult(result)) {
+              const data = comparePartialData(result, ticker);
+              if (data) {
+                return {
+                  status: "partial" as const,
+                  ticker,
+                  data,
+                  message: pendingMessage(result),
+                  retryAfterSeconds: result?.retry_after_seconds,
+                };
+              }
+            }
             if (isSnapshotPending(result)) {
               return {
                 status: "pending" as const,
@@ -119,8 +138,12 @@ export default function StockCompare() {
     () => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
     [states]
   );
+  const partialStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "partial" }> => state.status === "partial"), [states]);
   const isLoading = useMemo(() => states.some((state) => state.status === "loading"), [states]);
-  const pendingStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "pending" }> => state.status === "pending"), [states]);
+  const pendingStates = useMemo(
+    () => states.filter((state): state is Extract<LoadState, { status: "pending" | "partial" }> => state.status === "pending" || state.status === "partial"),
+    [states]
+  );
   const pendingRetry = useMemo(() => {
     if (!pendingStates.length) return undefined;
     const retryHints = pendingStates
@@ -178,7 +201,9 @@ export default function StockCompare() {
         <section className="compare-picks" aria-label="선택된 종목">
           {tickers.map((ticker, index) => {
             const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
-            const label = loaded ? compareItemTitle(loaded) : displayTickerRef(ticker);
+            const partial = partialStates.find((state) => state.ticker === ticker);
+            const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
+            const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
             return (
               <span key={ticker} className={index === 0 ? "base" : ""}>
                 {label}
@@ -225,12 +250,13 @@ export default function StockCompare() {
         </section>
       ) : null}
 
-      {isLoading && !items.length ? <CompareSkeleton /> : null}
+      {isLoading && !items.length && !partialStates.length ? <CompareSkeleton /> : null}
 
-      {items.length ? (
+      {items.length || partialStates.length ? (
         <div className="compare-feed">
-          <CompareBrief items={items} />
-          <CompareCards items={items} baseTicker={baseTickerLabel} />
+          {items.length ? <CompareBrief items={items} /> : <ComparePendingOverview count={partialStates.length} />}
+          {items.length ? <CompareCards items={items} baseTicker={baseTickerLabel} /> : null}
+          {partialStates.length ? <ComparePendingCards states={partialStates} /> : null}
           {items.length >= 2 ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
@@ -258,6 +284,53 @@ function CompareSkeleton() {
         </div>
       </section>
     </div>
+  );
+}
+
+function ComparePendingOverview({ count }: { count: number }) {
+  return (
+    <section className="compare-section compare-brief">
+      <div className="section-title">
+        <span>비교 준비 중</span>
+        <h2>준비된 종목부터 채우고 있어요</h2>
+      </div>
+      <p>{count}개 종목의 가격 데이터는 확인했고, 비교 점수와 재무 지표를 이어서 준비하고 있어요.</p>
+    </section>
+  );
+}
+
+function ComparePendingCards({ states }: { states: Array<Extract<LoadState, { status: "partial" }>> }) {
+  return (
+    <section className="compare-section">
+      <div className="section-title">
+        <span>준비 중</span>
+        <h2>점수 계산 대기 종목</h2>
+      </div>
+      <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
+        {states.map((state) => {
+          const identity = stockHeaderIdentity(state.data);
+          return (
+            <article className="compare-stock-card compare-pending-card" key={state.ticker}>
+              <div className="compare-card-top">
+                <div>
+                  <strong className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</strong>
+                  {identity.secondary ? <small>{identity.secondary}</small> : null}
+                </div>
+                <em className="price-neutral">준비 중</em>
+              </div>
+              <p>{state.message}</p>
+              <div className="compare-score-line">
+                <span>현재가</span>
+                <strong>{formatPrimaryPrice(state.data)}</strong>
+              </div>
+              <i className="compare-card-scorebar pending" aria-hidden="true">
+                <SkeletonBlock className="bar" />
+              </i>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

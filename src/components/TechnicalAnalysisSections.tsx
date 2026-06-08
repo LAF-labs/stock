@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   normalizedTone,
   technicalCoverageLabel,
@@ -12,7 +13,13 @@ import {
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
-import { formatPrimaryPrice, formatSecondaryPrice, type StockHeaderIdentity } from "@/components/stockDashboardHelpers";
+import {
+  formatPrimaryPrice,
+  formatSecondaryPrice,
+  usableChartPoints,
+  type SnapshotPendingState,
+  type StockHeaderIdentity,
+} from "@/components/stockDashboardHelpers";
 import type { StockScoreResponse } from "@/lib/types";
 
 export function TechnicalAnalysisTopbar({ detailHref, displayTicker }: { detailHref: string; displayTicker: string }) {
@@ -50,6 +57,59 @@ export function TechnicalStatus({
   );
 }
 
+export function TechnicalAnalysisSkeleton({
+  title = "기술적 분석 준비 중",
+  body,
+  actionLabel,
+  onAction,
+}: {
+  title?: string;
+  body?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="technical-feed skeleton-feed" role="status" aria-live="polite" aria-busy="true">
+      {body ? <span className="sr-only">{body}</span> : null}
+      <section className="technical-hero technical-skeleton-hero">
+        <div className="technical-hero-heading">
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="ticker" />
+          <SkeletonBlock className="company" />
+        </div>
+        <div className="technical-hero-price">
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="price" />
+          <SkeletonBlock className="krw" />
+        </div>
+        <div className="technical-summary">
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="headline" />
+          <SkeletonBlock className="wide" />
+          <SkeletonBlock className="medium" />
+        </div>
+      </section>
+      <section className="technical-chart-panel">
+        <div className="section-title">
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="section-heading" />
+        </div>
+        <SkeletonBlock className="chart-area" />
+      </section>
+      {body ? (
+        <div className="skeleton-pending-action">
+          <span>{title}</span>
+          {actionLabel && onAction ? (
+            <button type="button" onClick={onAction}>
+              {actionLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TechnicalAnalysisFeed({
   data,
   technical,
@@ -82,6 +142,71 @@ export function TechnicalAnalysisFeed({
       <TechnicalOverlayChart points={data.chart_series} technical={technical} />
       <TechnicalRuleSection signals={signals} />
       <TechnicalGlossary glossary={technical.glossary} />
+    </div>
+  );
+}
+
+export function TechnicalAnalysisPendingFeed({
+  data,
+  pending,
+  identity,
+  displayTicker,
+  onRetry,
+}: {
+  data: StockScoreResponse;
+  pending: SnapshotPendingState;
+  identity: StockHeaderIdentity | undefined;
+  displayTicker: string;
+  onRetry: () => void;
+}) {
+  const chartPointCount = usableChartPoints(data.chart_series).length;
+  const limitedWarnings =
+    chartPointCount > 1 && chartPointCount < 80
+      ? ["상장 후 가격 기록이 아직 짧아요. 이동평균, 피보나치, FVG/OB 같은 신호는 충분한 봉이 쌓이면 더 안정적으로 표시됩니다."]
+      : [];
+
+  return (
+    <div className="technical-feed">
+      <section className="technical-hero neutral technical-pending-hero">
+        <div className="technical-hero-heading">
+          <span>기술적 분석</span>
+          <h1>{identity?.primary || data.name || data.symbol || displayTicker}</h1>
+          <p>{data.exchange || data.market || "시장"} · {identity?.secondary || data.symbol || displayTicker}</p>
+        </div>
+        <div className="technical-hero-price">
+          <span>현재가</span>
+          <strong>{formatPrimaryPrice(data)}</strong>
+          <small>{[formatSecondaryPrice(data), data.latest_bar_date].filter(Boolean).join(" · ")}</small>
+        </div>
+        <div className="technical-summary">
+          <span>분석 준비 중</span>
+          <strong>가격 캔들부터 먼저 보여드려요.</strong>
+          <p>{pending.message}</p>
+          <button type="button" className="technical-pending-action" onClick={onRetry}>
+            다시 확인
+          </button>
+        </div>
+      </section>
+      {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
+      <TechnicalOverlayChart points={data.chart_series} />
+      <section className="technical-rule-section technical-rule-skeleton" role="status" aria-live="polite" aria-busy="true">
+        <div className="section-title">
+          <span>룰 기반 해석</span>
+          <h2>보조지표를 계산하고 있어요</h2>
+        </div>
+        <div className="technical-signal-grid">
+          {[0, 1, 2].map((item) => (
+            <article key={item} className="technical-signal-card neutral">
+              <div>
+                <SkeletonBlock className="label" />
+                <SkeletonBlock className="value" />
+              </div>
+              <SkeletonBlock className="wide" />
+              <SkeletonBlock className="medium" />
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

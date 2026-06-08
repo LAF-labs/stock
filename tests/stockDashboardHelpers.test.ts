@@ -16,10 +16,12 @@ import {
   formatRecordValue,
   formatSecondaryPrice,
   opportunityExtremes,
+  partialStockDataFromPayload,
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
   shouldShowStockSkeleton,
+  isPartialStockSnapshotPayload,
   shouldUseCompactMetricGrid,
   snapshotPendingFromPayload,
   stockHeaderIdentity,
@@ -90,9 +92,51 @@ test("dashboard pending payload ignores unrelated errors", () => {
   assert.equal(snapshotPendingFromPayload({ error: "refresh_queue_unavailable" }, "US:KO"), undefined);
 });
 
-test("dashboard uses skeleton for initial loading and pending snapshot preparation", () => {
+test("dashboard recognizes partial stock snapshots and keeps pending retry metadata", () => {
+  const payload = {
+    ok: true,
+    type: "partial_stock_snapshot",
+    requested_ticker: "US:POET",
+    quote: {
+      market: "US",
+      symbol: "POET",
+      name: "POET Technologies Inc.",
+      latest_price: 4.12,
+      currency: "USD",
+      latest_bar_date: "2026-06-08",
+    },
+    chart_series: [
+      { date: "2026-06-05", open: 4, high: 4.2, low: 3.9, close: 4.1 },
+      { date: "2026-06-08", open: 4.1, high: 4.3, low: 4, close: 4.12 },
+    ],
+    pending_snapshot: {
+      error: "snapshot_pending",
+      reason: "cold_start",
+      ticker: "US:POET",
+      retry_after_seconds: 30,
+      refresh_request: { queued: true },
+    },
+  };
+
+  assert.equal(isPartialStockSnapshotPayload(payload), true);
+  assert.deepEqual(snapshotPendingFromPayload(payload, "US:KO"), {
+    message: "처음 조회하는 종목이라 데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 점수와 현재가를 바로 표시합니다.",
+    ticker: "US:POET",
+    queued: true,
+    retryAfterSeconds: 30,
+  });
+
+  const partial = partialStockDataFromPayload(payload, "US:KO");
+  assert.equal(partial?.requested_ticker, "US:POET");
+  assert.equal(partial?.symbol, "POET");
+  assert.equal(partial?.latest_price, 4.12);
+  assert.equal(partial?.chart_series?.length, 2);
+});
+
+test("dashboard uses full skeleton only when no useful partial data is present", () => {
   assert.equal(shouldShowStockSkeleton("loading"), true);
   assert.equal(shouldShowStockSkeleton("pending"), true);
+  assert.equal(shouldShowStockSkeleton("pending", true), false);
   assert.equal(shouldShowStockSkeleton("success"), false);
   assert.equal(shouldShowStockSkeleton("error"), false);
 });

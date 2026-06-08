@@ -43,12 +43,25 @@ export function defaultTechnicalOverlayVisibility(): TechnicalOverlayVisibility 
   }, {} as TechnicalOverlayVisibility);
 }
 
+export function technicalOverlayAvailability(technical: TechnicalAnalysisPayload | undefined): TechnicalOverlayVisibility {
+  const movingAverage = record(record(technical?.overlays)?.moving_average);
+  const overlays = record(technical?.overlays);
+  return {
+    ema20: hasArrayValues(movingAverage?.ema20),
+    ema50: hasArrayValues(movingAverage?.ema50),
+    sma200: hasArrayValues(movingAverage?.sma200),
+    fvg: hasArrayValues(overlays?.fvg_zones),
+    ob: hasArrayValues(overlays?.order_blocks),
+    fib: hasArrayValues(record(overlays?.fibonacci)?.levels),
+  };
+}
+
 export default function TechnicalOverlayChart({
   points,
   technical,
 }: {
   points: ChartSeriesPoint[] | undefined;
-  technical: TechnicalAnalysisPayload;
+  technical?: TechnicalAnalysisPayload;
 }) {
   const [visibleOverlays, setVisibleOverlays] = useState<TechnicalOverlayVisibility>(() => defaultTechnicalOverlayVisibility());
   const chartPoints = usableChartPoints(points).slice(-160);
@@ -64,12 +77,14 @@ export default function TechnicalOverlayChart({
     );
   }
 
+  const overlayAvailability = technicalOverlayAvailability(technical);
   const ema20 = overlayLine(technical, "ema20", chartPoints);
   const ema50 = overlayLine(technical, "ema50", chartPoints);
   const sma200 = overlayLine(technical, "sma200", chartPoints);
   const fvgZones = overlayZones(technical, "fvg_zones");
   const orderBlocks = overlayZones(technical, "order_blocks");
   const fibLevels = fibonacciLevels(technical);
+  const hasAnyOverlay = Object.values(overlayAvailability).some(Boolean);
   const yDomain = priceDomain(chartPoints, [ema20, ema50, sma200], fvgZones, orderBlocks, fibLevels);
   const chartCurrency = typeof chartPoints[0]?.currency === "string" ? chartPoints[0].currency : undefined;
   const indexByDate = new Map(chartPoints.map((point, index) => [point.date, index]));
@@ -87,7 +102,7 @@ export default function TechnicalOverlayChart({
     <section className="technical-chart-panel">
       <div className="section-title">
         <span>시각화</span>
-        <h2>가격 캔들과 핵심 구간</h2>
+        <h2>{hasAnyOverlay ? "가격 캔들과 핵심 구간" : "가격 캔들 먼저 표시"}</h2>
       </div>
       <div className="technical-chart-shell">
         <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} role="img" aria-label="기술적 분석 오버레이 차트" preserveAspectRatio="xMidYMid meet">
@@ -98,9 +113,9 @@ export default function TechnicalOverlayChart({
               <text x={PAD.left - 8} y={y(value) + 4} textAnchor="end" className="technical-axis-label">{axisLabel(value, chartCurrency)}</text>
             </g>
           ))}
-          {visibleOverlays.fvg ? fvgZones.map((zone, index) => zoneRect(zone, indexByDate, x, y, "fvg", index)) : null}
-          {visibleOverlays.ob ? orderBlocks.map((zone, index) => zoneRect(zone, indexByDate, x, y, "ob", index)) : null}
-          {visibleOverlays.fib ? fibLevels.map((level) => (
+          {visibleOverlays.fvg && overlayAvailability.fvg ? fvgZones.map((zone, index) => zoneRect(zone, indexByDate, x, y, "fvg", index)) : null}
+          {visibleOverlays.ob && overlayAvailability.ob ? orderBlocks.map((zone, index) => zoneRect(zone, indexByDate, x, y, "ob", index)) : null}
+          {visibleOverlays.fib && overlayAvailability.fib ? fibLevels.map((level) => (
             <g key={level.label}>
               <line x1={PAD.left} x2={SVG_WIDTH - PAD.right} y1={y(level.price)} y2={y(level.price)} className="technical-fib-line" />
               <text x={SVG_WIDTH - PAD.right - 4} y={y(level.price) - 5} textAnchor="end" className="technical-fib-label">{level.label}</text>
@@ -119,27 +134,33 @@ export default function TechnicalOverlayChart({
               />
             </g>
           ))}
-          {visibleOverlays.ema20 ? <path d={pathFor(ema20.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema20" /> : null}
-          {visibleOverlays.ema50 ? <path d={pathFor(ema50.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema50" /> : null}
-          {visibleOverlays.sma200 ? <path d={pathFor(sma200.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-sma200" /> : null}
+          {visibleOverlays.ema20 && overlayAvailability.ema20 ? <path d={pathFor(ema20.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema20" /> : null}
+          {visibleOverlays.ema50 && overlayAvailability.ema50 ? <path d={pathFor(ema50.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema50" /> : null}
+          {visibleOverlays.sma200 && overlayAvailability.sma200 ? <path d={pathFor(sma200.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-sma200" /> : null}
           <text x={PAD.left} y={SVG_HEIGHT - 10} className="technical-axis-label">{chartPoints[0].date}</text>
           <text x={SVG_WIDTH - PAD.right} y={SVG_HEIGHT - 10} textAnchor="end" className="technical-axis-label">{chartPoints[chartPoints.length - 1].date}</text>
         </svg>
       </div>
       <div className="technical-chart-legend" aria-label="차트 범례">
         <span className="technical-legend-fixed"><i className="price" />가격</span>
-        {TECHNICAL_OVERLAY_CONTROLS.map((control) => (
-          <button
-            key={control.id}
-            type="button"
-            className={visibleOverlays[control.id] ? "" : "is-off"}
-            aria-pressed={visibleOverlays[control.id]}
-            onClick={() => toggleOverlay(control.id)}
-          >
-            <i className={control.className} />
-            {control.label}
-          </button>
-        ))}
+        {TECHNICAL_OVERLAY_CONTROLS.map((control) => {
+          const available = overlayAvailability[control.id];
+          const className = [visibleOverlays[control.id] ? "" : "is-off", available ? "" : "is-disabled"].filter(Boolean).join(" ");
+          return (
+            <button
+              key={control.id}
+              type="button"
+              className={className || undefined}
+              aria-pressed={visibleOverlays[control.id] && available}
+              disabled={!available}
+              title={available ? `${control.label} 표시 전환` : `${control.label} 데이터 준비 중`}
+              onClick={() => toggleOverlay(control.id)}
+            >
+              <i className={control.className} />
+              {control.label}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -171,9 +192,9 @@ export function candleShapeForPoint(
   };
 }
 
-function overlayLine(technical: TechnicalAnalysisPayload, key: "ema20" | "ema50" | "sma200", points: ChartPoint[]): OverlayPoint[] {
+function overlayLine(technical: TechnicalAnalysisPayload | undefined, key: "ema20" | "ema50" | "sma200", points: ChartPoint[]): OverlayPoint[] {
   const availableDates = new Set(points.map((point) => point.date));
-  const movingAverage = record(record(technical.overlays)?.moving_average);
+  const movingAverage = record(record(technical?.overlays)?.moving_average);
   const rawValues = movingAverage?.[key];
   const values = Array.isArray(rawValues) ? rawValues : [];
   return values
@@ -186,8 +207,8 @@ function overlayLine(technical: TechnicalAnalysisPayload, key: "ema20" | "ema50"
     .filter((item): item is OverlayPoint => Boolean(item));
 }
 
-function overlayZones(technical: TechnicalAnalysisPayload, key: "fvg_zones" | "order_blocks"): Zone[] {
-  const rawValues = record(technical.overlays)?.[key];
+function overlayZones(technical: TechnicalAnalysisPayload | undefined, key: "fvg_zones" | "order_blocks"): Zone[] {
+  const rawValues = record(technical?.overlays)?.[key];
   const values = Array.isArray(rawValues) ? rawValues : [];
   return values
     .map((item) => {
@@ -202,8 +223,8 @@ function overlayZones(technical: TechnicalAnalysisPayload, key: "fvg_zones" | "o
     .slice(-6);
 }
 
-function fibonacciLevels(technical: TechnicalAnalysisPayload): FibLevel[] {
-  const fib = record(record(technical.overlays)?.fibonacci);
+function fibonacciLevels(technical: TechnicalAnalysisPayload | undefined): FibLevel[] {
+  const fib = record(record(technical?.overlays)?.fibonacci);
   const rawValues = fib?.levels;
   const values = Array.isArray(rawValues) ? rawValues : [];
   return values
@@ -265,4 +286,8 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function hasArrayValues(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
 }

@@ -6,7 +6,9 @@ import {
   bestBy,
   compareItemSummary,
   compareItemTitle,
+  comparePartialData,
   comparePriceTone,
+  isPartialCompareResult,
   normalizeTicker,
   normalizedPoints,
   parseTickers,
@@ -126,6 +128,28 @@ test("compare pending message never exposes queue retry seconds", () => {
   assert.match(message, /자동으로 다시 확인/);
   assert.doesNotMatch(message, /300초|\d+초 안에/);
   assert.doesNotMatch(pendingMessage(undefined), /초 안에/);
+});
+
+test("compare helpers keep partial snapshots out of scored compare items", () => {
+  const result = {
+    ok: true,
+    type: "partial_stock_snapshot",
+    requested_ticker: "US:POET",
+    quote: {
+      market: "US",
+      symbol: "POET",
+      name: "POET Technologies Inc.",
+      latest_price: 4.12,
+      currency: "USD",
+    },
+    pending_snapshot: {
+      error: "snapshot_pending",
+      refresh_request: { queued: true },
+    },
+  } as any;
+
+  assert.equal(isPartialCompareResult(result), true);
+  assert.equal(comparePartialData(result, "US:POET")?.symbol, "POET");
 });
 
 test("compare price tone keeps missing and flat moves neutral", () => {

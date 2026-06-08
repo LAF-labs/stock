@@ -1,5 +1,12 @@
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
-import { stockHeaderIdentity, stockMarketCapDisplay, usableChartPoints, type StockHeaderIdentity } from "@/components/stockDashboardHelpers";
+import {
+  isPartialStockSnapshotPayload,
+  partialStockDataFromPayload,
+  stockHeaderIdentity,
+  stockMarketCapDisplay,
+  usableChartPoints,
+  type StockHeaderIdentity,
+} from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import { parseStrictTickerRef } from "@/lib/tickerRef";
 import type { JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
@@ -297,6 +304,14 @@ function objectParticle(value: string): string {
 
 export function isSnapshotPending(result: BatchScoreResult | undefined): boolean {
   return result?.error === "snapshot_pending" || result?.error === "snapshot_unavailable";
+}
+
+export function isPartialCompareResult(result: BatchScoreResult | undefined): boolean {
+  return isPartialStockSnapshotPayload(result);
+}
+
+export function comparePartialData(result: BatchScoreResult | undefined, fallbackTicker: string): StockScoreResponse | undefined {
+  return partialStockDataFromPayload(result, fallbackTicker);
 }
 
 export function pendingMessage(result: BatchScoreResult | undefined): string {

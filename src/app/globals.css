@@ -1705,6 +1705,14 @@ a:focus-visible {
   opacity: 0.54;
 }
 
+.technical-chart-legend button.is-disabled,
+.technical-chart-legend button:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: #f7f8fa;
+  opacity: 0.48;
+}
+
 .technical-legend-fixed {
   cursor: default;
 }
@@ -1745,6 +1753,19 @@ a:focus-visible {
   font-size: 15px;
   line-height: 1.6;
   font-weight: 500;
+}
+
+.technical-pending-action,
+.partial-retry-button {
+  justify-self: start;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .technical-signal-grid {

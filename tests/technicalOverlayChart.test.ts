@@ -5,6 +5,7 @@ import {
   TECHNICAL_OVERLAY_CONTROLS,
   candleShapeForPoint,
   defaultTechnicalOverlayVisibility,
+  technicalOverlayAvailability,
 } from "../src/components/TechnicalOverlayChart";
 
 test("technical chart renders price as candle shapes with OHLC fallback", () => {
@@ -46,4 +47,38 @@ test("technical overlay controls exclude price and default every indicator on", 
     ob: true,
     fib: true,
   });
+});
+
+test("technical overlay availability disables pending indicator controls", () => {
+  assert.deepEqual(technicalOverlayAvailability(undefined), {
+    ema20: false,
+    ema50: false,
+    sma200: false,
+    fvg: false,
+    ob: false,
+    fib: false,
+  });
+
+  const technical = {
+      overlays: {
+        moving_average: {
+          ema20: [{ date: "2026-06-08", value: 12 }],
+          ema50: [],
+        },
+        fvg_zones: [{ date: "2026-06-08", low: 10, high: 11 }],
+        fibonacci: { levels: [{ label: "50.0%", price: 10.5 }] },
+      },
+    } as any;
+
+  assert.deepEqual(
+    technicalOverlayAvailability(technical),
+    {
+      ema20: true,
+      ema50: false,
+      sma200: false,
+      fvg: true,
+      ob: false,
+      fib: true,
+    }
+  );
 });

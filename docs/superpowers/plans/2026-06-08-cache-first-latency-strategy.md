@@ -274,7 +274,7 @@ git commit -m "feat: return partial stock snapshot states"
 - Test: `tests/technicalOverlayChart.test.ts`
 - Test: `tests/stockCompareHelpers.test.ts`
 
-- [ ] **Step 1: Add UI helper tests**
+- [x] **Step 1: Add UI helper tests**
 
 Expected behavior:
 
@@ -283,11 +283,11 @@ Expected behavior:
 - overlay toggles can be disabled while their data is pending
 - compare renders ready ticker cards while pending cards keep skeletons
 
-- [ ] **Step 2: Update pending retry behavior**
+- [x] **Step 2: Update pending retry behavior**
 
-Polling should be tied to missing parts, not one page-level pending state. Keep short polling with jitter and pause while hidden.
+Polling is now driven by `snapshotPendingFromPayload`, including `pending_snapshot` inside partial responses. Short polling with jitter and hidden-tab pause remains in `usePendingRetry`.
 
-- [ ] **Step 3: Implement dashboard partial rendering**
+- [x] **Step 3: Implement dashboard partial rendering**
 
 Render:
 
@@ -296,7 +296,7 @@ Render:
 - score cards if score stale/fresh exists
 - section skeletons only where state is `pending` or `miss`
 
-- [ ] **Step 4: Implement technical partial rendering**
+- [x] **Step 4: Implement technical partial rendering**
 
 Rules:
 
@@ -305,7 +305,9 @@ Rules:
 - chart renders with available candles even if technical interpretation is pending
 - newly listed stocks show limited-mode text
 
-- [ ] **Step 5: Verify Phase 4**
+Technical success payloads now merge durable chart snapshots, and fall back to detail score `chart_series` when the dedicated chart lane has not populated yet. Empty technical `chart_series: []` no longer blocks candle rendering.
+
+- [x] **Step 5: Verify Phase 4**
 
 Run:
 
@@ -313,6 +315,12 @@ Run:
 npm test -- tests/stockDashboardHelpers.test.ts tests/clientApi.test.ts tests/technicalOverlayChart.test.ts tests/stockCompareHelpers.test.ts
 npm run typecheck
 ```
+
+Verified:
+
+- `node --import tsx --test tests/stockDashboardHelpers.test.ts tests/clientApi.test.ts tests/technicalOverlayChart.test.ts tests/stockCompareHelpers.test.ts tests/stockPartsResponse.test.ts tests/apiRouteSecurity.test.ts`
+- `npm run typecheck`
+- Browser check on `http://localhost:3002/technical?ticker=US%3AKO`: 160 candle nodes rendered, non-price overlays disabled when unavailable.
 
 Commit:
 

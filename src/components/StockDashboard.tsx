@@ -11,7 +11,13 @@ import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi"
 import {
   dashboardInputValue,
   dashboardTickerFromSearchParam,
+  dailyChangeText,
+  dailyToneClass,
+  formatPrimaryPrice,
+  formatSecondaryPrice,
+  partialStockDataFromPayload,
   refreshCooldownMessage,
+  scoreDataWithQuote,
   shouldShowStockSkeleton,
   snapshotPendingFromPayload,
   stringFromUnknown,
@@ -41,6 +47,7 @@ type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
 type LoadState =
   | { status: "idle" | "loading"; data?: undefined; error?: undefined }
   | { status: "success"; data: StockScoreResponse; error?: undefined }
+  | { status: "partial"; data: StockScoreResponse; error?: undefined; pending: SnapshotPendingState }
   | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; data?: undefined; error: string };
 
@@ -84,15 +91,21 @@ export default function StockDashboard() {
       return;
     }
     const controller = new AbortController();
-    const query = new URLSearchParams({ ticker: tickerParam });
+    const query = new URLSearchParams({ ticker: tickerParam, partial: "1" });
 
     setState({ status: "loading" });
     fetch(`/api/score?${query.toString()}`, {
       signal: controller.signal,
+      cache: "no-store",
     })
       .then(async (response) => {
         const payload = await readClientApiPayload(response);
         const pending = snapshotPendingFromPayload(payload, tickerParam);
+        const partialData = pending ? partialStockDataFromPayload(payload, tickerParam) : undefined;
+        if (pending && partialData) {
+          setState({ status: "partial", data: partialData, pending });
+          return undefined;
+        }
         if (pending) {
           setState({ status: "pending", pending });
           return undefined;
@@ -264,14 +277,15 @@ export default function StockDashboard() {
     setReloadVersion((version) => version + 1);
   }
 
-  const scorePending = tickerParam && state.status === "pending" ? state.pending : undefined;
+  const scorePending = tickerParam && (state.status === "pending" || state.status === "partial") ? state.pending : undefined;
   const quotePending = tickerParam && quoteState.status === "pending" ? quoteState.pending : undefined;
   usePendingRetry({ pending: scorePending, retryKey: `score:${tickerParam}`, onRetry: retryLoad });
   usePendingRetry({ pending: quotePending, retryKey: `quote:${tickerParam}`, onRetry: retryLoad });
 
-  const data = tickerParam && state.status === "success" ? state.data : undefined;
   const visibleDetailSections = DETAIL_SECTIONS;
   const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
+  const data = tickerParam && state.status === "success" ? state.data : undefined;
+  const partialData = tickerParam && state.status === "partial" ? scoreDataWithQuote(state.data, quoteData) : undefined;
   const compareHref = data && tickerParam ? compareHrefForStock(data, quoteData, tickerParam) : "";
   const pageIdentity = data ? stockHeaderIdentity(data, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
@@ -396,11 +410,15 @@ export default function StockDashboard() {
         />
       </section>
 
-      {tickerParam && shouldShowStockSkeleton(state.status) && (
+      {tickerParam && shouldShowStockSkeleton(state.status, Boolean(partialData)) && (
         <StockSkeleton pendingMessage={state.status === "pending" ? state.pending.message : undefined} onRetry={retryLoad} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
+
+      {partialData && !data ? (
+        <PartialStockFeed data={partialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
+      ) : null}
 
       {data && (
         <>
@@ -450,6 +468,126 @@ export default function StockDashboard() {
         </>
       )}
     </main>
+  );
+}
+
+function PartialStockFeed({
+  data,
+  quote,
+  pending,
+  onRetry,
+}: {
+  data: StockScoreResponse;
+  quote: StockQuoteResponse | undefined;
+  pending: SnapshotPendingState | undefined;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="stock-feed partial-stock-feed" role="status" aria-live="polite">
+      <DetailSection id="detail-summary">
+        <PartialStockSummary data={data} quote={quote} pending={pending} onRetry={onRetry} />
+      </DetailSection>
+      <DetailSection id="detail-chart">
+        <ChartStory points={data.chart_series} patterns={undefined} />
+      </DetailSection>
+      <SectionSkeleton title="품질 점수 이유" eyebrow="점수 이유" />
+      <SectionSkeleton title="핵심 숫자" eyebrow="핵심 숫자" compact />
+    </div>
+  );
+}
+
+function PartialStockSummary({
+  data,
+  quote,
+  pending,
+  onRetry,
+}: {
+  data: StockScoreResponse;
+  quote: StockQuoteResponse | undefined;
+  pending: SnapshotPendingState | undefined;
+  onRetry: () => void;
+}) {
+  const displayData = scoreDataWithQuote(data, quote);
+  const identity = stockHeaderIdentity(displayData, quote);
+  const daily = dailyChangeText(displayData, quote);
+  const latestBarDate = quote?.latest_bar_date || displayData.latest_bar_date || "최근 가격";
+
+  return (
+    <section className="stock-title-card partial-stock-title-card">
+      <div className="stock-hero-main">
+        <div className="stock-name-row">
+          <div>
+            <span>{quote?.exchange || displayData.exchange || displayData.market || "시장"} · {latestBarDate}</span>
+            <h2 className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</h2>
+            {identity.secondary ? <p>{identity.secondary}</p> : null}
+          </div>
+        </div>
+        <span className="score-time-chip">점수 준비 중</span>
+      </div>
+      <div className="price-strip">
+        <div className="price-block">
+          <strong>{formatPrimaryPrice(displayData)}</strong>
+          <span>{formatSecondaryPrice(displayData)}</span>
+        </div>
+        <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
+      </div>
+      <div className="quick-read">
+        <article className="quick-metric-card">
+          <span>강점</span>
+          <SkeletonBlock className="value" />
+        </article>
+        <article className="quick-metric-card">
+          <span>먼저 볼 것</span>
+          <SkeletonBlock className="value" />
+        </article>
+        <article className="quick-metric-card">
+          <span>시가총액</span>
+          <SkeletonBlock className="value wide" />
+        </article>
+        <article className="score-panel">
+          <span>품질 점수</span>
+          <SkeletonBlock className="score" />
+        </article>
+      </div>
+      <div className="hero-verdict neutral partial-verdict">
+        <span>오늘의 판단</span>
+        <strong>가격 데이터부터 먼저 보여드려요.</strong>
+        <p>{pending?.message || "점수와 재무 지표를 준비하는 중이에요. 준비가 끝나면 이 영역이 자동으로 채워집니다."}</p>
+        <button type="button" className="partial-retry-button" onClick={onRetry}>
+          다시 확인
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SectionSkeleton({ title, eyebrow, compact = false }: { title: string; eyebrow: string; compact?: boolean }) {
+  return (
+    <section className={compact ? "accordion-card skeleton-accordion" : "factor-card"}>
+      <div className="section-title">
+        <span>{eyebrow}</span>
+        <h2>{title}</h2>
+      </div>
+      {compact ? (
+        <>
+          <SkeletonBlock className="wide" />
+          <SkeletonBlock className="medium" />
+        </>
+      ) : (
+        <div className="factor-list">
+          {[0, 1, 2].map((item) => (
+            <article key={item}>
+              <div className="factor-heading">
+                <SkeletonBlock className="value" />
+                <SkeletonBlock className="small" />
+              </div>
+              <SkeletonBlock className="bar" />
+              <SkeletonBlock className="wide" />
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

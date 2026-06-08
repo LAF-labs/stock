@@ -4,10 +4,11 @@ import { jsonError } from "@/lib/apiGuards";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { getStockChart } from "@/lib/stockChartCache";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
-import { attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
-import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
+import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
+import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { technicalEligibilityForTicker, technicalUnsupportedProductPayload } from "@/lib/technicalAnalysisEligibility";
@@ -73,7 +74,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getStockScore(ticker, view, { forceRefresh });
-    const enrichedPayload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(attachScoreParts(result)));
+    const scorePayload = await attachChartForTechnicalView(attachScoreParts(result), ticker, view);
+    const enrichedPayload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(scorePayload));
     const payload = forceRefresh
       ? {
           ...enrichedPayload,
@@ -124,4 +126,44 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   }
+}
+
+async function attachChartForTechnicalView(payload: StockPayload, ticker: string, view: ReturnType<typeof cleanView>): Promise<StockPayload> {
+  if (view !== "technical" || hasUsableChartSeries(payload.chart_series)) return payload;
+  try {
+    const chartResult = await getStockChart(ticker);
+    return attachChartPartToPayload(payload, chartResult);
+  } catch {
+    // Keep going: older deployments may have detail score snapshots with chart_series
+    // before the dedicated chart snapshot lane is populated.
+  }
+  try {
+    const detailResult = await getStockScore(ticker, "detail");
+    return attachChartFromScoreSnapshot(payload, detailResult);
+  } catch {
+    return payload;
+  }
+}
+
+function attachChartFromScoreSnapshot(payload: StockPayload, result: StockScoreResult): StockPayload {
+  if (!hasUsableChartSeries(result.payload.chart_series)) return payload;
+  return {
+    ...payload,
+    chart_series: result.payload.chart_series,
+    parts: {
+      ...(payload.parts && typeof payload.parts === "object" && !Array.isArray(payload.parts) ? payload.parts : {}),
+      chart: {
+        state: result.cache.state,
+        source: result.cache.source,
+        fetched_at: result.cache.fetchedAt,
+        expires_at: result.cache.expiresAt,
+        refresh_started: result.cache.refreshStarted,
+        refresh_error: result.cache.refreshError,
+      },
+    },
+  };
+}
+
+function hasUsableChartSeries(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 1;
 }

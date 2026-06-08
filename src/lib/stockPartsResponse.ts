@@ -50,6 +50,20 @@ export function attachChartParts(result: StockChartResult): StockPayload {
   });
 }
 
+export function attachChartPartToPayload(payload: StockPayload, result: StockChartResult): StockPayload {
+  const chartSeries = Array.isArray(result.payload.chart_series) ? result.payload.chart_series : undefined;
+  return attachParts(
+    {
+      ...payload,
+      chart_series: Array.isArray(payload.chart_series) && payload.chart_series.length ? payload.chart_series : chartSeries,
+    },
+    {
+      ...partsFromPayload(payload),
+      chart: partFromChartResult(result),
+    }
+  );
+}
+
 export async function pendingPartialStockPayload({
   pending,
   ticker,

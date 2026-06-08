@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { attachScoreParts, pendingPartialStockPayload } from "../src/lib/stockPartsResponse";
+import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "../src/lib/stockPartsResponse";
 import type { StockPendingPayload } from "../src/lib/stockPendingResponse";
+import type { StockChartResult } from "../src/lib/stockChartCache";
 import type { StockScoreResult } from "../src/lib/stockSnapshotCache";
 
 const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
@@ -45,6 +46,37 @@ test("attachScoreParts adds score and chart part states without changing score f
   assert.equal(parts.technical.state, "stale");
   assert.equal(parts.chart.state, "stale");
   assert.equal(parts.technical.refresh_started, true);
+});
+
+test("attachChartPartToPayload merges durable chart candles into technical score payloads", () => {
+  const chartResult = {
+    payload: {
+      ok: true,
+      type: "chart",
+      requested_ticker: "US:KO",
+      chart_series: [
+        { date: "2026-06-07", open: 70, high: 72, low: 69, close: 71 },
+        { date: "2026-06-08", open: 71, high: 73, low: 70, close: 72 },
+      ],
+    },
+    cache: {
+      state: "fresh",
+      source: "supabase",
+      ticker: "US:KO",
+      fetchedAt: "2026-06-08T00:00:00.000Z",
+      expiresAt: "2026-06-08T00:15:00.000Z",
+      staleExpiresAt: "2026-07-08T00:00:00.000Z",
+      lastBarDate: "2026-06-08",
+    },
+  } satisfies StockChartResult;
+
+  const payload = attachChartPartToPayload({ ok: true, chart_series: [], technical_analysis: { status: "ready" } }, chartResult);
+  const parts = payload.parts as Record<string, Record<string, unknown>>;
+
+  assert.equal(Array.isArray(payload.chart_series), true);
+  assert.equal((payload.chart_series as unknown[]).length, 2);
+  assert.equal(parts.chart.state, "fresh");
+  assert.equal(parts.chart.last_bar_date, "2026-06-08");
 });
 
 test("pendingPartialStockPayload returns ready quote and chart parts while score is pending", async () => {

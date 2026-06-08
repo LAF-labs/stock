@@ -197,6 +197,13 @@ export type MarketCapDisplay = {
 
 export type UsableChartPoint = ChartSeriesPoint & { close: number; date: string };
 
+export type PartialStockSnapshotPayload = StockScoreResponse & {
+  type?: "partial_stock_snapshot";
+  quote?: StockQuoteResponse;
+  chart?: StockScoreResponse;
+  pending_snapshot?: unknown;
+};
+
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function dashboardTickerFromSearchParam(value: string | null): string | undefined {
@@ -208,8 +215,45 @@ export function dashboardInputValue(ticker: string | undefined): string {
   return ticker ? displayTickerInput(ticker) : "";
 }
 
-export function shouldShowStockSkeleton(status: string): boolean {
-  return status === "loading" || status === "pending";
+export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = false): boolean {
+  return status === "loading" || (status === "pending" && !hasUsefulPartialData);
+}
+
+export function isPartialStockSnapshotPayload(payload: unknown): payload is PartialStockSnapshotPayload {
+  return recordFromUnknown(payload)?.type === "partial_stock_snapshot";
+}
+
+export function partialStockDataFromPayload(payload: unknown, fallbackTicker: string): StockScoreResponse | undefined {
+  if (!isPartialStockSnapshotPayload(payload)) return undefined;
+
+  const record = recordFromUnknown(payload);
+  const quote = recordFromUnknown(record?.quote);
+  const chart = recordFromUnknown(record?.chart);
+  const requestedTicker = stringFromUnknown(record?.requested_ticker) || stringFromUnknown(record?.ticker) || fallbackTicker;
+  const market = marketFromPartial(record, quote, chart, requestedTicker);
+  const chartSeries = arrayFromUnknown(record?.chart_series) || arrayFromUnknown(chart?.chart_series);
+  const latestPrice = numberFromUnknown(quote?.latest_price) ?? numberFromUnknown(record?.latest_price) ?? numberFromUnknown(chart?.latest_price);
+  const data: StockScoreResponse = {
+    requested_ticker: requestedTicker,
+    market,
+    symbol: stringFromUnknown(record?.symbol) || stringFromUnknown(quote?.symbol) || stringFromUnknown(chart?.symbol) || cleanTickerSymbol(requestedTicker),
+    name: stringFromUnknown(record?.name) || stringFromUnknown(quote?.name) || stringFromUnknown(chart?.name),
+    exchange: stringFromUnknown(record?.exchange) || stringFromUnknown(quote?.exchange) || stringFromUnknown(chart?.exchange),
+    currency: stringFromUnknown(record?.currency) || stringFromUnknown(quote?.currency) || stringFromUnknown(chart?.currency),
+    latest_price: latestPrice,
+    latest_price_label: stringFromUnknown(quote?.latest_price_label) || stringFromUnknown(record?.latest_price_label) || stringFromUnknown(chart?.latest_price_label),
+    latest_bar_date: stringFromUnknown(quote?.latest_bar_date) || stringFromUnknown(record?.latest_bar_date) || stringFromUnknown(chart?.latest_bar_date),
+    usd_krw_rate: numberFromUnknown(quote?.usd_krw_rate) ?? numberFromUnknown(record?.usd_krw_rate) ?? numberFromUnknown(chart?.usd_krw_rate),
+    usd_krw_label: stringFromUnknown(quote?.usd_krw_label) || stringFromUnknown(record?.usd_krw_label) || stringFromUnknown(chart?.usd_krw_label),
+    chart_series: chartSeries as ChartSeriesPoint[] | undefined,
+    server_cache: {
+      state: "pending",
+      source: "partial",
+      refresh_started: true,
+    },
+  };
+
+  return data.latest_price !== undefined || usableChartPoints(data.chart_series).length > 1 ? data : undefined;
 }
 
 export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {
@@ -405,6 +449,9 @@ function recordFromUnknown(value: unknown): Record<string, unknown> | undefined 
 
 export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: string): SnapshotPendingState | undefined {
   const record = recordFromUnknown(payload);
+  if (record?.type === "partial_stock_snapshot" && record.pending_snapshot) {
+    return snapshotPendingFromPayload(record.pending_snapshot, fallbackTicker);
+  }
   const error = stringFromUnknown(record?.error);
   if (error !== "snapshot_pending" && error !== "snapshot_unavailable") return undefined;
 
@@ -428,6 +475,23 @@ export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: str
     queued,
     retryAfterSeconds,
   };
+}
+
+function arrayFromUnknown(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
+
+function marketFromPartial(
+  record: Record<string, unknown> | undefined,
+  quote: Record<string, unknown> | undefined,
+  chart: Record<string, unknown> | undefined,
+  ticker: string
+): "US" | "KR" | undefined {
+  const value = stringFromUnknown(record?.market) || stringFromUnknown(quote?.market) || stringFromUnknown(chart?.market);
+  if (value === "US" || value === "KR") return value;
+  if (ticker.startsWith("KR:")) return "KR";
+  if (ticker.startsWith("US:")) return "US";
+  return undefined;
 }
 
 function numberFromJsonRecord(record: Record<string, JsonValue> | undefined, key: string): number | undefined {
