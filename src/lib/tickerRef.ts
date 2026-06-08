@@ -62,7 +62,7 @@ export function parseStrictTickerRef(value: string | null | undefined): StrictTi
 }
 
 export function validTickerSymbolForMarket(market: MarketCode, symbol: string): boolean {
-  const clean = cleanTickerSymbol(symbol);
-  if (market === "KR") return DOMESTIC_SYMBOL_RE.test(clean);
-  return US_SYMBOL_RE.test(clean);
+  const raw = symbol.trim().toUpperCase();
+  if (market === "KR") return DOMESTIC_SYMBOL_RE.test(raw);
+  return US_SYMBOL_RE.test(raw);
 }

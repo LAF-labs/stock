@@ -56,11 +56,12 @@ Goal: Prevent unsupported raw ticker forms from being cleaned into apparently va
 
 Tasks:
 
-- [ ] Add tests proving strict parsing rejects slash tickers such as `US:BRK/B` and `US:XFLH/UN` while keeping `US:BRK.B` valid.
-- [ ] Change `validTickerSymbolForMarket()` to validate the raw normalized symbol instead of `cleanTickerSymbol(symbol)`.
-- [ ] Add symbol-search tests proving slash ticker master rows are not returned by local or RPC search normalization.
-- [ ] Keep `cleanTickerSymbol()` available for display/helper fallback paths, but stop using it as a strict API validator.
-- [ ] Document the current ticker policy and the intentional lack of slash ticker support until provider-specific mappings exist.
+- [x] Add tests proving strict parsing rejects slash tickers such as `US:BRK/B` and `US:XFLH/UN` while keeping `US:BRK.B` valid.
+- [x] Change `validTickerSymbolForMarket()` to validate the raw normalized symbol instead of `cleanTickerSymbol(symbol)`.
+- [x] Add symbol-search tests proving slash ticker master rows are not returned by local or RPC search normalization.
+- [x] Keep `cleanTickerSymbol()` available for display/helper fallback paths, but stop using it as a strict API validator.
+- [x] Document the current ticker policy and the intentional lack of slash ticker support until provider-specific mappings exist.
+- [x] Review and fix compare direct-input normalization so slash tickers are not cleaned into aliases.
 
 Verification:
 
@@ -68,6 +69,25 @@ Verification:
 npm test -- tests/tickerRef.test.ts tests/symbolSearch.test.ts tests/apiRouteSecurity.test.ts
 npm run typecheck
 ```
+
+Verification recorded:
+
+```text
+npm test -- tests/tickerRef.test.ts tests/symbolSearch.test.ts tests/apiRouteSecurity.test.ts tests/technicalAnalysisEligibility.test.ts tests/stockCompareHelpers.test.ts
+tests 193
+pass 193
+fail 0
+
+npm run typecheck
+tsc --noEmit
+exit 0
+```
+
+Reflection:
+
+- The first implementation fixed the strict API and search boundary, but review found a second UI helper path in compare direct input that also cleaned slash ticker aliases.
+- Using `parseStrictTickerRef()` in compare normalization is narrower and keeps direct entry aligned with score/quote API routes.
+- `normalizeTickerRef()` and `parseTickerRef()` still intentionally support loose internal/fallback canonicalization; future phases should not use those helpers for public API validation.
 
 ## Phase 2: Batch API Cost And Validation
 

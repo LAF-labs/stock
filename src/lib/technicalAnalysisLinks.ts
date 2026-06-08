@@ -1,4 +1,4 @@
-import { cleanTickerSymbol, parseStrictTickerRef, validTickerSymbolForMarket } from "@/lib/tickerRef";
+import { parseStrictTickerRef } from "@/lib/tickerRef";
 
 export type TechnicalEligibility =
   | { eligible: true; ticker: string }
@@ -35,16 +35,7 @@ export function technicalUnsupportedProductPayload(ticker: string) {
 }
 
 export function tickerFromInput(value: string | undefined): string | undefined {
-  const raw = value?.trim().replace(/^!/, "").toUpperCase();
-  if (!raw) return undefined;
-  if (raw.includes(":")) {
-    const [marketPart, symbolPart] = raw.split(":", 2);
-    if (marketPart !== "US" && marketPart !== "KR") return undefined;
-    const symbol = cleanTickerSymbol(symbolPart || "");
-    return symbol && validTickerSymbolForMarket(marketPart, symbol) ? `${marketPart}:${symbol}` : undefined;
-  }
-
-  const parsed = parseStrictTickerRef(raw);
+  const parsed = parseStrictTickerRef(value);
   return parsed.ok ? parsed.ticker : undefined;
 }
 

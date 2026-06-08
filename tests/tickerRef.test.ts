@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cleanTickerSymbol, normalizeTickerRef, parseStrictTickerRef, parseTickerRef } from "../src/lib/tickerRef";
+import { cleanTickerSymbol, normalizeTickerRef, parseStrictTickerRef, parseTickerRef, validTickerSymbolForMarket } from "../src/lib/tickerRef";
 
 test("normalizeTickerRef canonicalizes market-prefixed, domestic, and fallback inputs", () => {
   assert.equal(normalizeTickerRef(" nvda "), "US:NVDA");
@@ -35,7 +35,17 @@ test("parseStrictTickerRef rejects missing, unsafe, and market-mismatched API ti
   assert.deepEqual(parseStrictTickerRef(""), { ok: false, error: "missing_ticker" });
   assert.deepEqual(parseStrictTickerRef(null), { ok: false, error: "missing_ticker" });
   assert.deepEqual(parseStrictTickerRef("bad spaces"), { ok: false, error: "invalid_ticker" });
+  assert.deepEqual(parseStrictTickerRef("US:BRK/B"), { ok: false, error: "invalid_ticker" });
+  assert.deepEqual(parseStrictTickerRef("US:XFLH/UN"), { ok: false, error: "invalid_ticker" });
   assert.deepEqual(parseStrictTickerRef("KR:ABC123"), { ok: false, error: "invalid_ticker" });
   assert.deepEqual(parseStrictTickerRef("US:"), { ok: false, error: "invalid_ticker" });
   assert.deepEqual(parseStrictTickerRef("###"), { ok: false, error: "invalid_ticker" });
+});
+
+test("validTickerSymbolForMarket validates raw symbols instead of cleaned aliases", () => {
+  assert.equal(validTickerSymbolForMarket("US", "BRK.B"), true);
+  assert.equal(validTickerSymbolForMarket("US", "BRK/B"), false);
+  assert.equal(validTickerSymbolForMarket("US", "XFLH/UN"), false);
+  assert.equal(validTickerSymbolForMarket("KR", "0194M0"), true);
+  assert.equal(validTickerSymbolForMarket("KR", "005930.KS"), false);
 });

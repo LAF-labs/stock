@@ -24,6 +24,8 @@ test("compare helpers normalize and cap ticker lists", () => {
   assert.equal(normalizeTicker("KR:F70100026"), "");
   assert.equal(normalizeTicker("! nvda "), "US:NVDA");
   assert.equal(normalizeTicker("US:BRK.B"), "US:BRK.B");
+  assert.equal(normalizeTicker("US:BRK/B"), "");
+  assert.equal(normalizeTicker("BRK/B"), "");
   assert.deepEqual(parseTickers("KO, US:KO,005930,TSLA,NVDA,AAPL,MSFT"), ["US:KO", "KR:005930", "US:TSLA", "US:NVDA", "US:AAPL"]);
   assert.equal(parseTickers("KO,TSLA,NVDA,AAPL,MSFT,GOOGL").length, MAX_COMPARE);
 });

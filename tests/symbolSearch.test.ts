@@ -63,6 +63,38 @@ test("symbol search uses Supabase RPC when available", async () => {
   assert.equal(items[0].listedAt, "1999-01-22");
 });
 
+test("symbol search drops Supabase RPC rows with unsupported slash tickers", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  globalThis.fetch = (async () =>
+    Response.json([
+      {
+        market: "US",
+        ticker: "BRK/B",
+        exchange: "NYSE",
+        exchange_name: "NYSE",
+        korean_name: "",
+        english_name: "Berkshire Hathaway Class B slash alias",
+        instrument_type: "STOCK",
+      },
+      {
+        market: "US",
+        ticker: "BRK.B",
+        exchange: "NYSE",
+        exchange_name: "NYSE",
+        korean_name: "",
+        english_name: "Berkshire Hathaway Class B",
+        instrument_type: "STOCK",
+      },
+    ])) as typeof fetch;
+
+  const items = await searchSymbols({ query: "brk", limit: 8 });
+
+  assert.deepEqual(items.map((item) => item.key), ["US:BRK.B"]);
+});
+
 test("symbol search does not fallback when Supabase returns a real empty result", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
@@ -211,4 +243,32 @@ test("symbol search filters master rows that the score API cannot accept", async
   assert.deepEqual(items, []);
   assert.equal(derivative[0]?.key, "KR:0194M0");
   assert.equal(derivative[0]?.displayName, "ACE 삼성전자단일종목레버리지");
+});
+
+test("symbol search filters slash ticker master rows that would be cleaned into aliases", async () => {
+  const items = await searchLocalSymbolsForTests(
+    [
+      {
+        market: "US",
+        ticker: "BRK/B",
+        exchange: "NYSE",
+        exchangeName: "NYSE",
+        koreanName: "",
+        englishName: "Berkshire Hathaway Class B slash alias",
+        instrumentType: "STOCK",
+      },
+      {
+        market: "US",
+        ticker: "BRK.B",
+        exchange: "NYSE",
+        exchangeName: "NYSE",
+        koreanName: "",
+        englishName: "Berkshire Hathaway Class B",
+        instrumentType: "STOCK",
+      },
+    ],
+    { query: "brk", limit: 10 }
+  );
+
+  assert.deepEqual(items.map((item) => item.key), ["US:BRK.B"]);
 });

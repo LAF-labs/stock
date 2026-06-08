@@ -1,7 +1,7 @@
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
 import { stockHeaderIdentity, stockMarketCapDisplay, usableChartPoints, type StockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import { validTickerSymbolForMarket } from "@/lib/tickerRef";
+import { parseStrictTickerRef } from "@/lib/tickerRef";
 import type { JsonValue, ScoreComponent, StockScoreResponse } from "@/lib/types";
 
 export const MAX_COMPARE = 5;
@@ -46,16 +46,8 @@ export type CompareItem = {
 const KO_KR_RATIO_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 
 export function normalizeTicker(value: string): string {
-  const text = value.trim().replace(/^!/, "").toUpperCase();
-  if (text.includes(":")) {
-    const [market, rawSymbol] = text.split(":", 2);
-    const symbol = rawSymbol.replace(/[^A-Z0-9.-]/g, "");
-    if ((market === "US" || market === "KR") && symbol && validTickerSymbolForMarket(market, symbol)) return `${market}:${symbol}`;
-    return "";
-  }
-  const symbol = text.replace(/[^A-Z0-9.-]/g, "");
-  if (/^(?:[0-9][A-Z0-9]{5}|Q\d{6})$/.test(symbol)) return `KR:${symbol}`;
-  return symbol ? `US:${symbol}` : "";
+  const parsed = parseStrictTickerRef(value.trim().replace(/^!\s*/, ""));
+  return parsed.ok ? parsed.ticker : "";
 }
 
 export function displayTickerRef(value: string): string {
