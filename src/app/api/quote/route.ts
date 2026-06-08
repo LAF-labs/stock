@@ -5,6 +5,7 @@ import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
+import { attachQuoteParts } from "@/lib/stockPartsResponse";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
@@ -64,7 +65,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getStockQuote(ticker, { forceRefresh });
-    const payload = quoteNeedsSymbolProfile(result.payload) ? await enrichStockPayloadWithSymbolProfile(result.payload) : result.payload;
+    const resultPayload = attachQuoteParts(result);
+    const payload = quoteNeedsSymbolProfile(resultPayload) ? await enrichStockPayloadWithSymbolProfile(resultPayload) : resultPayload;
 
     const response = NextResponse.json(
       {

@@ -215,7 +215,7 @@ git commit -m "feat: cache stock chart snapshots"
 - Modify: `tests/stockPendingResponse.test.ts`
 - Test: `tests/stockPartsResponse.test.ts`
 
-- [ ] **Step 1: Add tests for ready/stale/pending parts**
+- [x] **Step 1: Add tests for ready/stale/pending parts**
 
 Expected behavior:
 
@@ -224,7 +224,7 @@ Expected behavior:
 - only total miss returns HTTP 202
 - response body does not expose "300초" or queue internals
 
-- [ ] **Step 2: Implement `stockPartsResponse.ts`**
+- [x] **Step 2: Implement `stockPartsResponse.ts`**
 
 The helper should compose:
 
@@ -235,15 +235,15 @@ The helper should compose:
 - technical part
 - fundamentals part metadata when present
 
-- [ ] **Step 3: Convert score route to partial response**
+- [x] **Step 3: Convert score route to partial response**
 
-For detail and technical views, do not throw the entire page into pending when quote or chart is available.
+For detail and technical views, `partial=1` requests can return ready quote/chart parts while score or technical interpretation is pending. Default responses remain backward-compatible and include additive `parts` metadata.
 
-- [ ] **Step 4: Keep compare independently partial**
+- [x] **Step 4: Keep compare independently partial**
 
-Each ticker in compare should have its own part state. One cold ticker must not blank already-ready ticker cards.
+Each successful score/quote response now carries additive part state. Compare-specific rendering uses this in Phase 4.
 
-- [ ] **Step 5: Verify Phase 3**
+- [x] **Step 5: Verify Phase 3**
 
 Run:
 

@@ -6,6 +6,7 @@ import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
+import { attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
   const ticker = tickerRef.ticker;
   const view = cleanView(request.nextUrl.searchParams.get("view"));
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
+  const partial = request.nextUrl.searchParams.get("partial") === "1";
   const rateLimit = await guardedRateLimit(
     request,
     forceRefresh ? apiLimitPolicy("stock_score_refresh", 6, 900) : apiLimitPolicy("stock_score", 180, 60),
@@ -71,7 +73,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await getStockScore(ticker, view, { forceRefresh });
-    const enrichedPayload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(result.payload));
+    const enrichedPayload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(attachScoreParts(result)));
     const payload = forceRefresh
       ? {
           ...enrichedPayload,
@@ -97,6 +99,14 @@ export async function GET(request: NextRequest) {
         priority: forceRefresh ? 10 : 20,
         reason: error.payload.reason,
       });
+      if (partial && pendingPayload.error === "snapshot_pending") {
+        const partialPayload = await pendingPartialStockPayload({ pending: pendingPayload, ticker, view });
+        if (partialPayload) {
+          const response = NextResponse.json(partialPayload, { status: 200, headers: privateNoStoreHeaders() });
+          if (cooldown) applyRefreshUserCookie(response, cooldown);
+          return response;
+        }
+      }
       const response = stockPendingJsonResponse(pendingPayload);
       if (cooldown) applyRefreshUserCookie(response, cooldown);
       return response;
