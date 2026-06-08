@@ -78,14 +78,25 @@ For Vercel + Supabase production, set the public app runtime to snapshot-only:
 STOCK_DATA_RUNTIME=snapshot
 ```
 
-Then drain quote snapshots through the TypeScript worker and legacy score snapshots through the Python score worker:
+Run an always-on snapshot worker outside Vercel as the primary queue drain. The worker reads Supabase `stock_refresh_jobs`, claims quote/chart lanes independently, and keeps running until the process is stopped:
 
 ```bash
-node --import tsx scripts/publish_stock_snapshots.ts --tickers NVDA,TSLA,KO,MRVL,005930,000660 --drain-queue --kind quote --queue-limit 50 --json
-python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --queue-kind score --json
+npm run snapshots:worker
 ```
 
-The bundled GitHub Actions queue backstop runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by an independent TypeScript job. Score jobs are drained by an independent legacy Python job until the durable Rust/TypeScript score worker owns score snapshot writes, so a quote-side KIS failure cannot block due score or technical jobs in the same workflow run. Python setup/install is skipped unless due score jobs or workflow_dispatch manual tickers exist. Configure these repository secrets:
+Default worker lanes are `quote,chart`. To also drain detail/compare/technical score jobs with the current Python collector fallback, run the worker with explicit fallback enabled:
+
+```bash
+STOCK_SNAPSHOT_ALLOW_SCORE_FALLBACK=1 npm run snapshots:worker -- --lanes quote,chart,score --allow-score-python-fallback
+```
+
+For a one-pass local check:
+
+```bash
+npm run snapshots:worker -- --once --lanes quote,chart --queue-limit 5
+```
+
+The bundled GitHub Actions queue workflow is now a backstop, not the primary drain. Keep it enabled to catch host outages, but user-visible pending time should be governed by the always-on worker cadence. The worker calls `stock_runtime_readiness` before every pass, uses kind-specific claims, and lets quote/chart/score lanes fail independently so a KIS quote issue does not stop due chart or score jobs. Configure these secrets wherever the always-on worker runs:
 
 ```text
 STOCK_API_APP_KEY
@@ -98,8 +109,9 @@ Relevant repository variables:
 
 ```text
 STOCK_SNAPSHOT_QUEUE_LIMIT=50
-STOCK_SNAPSHOT_SLEEP_SECONDS=0.5
-STOCK_LEGACY_SCORE_WORKER_ENABLED=1
+STOCK_SNAPSHOT_WORKER_IDLE_MS=4000
+STOCK_SNAPSHOT_WORKER_LANE_SLEEP_MS=250
+STOCK_SNAPSHOT_ALLOW_SCORE_FALLBACK=1
 MARKET_DATA_SERVICE_URL=https://market-data.internal
 ```
 

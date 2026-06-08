@@ -36,7 +36,7 @@ type PublishSummary = {
   queue_rows: Array<Record<string, unknown>>;
 };
 
-type Options = {
+export type Options = {
   dryRun: boolean;
   json: boolean;
   drainQueue: boolean;

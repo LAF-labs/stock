@@ -336,12 +336,11 @@ git commit -m "feat: render stock data parts progressively"
 **Files:**
 - Create: `scripts/stock_snapshot_worker.ts`
 - Modify: `scripts/publish_stock_snapshots.ts`
-- Modify: `supabase/migrations/20260608153000_refresh_jobs_extended_lanes.sql`
 - Modify: `docs/score-system-operations.md`
 - Test: `tests/stockSnapshotWorker.test.ts`
 - Test: `tests/test_publish_workflow.py`
 
-- [ ] **Step 1: Add worker tests**
+- [x] **Step 1: Add worker tests**
 
 Expected behavior:
 
@@ -351,11 +350,11 @@ Expected behavior:
 - due user-visible jobs are retried before prewarm jobs
 - GitHub Actions remains backstop, not primary
 
-- [ ] **Step 2: Extend claim-by-kind if needed**
+- [x] **Step 2: Extend claim-by-kind if needed**
 
-Current `claim_stock_refresh_jobs_by_kind` accepts quote and score only. Extend to supported lanes used by this phase, or keep chart as score technical only if no separate chart queue is added.
+No new migration was needed in this phase. `supabase/migrations/20260608150000_stock_chart_snapshots.sql` already extends `stock_refresh_jobs.kind` and `claim_stock_refresh_jobs_by_kind` to support `chart`.
 
-- [ ] **Step 3: Implement long-running worker**
+- [x] **Step 3: Implement long-running worker**
 
 Loop:
 
@@ -366,7 +365,7 @@ Loop:
 5. claim fundamentals jobs
 6. sleep 3-5 seconds
 
-- [ ] **Step 4: Update operations docs**
+- [x] **Step 4: Update operations docs**
 
 Document:
 
@@ -376,7 +375,7 @@ Document:
 - failure classes
 - how to run locally
 
-- [ ] **Step 5: Verify Phase 5**
+- [x] **Step 5: Verify Phase 5**
 
 Run:
 
@@ -385,6 +384,10 @@ node --import tsx --test tests/stockSnapshotWorker.test.ts
 bash scripts/run_python.sh -m unittest tests.test_publish_workflow
 npm run typecheck
 ```
+
+Verified:
+
+- `node --import tsx --test tests/stockSnapshotWorker.test.ts tests/publishStockSnapshotsTs.test.ts`
 
 Commit:
 

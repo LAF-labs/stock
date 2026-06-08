@@ -21,6 +21,7 @@
     "snapshots:drain": "npm run snapshots:drain:quote",
     "snapshots:drain:quote": "node --import tsx scripts/publish_stock_snapshots.ts --drain-queue --kind quote --json",
     "snapshots:drain:score-legacy": "bash scripts/run_python.sh scripts/publish_stock_snapshots.py --drain-queue --queue-kind score --json",
+    "snapshots:worker": "node --import tsx scripts/stock_snapshot_worker.ts --json",
     "supabase:readiness": "node --import tsx scripts/supabase_runtime_readiness.ts --json",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "test:python": "bash scripts/run_python.sh -m unittest discover tests",
