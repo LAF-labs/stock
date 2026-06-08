@@ -4,6 +4,7 @@ WORKDIR /app/services/market-data
 
 COPY services/market-data/Cargo.toml services/market-data/Cargo.lock ./
 COPY services/market-data/src ./src
+COPY shared /app/shared
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim AS market-data

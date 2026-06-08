@@ -372,7 +372,7 @@ export async function run(options: Options): Promise<PublishSummary> {
   }
 
   return {
-    ok: !rows.some(hasErrors) && !queueRows.some(hasErrors),
+    ok: !rows.some(rowHasBlockingErrors) && !queueRows.some(hasErrors),
     dry_run: options.dryRun,
     mode: options.mode,
     tickers: options.tickers.length,
@@ -468,6 +468,15 @@ function scoreViewValue(value: unknown): ScoreView | undefined {
 
 function hasErrors(row: Record<string, unknown>): boolean {
   return Array.isArray(row.errors) && row.errors.length > 0;
+}
+
+export function rowHasBlockingErrors(row: Record<string, unknown>): boolean {
+  const errors = Array.isArray(row.errors) ? row.errors : [];
+  if (!errors.length) return false;
+  return errors.some((error) => {
+    const message = typeof error === "object" && error !== null && "error" in error ? String((error as { error?: unknown }).error || "") : "";
+    return !message.startsWith("quote_refresh_not_performed:");
+  });
 }
 
 function publicError(error: unknown): string {

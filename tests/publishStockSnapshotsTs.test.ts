@@ -10,6 +10,7 @@ import {
   permanentRefreshFailure,
   publishQueueJob,
   retryAfterSeconds,
+  rowHasBlockingErrors,
   upsertChartSnapshot,
   run,
   upsertQuoteSnapshot,
@@ -159,6 +160,25 @@ test("TypeScript snapshot worker dry-runs quote tickers without provider calls",
   assert.equal(payload.tickers, 1);
   assert.equal(payload.rows[0].quote, "dry_run");
   assert.equal(calls, 0);
+});
+
+test("TypeScript snapshot worker does not fail optional warm tickers already being refreshed", () => {
+  assert.equal(
+    rowHasBlockingErrors({
+      ticker: "US:NVDA",
+      quote: "error",
+      errors: [{ kind: "quote", error: "quote_refresh_not_performed:US:NVDA" }],
+    }),
+    false
+  );
+  assert.equal(
+    rowHasBlockingErrors({
+      ticker: "US:NVDA",
+      quote: "error",
+      errors: [{ kind: "quote", error: "KIS HTTP 500" }],
+    }),
+    true
+  );
 });
 
 test("TypeScript snapshot worker upserts quote snapshots with serving columns", async () => {
