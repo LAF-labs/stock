@@ -11,6 +11,35 @@ type MarketDataServiceResponse = {
   server_cache?: unknown;
 };
 
+export type MarketDataServiceFeature = "quote" | "score";
+
+export type MarketDataServiceFallbackReason =
+  | "service_disabled"
+  | "feature_disabled"
+  | "config_missing"
+  | "localhost_blocked"
+  | "technical_score_unsupported"
+  | "timeout"
+  | "network_error"
+  | "http_error"
+  | "invalid_json"
+  | "invalid_response"
+  | "invalid_payload"
+  | "queued"
+  | "stale_score_model";
+
+export type MarketDataServiceFailure = {
+  ok: false;
+  feature: MarketDataServiceFeature;
+  reason: MarketDataServiceFallbackReason;
+  ticker?: string;
+  view?: ScoreView;
+  status?: number;
+  forceRefresh: boolean;
+};
+
+export type MarketDataServiceAttempt<T> = { ok: true; result: T } | MarketDataServiceFailure;
+
 export type MarketDataServiceConfig = {
   url: string;
   token: string;
@@ -18,21 +47,22 @@ export type MarketDataServiceConfig = {
 };
 
 export function marketDataServiceConfig(): MarketDataServiceConfig | undefined {
-  if (process.env.MARKET_DATA_SERVICE_ENABLED === "0") return undefined;
-  const url = process.env.MARKET_DATA_SERVICE_URL?.trim().replace(/\/$/, "");
-  const token = process.env.MARKET_DATA_INTERNAL_TOKEN?.trim();
-  if (!url || !token) return undefined;
-  if (process.env.VERCEL === "1" && isLocalServiceUrl(url) && process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL !== "1") {
-    return undefined;
-  }
-  return {
-    url,
-    token,
-    timeoutMs: numericEnv("MARKET_DATA_SERVICE_TIMEOUT_MS", 1_500),
-  };
+  const resolved = resolveMarketDataServiceConfig();
+  return resolved.ok ? resolved.config : undefined;
 }
 
-function marketDataServiceFeatureEnabled(feature: "quote" | "score"): boolean {
+function resolveMarketDataServiceConfig(): { ok: true; config: MarketDataServiceConfig } | { ok: false; reason: "service_disabled" | "config_missing" | "localhost_blocked" } {
+  if (process.env.MARKET_DATA_SERVICE_ENABLED === "0") return { ok: false, reason: "service_disabled" };
+  const url = process.env.MARKET_DATA_SERVICE_URL?.trim().replace(/\/$/, "");
+  const token = process.env.MARKET_DATA_INTERNAL_TOKEN?.trim();
+  if (!url || !token) return { ok: false, reason: "config_missing" };
+  if (process.env.VERCEL === "1" && isLocalServiceUrl(url) && process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL !== "1") {
+    return { ok: false, reason: "localhost_blocked" };
+  }
+  return { ok: true, config: { url, token, timeoutMs: numericEnv("MARKET_DATA_SERVICE_TIMEOUT_MS", 1_500) } };
+}
+
+function marketDataServiceFeatureEnabled(feature: MarketDataServiceFeature): boolean {
   if (feature === "quote") return process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE !== "0";
   return process.env.MARKET_DATA_SERVICE_ENABLE_SCORE === "1";
 }
@@ -50,18 +80,32 @@ export async function getMarketDataServiceQuote(
   tickerRef: string,
   options: { forceRefresh?: boolean } = {}
 ): Promise<StockQuoteResult | undefined> {
-  if (!marketDataServiceFeatureEnabled("quote")) return undefined;
-  const config = marketDataServiceConfig();
-  if (!config) return undefined;
+  const attempt = await getMarketDataServiceQuoteAttempt(tickerRef, options);
+  if (attempt.ok) return attempt.result;
+  logMarketDataServiceFallback(attempt);
+  return undefined;
+}
 
+export async function getMarketDataServiceQuoteAttempt(
+  tickerRef: string,
+  options: { forceRefresh?: boolean } = {}
+): Promise<MarketDataServiceAttempt<StockQuoteResult>> {
   const ticker = parseTickerRef(tickerRef);
+  const setup = marketDataServiceSetup("quote", ticker, undefined, options.forceRefresh);
+  if (!setup.ok) return setup;
+
   const refresh = options.forceRefresh ? "?refresh=1" : "";
-  const response = await callMarketDataService(
-    config,
+  const call = await callMarketDataService(
+    setup.config,
     `/v1/quote/${ticker.market.toLowerCase()}/${encodeURIComponent(ticker.symbol)}${refresh}`
   );
-  if (!response || response.ok !== true || !isRecord(response.data)) return undefined;
-  return adaptQuoteResponse(ticker, response.data, response.server_cache);
+  if (!call.ok) return serviceFailure("quote", ticker, undefined, call.reason, options.forceRefresh, call.status);
+  if (call.response.ok !== true || !isRecord(call.response.data)) {
+    return serviceFailure("quote", ticker, undefined, "invalid_response", options.forceRefresh);
+  }
+
+  const result = adaptQuoteResponse(ticker, call.response.data, call.response.server_cache);
+  return result ? { ok: true, result } : serviceFailure("quote", ticker, undefined, "invalid_payload", options.forceRefresh);
 }
 
 export async function getMarketDataServiceScore(
@@ -69,27 +113,53 @@ export async function getMarketDataServiceScore(
   view: ScoreView,
   options: { forceRefresh?: boolean } = {}
 ): Promise<StockScoreResult | undefined> {
-  if (!marketDataServiceFeatureEnabled("score")) return undefined;
-  const config = marketDataServiceConfig();
-  if (!config) return undefined;
+  const attempt = await getMarketDataServiceScoreAttempt(tickerRef, view, options);
+  if (attempt.ok) return attempt.result;
+  logMarketDataServiceFallback(attempt);
+  return undefined;
+}
 
+export async function getMarketDataServiceScoreAttempt(
+  tickerRef: string,
+  view: ScoreView,
+  options: { forceRefresh?: boolean } = {}
+): Promise<MarketDataServiceAttempt<StockScoreResult>> {
   const ticker = parseTickerRef(tickerRef);
+  if (!marketDataServiceFeatureEnabled("score")) {
+    return serviceFailure("score", ticker, view, "feature_disabled", options.forceRefresh);
+  }
+  if (view === "technical") {
+    return serviceFailure("score", ticker, view, "technical_score_unsupported", options.forceRefresh);
+  }
+  const setup = marketDataServiceSetup("score", ticker, view, options.forceRefresh);
+  if (!setup.ok) return setup;
+
   const query = new URLSearchParams({ view });
   if (options.forceRefresh) query.set("refresh", "1");
-  const response = await callMarketDataService(
-    config,
+  const call = await callMarketDataService(
+    setup.config,
     `/v1/score/${ticker.market.toLowerCase()}/${encodeURIComponent(ticker.symbol)}?${query}`
   );
-  if (!response || response.ok !== true || !isRecord(response.data)) return undefined;
-  if (typeof response.data.score !== "number" || !Number.isFinite(response.data.score)) return undefined;
-  if (!isCurrentScoreModelPayload(response.data)) return undefined;
-  return adaptScoreResponse(ticker, view, response.data as StockPayload, response.server_cache);
+  if (!call.ok) return serviceFailure("score", ticker, view, call.reason, options.forceRefresh, call.status);
+  if (call.response.ok !== true || !isRecord(call.response.data)) {
+    return serviceFailure("score", ticker, view, "invalid_response", options.forceRefresh);
+  }
+  if (stringField(call.response.data, "status") === "queued") {
+    return serviceFailure("score", ticker, view, "queued", options.forceRefresh);
+  }
+  if (typeof call.response.data.score !== "number" || !Number.isFinite(call.response.data.score)) {
+    return serviceFailure("score", ticker, view, "invalid_payload", options.forceRefresh);
+  }
+  if (!isCurrentScoreModelPayload(call.response.data)) {
+    return serviceFailure("score", ticker, view, "stale_score_model", options.forceRefresh);
+  }
+  return { ok: true, result: adaptScoreResponse(ticker, view, call.response.data as StockPayload, call.response.server_cache) };
 }
 
 async function callMarketDataService(
   config: MarketDataServiceConfig,
   path: string
-): Promise<MarketDataServiceResponse | undefined> {
+): Promise<{ ok: true; response: MarketDataServiceResponse } | { ok: false; reason: MarketDataServiceFallbackReason; status?: number }> {
   try {
     const response = await fetchWithTimeout(
       `${config.url}${path}`,
@@ -102,12 +172,75 @@ async function callMarketDataService(
       },
       config.timeoutMs
     );
-    if (!response.ok) return undefined;
-    const payload = (await response.json()) as unknown;
-    return isRecord(payload) ? (payload as MarketDataServiceResponse) : undefined;
-  } catch {
-    return undefined;
+    if (!response.ok) return { ok: false, reason: "http_error", status: response.status };
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return { ok: false, reason: "invalid_json", status: response.status };
+    }
+    return isRecord(payload) ? { ok: true, response: payload as MarketDataServiceResponse } : { ok: false, reason: "invalid_response", status: response.status };
+  } catch (error) {
+    return { ok: false, reason: isAbortError(error) ? "timeout" : "network_error" };
   }
+}
+
+function marketDataServiceSetup(
+  feature: MarketDataServiceFeature,
+  ticker: ParsedTickerRef,
+  view: ScoreView | undefined,
+  forceRefresh: boolean | undefined
+): { ok: true; config: MarketDataServiceConfig } | MarketDataServiceFailure {
+  if (!marketDataServiceFeatureEnabled(feature)) {
+    return serviceFailure(feature, ticker, view, "feature_disabled", forceRefresh);
+  }
+  const resolved = resolveMarketDataServiceConfig();
+  return resolved.ok ? resolved : serviceFailure(feature, ticker, view, resolved.reason, forceRefresh);
+}
+
+function serviceFailure(
+  feature: MarketDataServiceFeature,
+  ticker: ParsedTickerRef,
+  view: ScoreView | undefined,
+  reason: MarketDataServiceFallbackReason,
+  forceRefresh: boolean | undefined,
+  status?: number
+): MarketDataServiceFailure {
+  return {
+    ok: false,
+    feature,
+    reason,
+    ticker: ticker.ticker,
+    ...(view ? { view } : {}),
+    ...(status === undefined ? {} : { status }),
+    forceRefresh: forceRefresh === true,
+  };
+}
+
+function logMarketDataServiceFallback(failure: MarketDataServiceFailure) {
+  if (quietFallbackReason(failure.reason)) return;
+  console.warn("market_data_service_fallback", {
+    feature: failure.feature,
+    reason: failure.reason,
+    ticker: failure.ticker,
+    ...(failure.view ? { view: failure.view } : {}),
+    ...(failure.status === undefined ? {} : { status: failure.status }),
+    force_refresh: failure.forceRefresh,
+  });
+}
+
+function quietFallbackReason(reason: MarketDataServiceFallbackReason): boolean {
+  return (
+    reason === "service_disabled" ||
+    reason === "feature_disabled" ||
+    reason === "config_missing" ||
+    reason === "localhost_blocked" ||
+    reason === "technical_score_unsupported"
+  );
+}
+
+function isAbortError(error: unknown): boolean {
+  return isRecord(error) && error.name === "AbortError";
 }
 
 function adaptQuoteResponse(

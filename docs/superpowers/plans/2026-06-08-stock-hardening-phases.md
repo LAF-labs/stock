@@ -173,11 +173,11 @@ Goal: Preserve fallback behavior while making service failure classes visible.
 
 Tasks:
 
-- [ ] Replace silent `undefined` market-data call failures with a typed internal result.
-- [ ] Add tests for timeout, HTTP error, invalid JSON, invalid payload, and disabled feature paths.
-- [ ] Skip Rust score calls for `view=technical` until Rust supports that view explicitly.
-- [ ] Add structured fallback logging without exposing tokens or raw provider bodies.
-- [ ] Keep public response contracts unchanged.
+- [x] Replace silent `undefined` market-data call failures with a typed internal result.
+- [x] Add tests for timeout, HTTP error, invalid JSON, invalid payload, and disabled feature paths.
+- [x] Skip Rust score calls for `view=technical` until Rust supports that view explicitly.
+- [x] Add structured fallback logging without exposing tokens or raw provider bodies.
+- [x] Keep public response contracts unchanged.
 
 Verification:
 
@@ -185,6 +185,27 @@ Verification:
 npm test -- tests/marketDataServiceClient.test.ts tests/marketDataContract.test.ts tests/stockCacheSnapshotMode.test.ts
 npm run typecheck
 ```
+
+Actual verification:
+
+```bash
+node --import tsx --test tests/marketDataServiceClient.test.ts
+# pass 15 / fail 0
+
+npm test -- tests/marketDataServiceClient.test.ts tests/marketDataContract.test.ts tests/stockCacheSnapshotMode.test.ts
+# pass 209 / fail 0
+
+npm run typecheck
+# exit 0
+```
+
+Reflection:
+
+- The public compatibility wrappers still return `undefined` to existing cache fallback code, but the internal attempt API now carries classified reasons.
+- Technical score view is skipped before any Rust score call when score service is enabled, keeping the Python technical fast path authoritative for now.
+- Review found that queued score work should not be reported as `invalid_payload`; it now has its own `queued` reason.
+- Review also separated explicit global disable from missing config, which keeps observability useful without making intentional disablement look like an operator mistake.
+- Fallback logging emits only structured fields (`feature`, `reason`, `ticker`, optional `view`/`status`, `force_refresh`) and does not include tokens or provider bodies.
 
 ## Phase 5: Client UX And Request Discipline
 

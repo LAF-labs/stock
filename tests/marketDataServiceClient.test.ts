@@ -1,24 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  getMarketDataServiceQuoteAttempt,
   getMarketDataServiceQuote,
+  getMarketDataServiceScoreAttempt,
   getMarketDataServiceScore,
   marketDataServiceConfig,
 } from "../src/lib/marketDataServiceClient";
 
 const originalFetch = globalThis.fetch;
+const originalWarn = console.warn;
 const originalEnv = {
   MARKET_DATA_SERVICE_URL: process.env.MARKET_DATA_SERVICE_URL,
   MARKET_DATA_INTERNAL_TOKEN: process.env.MARKET_DATA_INTERNAL_TOKEN,
   MARKET_DATA_SERVICE_ENABLED: process.env.MARKET_DATA_SERVICE_ENABLED,
   MARKET_DATA_SERVICE_ENABLE_QUOTE: process.env.MARKET_DATA_SERVICE_ENABLE_QUOTE,
   MARKET_DATA_SERVICE_ENABLE_SCORE: process.env.MARKET_DATA_SERVICE_ENABLE_SCORE,
+  MARKET_DATA_SERVICE_TIMEOUT_MS: process.env.MARKET_DATA_SERVICE_TIMEOUT_MS,
   MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL: process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL,
   VERCEL: process.env.VERCEL,
 };
 
 function restore() {
   globalThis.fetch = originalFetch;
+  console.warn = originalWarn;
   if (originalEnv.MARKET_DATA_SERVICE_URL === undefined) {
     delete process.env.MARKET_DATA_SERVICE_URL;
   } else {
@@ -43,6 +48,11 @@ function restore() {
     delete process.env.MARKET_DATA_SERVICE_ENABLE_SCORE;
   } else {
     process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = originalEnv.MARKET_DATA_SERVICE_ENABLE_SCORE;
+  }
+  if (originalEnv.MARKET_DATA_SERVICE_TIMEOUT_MS === undefined) {
+    delete process.env.MARKET_DATA_SERVICE_TIMEOUT_MS;
+  } else {
+    process.env.MARKET_DATA_SERVICE_TIMEOUT_MS = originalEnv.MARKET_DATA_SERVICE_TIMEOUT_MS;
   }
   if (originalEnv.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL === undefined) {
     delete process.env.MARKET_DATA_ALLOW_LOCALHOST_ON_VERCEL;
@@ -71,6 +81,23 @@ test("market-data service client ignores localhost URLs on Vercel", () => {
   process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
 
   assert.equal(marketDataServiceConfig(), undefined);
+});
+
+test("market-data service global disable is classified without fetch", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  process.env.MARKET_DATA_SERVICE_ENABLED = "0";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return Response.json({});
+  }) as typeof fetch;
+
+  const attempt = await getMarketDataServiceQuoteAttempt("US:KO");
+
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "service_disabled");
+  assert.equal(calls, 0);
 });
 
 test("quote client maps Rust quote response into public payload shape", async () => {
@@ -157,6 +184,10 @@ test("quote client can be disabled independently", async () => {
 
   assert.equal(result, undefined);
   assert.equal(calls, 0);
+
+  const attempt = await getMarketDataServiceQuoteAttempt("US:KO");
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "feature_disabled");
 });
 
 test("score client is opt-in until Rust score has a durable refresh path", async () => {
@@ -178,6 +209,7 @@ test("score client falls back when Rust score is only queued", async () => {
   process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
   process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
   process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = "1";
+  console.warn = (() => undefined) as typeof console.warn;
 
   globalThis.fetch = (async () =>
     new Response(
@@ -190,14 +222,37 @@ test("score client falls back when Rust score is only queued", async () => {
     )) as typeof fetch;
 
   const result = await getMarketDataServiceScore("US:KO", "detail");
+  const attempt = await getMarketDataServiceScoreAttempt("US:KO", "detail");
 
   assert.equal(result, undefined);
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "queued");
+});
+
+test("score client skips technical view before calling Rust score service", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = "1";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  const result = await getMarketDataServiceScore("US:NVDA", "technical");
+  const attempt = await getMarketDataServiceScoreAttempt("US:NVDA", "technical");
+
+  assert.equal(result, undefined);
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "technical_score_unsupported");
+  assert.equal(calls, 0);
 });
 
 test("score client falls back when Rust score model version is stale", async () => {
   process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
   process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
   process.env.MARKET_DATA_SERVICE_ENABLE_SCORE = "1";
+  console.warn = (() => undefined) as typeof console.warn;
 
   globalThis.fetch = (async () =>
     new Response(
@@ -216,6 +271,108 @@ test("score client falls back when Rust score model version is stale", async () 
     )) as typeof fetch;
 
   const result = await getMarketDataServiceScore("US:KO", "detail");
+  const attempt = await getMarketDataServiceScoreAttempt("US:KO", "detail");
 
   assert.equal(result, undefined);
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "stale_score_model");
+});
+
+test("market-data client classifies timeout failures", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  process.env.MARKET_DATA_SERVICE_TIMEOUT_MS = "1";
+
+  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      signal?.addEventListener(
+        "abort",
+        () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        },
+        { once: true }
+      );
+    })) as typeof fetch;
+
+  const attempt = await getMarketDataServiceQuoteAttempt("US:KO");
+
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "timeout");
+});
+
+test("market-data client classifies HTTP errors", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+
+  globalThis.fetch = (async () => new Response("provider body should stay private", { status: 503 })) as typeof fetch;
+
+  const attempt = await getMarketDataServiceQuoteAttempt("US:KO");
+
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) {
+    assert.equal(attempt.reason, "http_error");
+    assert.equal(attempt.status, 503);
+  }
+});
+
+test("market-data client classifies invalid JSON", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+
+  globalThis.fetch = (async () =>
+    new Response("not-json", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+
+  const attempt = await getMarketDataServiceQuoteAttempt("US:KO");
+
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "invalid_json");
+});
+
+test("market-data client classifies invalid quote payloads", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+
+  globalThis.fetch = (async () =>
+    Response.json({
+      ok: true,
+      data: { market: "us", symbol: "KO" },
+      server_cache: { state: "fresh", source: "cache" },
+    })) as typeof fetch;
+
+  const attempt = await getMarketDataServiceQuoteAttempt("US:KO");
+
+  assert.equal(attempt.ok, false);
+  if (!attempt.ok) assert.equal(attempt.reason, "invalid_payload");
+});
+
+test("market-data fallback logging is structured and redacted", async () => {
+  process.env.MARKET_DATA_SERVICE_URL = "http://market-data.internal";
+  process.env.MARKET_DATA_INTERNAL_TOKEN = "internal-token";
+  const logs: unknown[][] = [];
+  console.warn = ((...args: unknown[]) => {
+    logs.push(args);
+  }) as typeof console.warn;
+
+  globalThis.fetch = (async () => new Response("provider body internal-token", { status: 502 })) as typeof fetch;
+
+  const result = await getMarketDataServiceQuote("US:KO");
+
+  assert.equal(result, undefined);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0][0], "market_data_service_fallback");
+  assert.deepEqual(logs[0][1], {
+    feature: "quote",
+    reason: "http_error",
+    ticker: "US:KO",
+    status: 502,
+    force_refresh: false,
+  });
+  assert.equal(JSON.stringify(logs).includes("internal-token"), false);
+  assert.equal(JSON.stringify(logs).includes("provider body"), false);
 });
