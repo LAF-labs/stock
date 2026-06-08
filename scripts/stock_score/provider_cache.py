@@ -16,6 +16,7 @@ from .formatting import as_float, finite_or_none
 from .io_utils import env_value, int_env, one_byte_file_lock
 from .symbols import clean_ticker
 from .yfinance_provider import safe_info
+from .cache_policy import fresh_seconds as policy_fresh_seconds, stale_seconds as policy_stale_seconds
 
 
 YFINANCE_FUNDAMENTAL_CACHE_VERSION = 2
@@ -55,6 +56,43 @@ YFINANCE_FUNDAMENTAL_FIELDS = (
     "averageVolume10days",
 )
 
+FUNDAMENTAL_FIELD_CLASS_POLICIES = {
+    "statement": "fundamentals_statement",
+    "market_ratio": "fundamentals_market_ratio",
+    "analyst": "fundamentals_market_ratio",
+    "liquidity": "fundamentals_market_ratio",
+}
+
+YFINANCE_FUNDAMENTAL_FIELD_CLASSES = {
+    "profitMargins": "statement",
+    "operatingMargins": "statement",
+    "returnOnEquity": "statement",
+    "revenueGrowth": "statement",
+    "earningsGrowth": "statement",
+    "totalRevenue": "statement",
+    "operatingCashflow": "statement",
+    "freeCashflow": "statement",
+    "totalCash": "statement",
+    "totalDebt": "statement",
+    "debtToEquity": "statement",
+    "currentRatio": "statement",
+    "quickRatio": "statement",
+    "grossMargins": "statement",
+    "ebitdaMargins": "statement",
+    "trailingPE": "market_ratio",
+    "forwardPE": "market_ratio",
+    "priceToBook": "market_ratio",
+    "enterpriseToRevenue": "market_ratio",
+    "priceToSalesTrailing12Months": "market_ratio",
+    "targetMeanPrice": "analyst",
+    "targetMedianPrice": "analyst",
+    "numberOfAnalystOpinions": "analyst",
+    "recommendationMean": "analyst",
+    "beta": "liquidity",
+    "averageVolume": "liquidity",
+    "averageVolume10days": "liquidity",
+}
+
 
 def yfinance_fundamental_cache_dir() -> Path:
     configured = env_value("STOCK_FUNDAMENTALS_CACHE_DIR")
@@ -67,11 +105,27 @@ def yfinance_fundamental_cache_path(symbol: str) -> Path:
 
 
 def yfinance_cache_fresh_seconds() -> int:
-    return int_env("STOCK_FUNDAMENTALS_CACHE_SECONDS", 43_200)
+    return int_env("STOCK_FUNDAMENTALS_CACHE_SECONDS", policy_fresh_seconds("fundamentals_market_ratio"))
 
 
 def yfinance_cache_stale_seconds() -> int:
-    return int_env("STOCK_FUNDAMENTALS_STALE_SECONDS", 604_800)
+    return int_env("STOCK_FUNDAMENTALS_STALE_SECONDS", policy_stale_seconds("fundamentals_market_ratio"))
+
+
+def fundamental_field_class(field: str) -> str:
+    return YFINANCE_FUNDAMENTAL_FIELD_CLASSES.get(field, "market_ratio")
+
+
+def fundamental_class_policy_key(field_class: str) -> str:
+    return FUNDAMENTAL_FIELD_CLASS_POLICIES.get(field_class, "fundamentals_market_ratio")
+
+
+def fundamental_class_fresh_seconds(field_class: str) -> int:
+    return policy_fresh_seconds(fundamental_class_policy_key(field_class))
+
+
+def fundamental_class_stale_seconds(field_class: str) -> int:
+    return policy_stale_seconds(fundamental_class_policy_key(field_class))
 
 
 def supabase_read_config() -> tuple[str, str] | None:
@@ -121,18 +175,35 @@ def supabase_cache_state(row: dict[str, Any], now: datetime) -> str | None:
 def fundamental_cache_payload(symbol: str, values: dict[str, Any], now: float | None = None) -> dict[str, Any]:
     timestamp = time.time() if now is None else now
     fetched_at = datetime.fromtimestamp(timestamp, timezone.utc)
-    fresh_expires_at = datetime.fromtimestamp(timestamp + yfinance_cache_fresh_seconds(), timezone.utc)
-    stale_expires_at = datetime.fromtimestamp(timestamp + yfinance_cache_stale_seconds(), timezone.utc)
+    field_classes = {field: fundamental_field_class(field) for field in values.keys()}
+    class_names = sorted(set(field_classes.values()) or {"market_ratio"})
+    class_expires_at = {
+        field_class: datetime.fromtimestamp(timestamp + fundamental_class_fresh_seconds(field_class), timezone.utc).isoformat()
+        for field_class in class_names
+    }
+    class_stale_expires_at = {
+        field_class: datetime.fromtimestamp(timestamp + fundamental_class_stale_seconds(field_class), timezone.utc).isoformat()
+        for field_class in class_names
+    }
+    fresh_expires_at = min(parse_iso_datetime(value) for value in class_expires_at.values())
+    stale_expires_at = max(parse_iso_datetime(value) for value in class_stale_expires_at.values())
+    if fresh_expires_at is None:
+        fresh_expires_at = datetime.fromtimestamp(timestamp + yfinance_cache_fresh_seconds(), timezone.utc)
+    if stale_expires_at is None:
+        stale_expires_at = datetime.fromtimestamp(timestamp + yfinance_cache_stale_seconds(), timezone.utc)
     return {
         "version": YFINANCE_FUNDAMENTAL_CACHE_VERSION,
         "symbol": clean_ticker(symbol),
         "source": YFINANCE_FUNDAMENTAL_SOURCE,
         "fetched_at": timestamp,
         "fetched_at_iso": fetched_at.isoformat(),
-        "expires_at": timestamp + yfinance_cache_fresh_seconds(),
+        "expires_at": fresh_expires_at.timestamp(),
         "expires_at_iso": fresh_expires_at.isoformat(),
-        "stale_expires_at": timestamp + yfinance_cache_stale_seconds(),
+        "stale_expires_at": stale_expires_at.timestamp(),
         "stale_expires_at_iso": stale_expires_at.isoformat(),
+        "field_classes": field_classes,
+        "class_expires_at": class_expires_at,
+        "class_stale_expires_at": class_stale_expires_at,
         "values": values,
     }
 
@@ -178,9 +249,8 @@ def read_supabase_yfinance_fundamental_cache(symbol: str, market: str = "US") ->
     if not isinstance(payload, dict) or payload.get("version") != YFINANCE_FUNDAMENTAL_CACHE_VERSION:
         return None, None, {"source": YFINANCE_FUNDAMENTAL_SOURCE, "store": "supabase", "cache": "miss", "error": "version_mismatch"}
 
-    values = payload.get("values")
-    state = supabase_cache_state(row, datetime.now(timezone.utc))
-    if not isinstance(values, dict) or state is None:
+    values, state = cached_payload_values_and_state(payload, datetime.now(timezone.utc))
+    if not values or state is None or supabase_cache_state(row, datetime.now(timezone.utc)) is None:
         return None, None, {"source": YFINANCE_FUNDAMENTAL_SOURCE, "store": "supabase", "cache": "expired"}
 
     return values, state, {
@@ -409,6 +479,35 @@ def cached_payload_state(cached: dict[str, Any], now: float) -> str | None:
     return None
 
 
+def cached_payload_values_and_state(cached: dict[str, Any], now: datetime) -> tuple[dict[str, Any] | None, str | None]:
+    values = cached.get("values")
+    if not isinstance(values, dict) or cached.get("version") != YFINANCE_FUNDAMENTAL_CACHE_VERSION:
+        return None, None
+
+    field_classes = cached.get("field_classes")
+    class_expires_at = cached.get("class_expires_at")
+    class_stale_expires_at = cached.get("class_stale_expires_at")
+    if not isinstance(field_classes, dict) or not isinstance(class_expires_at, dict) or not isinstance(class_stale_expires_at, dict):
+        state = cached_payload_state(cached, now.timestamp())
+        return (values, state) if state else (None, None)
+
+    kept: dict[str, Any] = {}
+    aggregate_state = "fresh"
+    for field, value in values.items():
+        field_class = str(field_classes.get(field) or fundamental_field_class(field))
+        expires_at = parse_iso_datetime(class_expires_at.get(field_class))
+        stale_expires_at = parse_iso_datetime(class_stale_expires_at.get(field_class))
+        if expires_at and now <= expires_at:
+            kept[field] = value
+        elif stale_expires_at and now <= stale_expires_at:
+            kept[field] = value
+            aggregate_state = "stale"
+
+    if not kept:
+        return None, None
+    return kept, aggregate_state
+
+
 def read_yfinance_fundamental_cache(symbol: str) -> tuple[dict[str, Any] | None, str | None]:
     path = yfinance_fundamental_cache_path(symbol)
     now = time.time()
@@ -418,9 +517,7 @@ def read_yfinance_fundamental_cache(symbol: str) -> tuple[dict[str, Any] | None,
         return None, None
     if not isinstance(cached, dict):
         return None, None
-    state = cached_payload_state(cached, now)
-    values = cached.get("values")
-    return (values if isinstance(values, dict) else None), state
+    return cached_payload_values_and_state(cached, datetime.fromtimestamp(now, timezone.utc))
 
 
 def write_yfinance_fundamental_cache(symbol: str, values: dict[str, Any]) -> None:

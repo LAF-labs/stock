@@ -401,14 +401,13 @@ git commit -m "feat: add always-on stock snapshot worker"
 ## Phase 6: Long-Lived Fundamentals Cache
 
 **Files:**
-- Modify: `supabase/migrations/20260605103000_stock_fundamental_snapshots.sql` or create a forward migration
+- Create: `supabase/migrations/20260608154000_extend_fundamental_snapshot_retention.sql`
 - Modify: `scripts/stock_score/provider_cache.py`
-- Modify: `scripts/fetch_stock_score.py`
 - Modify: `docs/score-system-operations.md`
 - Test: `tests/test_score_helpers.py`
 - Test: `tests/test_fetch_stock_score_technical_fast_path.py`
 
-- [ ] **Step 1: Add tests for split fundamentals cache states**
+- [x] **Step 1: Add tests for split fundamentals cache states**
 
 Expected behavior:
 
@@ -417,16 +416,16 @@ Expected behavior:
 - yfinance fetch remains disabled on user-request workers
 - stale fundamentals lower confidence but do not block score payloads
 
-- [ ] **Step 2: Update Supabase retention**
+- [x] **Step 2: Update Supabase retention**
 
 Current `stock_fundamental_snapshots_retention` caps stale expiry at 30 days. Add a forward migration that supports longer statement retention, either by:
 
 - relaxing the retention check to 180 days, or
 - splitting normalized field-class snapshots into a new table.
 
-Preferred: split field-class metadata first if implementation complexity is acceptable.
+Implemented forward migration relaxing `stock_fundamental_snapshots_retention` to 180 days. Field-class metadata decides which fields are still returned; the row retention is no longer the short-lived market-ratio limit.
 
-- [ ] **Step 3: Update yfinance cache metadata**
+- [x] **Step 3: Update yfinance cache metadata**
 
 Attach field class and cache state to enrichment payloads:
 
@@ -435,7 +434,7 @@ Attach field class and cache state to enrichment payloads:
 - `analyst`
 - `liquidity`
 
-- [ ] **Step 4: Verify Phase 6**
+- [x] **Step 4: Verify Phase 6**
 
 Run:
 
@@ -443,6 +442,10 @@ Run:
 bash scripts/run_python.sh -m unittest tests.test_score_helpers tests.test_fetch_stock_score_technical_fast_path
 npm run typecheck
 ```
+
+Verified:
+
+- `bash scripts/run_python.sh -m unittest tests.test_score_helpers tests.test_fetch_stock_score_technical_fast_path`
 
 Commit:
 

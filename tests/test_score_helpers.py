@@ -1,5 +1,6 @@
 import unittest
 import tempfile
+import json
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -135,6 +136,48 @@ class ScoreHelperTests(unittest.TestCase):
                 self.assertEqual(values, {"forwardPE": 31.2, "beta": 1.1})
                 self.assertEqual(state, "fresh")
                 self.assertTrue(provider_cache.yfinance_fundamental_cache_path("NVDA").exists())
+            finally:
+                os.chdir(original_cwd)
+
+    def test_yfinance_fundamental_cache_splits_statement_and_market_ratio_expiry(self):
+        payload = provider_cache.fundamental_cache_payload(
+            "NVDA",
+            {
+                "totalRevenue": 100,
+                "operatingCashflow": 20,
+                "forwardPE": 31.2,
+                "targetMeanPrice": 140,
+            },
+            now=1_700_000_000,
+        )
+
+        statement_stale = payload["class_stale_expires_at"]["statement"]
+        market_ratio_stale = payload["class_stale_expires_at"]["market_ratio"]
+
+        self.assertGreater(statement_stale, market_ratio_stale)
+        self.assertEqual(payload["field_classes"]["totalRevenue"], "statement")
+        self.assertEqual(payload["field_classes"]["forwardPE"], "market_ratio")
+        self.assertEqual(payload["field_classes"]["targetMeanPrice"], "analyst")
+
+    def test_yfinance_fundamental_cache_keeps_long_lived_statement_fields_only(self):
+        original_cwd = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                payload = provider_cache.fundamental_cache_payload(
+                    "NVDA",
+                    {"totalRevenue": 100, "forwardPE": 31.2},
+                    now=1_700_000_000,
+                )
+                path = provider_cache.yfinance_fundamental_cache_path("NVDA")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                with patch.object(provider_cache.time, "time", return_value=1_700_000_000 + 45 * 24 * 60 * 60):
+                    values, state = provider_cache.read_yfinance_fundamental_cache("NVDA")
+
+                self.assertEqual(values, {"totalRevenue": 100})
+                self.assertEqual(state, "stale")
             finally:
                 os.chdir(original_cwd)
 
