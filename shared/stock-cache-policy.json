@@ -1,0 +1,42 @@
+{
+  "identity": {
+    "fresh_seconds": 2592000,
+    "stale_seconds": 15552000
+  },
+  "quote": {
+    "fresh_seconds": 300,
+    "stale_seconds": 86400
+  },
+  "chart": {
+    "fresh_seconds": 900,
+    "stale_seconds": 2592000
+  },
+  "technical": {
+    "fresh_seconds": 900,
+    "stale_seconds": 604800
+  },
+  "score": {
+    "fresh_seconds": 1800,
+    "stale_seconds": 604800
+  },
+  "fundamentals_statement": {
+    "fresh_seconds": 604800,
+    "stale_seconds": 15552000
+  },
+  "fundamentals_market_ratio": {
+    "fresh_seconds": 86400,
+    "stale_seconds": 2592000
+  },
+  "industry_classification": {
+    "fresh_seconds": 7776000,
+    "stale_seconds": 31536000
+  },
+  "industry_benchmark": {
+    "fresh_seconds": 86400,
+    "stale_seconds": 604800
+  },
+  "judgment": {
+    "fresh_seconds": 86400,
+    "stale_seconds": 604800
+  }
+}

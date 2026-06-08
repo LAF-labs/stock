@@ -1,5 +1,6 @@
 import { fetchWithTimeout, numericEnv, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { QUOTE_CACHE_FRESH_SECONDS } from "@/lib/quoteContract";
+import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
 
 export type MarketCode = "KR" | "US";
 export type MarketSessionState = "open" | "closed" | "holiday" | "unknown";
@@ -55,7 +56,8 @@ export function quoteOpenTtlSeconds(market: MarketCode): number {
 }
 
 export function scoreOpenTtlSeconds(view: "detail" | "compare" | "technical"): number {
-  const base = numericEnv("STOCK_SCORE_CACHE_FRESH_SECONDS", 1_800);
+  const policyDefault = view === "technical" ? stockCachePolicyFreshSeconds("technical") : stockCachePolicyFreshSeconds("score");
+  const base = numericEnv("STOCK_SCORE_CACHE_FRESH_SECONDS", policyDefault);
   const name =
     view === "compare"
       ? "STOCK_SCORE_COMPARE_CACHE_SECONDS"

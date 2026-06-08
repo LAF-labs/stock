@@ -1,4 +1,5 @@
 import quoteContract from "../../shared/quote-contract.json";
+import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 
 type KisMarketDetail = {
   productType: string;
@@ -13,8 +14,8 @@ const US_MARKET_DETAILS: Record<string, KisMarketDetail> = {
 
 export const KIS_DOMESTIC_MARKET_DIV_CODE = quoteContract.kis.domestic.market_div_code;
 export const KIS_DOMESTIC_EXCHANGE_LABEL = quoteContract.kis.domestic.exchange_label;
-export const QUOTE_CACHE_FRESH_SECONDS = quoteContract.quote_cache.fresh_seconds;
-export const QUOTE_CACHE_STALE_SECONDS = quoteContract.quote_cache.stale_seconds;
+export const QUOTE_CACHE_FRESH_SECONDS = stockCachePolicyFreshSeconds("quote");
+export const QUOTE_CACHE_STALE_SECONDS = stockCachePolicyStaleSeconds("quote");
 
 export const KIS_US_MARKETS = quoteContract.kis.us_exchange_order.map((excd) => ({
   excd,

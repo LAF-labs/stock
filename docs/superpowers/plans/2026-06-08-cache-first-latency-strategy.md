@@ -58,7 +58,7 @@
 - Test: `tests/stockCachePolicy.test.ts`
 - Test: `tests/test_cache_policy.py`
 
-- [ ] **Step 1: Add failing TypeScript policy tests**
+- [x] **Step 1: Add failing TypeScript policy tests**
 
 Run:
 
@@ -76,7 +76,7 @@ Test cases:
 - fundamentals financial-statement stale is longer than ratios stale
 - unknown policy keys throw a clear error
 
-- [ ] **Step 2: Add failing Python policy tests**
+- [x] **Step 2: Add failing Python policy tests**
 
 Run:
 
@@ -86,7 +86,7 @@ bash scripts/run_python.sh -m unittest tests.test_cache_policy
 
 Expected before implementation: FAIL because `scripts.stock_score.cache_policy` does not exist.
 
-- [ ] **Step 3: Implement shared policy readers**
+- [x] **Step 3: Implement shared policy readers**
 
 Create `shared/stock-cache-policy.json` with concrete defaults:
 
@@ -105,7 +105,7 @@ Create `shared/stock-cache-policy.json` with concrete defaults:
 }
 ```
 
-- [ ] **Step 4: Wire existing quote/score TTL helpers to the policy**
+- [x] **Step 4: Wire existing quote/score TTL helpers to the policy**
 
 Keep environment overrides working:
 
@@ -116,7 +116,7 @@ Keep environment overrides working:
 - `STOCK_SCORE_TECHNICAL_CACHE_SECONDS`
 - `STOCK_SCORE_CACHE_STALE_SECONDS`
 
-- [ ] **Step 5: Verify Phase 1**
+- [x] **Step 5: Verify Phase 1**
 
 Run:
 

@@ -5,6 +5,7 @@ import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
+import { stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
 
@@ -59,8 +60,9 @@ function freshTtlSeconds(view: ScoreView): number {
   return scoreOpenTtlSeconds(view);
 }
 
-function staleTtlSeconds(): number {
-  return numericEnv("STOCK_SCORE_CACHE_STALE_SECONDS", 86_400);
+function staleTtlSeconds(view: ScoreView): number {
+  const policyDefault = view === "technical" ? stockCachePolicyStaleSeconds("technical") : stockCachePolicyStaleSeconds("score");
+  return numericEnv("STOCK_SCORE_CACHE_STALE_SECONDS", policyDefault);
 }
 
 export function cleanView(value: string | null): ScoreView {
@@ -100,7 +102,7 @@ function isFresh(snapshot: StoredSnapshot, nowMs: number): boolean {
 function isServeableStale(snapshot: StoredSnapshot, nowMs: number): boolean {
   if (!isCurrentScoreSnapshot(snapshot)) return false;
   const fetchedAt = Date.parse(snapshot.fetchedAt);
-  return Number.isFinite(fetchedAt) && fetchedAt + staleTtlSeconds() * 1000 > nowMs;
+  return Number.isFinite(fetchedAt) && fetchedAt + staleTtlSeconds(snapshot.view) * 1000 > nowMs;
 }
 
 function isCurrentScoreSnapshot(snapshot: StoredSnapshot): boolean {
