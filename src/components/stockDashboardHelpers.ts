@@ -199,6 +199,15 @@ export type UsableChartPoint = ChartSeriesPoint & { close: number; date: string 
 
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+export function dashboardTickerFromSearchParam(value: string | null): string | undefined {
+  const ticker = value?.trim().toUpperCase();
+  return ticker || undefined;
+}
+
+export function dashboardInputValue(ticker: string | undefined): string {
+  return ticker ? displayTickerInput(ticker) : "";
+}
+
 export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {
   const byDate = new Map<string, UsableChartPoint>();
   for (const point of points || []) {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
@@ -9,7 +9,8 @@ import StockHeader, { type JudgmentState, type QuoteRefreshState, type QuoteStat
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
-  displayTickerInput,
+  dashboardInputValue,
+  dashboardTickerFromSearchParam,
   refreshCooldownMessage,
   snapshotPendingFromPayload,
   stringFromUnknown,
@@ -52,24 +53,37 @@ function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse
 export default function StockDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tickerParam = (searchParams.get("ticker") || "US:KO").trim().toUpperCase();
+  const tickerParam = dashboardTickerFromSearchParam(searchParams.get("ticker"));
 
-  const [tickerInput, setTickerInput] = useState(displayTickerInput(tickerParam));
+  const [tickerInput, setTickerInput] = useState(dashboardInputValue(tickerParam));
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
   const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
   const [judgmentState, setJudgmentState] = useState<JudgmentState>({ status: "idle" });
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [reloadVersion, setReloadVersion] = useState(0);
+  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const currentTickerRef = useRef(tickerParam);
   const quoteRefreshControllerRef = useRef<AbortController | null>(null);
+  const lastScrollYRef = useRef(0);
+  const isSearchCollapsedRef = useRef(false);
+
+  function setSearchCollapsed(nextCollapsed: boolean) {
+    if (isSearchCollapsedRef.current === nextCollapsed) return;
+    isSearchCollapsedRef.current = nextCollapsed;
+    setIsSearchCollapsed(nextCollapsed);
+  }
 
   useEffect(() => {
     currentTickerRef.current = tickerParam;
     quoteRefreshControllerRef.current?.abort();
-    setTickerInput(displayTickerInput(tickerParam));
+    setTickerInput(dashboardInputValue(tickerParam));
+    if (!tickerParam) {
+      setState({ status: "idle" });
+      return;
+    }
     const controller = new AbortController();
-    const query = new URLSearchParams({ ticker: tickerParam || "US:KO" });
+    const query = new URLSearchParams({ ticker: tickerParam });
 
     setState({ status: "loading" });
     fetch(`/api/score?${query.toString()}`, {
@@ -102,14 +116,49 @@ export default function StockDashboard() {
   }, [tickerParam, reloadVersion]);
 
   useEffect(() => {
+    let ticking = false;
+    lastScrollYRef.current = window.scrollY;
+
+    function updateSearchChrome() {
+      const scrollY = window.scrollY;
+      const delta = scrollY - lastScrollYRef.current;
+
+      if (scrollY <= 16) {
+        setSearchCollapsed(false);
+      } else if (delta > 8 && scrollY > 92) {
+        setSearchCollapsed(true);
+      } else if (delta < -24) {
+        setSearchCollapsed(false);
+      }
+
+      lastScrollYRef.current = scrollY;
+      ticking = false;
+    }
+
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(updateSearchChrome);
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
     if (state.status !== "success") return;
     const identity = stockHeaderIdentity(state.data);
-    setTickerInput(identity.primary || displayTickerInput(tickerParam));
+    setTickerInput(identity.primary || dashboardInputValue(tickerParam));
   }, [state, tickerParam]);
 
   useEffect(() => {
+    if (!tickerParam) {
+      setQuoteState({ status: "idle" });
+      setQuoteRefreshState({ status: "idle" });
+      return;
+    }
     const controller = new AbortController();
-    const query = new URLSearchParams({ ticker: tickerParam || "US:KO" });
+    const query = new URLSearchParams({ ticker: tickerParam });
 
     setQuoteState({ status: "loading" });
     setQuoteRefreshState({ status: "idle" });
@@ -214,17 +263,17 @@ export default function StockDashboard() {
     setReloadVersion((version) => version + 1);
   }
 
-  const scorePending = state.status === "pending" ? state.pending : undefined;
-  const quotePending = quoteState.status === "pending" ? quoteState.pending : undefined;
+  const scorePending = tickerParam && state.status === "pending" ? state.pending : undefined;
+  const quotePending = tickerParam && quoteState.status === "pending" ? quoteState.pending : undefined;
   usePendingRetry({ pending: scorePending, retryKey: `score:${tickerParam}`, onRetry: retryLoad });
   usePendingRetry({ pending: quotePending, retryKey: `quote:${tickerParam}`, onRetry: retryLoad });
 
-  const data = state.status === "success" ? state.data : undefined;
+  const data = tickerParam && state.status === "success" ? state.data : undefined;
   const visibleDetailSections = DETAIL_SECTIONS;
   const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
-  const compareHref = data ? compareHrefForStock(data, quoteData, tickerParam) : "";
+  const compareHref = data && tickerParam ? compareHrefForStock(data, quoteData, tickerParam) : "";
   const pageIdentity = data ? stockHeaderIdentity(data, quoteData) : undefined;
-  const pageTitle = `${pageIdentity?.primary || displayTickerInput(tickerParam || "US:KO")} 주식 상세`;
+  const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
 
   useEffect(() => {
     if (!data || !visibleDetailSections.length) return;
@@ -268,9 +317,10 @@ export default function StockDashboard() {
   }
 
   function refreshQuote() {
+    if (!tickerParam) return;
     if (quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending") return;
 
-    const requestedTicker = tickerParam || "US:KO";
+    const requestedTicker = tickerParam;
     const controller = new AbortController();
     quoteRefreshControllerRef.current?.abort();
     quoteRefreshControllerRef.current = controller;
@@ -325,25 +375,30 @@ export default function StockDashboard() {
       });
   }
 
+  const searchSectionClassName = ["stock-search", isSearchCollapsed ? "search-collapsed" : ""].filter(Boolean).join(" ");
+
   return (
     <main className="stock-app stock-detail-app">
       <h1 className="sr-only">{pageTitle}</h1>
-      <section className="stock-search">
+      <section className={searchSectionClassName}>
         <SymbolAutocomplete
           id="ticker"
           value={tickerInput}
           onValueChange={setTickerInput}
           onSelect={selectSymbol}
           placeholder="종목명이나 티커 검색"
-          buttonLabel="검색"
           label="국내·미국 주식 검색"
           className="stock-search-form"
+          variant="floating"
+          isCollapsed={isSearchCollapsed}
+          onExpandRequest={() => setSearchCollapsed(false)}
         />
       </section>
 
-      {state.status === "loading" && <StockSkeleton />}
-      {state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={retryLoad} />}
-      {state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
+      {tickerParam && state.status === "loading" && <StockSkeleton />}
+      {tickerParam && state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={retryLoad} />}
+      {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
+      {!tickerParam && <DashboardLandingHero />}
 
       {data && (
         <>
@@ -393,6 +448,182 @@ export default function StockDashboard() {
         </>
       )}
     </main>
+  );
+}
+
+function DashboardLandingHero() {
+  return (
+    <section className="dashboard-landing" aria-label="주식 점수 검색 시작">
+      <article className="landing-story-section dashboard-landing-hero">
+        <div className="landing-copy">
+          <span>AI Stock Score</span>
+          <h2>종목만 입력하세요</h2>
+          <p>검색 한 번으로 투자 후보를 압축합니다.</p>
+          <div className="landing-proof-list">
+            <span>한글 종목명·해외 티커 모두 검색</span>
+            <span>품질 점수와 기회 점수를 동시에 확인</span>
+            <span>관심 종목은 상세 분석으로 바로 연결</span>
+          </div>
+        </div>
+
+        <div className="landing-visual landing-stock-visual" aria-hidden="true">
+          <div className="landing-grid" />
+          <div className="landing-scanline" />
+          <div className="landing-score-stack">
+            <div className="landing-score-card">
+              <span>QUALITY</span>
+              <strong>82</strong>
+            </div>
+            <div className="landing-score-card secondary">
+              <span>OPPORTUNITY</span>
+              <strong>74</strong>
+            </div>
+          </div>
+          <div className="landing-stock-loop">
+            <div className="landing-loop-window">
+              <div className="landing-loop-track">
+                <div className="landing-loop-group">
+                  <span>NVDA</span>
+                  <span>애플</span>
+                  <span>TSLA</span>
+                  <span>엔비디아</span>
+                  <span>삼성전자</span>
+                  <span>SK하이닉스</span>
+                  <span>현대차</span>
+                  <span>네이버</span>
+                </div>
+                <div className="landing-loop-group" aria-hidden="true">
+                  <span>NVDA</span>
+                  <span>애플</span>
+                  <span>TSLA</span>
+                  <span>엔비디아</span>
+                  <span>삼성전자</span>
+                  <span>SK하이닉스</span>
+                  <span>현대차</span>
+                  <span>네이버</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="landing-console">
+            <span>signal.ready</span>
+            <i />
+            <span>score.synced</span>
+          </div>
+        </div>
+      </article>
+
+      <article className="landing-story-section landing-story-info">
+        <div className="landing-copy">
+          <span>Company Brief</span>
+          <h2>종목 정보 확인</h2>
+          <p>처음 보는 회사도 핵심 맥락부터 잡습니다.</p>
+          <div className="landing-proof-list">
+            <span>시총·섹터·재무를 한 화면에서 정리</span>
+            <span>뉴스와 밸류에이션 부담을 함께 확인</span>
+            <span>국내·해외 종목 표기를 읽기 쉽게 변환</span>
+          </div>
+        </div>
+
+        <div className="landing-visual landing-info-visual" aria-hidden="true">
+          <div className="landing-grid" />
+          <div className="landing-info-orbit">
+            <span>섹터</span>
+            <span>시총</span>
+            <span>재무</span>
+          </div>
+          <div className="landing-info-panel">
+            <span>AI 반도체</span>
+            <strong>상위 1%</strong>
+            <i />
+          </div>
+          <div className="landing-info-list">
+            <span>
+              매출
+              <b>+18%</b>
+            </span>
+            <span>
+              마진
+              <b>개선</b>
+            </span>
+            <span>
+              뉴스
+              <b>확인</b>
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <article className="landing-story-section landing-story-technical">
+        <div className="landing-copy">
+          <span>Technical Flow</span>
+          <h2>기술적 분석</h2>
+          <p>가격 흐름을 점수와 분리해서 봅니다.</p>
+          <div className="landing-proof-list">
+            <span>추세·변동성·신호를 따로 해석</span>
+            <span>차트 패턴과 단기 리스크를 구분</span>
+            <span>기술적 분석 화면으로 바로 이동</span>
+          </div>
+        </div>
+
+        <div className="landing-visual landing-technical-visual" aria-hidden="true">
+          <div className="landing-grid" />
+          <div className="landing-chart-stage">
+            <div className="landing-chart-bars">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="landing-chart-line">
+              <i />
+            </div>
+          </div>
+          <div className="landing-signal-row">
+            <span>추세</span>
+            <b>상승</b>
+            <span>변동성</span>
+            <b>중립</b>
+          </div>
+        </div>
+      </article>
+
+      <article className="landing-story-section landing-story-compare">
+        <div className="landing-copy">
+          <span>Compare Mode</span>
+          <h2>종목별 비교</h2>
+          <p>고민 중인 종목을 같은 기준에 올립니다.</p>
+          <div className="landing-proof-list">
+            <span>후보를 나란히 비교</span>
+            <span>점수·재무·밸류에이션을 한 번에 대조</span>
+            <span>가장 강한 지표를 자동으로 강조</span>
+          </div>
+        </div>
+
+        <div className="landing-visual landing-compare-visual" aria-hidden="true">
+          <div className="landing-grid" />
+          <div className="landing-compare-board">
+            <div className="landing-compare-card" style={{ "--landing-line": "86%" } as CSSProperties}>
+              <span>AAPL</span>
+              <strong>86</strong>
+              <i />
+            </div>
+            <div className="landing-compare-card" style={{ "--landing-line": "78%" } as CSSProperties}>
+              <span>삼성전자</span>
+              <strong>78</strong>
+              <i />
+            </div>
+            <div className="landing-compare-card" style={{ "--landing-line": "72%" } as CSSProperties}>
+              <span>MSFT</span>
+              <strong>72</strong>
+              <i />
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
   );
 }
 

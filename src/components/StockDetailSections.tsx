@@ -61,7 +61,7 @@ export function ChartStory({
   if (usable.length < 2) {
     return <EmptyCard title="가격 흐름" body="표시할 차트 데이터가 없어요." />;
   }
-  const oneYearPoints = usable.slice(-260);
+  const chartPoints = usable;
 
   return (
     <section className="chart-story">
@@ -80,9 +80,9 @@ export function ChartStory({
         </div>
       </div>
       <p id={summaryId} className="sr-only">
-        {chartSummary(oneYearPoints)}
+        {chartSummary(chartPoints)}
       </p>
-      <LazyTradingPriceChart points={oneYearPoints} mode={chartMode} describedBy={summaryId} />
+      <LazyTradingPriceChart points={chartPoints} mode={chartMode} describedBy={summaryId} />
       <div className="pattern-chips">
         {(patterns || []).slice(0, 3).map((pattern) => (
           <article key={pattern.name}>

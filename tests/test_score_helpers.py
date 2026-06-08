@@ -1,6 +1,7 @@
 import unittest
 import tempfile
 import os
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -294,16 +295,19 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIsNone(rows[0]["change_pct"])
         self.assertAlmostEqual(rows[1]["change_pct"], 12 / 11 - 1)
 
-    def test_timeseries_helpers_keep_roughly_one_trading_year(self):
+    def test_timeseries_helpers_keep_current_calendar_year_window(self):
         history = pd.DataFrame(
-            [{"Open": index, "High": index + 1, "Low": index - 1, "Close": index, "Volume": "1000"} for index in range(1, 301)],
-            index=pd.date_range("2025-01-01", periods=300, freq="B"),
+            [{"Open": index, "High": index + 1, "Low": index - 1, "Close": index, "Volume": "1000"} for index in range(1, 381)],
+            index=pd.date_range("2025-01-01", periods=380, freq="B"),
         )
 
         rows = timeseries.build_chart_series(history, "USD", None)
+        latest = history.index[-1].date()
+        expected_start = next(index.date().isoformat() for index in history.index if index.date() >= latest - timedelta(days=365))
 
-        self.assertEqual(len(rows), 260)
-        self.assertEqual(rows[0]["date"], history.tail(260).index[0].date().isoformat())
+        self.assertEqual(rows[0]["date"], expected_start)
+        self.assertEqual(rows[-1]["date"], latest.isoformat())
+        self.assertLess(len(rows), len(history))
 
     def test_timeseries_helpers_convert_yfinance_domestic_history(self):
         history = pd.DataFrame(
@@ -313,12 +317,42 @@ class ScoreHelperTests(unittest.TestCase):
 
         provider_rows = timeseries.yfinance_domestic_daily_rows(history)
         chart_rows = timeseries.kis_domestic_chart_series(provider_rows)
+        latest = history.index[-1].date()
+        expected_start = next(index.date().isoformat() for index in history.index if index.date() >= latest - timedelta(days=365))
 
         self.assertEqual(len(provider_rows), 300)
         self.assertEqual(provider_rows[0]["stck_bsop_date"], "20250101")
         self.assertEqual(provider_rows[-1]["stck_clpr"], 300)
-        self.assertEqual(len(chart_rows), 260)
-        self.assertEqual(chart_rows[0]["date"], history.tail(260).index[0].date().isoformat())
+        self.assertEqual(chart_rows[0]["date"], expected_start)
+        self.assertEqual(chart_rows[-1]["date"], latest.isoformat())
+
+    def test_kis_us_daily_rows_pages_back_to_cover_one_calendar_year(self):
+        calls = []
+
+        def fake_kis_get(_path, _tr_id, params):
+            calls.append(params)
+            if not params["BYMD"]:
+                return {
+                    "output2": [
+                        {"xymd": "20260607", "clos": "110"},
+                        {"xymd": "20260606", "clos": "109"},
+                        {"xymd": "20260103", "clos": "90"},
+                    ]
+                }
+            if params["BYMD"] == "20260102":
+                return {
+                    "output2": [
+                        {"xymd": "20251231", "clos": "88"},
+                        {"xymd": "20250609", "clos": "70"},
+                    ]
+                }
+            return {"output2": []}
+
+        with patch.object(kis_client, "kis_get", side_effect=fake_kis_get):
+            rows = kis_client.kis_daily_rows("NAS", "AAPL", as_of=date(2026, 6, 8))
+
+        self.assertEqual([call["BYMD"] for call in calls], ["", "20260102"])
+        self.assertEqual([row["xymd"] for row in rows], ["20250609", "20251231", "20260103", "20260606", "20260607"])
 
     def test_kis_chart_helpers_preserve_provider_date_and_change_rules(self):
         rows = timeseries.kis_chart_series(

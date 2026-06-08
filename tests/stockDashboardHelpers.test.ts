@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   chartSummary,
   chartPointPriceLabel,
+  dashboardInputValue,
+  dashboardTickerFromSearchParam,
   dailyChangeText,
   dailyToneClass,
   directInputSymbolItem,
@@ -27,6 +29,19 @@ import {
 } from "../src/components/stockDashboardHelpers";
 import { compactRuleJudgmentStock, tickerFromRuleJudgmentStock, validRuleJudgmentStock } from "../src/lib/ruleBasedJudgment";
 import type { StockQuoteResponse, StockScoreResponse } from "../src/lib/types";
+
+test("dashboard starts without a default ticker when the URL has no ticker", () => {
+  assert.equal(dashboardTickerFromSearchParam(null), undefined);
+  assert.equal(dashboardTickerFromSearchParam(""), undefined);
+  assert.equal(dashboardTickerFromSearchParam("   "), undefined);
+  assert.equal(dashboardInputValue(undefined), "");
+});
+
+test("dashboard preserves explicit ticker params instead of normalizing to the old landing default", () => {
+  assert.equal(dashboardTickerFromSearchParam("us:nvda"), "US:NVDA");
+  assert.equal(dashboardTickerFromSearchParam("  kr:005930  "), "KR:005930");
+  assert.equal(dashboardInputValue("US:NVDA"), "NVDA");
+});
 
 test("dashboard pending payload maps queue state into user-facing retry guidance", () => {
   const pending = snapshotPendingFromPayload(

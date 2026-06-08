@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,9 @@ KIS_US_MARKETS = [
 KIS_LAST_REQUEST_AT = 0.0
 KIS_REQUEST_INTERVAL = 1.05
 KIS_DOMESTIC_SCORE_MARKET_DIV_CODE = "J"
+KIS_DAILY_HISTORY_CALENDAR_DAYS = 365
+KIS_DAILY_HISTORY_TOLERANCE_DAYS = 7
+KIS_US_DAILY_MAX_PAGES = 6
 
 
 def kis_config() -> dict[str, str]:
@@ -198,6 +201,16 @@ def kis_date(value: Any) -> str | None:
     return None
 
 
+def _kis_row_date(value: Any) -> date | None:
+    text = str(value or "").strip()
+    if len(text) != 8 or not text.isdigit():
+        return None
+    try:
+        return datetime.strptime(text, "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
 def news_epoch(date_value: Any, time_value: Any) -> int | None:
     date_text = str(date_value or "").strip()
     time_text = str(time_value or "").strip().ljust(6, "0")[:6]
@@ -240,14 +253,38 @@ def kis_search_info(product_type: str, symbol: str) -> dict[str, Any]:
     )
 
 
-def kis_daily_rows(excd: str, symbol: str) -> list[dict[str, Any]]:
-    payload = kis_get(
-        "/uapi/overseas-price/v1/quotations/dailyprice",
-        "HHDFS76240000",
-        {"AUTH": "", "EXCD": excd, "SYMB": symbol, "GUBN": "0", "BYMD": "", "MODP": "1"},
-    )
-    rows = output_list(payload, "output2") or output_list(payload, "output")
-    rows = [row for row in rows if kis_date(row.get("xymd")) and as_float(row.get("clos")) is not None]
+def kis_daily_rows(excd: str, symbol: str, *, as_of: date | None = None, max_pages: int = KIS_US_DAILY_MAX_PAGES) -> list[dict[str, Any]]:
+    end = as_of or datetime.now(timezone.utc).date()
+    target_start = end - timedelta(days=KIS_DAILY_HISTORY_CALENDAR_DAYS)
+    rows_by_date: dict[str, dict[str, Any]] = {}
+    before = end
+
+    for page_index in range(max(1, max_pages)):
+        bymd = "" if page_index == 0 else before.strftime("%Y%m%d")
+        payload = kis_get(
+            "/uapi/overseas-price/v1/quotations/dailyprice",
+            "HHDFS76240000",
+            {"AUTH": "", "EXCD": excd, "SYMB": symbol, "GUBN": "0", "BYMD": bymd, "MODP": "1"},
+        )
+        page_rows = output_list(payload, "output2") or output_list(payload, "output")
+        page_rows = [row for row in page_rows if kis_date(row.get("xymd")) and as_float(row.get("clos")) is not None]
+        if not page_rows:
+            break
+        for row in page_rows:
+            rows_by_date[str(row.get("xymd") or "")] = row
+        page_dates = [_kis_row_date(row.get("xymd")) for row in page_rows]
+        page_dates = [value for value in page_dates if value is not None]
+        if not page_dates:
+            break
+        earliest = min(page_dates)
+        if earliest <= target_start + timedelta(days=KIS_DAILY_HISTORY_TOLERANCE_DAYS):
+            break
+        next_before = earliest - timedelta(days=1)
+        if next_before >= before:
+            break
+        before = next_before
+
+    rows = list(rows_by_date.values())
     rows.sort(key=lambda row: str(row.get("xymd") or ""))
     return rows
 

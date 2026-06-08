@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pandas as pd
@@ -7,6 +8,7 @@ import pandas as pd
 from .formatting import as_float, as_int, labeled_money, num_label, pct, price_label
 
 CHART_SERIES_TRADING_YEAR_ROWS = 260
+CHART_SERIES_CALENDAR_DAYS = 365
 
 
 def return_between(closes: list[float], days: int) -> float | None:
@@ -58,7 +60,7 @@ def atr_percent(history: pd.DataFrame, period: int = 14) -> tuple[float | None, 
 def build_chart_series(history: pd.DataFrame, currency: str, usd_krw: float | None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     previous_close: float | None = None
-    for index, row in history.tail(CHART_SERIES_TRADING_YEAR_ROWS).iterrows():
+    for index, row in _recent_history_frame(history).iterrows():
         close = as_float(row.get("Close"))
         if close is None:
             continue
@@ -132,7 +134,7 @@ def yfinance_history_date(index: Any) -> str | None:
 def kis_chart_series(rows: list[dict[str, Any]], currency: str, usd_krw: float | None) -> list[dict[str, Any]]:
     chart: list[dict[str, Any]] = []
     previous_close: float | None = None
-    for row in rows[-CHART_SERIES_TRADING_YEAR_ROWS:]:
+    for row in _recent_provider_rows(rows, "xymd"):
         close = as_float(row.get("clos"))
         if close is None:
             continue
@@ -169,7 +171,7 @@ def kis_chart_series(rows: list[dict[str, Any]], currency: str, usd_krw: float |
 def kis_domestic_chart_series(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     chart: list[dict[str, Any]] = []
     previous_close: float | None = None
-    for row in rows[-CHART_SERIES_TRADING_YEAR_ROWS:]:
+    for row in _recent_provider_rows(rows, "stck_bsop_date"):
         close = as_float(row.get("stck_clpr"))
         if close is None:
             continue
@@ -207,11 +209,64 @@ def _index_date(index: Any) -> str:
     return index.date().isoformat() if hasattr(index, "date") else str(index)
 
 
+def _recent_history_frame(history: pd.DataFrame) -> pd.DataFrame:
+    if history.empty:
+        return history
+    latest = None
+    for index in reversed(history.index):
+        try:
+            timestamp = pd.Timestamp(index)
+        except Exception:
+            continue
+        if pd.isna(timestamp):
+            continue
+        latest = timestamp.date()
+        break
+    if latest is None:
+        return history.tail(CHART_SERIES_TRADING_YEAR_ROWS)
+    start = latest - timedelta(days=CHART_SERIES_CALENDAR_DAYS)
+    mask = []
+    for index in history.index:
+        try:
+            timestamp = pd.Timestamp(index)
+        except Exception:
+            mask.append(False)
+            continue
+        mask.append(not pd.isna(timestamp) and timestamp.date() >= start)
+    filtered = history.loc[mask]
+    return filtered if not filtered.empty else history.tail(CHART_SERIES_TRADING_YEAR_ROWS)
+
+
+def _recent_provider_rows(rows: list[dict[str, Any]], date_key: str) -> list[dict[str, Any]]:
+    dated_rows: list[tuple[Any, dict[str, Any]]] = []
+    for row in rows:
+        date = _yyyymmdd_python_date(row.get(date_key))
+        if date is not None:
+            dated_rows.append((date, row))
+    if not dated_rows:
+        return rows[-CHART_SERIES_TRADING_YEAR_ROWS:]
+    dated_rows.sort(key=lambda item: item[0])
+    latest = max(date for date, _ in dated_rows)
+    start = latest - timedelta(days=CHART_SERIES_CALENDAR_DAYS)
+    filtered = [row for date, row in dated_rows if date >= start]
+    return filtered if filtered else [row for _, row in dated_rows[-CHART_SERIES_TRADING_YEAR_ROWS:]]
+
+
 def _yyyymmdd_date(value: Any) -> str | None:
     text = str(value or "").strip()
     if len(text) == 8 and text.isdigit():
         return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
     return None
+
+
+def _yyyymmdd_python_date(value: Any):
+    text = str(value or "").strip()
+    if len(text) != 8 or not text.isdigit():
+        return None
+    try:
+        return pd.Timestamp(f"{text[:4]}-{text[4:6]}-{text[6:8]}").date()
+    except Exception:
+        return None
 
 
 def _kis_percent(value: Any) -> float | None:

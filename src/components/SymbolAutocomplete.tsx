@@ -18,10 +18,13 @@ type SymbolAutocompleteProps = {
   onValueChange: (value: string) => void;
   onSelect: (item: SymbolSearchItem) => void;
   placeholder: string;
-  buttonLabel: string;
+  buttonLabel?: string;
   label: string;
   disabled?: boolean;
   className?: string;
+  variant?: "default" | "floating";
+  isCollapsed?: boolean;
+  onExpandRequest?: () => void;
 };
 
 function displayInputValue(item: SymbolSearchItem): string {
@@ -32,16 +35,37 @@ function displaySubtitle(item: SymbolSearchItem): string {
   return [item.market === "US" ? "미장" : "국장", item.exchangeName || item.exchange].filter(Boolean).join(" · ");
 }
 
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16.5 16.5 4 4" />
+    </svg>
+  );
+}
+
+function ClearIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </svg>
+  );
+}
+
 export default function SymbolAutocomplete({
   id,
   value,
   onValueChange,
   onSelect,
   placeholder,
-  buttonLabel,
+  buttonLabel = "검색",
   label,
   disabled = false,
   className = "",
+  variant = "default",
+  isCollapsed = false,
+  onExpandRequest,
 }: SymbolAutocompleteProps) {
   const [items, setItems] = useState<SymbolSearchItem[]>([]);
   const [itemsQuery, setItemsQuery] = useState("");
@@ -117,6 +141,10 @@ export default function SymbolAutocomplete({
   }, [query]);
 
   useEffect(() => {
+    if (isCollapsed) setIsOpen(false);
+  }, [isCollapsed]);
+
+  useEffect(() => {
     function closeOnOutside(event: MouseEvent) {
       if (!wrapperRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
@@ -133,6 +161,9 @@ export default function SymbolAutocomplete({
   const activeItem = useMemo(() => activeSymbolItemForQuery(items, itemsQuery, query, activeIndex), [activeIndex, items, itemsQuery, query]);
   const canSubmit = Boolean(activeItem || directItem) && !disabled;
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
+  const isFloating = variant === "floating";
+  const formClassName = [className, isFloating ? "symbol-autocomplete-floating" : "", isFloating && isCollapsed ? "is-collapsed" : ""].filter(Boolean).join(" ");
+  const actionLabel = isCollapsed ? "검색창 펼치기" : query ? "검색어 지우기" : "종목 검색";
   const searchStatus = isLoading
     ? "종목을 검색하고 있어요."
     : searchError
@@ -159,6 +190,28 @@ export default function SymbolAutocomplete({
     if (directItem) {
       onSelect(directItem);
     }
+  }
+
+  function focusInput() {
+    window.setTimeout(() => inputRef.current?.focus(), 120);
+  }
+
+  function onFloatingAction() {
+    if (disabled) return;
+    if (isCollapsed) {
+      onExpandRequest?.();
+      focusInput();
+      return;
+    }
+    if (query) {
+      onValueChange("");
+      setItems([]);
+      setItemsQuery("");
+      setIsOpen(false);
+      focusInput();
+      return;
+    }
+    focusInput();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -194,7 +247,7 @@ export default function SymbolAutocomplete({
   }
 
   return (
-    <form onSubmit={submit} className={className}>
+    <form onSubmit={submit} className={formClassName}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
@@ -218,9 +271,21 @@ export default function SymbolAutocomplete({
           aria-describedby={statusId}
           aria-busy={isLoading}
         />
-        <button type="submit" disabled={!canSubmit}>
-          {isLoading ? "찾는 중" : buttonLabel}
-        </button>
+        {isFloating ? (
+          <button
+            type="button"
+            className={`symbol-search-action ${!isCollapsed && query ? "clear" : "search"}`}
+            disabled={disabled}
+            aria-label={actionLabel}
+            onClick={onFloatingAction}
+          >
+            {!isCollapsed && query ? <ClearIcon /> : <SearchIcon />}
+          </button>
+        ) : (
+          <button type="submit" disabled={!canSubmit}>
+            {isLoading ? "찾는 중" : buttonLabel}
+          </button>
+        )}
         {isOpen ? (
           <div className="symbol-suggestions" id={listId} role="listbox">
             {visibleItems.map((item, index) => (
