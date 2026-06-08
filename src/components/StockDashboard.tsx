@@ -15,9 +15,11 @@ import {
   dailyToneClass,
   formatPrimaryPrice,
   formatSecondaryPrice,
+  pendingRetryTargetForDashboard,
   partialStockDataFromPayload,
   refreshCooldownMessage,
   scoreDataWithQuote,
+  shouldPreservePendingViewDuringRetry,
   shouldShowStockSkeleton,
   snapshotPendingFromPayload,
   stringFromUnknown,
@@ -58,6 +60,14 @@ function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse
   return `/compare?tickers=${encodeURIComponent(`${market === "KR" ? "KR" : "US"}:${symbol}`)}`;
 }
 
+function pendingBelongsToTicker(pending: unknown, ticker: string | undefined): boolean {
+  const pendingTicker =
+    pending && typeof pending === "object" && !Array.isArray(pending) && typeof (pending as { ticker?: unknown }).ticker === "string"
+      ? (pending as { ticker: string }).ticker
+      : undefined;
+  return Boolean(ticker && (!pendingTicker || pendingTicker === ticker));
+}
+
 export default function StockDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,7 +103,10 @@ export default function StockDashboard() {
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker: tickerParam, partial: "1" });
 
-    setState({ status: "loading" });
+    setState((current) => {
+      const pending = current.status === "pending" || current.status === "partial" ? current.pending : undefined;
+      return shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(pending, tickerParam)) ? current : { status: "loading" };
+    });
     fetch(`/api/score?${query.toString()}`, {
       signal: controller.signal,
       cache: "no-store",
@@ -174,8 +187,12 @@ export default function StockDashboard() {
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker: tickerParam });
 
-    setQuoteState({ status: "loading" });
-    setQuoteRefreshState({ status: "idle" });
+    setQuoteState((current) =>
+      shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(current.status === "pending" ? current.pending : undefined, tickerParam))
+        ? current
+        : { status: "loading" }
+    );
+    setQuoteRefreshState((current) => (reloadVersion > 0 && current.status === "pending" ? current : { status: "idle" }));
     fetch(`/api/quote?${query.toString()}`, {
       signal: controller.signal,
       cache: "no-store",
@@ -200,6 +217,8 @@ export default function StockDashboard() {
         const message = refreshCooldownMessage(nextAllowedAt);
         if (message) {
           setQuoteRefreshState({ status: "cooldown", nextAllowedAt, message });
+        } else {
+          setQuoteRefreshState({ status: "idle" });
         }
       })
       .catch((error) => {
@@ -279,8 +298,8 @@ export default function StockDashboard() {
 
   const scorePending = tickerParam && (state.status === "pending" || state.status === "partial") ? state.pending : undefined;
   const quotePending = tickerParam && quoteState.status === "pending" ? quoteState.pending : undefined;
-  usePendingRetry({ pending: scorePending, retryKey: `score:${tickerParam}`, onRetry: retryLoad });
-  usePendingRetry({ pending: quotePending, retryKey: `quote:${tickerParam}`, onRetry: retryLoad });
+  const pendingRetryTarget = pendingRetryTargetForDashboard(tickerParam, scorePending, quotePending);
+  usePendingRetry({ pending: pendingRetryTarget?.pending, retryKey: pendingRetryTarget?.retryKey || "stock:none", onRetry: retryLoad });
 
   const visibleDetailSections = DETAIL_SECTIONS;
   const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
