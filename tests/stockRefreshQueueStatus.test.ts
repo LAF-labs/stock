@@ -27,7 +27,9 @@ test("refresh queue status checks due score job existence without exact counts",
     assert.match(decodeURIComponent(requestedUrl), /status\.eq\.queued/);
     assert.match(decodeURIComponent(requestedUrl), /run_after\.lte\.2026-06-06T00:00:00\.000Z/);
     assert.match(decodeURIComponent(requestedUrl), /status\.eq\.running/);
-    assert.match(decodeURIComponent(requestedUrl), /lease_until\.lt\.2026-06-06T00:00:00\.000Z/);
+    assert.match(decodeURIComponent(requestedUrl), /locked_until\.lt\.2026-06-06T00:00:00\.000Z/);
+    assert.match(decodeURIComponent(requestedUrl), /locked_until\.is\.null/);
+    assert.doesNotMatch(decodeURIComponent(requestedUrl), /lease_until/);
     assert.doesNotMatch(requestedUrl, /attempts=/);
   } finally {
     global.fetch = originalFetch;

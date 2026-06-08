@@ -191,6 +191,52 @@ test("quote force refresh serves existing snapshot when a provider refresh lease
   assert.equal(result.cache.source, "supabase");
 });
 
+test("quote provider refresh failures do not leak unhandled inflight promise rejections", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_quote_snapshots")) {
+      return Response.json([]);
+    }
+    if (text.includes("/rest/v1/rpc/acquire_stock_refresh_lease")) {
+      return Response.json({ acquired: true });
+    }
+    if (text.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 119, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens")) {
+      return Response.json([]);
+    }
+    if (text.includes("/rest/v1/rpc/acquire_kis_token_issue_lock")) {
+      return Response.json({ acquired: true });
+    }
+    if (text.startsWith("https://kis.example/")) {
+      throw new Error("provider network failed");
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  try {
+    await assert.rejects(() => getStockQuote("US:UHFAIL", { forceRefresh: true }), /provider network failed/);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
 test("score force refresh serves existing snapshot when refresh is unavailable", async () => {
   useSnapshotOnlyRuntime();
   process.env.SUPABASE_URL = "https://example.supabase.co";

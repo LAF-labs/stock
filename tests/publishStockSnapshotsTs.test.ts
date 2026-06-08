@@ -20,6 +20,7 @@ import {
   run,
   upsertQuoteSnapshot,
 } from "../scripts/publish_stock_snapshots";
+import { RUNTIME_RPC_CHECKS, RUNTIME_TABLE_CHECKS } from "../scripts/supabase_runtime_readiness";
 
 const originalFetch = globalThis.fetch;
 
@@ -221,6 +222,81 @@ test("TypeScript snapshot worker does not fail optional warm tickers already bei
     }),
     true
   );
+  assert.equal(
+    rowHasBlockingErrors({
+      ticker: "US:NVDA",
+      quote: "error",
+      errors: [{ kind: "quote", error: "NAS: fetch failed; NYS: fetch failed; AMS: fetch failed" }],
+    }),
+    false
+  );
+});
+
+test("TypeScript snapshot worker treats persisted queue job failures as handled retries", async () => {
+  const envKeys = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "STOCK_API_APP_KEY", "STOCK_API_APP_SECRET", "STOCK_API_BASE"] as const;
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    calls.push({ url, body });
+    if (url.endsWith("/rest/v1/rpc/stock_runtime_readiness")) {
+      return Response.json({
+        ok: true,
+        required_tables: [...RUNTIME_TABLE_CHECKS],
+        required_rpcs: [...RUNTIME_RPC_CHECKS],
+        missing_rpc_grants: [],
+      });
+    }
+    if (url.endsWith("/rest/v1/rpc/claim_stock_refresh_jobs_by_kind")) {
+      return Response.json([{ id: "job-1", kind: "quote", market: "US", symbol: "FAILQ", attempts: 1 }]);
+    }
+    if (url.includes("/rest/v1/stock_quote_snapshots")) {
+      return Response.json([]);
+    }
+    if (url.endsWith("/rest/v1/rpc/acquire_stock_refresh_lease")) {
+      return Response.json({ acquired: true });
+    }
+    if (url.endsWith("/rest/v1/rpc/fail_stock_refresh_job")) {
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 119, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/kis_access_tokens")) {
+      return Response.json([]);
+    }
+    if (url.endsWith("/rest/v1/rpc/acquire_kis_token_issue_lock")) {
+      return Response.json({ acquired: true });
+    }
+    if (url.startsWith("https://kis.example/")) {
+      throw new Error("provider network failed");
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+
+  try {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+    process.env.STOCK_API_APP_KEY = "app-key";
+    process.env.STOCK_API_APP_SECRET = "app-secret";
+    process.env.STOCK_API_BASE = "https://kis.example";
+
+    const payload = await run(
+      parseOptions(["--drain-queue", "--kind", "quote", "--worker-id", "worker-1", "--queue-limit", "1", "--no-warm-from-demand"])
+    );
+
+    assert.equal(payload.ok, true);
+    assert.equal(payload.queue_rows.length, 1);
+    assert.equal(payload.queue_rows[0].status, "failed");
+    assert.equal(calls.some((call) => call.url.endsWith("/rest/v1/rpc/fail_stock_refresh_job")), true);
+  } finally {
+    for (const key of envKeys) {
+      const value = originalEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("TypeScript snapshot worker upserts quote snapshots with serving columns", async () => {

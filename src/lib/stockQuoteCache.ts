@@ -197,10 +197,9 @@ async function refreshQuoteSnapshot(
     return { snapshot, refreshed: true, lease };
   })();
 
-  inflightRefreshes.set(
-    ticker,
-    promise.then((result) => result.snapshot)
-  );
+  const snapshotPromise = promise.then((result) => result.snapshot);
+  void snapshotPromise.catch(() => undefined);
+  inflightRefreshes.set(ticker, snapshotPromise);
   try {
     return await promise;
   } finally {

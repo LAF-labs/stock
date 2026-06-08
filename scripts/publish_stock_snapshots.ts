@@ -468,7 +468,7 @@ export async function run(options: Options): Promise<PublishSummary> {
   }
 
   return {
-    ok: !rows.some(rowHasBlockingErrors) && !queueRows.some(hasErrors),
+    ok: !rows.some(rowHasBlockingErrors),
     dry_run: options.dryRun,
     mode: options.mode,
     tickers: warmTickers.length,
@@ -571,17 +571,17 @@ function scoreViewValue(value: unknown): ScoreView | undefined {
   return value === "detail" || value === "compare" || value === "technical" ? value : undefined;
 }
 
-function hasErrors(row: Record<string, unknown>): boolean {
-  return Array.isArray(row.errors) && row.errors.length > 0;
-}
-
 export function rowHasBlockingErrors(row: Record<string, unknown>): boolean {
   const errors = Array.isArray(row.errors) ? row.errors : [];
   if (!errors.length) return false;
-  return errors.some((error) => {
-    const message = typeof error === "object" && error !== null && "error" in error ? String((error as { error?: unknown }).error || "") : "";
-    return !message.startsWith("quote_refresh_not_performed:");
-  });
+  return errors.some((error) => !isNonBlockingWarmError(error));
+}
+
+function isNonBlockingWarmError(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  const kind = stringValue(error.kind);
+  const message = String(error.error || "");
+  return message.startsWith("quote_refresh_not_performed:") || (kind === "quote" && /\bfetch failed\b/i.test(message));
 }
 
 function publicError(error: unknown): string {

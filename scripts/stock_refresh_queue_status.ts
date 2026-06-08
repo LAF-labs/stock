@@ -23,8 +23,8 @@ export async function refreshQueueStatus(config: SupabaseConfig, options: QueueS
   url.searchParams.set(
     "or",
     options.dueOnly
-      ? `(and(status.eq.queued,run_after.lte.${nowIso}),and(status.eq.running,lease_until.lt.${nowIso}))`
-      : `(status.eq.queued,and(status.eq.running,lease_until.lt.${nowIso}))`
+      ? `(and(status.eq.queued,run_after.lte.${nowIso}),and(status.eq.running,or(locked_until.lt.${nowIso},locked_until.is.null)))`
+      : `(status.eq.queued,and(status.eq.running,or(locked_until.lt.${nowIso},locked_until.is.null)))`
   );
 
   const response = await fetchWithTimeout(
