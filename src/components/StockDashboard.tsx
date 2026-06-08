@@ -12,6 +12,7 @@ import {
   dashboardInputValue,
   dashboardTickerFromSearchParam,
   refreshCooldownMessage,
+  shouldShowStockSkeleton,
   snapshotPendingFromPayload,
   stringFromUnknown,
   stockHeaderIdentity,
@@ -395,8 +396,9 @@ export default function StockDashboard() {
         />
       </section>
 
-      {tickerParam && state.status === "loading" && <StockSkeleton />}
-      {tickerParam && state.status === "pending" && <StatusCard title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={retryLoad} />}
+      {tickerParam && shouldShowStockSkeleton(state.status) && (
+        <StockSkeleton pendingMessage={state.status === "pending" ? state.pending.message : undefined} onRetry={retryLoad} />
+      )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
 
@@ -695,10 +697,10 @@ function StatusCard({
   );
 }
 
-function StockSkeleton() {
+function StockSkeleton({ pendingMessage, onRetry }: { pendingMessage?: string; onRetry?: () => void }) {
   return (
     <div className="stock-feed skeleton-feed" role="status" aria-live="polite" aria-busy="true">
-      <span className="sr-only">주식 데이터를 불러오는 중이에요.</span>
+      <span className="sr-only">{pendingMessage || "주식 데이터를 불러오는 중이에요."}</span>
       <section className="stock-title-card skeleton-title-card">
         <div className="stock-hero-main">
           <div className="stock-name-row skeleton-name">
@@ -775,6 +777,14 @@ function StockSkeleton() {
         <SkeletonBlock className="label" />
         <SkeletonBlock className="section-heading" />
       </section>
+      {pendingMessage && onRetry ? (
+        <div className="skeleton-pending-action">
+          <span aria-hidden="true">데이터 준비 중</span>
+          <button type="button" onClick={onRetry}>
+            다시 확인
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

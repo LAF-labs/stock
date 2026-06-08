@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { chartPointPriceLabel, usableChartPoints } from "@/components/stockDashboardHelpers";
 import { formatCurrencyAmount } from "@/lib/format";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
@@ -7,10 +10,38 @@ type ChartPoint = ChartSeriesPoint & { close: number; date: string };
 type OverlayPoint = { date: string; value: number };
 type Zone = { direction: string | undefined; date: string; low: number; high: number };
 type FibLevel = { label: string; price: number };
+type CandleTone = "up" | "down" | "flat";
+export type TechnicalOverlayId = "ema20" | "ema50" | "sma200" | "fvg" | "ob" | "fib";
+export type TechnicalOverlayVisibility = Record<TechnicalOverlayId, boolean>;
+export type CandleShape = {
+  x: number;
+  width: number;
+  tone: CandleTone;
+  wickY1: number;
+  wickY2: number;
+  bodyY: number;
+  bodyHeight: number;
+};
 
 const SVG_WIDTH = 760;
 const SVG_HEIGHT = 340;
 const PAD = { top: 18, right: 18, bottom: 34, left: 76 };
+
+export const TECHNICAL_OVERLAY_CONTROLS: Array<{ id: TechnicalOverlayId; label: string; className: string }> = [
+  { id: "ema20", label: "EMA20", className: "ema20" },
+  { id: "ema50", label: "EMA50", className: "ema50" },
+  { id: "sma200", label: "SMA200", className: "sma200" },
+  { id: "fvg", label: "FVG", className: "fvg" },
+  { id: "ob", label: "OB", className: "ob" },
+  { id: "fib", label: "피보나치", className: "fib" },
+];
+
+export function defaultTechnicalOverlayVisibility(): TechnicalOverlayVisibility {
+  return TECHNICAL_OVERLAY_CONTROLS.reduce((visibility, control) => {
+    visibility[control.id] = true;
+    return visibility;
+  }, {} as TechnicalOverlayVisibility);
+}
 
 export default function TechnicalOverlayChart({
   points,
@@ -19,6 +50,7 @@ export default function TechnicalOverlayChart({
   points: ChartSeriesPoint[] | undefined;
   technical: TechnicalAnalysisPayload;
 }) {
+  const [visibleOverlays, setVisibleOverlays] = useState<TechnicalOverlayVisibility>(() => defaultTechnicalOverlayVisibility());
   const chartPoints = usableChartPoints(points).slice(-160);
   if (chartPoints.length < 2) {
     return (
@@ -27,7 +59,7 @@ export default function TechnicalOverlayChart({
           <span>시각화</span>
           <h2>차트 데이터가 더 필요해요</h2>
         </div>
-        <p className="technical-chart-empty">가격선과 보조선을 그릴 일봉 데이터가 부족해요.</p>
+        <p className="technical-chart-empty">가격 캔들과 보조지표를 그릴 일봉 데이터가 부족해요.</p>
       </section>
     );
   }
@@ -43,13 +75,19 @@ export default function TechnicalOverlayChart({
   const indexByDate = new Map(chartPoints.map((point, index) => [point.date, index]));
   const x = (index: number) => PAD.left + (index / Math.max(1, chartPoints.length - 1)) * (SVG_WIDTH - PAD.left - PAD.right);
   const y = (value: number) => PAD.top + ((yDomain.max - value) / Math.max(1, yDomain.max - yDomain.min)) * (SVG_HEIGHT - PAD.top - PAD.bottom);
-  const pricePath = pathFor(chartPoints.map((point, index) => ({ x: x(index), y: y(point.close) })));
+  const candleWidth = Math.max(2, Math.min(8, ((SVG_WIDTH - PAD.left - PAD.right) / Math.max(1, chartPoints.length)) * 0.58));
+  const candles = chartPoints
+    .map((point, index) => ({ key: point.date, shape: candleShapeForPoint(point, x(index), candleWidth, y) }))
+    .filter((item): item is { key: string; shape: CandleShape } => Boolean(item.shape));
+  const toggleOverlay = (id: TechnicalOverlayId) => {
+    setVisibleOverlays((current) => ({ ...current, [id]: !current[id] }));
+  };
 
   return (
     <section className="technical-chart-panel">
       <div className="section-title">
         <span>시각화</span>
-        <h2>가격선과 핵심 구간</h2>
+        <h2>가격 캔들과 핵심 구간</h2>
       </div>
       <div className="technical-chart-shell">
         <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} role="img" aria-label="기술적 분석 오버레이 차트" preserveAspectRatio="xMidYMid meet">
@@ -60,33 +98,77 @@ export default function TechnicalOverlayChart({
               <text x={PAD.left - 8} y={y(value) + 4} textAnchor="end" className="technical-axis-label">{axisLabel(value, chartCurrency)}</text>
             </g>
           ))}
-          {fvgZones.map((zone, index) => zoneRect(zone, indexByDate, x, y, "fvg", index))}
-          {orderBlocks.map((zone, index) => zoneRect(zone, indexByDate, x, y, "ob", index))}
-          {fibLevels.map((level) => (
+          {visibleOverlays.fvg ? fvgZones.map((zone, index) => zoneRect(zone, indexByDate, x, y, "fvg", index)) : null}
+          {visibleOverlays.ob ? orderBlocks.map((zone, index) => zoneRect(zone, indexByDate, x, y, "ob", index)) : null}
+          {visibleOverlays.fib ? fibLevels.map((level) => (
             <g key={level.label}>
               <line x1={PAD.left} x2={SVG_WIDTH - PAD.right} y1={y(level.price)} y2={y(level.price)} className="technical-fib-line" />
               <text x={SVG_WIDTH - PAD.right - 4} y={y(level.price) - 5} textAnchor="end" className="technical-fib-label">{level.label}</text>
             </g>
+          )) : null}
+          {candles.map(({ key, shape }) => (
+            <g key={key} className={`technical-candle technical-candle-${shape.tone}`}>
+              <line x1={shape.x} x2={shape.x} y1={shape.wickY1} y2={shape.wickY2} className="technical-candle-wick" />
+              <rect
+                x={shape.x - shape.width / 2}
+                y={shape.bodyY}
+                width={shape.width}
+                height={shape.bodyHeight}
+                rx="1"
+                className="technical-candle-body"
+              />
+            </g>
           ))}
-          <path d={pathFor(ema20.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema20" />
-          <path d={pathFor(ema50.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema50" />
-          <path d={pathFor(sma200.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-sma200" />
-          <path d={pricePath} className="technical-price-line" />
-          <circle cx={x(chartPoints.length - 1)} cy={y(chartPoints[chartPoints.length - 1].close)} r="4" className="technical-last-price-dot" />
+          {visibleOverlays.ema20 ? <path d={pathFor(ema20.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema20" /> : null}
+          {visibleOverlays.ema50 ? <path d={pathFor(ema50.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-ema50" /> : null}
+          {visibleOverlays.sma200 ? <path d={pathFor(sma200.map((point) => ({ x: x(indexByDate.get(point.date) || 0), y: y(point.value) })))} className="technical-ma technical-sma200" /> : null}
           <text x={PAD.left} y={SVG_HEIGHT - 10} className="technical-axis-label">{chartPoints[0].date}</text>
           <text x={SVG_WIDTH - PAD.right} y={SVG_HEIGHT - 10} textAnchor="end" className="technical-axis-label">{chartPoints[chartPoints.length - 1].date}</text>
         </svg>
       </div>
       <div className="technical-chart-legend" aria-label="차트 범례">
-        <span><i className="price" />가격</span>
-        <span><i className="ema20" />EMA20</span>
-        <span><i className="ema50" />EMA50</span>
-        <span><i className="fvg" />FVG</span>
-        <span><i className="ob" />OB</span>
-        <span><i className="fib" />피보나치</span>
+        <span className="technical-legend-fixed"><i className="price" />가격</span>
+        {TECHNICAL_OVERLAY_CONTROLS.map((control) => (
+          <button
+            key={control.id}
+            type="button"
+            className={visibleOverlays[control.id] ? "" : "is-off"}
+            aria-pressed={visibleOverlays[control.id]}
+            onClick={() => toggleOverlay(control.id)}
+          >
+            <i className={control.className} />
+            {control.label}
+          </button>
+        ))}
       </div>
     </section>
   );
+}
+
+export function candleShapeForPoint(
+  point: Pick<ChartSeriesPoint, "open" | "high" | "low" | "close">,
+  x: number,
+  width: number,
+  y: (value: number) => number,
+): CandleShape | undefined {
+  const close = number(point.close);
+  if (close === undefined) return undefined;
+  const open = number(point.open) ?? close;
+  const high = Math.max(number(point.high) ?? Math.max(open, close), open, close);
+  const low = Math.min(number(point.low) ?? Math.min(open, close), open, close);
+  const openY = y(open);
+  const closeY = y(close);
+  const highY = y(high);
+  const lowY = y(low);
+  return {
+    x,
+    width,
+    tone: close > open ? "up" : close < open ? "down" : "flat",
+    wickY1: Math.min(highY, lowY),
+    wickY2: Math.max(highY, lowY),
+    bodyY: Math.min(openY, closeY),
+    bodyHeight: Math.max(2, Math.abs(closeY - openY)),
+  };
 }
 
 function overlayLine(technical: TechnicalAnalysisPayload, key: "ema20" | "ema50" | "sma200", points: ChartPoint[]): OverlayPoint[] {

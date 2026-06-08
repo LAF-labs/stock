@@ -208,6 +208,10 @@ export function dashboardInputValue(ticker: string | undefined): string {
   return ticker ? displayTickerInput(ticker) : "";
 }
 
+export function shouldShowStockSkeleton(status: string): boolean {
+  return status === "loading" || status === "pending";
+}
+
 export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {
   const byDate = new Map<string, UsableChartPoint>();
   for (const point of points || []) {

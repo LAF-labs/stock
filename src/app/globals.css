@@ -559,6 +559,35 @@ a:focus-visible {
   overflow: hidden;
 }
 
+.skeleton-pending-action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.skeleton-pending-action span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.skeleton-pending-action button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .verdict-mini-skeleton {
   display: grid;
   gap: 9px;
@@ -1572,18 +1601,39 @@ a:focus-visible {
   font-weight: 700;
 }
 
-.technical-price-line {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 3.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.technical-candle-wick {
+  stroke-width: 1.3;
 }
 
-.technical-last-price-dot {
-  fill: var(--accent);
-  stroke: #fff;
-  stroke-width: 2;
+.technical-candle-body {
+  stroke-width: 1;
+}
+
+.technical-candle-up .technical-candle-wick,
+.technical-candle-up .technical-candle-body {
+  stroke: #18a976;
+}
+
+.technical-candle-up .technical-candle-body {
+  fill: rgba(24, 169, 118, 0.82);
+}
+
+.technical-candle-down .technical-candle-wick,
+.technical-candle-down .technical-candle-body {
+  stroke: #f04452;
+}
+
+.technical-candle-down .technical-candle-body {
+  fill: rgba(240, 68, 82, 0.82);
+}
+
+.technical-candle-flat .technical-candle-wick,
+.technical-candle-flat .technical-candle-body {
+  stroke: var(--accent);
+}
+
+.technical-candle-flat .technical-candle-body {
+  fill: rgba(49, 130, 246, 0.7);
 }
 
 .technical-ma {
@@ -1630,7 +1680,8 @@ a:focus-visible {
   gap: 8px;
 }
 
-.technical-chart-legend span {
+.technical-chart-legend span,
+.technical-chart-legend button {
   min-height: 28px;
   display: inline-flex;
   align-items: center;
@@ -1644,6 +1695,20 @@ a:focus-visible {
   background: #fff;
 }
 
+.technical-chart-legend button {
+  cursor: pointer;
+}
+
+.technical-chart-legend button.is-off {
+  color: var(--muted);
+  background: #f7f8fa;
+  opacity: 0.54;
+}
+
+.technical-legend-fixed {
+  cursor: default;
+}
+
 .technical-chart-legend i {
   width: 10px;
   height: 10px;
@@ -1651,7 +1716,7 @@ a:focus-visible {
 }
 
 .technical-chart-legend .price {
-  background: var(--accent);
+  background: linear-gradient(90deg, #18a976 0 48%, #f04452 52% 100%);
 }
 
 .technical-chart-legend .ema20 {
