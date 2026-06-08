@@ -32,7 +32,9 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("jobs:\n  quote:", text)
         self.assertIn("\n  score:", text)
         score_block = text.split("\n  score:", 1)[1]
+        score_header = score_block.split("\n    env:", 1)[0]
         self.assertNotIn("needs: quote", score_block)
+        self.assertNotIn("if:", score_header)
         self.assertIn("Check due legacy score refresh jobs", score_block)
         self.assertIn("Drain legacy score refresh queue", score_block)
 

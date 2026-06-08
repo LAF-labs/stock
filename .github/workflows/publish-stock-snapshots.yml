@@ -66,7 +66,6 @@ jobs:
   score:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    if: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED != '0' }}
     env:
       STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
       STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
