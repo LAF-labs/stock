@@ -85,7 +85,7 @@ node --import tsx scripts/publish_stock_snapshots.ts --tickers NVDA,TSLA,KO,MRVL
 python scripts/publish_stock_snapshots.py --tickers NVDA,TSLA,KO,MRVL,005930,000660 --queue-kind score --json
 ```
 
-The bundled GitHub Actions queue worker runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by the TypeScript worker. Score jobs remain on the kind-filtered legacy Python worker until the durable Rust/TypeScript score worker owns score snapshot writes, but Python setup/install is skipped unless due score jobs or workflow_dispatch manual tickers exist. Configure these repository secrets:
+The bundled GitHub Actions queue backstop runs every 5 minutes on weekdays and every 30 minutes on weekends. It drains user-driven refresh jobs and uses workflow concurrency to avoid overlapping provider bursts. Quote jobs are drained by an independent TypeScript job. Score jobs are drained by an independent legacy Python job until the durable Rust/TypeScript score worker owns score snapshot writes, so a quote-side KIS failure cannot block due score or technical jobs in the same workflow run. Python setup/install is skipped unless due score jobs or workflow_dispatch manual tickers exist. Configure these repository secrets:
 
 ```text
 STOCK_API_APP_KEY
@@ -175,6 +175,7 @@ Classification data should not be refreshed daily. Refresh classifications quart
 - If a Supabase snapshot is missing in snapshot mode, enqueue `stock_refresh_jobs` and return `snapshot_pending` with `Retry-After`. The default retry hint is 300 seconds, matching the 5-minute GitHub Actions backstop. Tune it with `STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS` if a faster external worker is configured.
 - Technical analysis is available on demand for every eligible single stock. Do not gate product eligibility by a warmup list or popularity list. The detail-page CTA and `/technical` route block ETFs, ETNs, leveraged/inverse wrappers, warrants, funds, and other derivative-like products; eligible single stocks enqueue `view_mode='technical'` snapshots when missing.
 - Technical analysis collection must use the technical fast path. It should fetch daily chart rows and minimal identity data only; yfinance fundamentals, news, analyst data, and broad KIS search/detail enrichment belong to detail/compare or background jobs.
+- KIS token caches are shared through `kis_access_tokens`. If KIS returns an expired-token response even though the cached expiry looks fresh, the Node quote worker and Python score worker invalidate the local/shared token cache and retry the provider call once with a newly issued token.
 - Newly listed eligible stocks should still render the technical page. The rule engine downgrades the page to a limited/starter interpretation and warns users that only the available daily bars were used.
 - The detail UI displays score `server_cache` freshness separately from quote refresh status. A fresh quote does not imply a fresh score; stale score snapshots should stay visible until the score worker writes a new snapshot.
 - In local/Docker mode, `STOCK_DATA_RUNTIME=python` keeps the Python collector fallback available for development and container deployments.

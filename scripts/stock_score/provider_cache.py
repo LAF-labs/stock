@@ -357,6 +357,24 @@ def write_supabase_kis_access_token(cache_key: str, token: str, expires_at: floa
         return False
 
 
+def delete_supabase_kis_access_token(cache_key: str) -> bool:
+    config = supabase_write_config()
+    if not config:
+        return False
+
+    url, key = config
+    try:
+        response = requests.delete(
+            f"{url}/rest/v1/{KIS_TOKEN_CACHE_TABLE}",
+            params={"cache_key": f"eq.{cache_key}"},
+            headers=supabase_headers(key),
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        return response.ok
+    except Exception:
+        return False
+
+
 def yfinance_cache_meta(store: str, state: str, **extra: Any) -> dict[str, Any]:
     return {
         "source": YFINANCE_FUNDAMENTAL_SOURCE,

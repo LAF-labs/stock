@@ -26,6 +26,16 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("publish-stock-snapshots", text)
         self.assertIn("cancel-in-progress: false", text)
 
+    def test_refresh_queue_worker_keeps_score_job_independent_from_quote_failures(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("jobs:\n  quote:", text)
+        self.assertIn("\n  score:", text)
+        score_block = text.split("\n  score:", 1)[1]
+        self.assertNotIn("needs: quote", score_block)
+        self.assertIn("Check due legacy score refresh jobs", score_block)
+        self.assertIn("Drain legacy score refresh queue", score_block)
+
     def test_refresh_queue_worker_uses_typescript_quote_worker_and_isolates_legacy_score(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
 

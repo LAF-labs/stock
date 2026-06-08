@@ -294,3 +294,69 @@ test("fetchKisQuote stores newly issued KIS tokens in the Supabase shared cache"
   assert.equal(writtenBody?.access_token, "fresh-token");
   assert.equal(typeof writtenBody?.expires_at, "string");
 });
+
+test("fetchKisQuote invalidates an expired shared KIS token and retries once", async () => {
+  setupEnv();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  const expectedCacheKey = createHash("sha256").update("https://kis.example.com:app-key").digest("hex").slice(0, 16);
+
+  let quoteCalls = 0;
+  let tokenEndpointCalls = 0;
+  let deleteUrl = "";
+  const quoteAuthorizations: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/kis_access_tokens") && init?.method === "DELETE") {
+      deleteUrl = text;
+      return new Response(null, { status: 204 });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens") && init?.method === "POST") {
+      return new Response(null, { status: 204 });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens")) {
+      return Response.json([
+        {
+          cache_key: expectedCacheKey,
+          access_token: "expired-shared-token",
+          expires_at: "2099-01-01T00:00:00.000Z",
+        },
+      ]);
+    }
+    if (text.includes("/rest/v1/rpc/acquire_kis_token_issue_lock")) {
+      return Response.json({ acquired: true });
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      tokenEndpointCalls += 1;
+      return Response.json({ access_token: "fresh-token", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      quoteCalls += 1;
+      quoteAuthorizations.push(String((init?.headers as Record<string, string>)?.authorization || ""));
+      if (quoteCalls === 1) {
+        return Response.json({ rt_cd: "1", msg1: "기간이 만료된 token 입니다." });
+      }
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "70000",
+          stck_sdpr: "69000",
+          prdy_ctrt: "1.45",
+          acml_vol: "123456",
+          hts_kor_isnm: "삼성전자",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const payload = await fetchKisQuote("KR:005930");
+
+  assert.equal(payload.ok, true);
+  assert.equal(quoteCalls, 2);
+  assert.equal(tokenEndpointCalls, 1);
+  assert.deepEqual(quoteAuthorizations, ["Bearer expired-shared-token", "Bearer fresh-token"]);
+  assert.match(deleteUrl, /\/rest\/v1\/kis_access_tokens/);
+  assert.match(deleteUrl, new RegExp(`cache_key=eq\\.${expectedCacheKey}`));
+});

@@ -2,6 +2,7 @@ import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRa
 import { safeErrorMessage } from "@/lib/errorSafety";
 import {
   acquireSharedKisTokenIssueLock,
+  deleteSharedKisAccessToken,
   isFreshKisToken,
   kisTokenCacheKey,
   readSharedKisAccessToken,
@@ -241,6 +242,28 @@ function readUsDiscoveryCache(cacheKey: string): KisUsDiscoveryCacheEntry | unde
 
 async function kisGet(path: string, trId: string, params: Record<string, string>): Promise<KisPayload> {
   const config = kisConfig();
+  const cacheKey = kisTokenCacheKey(config);
+  const first = await kisGetOnce(config, path, trId, params);
+  if (first.ok) return first.payload;
+
+  if (kisTokenExpiredMessage(first.message)) {
+    tokenCache.delete(cacheKey);
+    await deleteSharedKisAccessToken(cacheKey);
+    const retry = await kisGetOnce(config, path, trId, params, { skipSharedTokenCache: true });
+    if (retry.ok) return retry.payload;
+    throw new KisQuoteError(retry.message);
+  }
+
+  throw new KisQuoteError(first.message);
+}
+
+async function kisGetOnce(
+  config: KisConfig,
+  path: string,
+  trId: string,
+  params: Record<string, string>,
+  options: { skipSharedTokenCache?: boolean } = {}
+): Promise<{ ok: true; payload: KisPayload } | { ok: false; message: string }> {
   const url = new URL(`${config.baseUrl}${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
@@ -251,7 +274,7 @@ async function kisGet(path: string, trId: string, params: Record<string, string>
     {
       headers: {
         "content-type": "application/json; charset=utf-8",
-        authorization: `Bearer ${await kisAccessToken(config)}`,
+        authorization: `Bearer ${await kisAccessToken(config, options)}`,
         appkey: config.appKey,
         appsecret: config.appSecret,
         tr_id: trId,
@@ -264,22 +287,29 @@ async function kisGet(path: string, trId: string, params: Record<string, string>
   const payload = (await response.json().catch(() => undefined)) as KisPayload | undefined;
   if (!response.ok || !payload || String(payload.rt_cd ?? "0") !== "0") {
     const message = stringValue(payload?.msg1) || stringValue(payload?.msg_cd) || `KIS HTTP ${response.status}`;
-    throw new KisQuoteError(message);
+    return { ok: false, message };
   }
-  return payload;
+  return { ok: true, payload };
 }
 
-async function kisAccessToken(config: KisConfig): Promise<string> {
+function kisTokenExpiredMessage(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized.includes("expired token") || normalized.includes("만료") && (normalized.includes("token") || normalized.includes("토큰"));
+}
+
+async function kisAccessToken(config: KisConfig, options: { skipSharedTokenCache?: boolean } = {}): Promise<string> {
   const cacheKey = kisTokenCacheKey(config);
   const cached = tokenCache.get(cacheKey);
   if (isFreshKisToken(cached)) {
     return cached.accessToken;
   }
 
-  const shared = await readSharedKisAccessToken(cacheKey);
-  if (shared) {
-    tokenCache.set(cacheKey, shared);
-    return shared.accessToken;
+  if (!options.skipSharedTokenCache) {
+    const shared = await readSharedKisAccessToken(cacheKey);
+    if (shared) {
+      tokenCache.set(cacheKey, shared);
+      return shared.accessToken;
+    }
   }
 
   const lockAcquired = await acquireSharedKisTokenIssueLock(cacheKey);

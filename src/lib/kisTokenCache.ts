@@ -124,6 +124,29 @@ export async function writeSharedKisAccessToken(cacheKey: string, entry: KisToke
   }
 }
 
+export async function deleteSharedKisAccessToken(cacheKey: string): Promise<boolean> {
+  const config = supabaseAdminConfig();
+  if (!config) return false;
+
+  const url = new URL(`${config.url}/rest/v1/${KIS_TOKEN_TABLE}`);
+  url.searchParams.set("cache_key", `eq.${cacheKey}`);
+
+  try {
+    const response = await fetchWithTimeout(
+      url.toString(),
+      {
+        method: "DELETE",
+        headers: supabaseHeaders(config.key),
+        cache: "no-store",
+      },
+      2_500
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 function parseSharedTokenRow(row: KisTokenCacheRow | undefined): KisTokenCacheEntry | undefined {
   const accessToken = typeof row?.access_token === "string" ? row.access_token.trim() : "";
   const expiresAtMs = typeof row?.expires_at === "string" ? Date.parse(row.expires_at) : Number.NaN;

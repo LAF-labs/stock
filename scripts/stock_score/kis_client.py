@@ -13,6 +13,7 @@ from .io_utils import env_value, one_byte_file_lock
 from .kis_discovery_cache import read_kis_discovery_cache, write_kis_discovery_cache
 from .provider_cache import (
     acquire_supabase_kis_token_issue_lock,
+    delete_supabase_kis_access_token,
     kis_token_cache_key,
     read_local_kis_token_cache,
     read_supabase_kis_access_token,
@@ -73,7 +74,7 @@ def parse_kis_token_expiry(value: Any) -> float | None:
     return None
 
 
-def kis_access_token() -> str:
+def kis_access_token(skip_shared_cache: bool = False) -> str:
     config = kis_config()
     cache_key = kis_token_cache_key(config)
     cache_path = Path.cwd() / f".kis_token_cache_{cache_key}.json"
@@ -84,10 +85,11 @@ def kis_access_token() -> str:
         if cached:
             return cached[0]
 
-        shared = read_supabase_kis_access_token(cache_key)
-        if shared:
-            write_local_kis_token_cache(cache_path, shared[0], shared[1])
-            return shared[0]
+        if not skip_shared_cache:
+            shared = read_supabase_kis_access_token(cache_key)
+            if shared:
+                write_local_kis_token_cache(cache_path, shared[0], shared[1])
+                return shared[0]
 
         lock_acquired = acquire_supabase_kis_token_issue_lock(cache_key)
         if lock_acquired is False:
@@ -123,6 +125,24 @@ def kis_access_token() -> str:
         return token
 
 
+def invalidate_kis_access_token(config: dict[str, str] | None = None) -> None:
+    resolved = config or kis_config()
+    cache_key = kis_token_cache_key(resolved)
+    cache_path = Path.cwd() / f".kis_token_cache_{cache_key}.json"
+    try:
+        cache_path.unlink()
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    delete_supabase_kis_access_token(cache_key)
+
+
+def kis_token_expired_message(message: str) -> bool:
+    normalized = str(message or "").strip().lower()
+    return "expired token" in normalized or ("만료" in normalized and ("token" in normalized or "토큰" in normalized))
+
+
 def kis_throttle() -> None:
     lock_path = Path.cwd() / ".kis_request_lock"
     clock_path = Path.cwd() / ".kis_request_clock"
@@ -147,12 +167,25 @@ def kis_throttle() -> None:
 
 def kis_get(path: str, tr_id: str, params: dict[str, Any]) -> dict[str, Any]:
     config = kis_config()
+    payload, message = kis_get_once(config, path, tr_id, params)
+    if payload is not None:
+        return payload
+    if kis_token_expired_message(message):
+        invalidate_kis_access_token(config)
+        payload, retry_message = kis_get_once(config, path, tr_id, params, skip_shared_cache=True)
+        if payload is not None:
+            return payload
+        raise KisApiError(str(retry_message))
+    raise KisApiError(str(message))
+
+
+def kis_get_once(config: dict[str, str], path: str, tr_id: str, params: dict[str, Any], skip_shared_cache: bool = False) -> tuple[dict[str, Any] | None, str]:
     kis_throttle()
     response = requests.get(
         f"{config['base_url']}{path}",
         headers={
             "content-type": "application/json; charset=utf-8",
-            "authorization": f"Bearer {kis_access_token()}",
+            "authorization": f"Bearer {kis_access_token(skip_shared_cache=skip_shared_cache)}",
             "appkey": config["app_key"],
             "appsecret": config["app_secret"],
             "tr_id": tr_id,
@@ -167,8 +200,8 @@ def kis_get(path: str, tr_id: str, params: dict[str, Any]) -> dict[str, Any]:
         raise KisApiError(f"시세 응답을 읽지 못했습니다. HTTP {response.status_code}") from exc
     if not response.ok or str(payload.get("rt_cd", "0")) != "0":
         message = payload.get("msg1") or payload.get("msg_cd") or response.text
-        raise KisApiError(str(message))
-    return payload
+        return None, str(message)
+    return payload, ""
 
 
 def output_object(payload: dict[str, Any], key: str = "output") -> dict[str, Any]:

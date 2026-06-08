@@ -16,9 +16,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  maintain:
+  quote:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     env:
       STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
       STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
@@ -29,7 +29,6 @@ jobs:
       STOCK_WARM_TICKERS: ${{ vars.STOCK_WARM_TICKERS || vars.STOCK_SNAPSHOT_TICKERS }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '50' }}
-      STOCK_LEGACY_SCORE_WORKER_ENABLED: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED || '1' }}
 
     steps:
       - name: Check out repository
@@ -63,6 +62,34 @@ jobs:
           fi
           node --import tsx scripts/publish_stock_snapshots.ts \
             "${ARGS[@]}"
+
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED != '0' }}
+    env:
+      STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
+      STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
+      STOCK_API_BASE: ${{ vars.STOCK_API_BASE || 'https://openapi.koreainvestment.com:9443' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      MANUAL_WARM_TICKERS: ${{ github.event.inputs.tickers || '' }}
+      STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
+      STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '50' }}
+      STOCK_LEGACY_SCORE_WORKER_ENABLED: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED || '1' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install Node dependencies
+        run: npm ci
 
       - name: Check due legacy score refresh jobs
         id: legacy_score_queue

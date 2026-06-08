@@ -594,6 +594,107 @@ class ScoreHelperTests(unittest.TestCase):
                     else:
                         os.environ[key] = value
 
+    def test_kis_get_invalidates_expired_shared_token_and_retries_once(self):
+        original_env = {
+            key: os.environ.get(key)
+            for key in (
+                "STOCK_API_APP_KEY",
+                "STOCK_API_APP_SECRET",
+                "STOCK_API_BASE",
+                "KIS_APP_KEY",
+                "KIS_APP_SECRET",
+                "KIS_API_BASE",
+                "SUPABASE_URL",
+                "SUPABASE_SERVICE_ROLE_KEY",
+                "SUPABASE_PUBLISHABLE_KEY",
+            )
+        }
+        original_cwd = Path.cwd()
+        original_get = kis_client.requests.get
+        original_post = kis_client.requests.post
+        original_delete = kis_client.requests.delete
+
+        class FakeResponse:
+            def __init__(self, payload, ok=True, status_code=200, text=""):
+                self._payload = payload
+                self.ok = ok
+                self.status_code = status_code
+                self.text = text
+
+            def json(self):
+                return self._payload
+
+        calls = {"quote": 0, "token": 0, "delete": 0}
+        authorizations = []
+
+        def fake_get(url, headers=None, **_kwargs):
+            if "/rest/v1/kis_access_tokens" in url:
+                return FakeResponse(
+                    [
+                        {
+                            "cache_key": "unused",
+                            "access_token": "expired-shared-token",
+                            "expires_at": "2099-01-01T00:00:00+00:00",
+                        }
+                    ]
+                )
+            if "/uapi/domestic-stock/v1/quotations/inquire-price" in url:
+                calls["quote"] += 1
+                authorizations.append(headers.get("authorization"))
+                if calls["quote"] == 1:
+                    return FakeResponse({"rt_cd": "1", "msg1": "기간이 만료된 token 입니다."})
+                return FakeResponse({"rt_cd": "0", "output": {"stck_prpr": "70000"}})
+            raise AssertionError(f"unexpected GET {url}")
+
+        def fake_post(url, **_kwargs):
+            if "/rest/v1/rpc/acquire_kis_token_issue_lock" in url:
+                return FakeResponse({"acquired": True})
+            if "/rest/v1/kis_access_tokens" in url:
+                return FakeResponse({}, status_code=204)
+            if "/oauth2/tokenP" in url:
+                calls["token"] += 1
+                return FakeResponse({"access_token": "fresh-token", "expires_in": 3600})
+            raise AssertionError(f"unexpected POST {url}")
+
+        def fake_delete(url, **_kwargs):
+            self.assertIn("/rest/v1/kis_access_tokens", url)
+            calls["delete"] += 1
+            return FakeResponse({}, status_code=204)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                os.environ["STOCK_API_APP_KEY"] = "app-key"
+                os.environ["STOCK_API_APP_SECRET"] = "app-secret"
+                os.environ["STOCK_API_BASE"] = "https://kis.example.com"
+                os.environ["SUPABASE_URL"] = "https://example.supabase.co"
+                os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "service-role-key"
+                for key in ("KIS_APP_KEY", "KIS_APP_SECRET", "KIS_API_BASE", "SUPABASE_PUBLISHABLE_KEY"):
+                    os.environ.pop(key, None)
+                kis_client.requests.get = fake_get
+                kis_client.requests.post = fake_post
+                kis_client.requests.delete = fake_delete
+
+                payload = kis_client.kis_get(
+                    "/uapi/domestic-stock/v1/quotations/inquire-price",
+                    "FHKST01010100",
+                    {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": "005930"},
+                )
+            finally:
+                os.chdir(original_cwd)
+                kis_client.requests.get = original_get
+                kis_client.requests.post = original_post
+                kis_client.requests.delete = original_delete
+                for key, value in original_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+        self.assertEqual(payload["rt_cd"], "0")
+        self.assertEqual(calls, {"quote": 2, "token": 1, "delete": 1})
+        self.assertEqual(authorizations, ["Bearer expired-shared-token", "Bearer fresh-token"])
+
 
 if __name__ == "__main__":
     unittest.main()
