@@ -1,0 +1,86 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+
+export type PendingRetryTarget = {
+  message?: string;
+  retryAfterSeconds?: number;
+};
+
+export function pendingRetryDelayMs(retryAfterSeconds: number | undefined, random: () => number = Math.random): number {
+  const baseSeconds = typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds : 30;
+  const boundedSeconds = Math.max(5, Math.min(300, baseSeconds));
+  const jitter = 0.85 + Math.max(0, Math.min(1, random())) * 0.3;
+  return Math.round(boundedSeconds * 1000 * jitter);
+}
+
+export function canSchedulePendingRetry({
+  attempt,
+  maxAttempts,
+  visibilityState,
+}: {
+  attempt: number;
+  maxAttempts: number;
+  visibilityState: DocumentVisibilityState;
+}): boolean {
+  return attempt < maxAttempts && visibilityState !== "hidden";
+}
+
+export function usePendingRetry({
+  pending,
+  retryKey,
+  onRetry,
+  maxAttempts = 3,
+}: {
+  pending: PendingRetryTarget | undefined;
+  retryKey: string;
+  onRetry: () => void;
+  maxAttempts?: number;
+}) {
+  const retryRef = useRef(onRetry);
+  const attemptRef = useRef({ key: "", attempts: 0 });
+
+  useEffect(() => {
+    retryRef.current = onRetry;
+  }, [onRetry]);
+
+  useEffect(() => {
+    if (!pending) return;
+    if (attemptRef.current.key !== retryKey) {
+      attemptRef.current = { key: retryKey, attempts: 0 };
+    }
+
+    let timer: number | undefined;
+    const clear = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    const schedule = () => {
+      clear();
+      if (!canSchedulePendingRetry({ attempt: attemptRef.current.attempts, maxAttempts, visibilityState: document.visibilityState })) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        if (!canSchedulePendingRetry({ attempt: attemptRef.current.attempts, maxAttempts, visibilityState: document.visibilityState })) return;
+        attemptRef.current.attempts += 1;
+        retryRef.current();
+      }, pendingRetryDelayMs(pending.retryAfterSeconds));
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        clear();
+      } else {
+        schedule();
+      }
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clear();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [pending, retryKey, maxAttempts]);
+}

@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
+import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
   MAX_COMPARE,
   bestBy,
@@ -28,6 +29,7 @@ import {
   type BatchScorePayload,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
+import { usePendingRetry } from "@/components/usePendingRetry";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockScoreResponse } from "@/lib/types";
 
@@ -36,26 +38,11 @@ const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
 type LoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
   | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined }
-  | { status: "pending"; ticker: string; data?: undefined; error?: undefined; message: string }
+  | { status: "pending"; ticker: string; data?: undefined; error?: undefined; message: string; retryAfterSeconds?: number }
   | { status: "error"; ticker: string; data?: undefined; error: string };
 
 function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[]) {
   router.push(`/compare?tickers=${encodeURIComponent(tickers.join(","))}`);
-}
-
-async function readComparePayload(response: Response): Promise<BatchScorePayload> {
-  const text = await response.text();
-  if (!text.trim()) {
-    throw new Error(response.ok ? "서버 응답이 비어 있어요." : `서버 응답이 비어 있어요. (HTTP ${response.status})`);
-  }
-
-  try {
-    const payload = JSON.parse(text) as unknown;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("non_object_payload");
-    return payload as BatchScorePayload;
-  } catch {
-    throw new Error(response.ok ? "서버 응답 형식이 올바르지 않아요." : `서버 오류 응답을 읽지 못했어요. (HTTP ${response.status})`);
-  }
 }
 
 function subjectParticle(value: string): string {
@@ -84,9 +71,9 @@ export default function StockCompare() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = await readComparePayload(response);
+        const payload = (await readClientApiPayload(response)) as BatchScorePayload;
         if (!response.ok) {
-          throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+          throw new Error(apiPayloadMessage(payload as Record<string, unknown>, `HTTP ${response.status}`));
         }
         return payload.results || [];
       })
@@ -100,6 +87,7 @@ export default function StockCompare() {
                 status: "pending" as const,
                 ticker,
                 message: pendingMessage(result),
+                retryAfterSeconds: result?.retry_after_seconds,
               };
             }
             if (!result || result.ok === false) {
@@ -133,6 +121,13 @@ export default function StockCompare() {
   );
   const isLoading = useMemo(() => states.some((state) => state.status === "loading"), [states]);
   const pendingStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "pending" }> => state.status === "pending"), [states]);
+  const pendingRetry = useMemo(() => {
+    if (!pendingStates.length) return undefined;
+    const retryHints = pendingStates
+      .map((state) => state.retryAfterSeconds)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    return { retryAfterSeconds: retryHints.length ? Math.min(...retryHints) : undefined };
+  }, [pendingStates]);
   const errorStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "error" }> => state.status === "error"), [states]);
   const selectedCount = tickers.length;
   const baseItem = useMemo(() => items.find((item) => item.ticker === baseTickerLabel), [items, baseTickerLabel]);
@@ -157,6 +152,8 @@ export default function StockCompare() {
   function retryCompare() {
     setReloadVersion((version) => version + 1);
   }
+
+  usePendingRetry({ pending: pendingRetry, retryKey: `compare:${tickers.join(",")}`, onRetry: retryCompare });
 
   return (
     <main className="stock-app compare-app">

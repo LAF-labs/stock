@@ -6,7 +6,9 @@ import {
   safeInternalRedirectPath,
 } from "@/components/technicalAnalysisHelpers";
 import { TechnicalAnalysisFeed, TechnicalAnalysisTopbar, TechnicalStatus } from "@/components/TechnicalAnalysisSections";
+import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import { displayTickerInput, scoreDataWithQuote, snapshotPendingFromPayload, stringFromUnknown, stockHeaderIdentity, type SnapshotPendingState } from "@/components/stockDashboardHelpers";
+import { usePendingRetry } from "@/components/usePendingRetry";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 type LoadState =
@@ -15,33 +17,12 @@ type LoadState =
   | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; data?: undefined; error: string; pending?: undefined };
 
-type ApiPayload = Record<string, unknown>;
-
-async function readApiPayload(response: Response): Promise<ApiPayload> {
-  const text = await response.text();
-  if (!text.trim()) {
-    throw new Error(response.ok ? "서버 응답이 비어 있어요." : `서버 응답이 비어 있어요. (HTTP ${response.status})`);
-  }
-
-  try {
-    const payload = JSON.parse(text) as unknown;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("non_object_payload");
-    return payload as ApiPayload;
-  } catch {
-    throw new Error(response.ok ? "서버 응답 형식이 올바르지 않아요." : `서버 오류 응답을 읽지 못했어요. (HTTP ${response.status})`);
-  }
-}
-
-function apiPayloadMessage(payload: ApiPayload, fallback: string): string {
-  return stringFromUnknown(payload.message) || stringFromUnknown(payload.error) || fallback;
-}
-
 async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promise<StockQuoteResponse | undefined> {
   try {
     const query = new URLSearchParams({ ticker });
     const response = await fetch(`/api/quote?${query.toString()}`, { cache: "no-store", signal });
     if (!response.ok) return undefined;
-    const payload = await readApiPayload(response);
+    const payload = await readClientApiPayload(response);
     return payload as StockQuoteResponse;
   } catch {
     return undefined;
@@ -52,6 +33,13 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadVersion, setReloadVersion] = useState(0);
   const detailHref = `/?ticker=${encodeURIComponent(ticker)}`;
+  const pending = state.status === "pending" ? state.pending : undefined;
+
+  function retryTechnical() {
+    setReloadVersion((version) => version + 1);
+  }
+
+  usePendingRetry({ pending, retryKey: `technical:${ticker}`, onRetry: retryTechnical });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -60,7 +48,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
 
     fetch(`/api/score?${query.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const payload = await readApiPayload(response);
+        const payload = await readClientApiPayload(response);
         const redirectTo = stringFromUnknown(payload.redirect_to);
         if (!response.ok && payload.error === "technical_unsupported_product" && redirectTo) {
           window.location.assign(safeInternalRedirectPath(redirectTo, detailHref));
@@ -102,10 +90,10 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
 
       {state.status === "loading" ? <TechnicalStatus title="기술적 분석 준비 중" body="차트 데이터를 확인하고 있어요." /> : null}
       {state.status === "pending" ? (
-        <TechnicalStatus title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={() => setReloadVersion((version) => version + 1)} />
+        <TechnicalStatus title="데이터 준비 중" body={state.pending.message} actionLabel="다시 확인" onAction={retryTechnical} />
       ) : null}
       {state.status === "error" ? (
-        <TechnicalStatus title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={() => setReloadVersion((version) => version + 1)} />
+        <TechnicalStatus title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryTechnical} />
       ) : null}
 
       {data && technical ? <TechnicalAnalysisFeed data={data} technical={technical} identity={identity} displayTicker={displayTicker} /> : null}

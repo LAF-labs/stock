@@ -7,6 +7,7 @@ import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/com
 import SkeletonBlock from "@/components/SkeletonBlock";
 import StockHeader, { type JudgmentState, type QuoteRefreshState, type QuoteState } from "@/components/StockHeader";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
+import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
   displayTickerInput,
   refreshCooldownMessage,
@@ -17,6 +18,7 @@ import {
   symbolRef,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
+import { usePendingRetry } from "@/components/usePendingRetry";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
@@ -39,29 +41,6 @@ type LoadState =
   | { status: "success"; data: StockScoreResponse; error?: undefined }
   | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; data?: undefined; error: string };
-
-type ApiPayload = Record<string, unknown>;
-
-async function readApiPayload(response: Response): Promise<ApiPayload> {
-  const text = await response.text();
-  if (!text.trim()) {
-    throw new Error(response.ok ? "서버 응답이 비어 있어요." : `서버 응답이 비어 있어요. (HTTP ${response.status})`);
-  }
-
-  try {
-    const payload = JSON.parse(text) as unknown;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      throw new Error("non_object_payload");
-    }
-    return payload as ApiPayload;
-  } catch {
-    throw new Error(response.ok ? "서버 응답 형식이 올바르지 않아요." : `서버 오류 응답을 읽지 못했어요. (HTTP ${response.status})`);
-  }
-}
-
-function apiPayloadMessage(payload: ApiPayload, fallback: string): string {
-  return stringFromUnknown(payload.message) || stringFromUnknown(payload.error) || fallback;
-}
 
 function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse | undefined, fallbackTicker: string): string {
   const rawSymbol = stringFromUnknown(quote?.symbol) || stringFromUnknown(data.symbol) || stringFromUnknown(data.requested_ticker) || fallbackTicker;
@@ -97,7 +76,7 @@ export default function StockDashboard() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = await readApiPayload(response);
+        const payload = await readClientApiPayload(response);
         const pending = snapshotPendingFromPayload(payload, tickerParam);
         if (pending) {
           setState({ status: "pending", pending });
@@ -139,7 +118,7 @@ export default function StockDashboard() {
       cache: "no-store",
     })
       .then(async (response) => {
-        const payload = await readApiPayload(response);
+        const payload = await readClientApiPayload(response);
         const pending = snapshotPendingFromPayload(payload, tickerParam);
         if (pending) {
           setQuoteState({ status: "pending", pending });
@@ -209,7 +188,7 @@ export default function StockDashboard() {
       body: JSON.stringify(stockJudgmentRequestPayload(state.data)),
     })
       .then(async (response) => {
-        const payload = await readApiPayload(response);
+        const payload = await readClientApiPayload(response);
         if (!response.ok || !payload?.ok) {
           throw new Error(apiPayloadMessage(payload, "판단을 불러오지 못했어요."));
         }
@@ -234,6 +213,11 @@ export default function StockDashboard() {
   function retryLoad() {
     setReloadVersion((version) => version + 1);
   }
+
+  const scorePending = state.status === "pending" ? state.pending : undefined;
+  const quotePending = quoteState.status === "pending" ? quoteState.pending : undefined;
+  usePendingRetry({ pending: scorePending, retryKey: `score:${tickerParam}`, onRetry: retryLoad });
+  usePendingRetry({ pending: quotePending, retryKey: `quote:${tickerParam}`, onRetry: retryLoad });
 
   const data = state.status === "success" ? state.data : undefined;
   const visibleDetailSections = DETAIL_SECTIONS;
@@ -296,7 +280,7 @@ export default function StockDashboard() {
 
     fetch(`/api/quote?${query.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await readApiPayload(response);
+        const payload = await readClientApiPayload(response);
         if (controller.signal.aborted || currentTickerRef.current !== requestedTicker) return undefined;
         const pending = snapshotPendingFromPayload(payload, requestedTicker);
         if (pending) {

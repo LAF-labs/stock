@@ -2,6 +2,7 @@
 
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { activeSymbolItemForQuery, shouldFetchSymbolSearch } from "@/components/symbolAutocompleteHelpers";
 import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
 import { symbolDisplayName } from "@/lib/symbolDisplay";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -43,6 +44,7 @@ export default function SymbolAutocomplete({
   className = "",
 }: SymbolAutocompleteProps) {
   const [items, setItems] = useState<SymbolSearchItem[]>([]);
+  const [itemsQuery, setItemsQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -52,7 +54,6 @@ export default function SymbolAutocomplete({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const query = value.trim();
   const directItem = directInputSymbolItem(query);
-  const canSubmit = Boolean(directItem) && !disabled;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -60,6 +61,7 @@ export default function SymbolAutocomplete({
 
     if (!query) {
       setItems([]);
+      setItemsQuery("");
       setIsOpen(false);
       setIsLoading(false);
       setHasSearched(false);
@@ -68,9 +70,14 @@ export default function SymbolAutocomplete({
     }
 
     setItems([]);
+    setItemsQuery("");
     setIsOpen(false);
     setHasSearched(false);
     setSearchError(false);
+    if (!shouldFetchSymbolSearch(query)) {
+      setIsLoading(false);
+      return () => controller.abort();
+    }
     const timer = window.setTimeout(() => {
       setIsLoading(true);
       fetch(`/api/symbols?q=${encodeURIComponent(query)}&limit=8`, {
@@ -85,6 +92,7 @@ export default function SymbolAutocomplete({
         .then((nextItems) => {
           if (controller.signal.aborted) return;
           setItems(nextItems);
+          setItemsQuery(query);
           setActiveIndex(0);
           setHasSearched(true);
           setIsOpen(Boolean(query && nextItems.length && document.activeElement === inputRef.current));
@@ -92,6 +100,7 @@ export default function SymbolAutocomplete({
         .catch(() => {
           if (controller.signal.aborted) return;
           setItems([]);
+          setItemsQuery(query);
           setIsOpen(false);
           setHasSearched(true);
           setSearchError(true);
@@ -120,15 +129,17 @@ export default function SymbolAutocomplete({
 
   const listId = `${id}-list`;
   const statusId = `${id}-status`;
-  const activeItem = useMemo(() => items[activeIndex] || items[0], [activeIndex, items]);
+  const visibleItems = itemsQuery === query ? items : [];
+  const activeItem = useMemo(() => activeSymbolItemForQuery(items, itemsQuery, query, activeIndex), [activeIndex, items, itemsQuery, query]);
+  const canSubmit = Boolean(activeItem || directItem) && !disabled;
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
   const searchStatus = isLoading
     ? "종목을 검색하고 있어요."
     : searchError
       ? "종목 검색에 실패했어요."
       : hasSearched
-        ? items.length
-          ? `검색 결과 ${items.length}개`
+        ? visibleItems.length
+          ? `검색 결과 ${visibleItems.length}개`
           : "검색 결과가 없어요."
         : "";
 
@@ -151,16 +162,16 @@ export default function SymbolAutocomplete({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (!isOpen && (event.key === "ArrowDown" || event.key === "ArrowUp") && items.length) {
+    if (!isOpen && (event.key === "ArrowDown" || event.key === "ArrowUp") && visibleItems.length) {
       event.preventDefault();
       setIsOpen(true);
-      setActiveIndex(event.key === "ArrowUp" ? items.length - 1 : 0);
+      setActiveIndex(event.key === "ArrowUp" ? visibleItems.length - 1 : 0);
       return;
     }
     if (!isOpen && event.key !== "Enter") return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((index) => Math.min(index + 1, items.length - 1));
+      setActiveIndex((index) => Math.min(index + 1, visibleItems.length - 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((index) => Math.max(index - 1, 0));
@@ -169,7 +180,7 @@ export default function SymbolAutocomplete({
       setActiveIndex(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      setActiveIndex(Math.max(0, items.length - 1));
+      setActiveIndex(Math.max(0, visibleItems.length - 1));
     } else if (event.key === "Enter") {
       event.preventDefault();
       if (activeItem) {
@@ -193,7 +204,7 @@ export default function SymbolAutocomplete({
           ref={inputRef}
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
-          onFocus={() => setIsOpen(Boolean(query && items.length))}
+          onFocus={() => setIsOpen(Boolean(query && visibleItems.length))}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           autoComplete="off"
@@ -212,7 +223,7 @@ export default function SymbolAutocomplete({
         </button>
         {isOpen ? (
           <div className="symbol-suggestions" id={listId} role="listbox">
-            {items.map((item, index) => (
+            {visibleItems.map((item, index) => (
               <button
                 key={item.key}
                 id={`${listId}-option-${index}`}

@@ -213,12 +213,12 @@ Goal: Improve waiting/search behavior only after backend reasons and cost contro
 
 Tasks:
 
-- [ ] Create a shared client API response parser for browser components.
-- [ ] Replace duplicated `readApiPayload()` and API message helpers in dashboard and technical pages.
-- [ ] Add a pending polling hook that respects `retry_after_seconds`, caps attempts, adds jitter, and pauses while the tab is hidden.
-- [ ] Apply the polling hook to detail, compare, and technical pending states.
-- [ ] Store autocomplete result query alongside items and prevent stale active-item submit.
-- [ ] Avoid server symbol searches for one-character free text unless an exact ticker/direct entry is being submitted.
+- [x] Create a shared client API response parser for browser components.
+- [x] Replace duplicated `readApiPayload()` and API message helpers in dashboard and technical pages.
+- [x] Add a pending polling hook that respects `retry_after_seconds`, caps attempts, adds jitter, and pauses while the tab is hidden.
+- [x] Apply the polling hook to detail, compare, and technical pending states.
+- [x] Store autocomplete result query alongside items and prevent stale active-item submit.
+- [x] Avoid server symbol searches for one-character free text unless an exact ticker/direct entry is being submitted.
 
 Verification:
 
@@ -226,6 +226,27 @@ Verification:
 npm test -- tests/stockDashboardHelpers.test.ts tests/stockCompareHelpers.test.ts tests/symbolsRoute.test.ts tests/symbolSearch.test.ts
 npm run typecheck
 ```
+
+Actual verification:
+
+```bash
+node --import tsx --test tests/clientApi.test.ts tests/symbolAutocompleteHelpers.test.ts tests/stockDashboardHelpers.test.ts tests/stockCompareHelpers.test.ts
+# pass 38 / fail 0
+
+npm test -- tests/clientApi.test.ts tests/symbolAutocompleteHelpers.test.ts tests/stockDashboardHelpers.test.ts tests/stockCompareHelpers.test.ts tests/symbolsRoute.test.ts tests/symbolSearch.test.ts
+# pass 215 / fail 0
+
+npm run typecheck
+# exit 0
+```
+
+Reflection:
+
+- The shared browser parser removed duplicated text/JSON handling from detail, compare, and technical pages without changing route payload contracts.
+- Pending retry is intentionally thin: pure delay/scheduling rules are tested, while the hook only wires timers, visibility pause, and capped retry attempts.
+- Detail, quote, compare, and technical pending states now retry on the server-provided cadence instead of requiring a manual click.
+- Autocomplete now ties result items to the query that produced them, so fast input changes cannot submit an old active item.
+- One-character input no longer triggers symbol search requests; direct ticker submission still works through the existing direct-entry path.
 
 ## Phase 6: Security And Public Surface
 
