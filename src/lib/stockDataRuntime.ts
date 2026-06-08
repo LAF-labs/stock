@@ -1,5 +1,5 @@
 export type StockDataRuntimeMode = "python" | "snapshot";
-export type StockDataKind = "score" | "quote";
+export type StockDataKind = "score" | "quote" | "chart";
 export type StockDataUnavailableReason = "snapshot_miss" | "refresh_background_only" | "stale_refresh";
 export type StockDataScoreView = "detail" | "compare" | "technical";
 

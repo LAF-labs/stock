@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 
 import { getStockQuote } from "@/lib/stockQuoteCache";
 import { getStockScore, type ScoreView, type StockPayload } from "@/lib/stockSnapshotCache";
+import { chartSnapshotExpiresAt, lastBarDateFromChartPayload } from "@/lib/stockChartCache";
 import { QUOTE_CACHE_FRESH_SECONDS, QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
+import { runScoreCollector } from "@/lib/pythonStockCollector";
+import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import { loadLocalEnvFiles } from "./localEnv";
@@ -11,8 +14,8 @@ import { readinessContractPayload } from "./supabase_runtime_readiness";
 
 export { loadLocalEnvFiles } from "./localEnv";
 
-type RefreshKind = "quote" | "score";
-type WorkerMode = "quote" | "score" | "all";
+type RefreshKind = "quote" | "score" | "chart";
+type WorkerMode = "quote" | "score" | "chart" | "all";
 
 type RefreshJob = {
   id?: unknown;
@@ -42,6 +45,7 @@ type Options = {
   views: ScoreView[];
   skipQuote: boolean;
   skipScore: boolean;
+  skipChart: boolean;
   queueLimit: number;
   queueLockSeconds: number;
   workerId: string;
@@ -187,6 +191,39 @@ export async function upsertQuoteSnapshot(config: SupabaseConfig, ticker: string
   }
 }
 
+export async function upsertChartSnapshot(config: SupabaseConfig, ticker: string, payload: StockPayload, fetchedAt?: string, expiresAt?: string, staleExpiresAt?: string) {
+  const target = parseTickerRef(ticker);
+  const fetched = validIso(fetchedAt) || new Date().toISOString();
+  const expires = validIso(expiresAt) || new Date(Date.parse(fetched) + stockCachePolicyFreshSeconds("chart") * 1000).toISOString();
+  const stale = validIso(staleExpiresAt) || new Date(Math.max(Date.parse(expires), Date.parse(fetched) + stockCachePolicyStaleSeconds("chart") * 1000)).toISOString();
+  const response = await fetchWithTimeout(
+    `${config.url}/rest/v1/stock_chart_snapshots?on_conflict=ticker,source`,
+    {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(config.key),
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({
+        ticker: target.ticker,
+        market: target.market,
+        symbol: target.symbol,
+        source: "kis",
+        payload,
+        last_bar_date: lastBarDateFromChartPayload(payload),
+        fetched_at: fetched,
+        expires_at: expires,
+        stale_expires_at: stale,
+      }),
+    },
+    5_000
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase chart snapshot upsert failed: HTTP ${response.status} ${text.slice(0, 300)}`);
+  }
+}
+
 function assertFreshQuoteRefresh(cache: { source?: string; refreshError?: string }, ticker: string) {
   if (cache.refreshError) throw new Error(cache.refreshError);
   if (cache.source !== "market-data") {
@@ -195,7 +232,7 @@ function assertFreshQuoteRefresh(cache: { source?: string; refreshError?: string
 }
 
 async function publishTicker(ticker: string, options: Options, config?: SupabaseConfig) {
-  const row: Record<string, unknown> = { ticker, quote: null, scores: {}, errors: [] as Array<Record<string, unknown>> };
+  const row: Record<string, unknown> = { ticker, quote: null, chart: null, scores: {}, errors: [] as Array<Record<string, unknown>> };
   if (!options.skipQuote) {
     try {
       if (!options.dryRun) {
@@ -224,6 +261,15 @@ async function publishTicker(ticker: string, options: Options, config?: Supabase
       }
     }
   }
+  if (!options.skipChart) {
+    try {
+      if (!options.dryRun && config) await publishChartSnapshot(ticker, config);
+      row.chart = options.dryRun ? "dry_run" : "published";
+    } catch (error) {
+      row.chart = "error";
+      (row.errors as Array<Record<string, unknown>>).push({ kind: "chart", error: publicError(error) });
+    }
+  }
   return row;
 }
 
@@ -241,6 +287,8 @@ export async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, o
       const result = await getStockQuote(ticker, { forceRefresh: true });
       assertFreshQuoteRefresh(result.cache, ticker);
       await upsertQuoteSnapshot(config, ticker, result.payload, result.cache.fetchedAt, result.cache.expiresAt, result.cache.staleExpiresAt);
+    } else if (kind === "chart") {
+      await publishChartSnapshot(ticker, config);
     } else if (kind === "score") {
       if (!view) {
         throw new Error(`unsupported score view: ${String(rawView || "")}`);
@@ -264,6 +312,34 @@ export async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, o
   }
 
   return row;
+}
+
+async function publishChartSnapshot(ticker: string, config: SupabaseConfig) {
+  const payload = await runScoreCollector(ticker, "technical");
+  const chartPayload = chartPayloadFromTechnicalPayload(ticker, payload);
+  const fetchedAtMs = Date.now();
+  const fetchedAt = new Date(fetchedAtMs).toISOString();
+  const { expiresAt, staleExpiresAt } = await chartSnapshotExpiresAt(ticker, fetchedAtMs);
+  await upsertChartSnapshot(config, ticker, chartPayload, fetchedAt, expiresAt, staleExpiresAt);
+}
+
+function chartPayloadFromTechnicalPayload(ticker: string, payload: StockPayload): StockPayload {
+  const target = parseTickerRef(ticker);
+  const chartSeries = Array.isArray(payload.chart_series) ? payload.chart_series : [];
+  if (!chartSeries.length) throw new Error(`chart_series_missing:${ticker}`);
+  return {
+    ok: true,
+    type: "chart",
+    requested_ticker: target.ticker,
+    market: typeof payload.market === "string" ? payload.market : target.market,
+    symbol: typeof payload.symbol === "string" ? payload.symbol : target.symbol,
+    name: payload.name,
+    exchange: payload.exchange,
+    currency: payload.currency,
+    chart_series: chartSeries,
+    price_metrics: payload.price_metrics,
+    source_payload: "technical_fast_path",
+  };
 }
 
 export async function drainRefreshQueue(config: SupabaseConfig, options: Options) {
@@ -316,6 +392,7 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
     drainQueue: false,
     skipQuote: false,
     skipScore: true,
+    skipChart: true,
     queueLimit: positiveInteger(env.STOCK_SNAPSHOT_QUEUE_LIMIT, 50),
     queueLockSeconds: positiveInteger(env.STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS, 900),
     workerId: env.STOCK_SNAPSHOT_WORKER_ID || `stock-snapshot-ts-${process.pid}`,
@@ -339,6 +416,8 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--json") options.json = true;
     else if (arg === "--skip-quote") options.skipQuote = true;
+    else if (arg === "--include-chart") options.skipChart = false;
+    else if (arg === "--skip-chart") options.skipChart = true;
     else if (arg === "--include-score") options.skipScore = false;
     else if (arg === "--skip-score") options.skipScore = true;
     else if (arg === "--allow-score-python-fallback") options.allowScorePythonFallback = true;
@@ -352,9 +431,14 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
 
   const parsedViews = parseViews(views);
   const parsedTickers = parseTickerArgs(tickers);
+  if (mode === "chart") {
+    options.skipQuote = true;
+    options.skipScore = true;
+    options.skipChart = false;
+  }
   if (!parsedTickers.length && !options.drainQueue) throw new Error("At least one ticker is required unless --drain-queue is used.");
-  if (options.skipQuote && options.skipScore) throw new Error("At least one of quote or score publishing must be enabled.");
-  if (!options.allowScorePythonFallback && (mode !== "quote" || !options.skipScore)) {
+  if (options.skipQuote && options.skipScore && options.skipChart) throw new Error("At least one of quote, chart, or score publishing must be enabled.");
+  if (!options.allowScorePythonFallback && (mode === "score" || mode === "all" || !options.skipScore)) {
     throw new Error("Score publishing requires --allow-score-python-fallback. Use the legacy Python score worker for score jobs.");
   }
 
@@ -368,7 +452,7 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
 
 function parseMode(value: string): WorkerMode {
   const mode = value.trim().toLowerCase();
-  if (mode === "quote" || mode === "score" || mode === "all") return mode;
+  if (mode === "quote" || mode === "score" || mode === "chart" || mode === "all") return mode;
   throw new Error(`Unsupported queue kind: ${value}`);
 }
 

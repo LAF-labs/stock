@@ -70,6 +70,7 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
 }
 
 function defaultPriority(kind: StockDataKind, view: ScoreView | undefined): number {
+  if (kind === "chart") return 15;
   if (kind === "score" && view === "detail") return 20;
   if (kind === "score" && view === "compare") return 20;
   if (kind === "score" && view === "technical") return 20;

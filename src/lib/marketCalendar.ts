@@ -67,7 +67,12 @@ export function scoreOpenTtlSeconds(view: "detail" | "compare" | "technical"): n
   return numericEnv(name, base);
 }
 
-export async function cacheExpiresAtForMarket(market: MarketCode, kind: "quote" | "score", nowMs = Date.now(), view: "detail" | "compare" | "technical" = "detail") {
+export function chartOpenTtlSeconds(market: MarketCode): number {
+  const base = stockCachePolicyFreshSeconds("chart");
+  return numericEnv(`STOCK_CHART_${market}_CACHE_OPEN_SECONDS`, numericEnv("STOCK_CHART_CACHE_OPEN_SECONDS", base));
+}
+
+export async function cacheExpiresAtForMarket(market: MarketCode, kind: "quote" | "score" | "chart", nowMs = Date.now(), view: "detail" | "compare" | "technical" = "detail") {
   const session = await getMarketSession(market, nowMs);
   if (session.state !== "open" && session.cacheUntil) {
     return {
@@ -76,7 +81,7 @@ export async function cacheExpiresAtForMarket(market: MarketCode, kind: "quote" 
     };
   }
 
-  const ttl = kind === "quote" ? quoteOpenTtlSeconds(market) : scoreOpenTtlSeconds(view);
+  const ttl = kind === "quote" ? quoteOpenTtlSeconds(market) : kind === "chart" ? chartOpenTtlSeconds(market) : scoreOpenTtlSeconds(view);
   return {
     expiresAt: new Date(nowMs + ttl * 1000).toISOString(),
     session,

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_TABLE_CHECKS = (
     "public.stock_score_snapshots",
     "public.stock_quote_snapshots",
+    "public.stock_chart_snapshots",
     "public.stock_refresh_jobs",
     "public.stock_api_rate_limits",
     "public.stock_refresh_leases",
@@ -45,6 +46,7 @@ RUNTIME_RPC_SIGNATURE_CHECKS = (
 PUBLIC_READ_CHECKS = (
     ("stock_score_snapshots", "ticker"),
     ("stock_quote_snapshots", "ticker"),
+    ("stock_chart_snapshots", "ticker"),
     ("stock_fundamental_snapshots", "market"),
     ("market_calendar", "market"),
     ("stock_industry_benchmarks", "metric"),

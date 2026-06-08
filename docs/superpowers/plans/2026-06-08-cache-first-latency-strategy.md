@@ -141,11 +141,11 @@ git commit -m "feat: add stock cache policy contract"
 - Create: `supabase/migrations/20260608150000_stock_chart_snapshots.sql`
 - Create: `src/lib/stockChartCache.ts`
 - Modify: `scripts/publish_stock_snapshots.ts`
-- Modify: `scripts/stock_score/timeseries.py`
 - Test: `tests/stockChartCache.test.ts`
-- Test: `tests/test_timeseries_cache.py`
+- Test: `tests/publishStockSnapshotsTs.test.ts`
+- Test: `tests/supabaseRuntimeReadinessTs.test.ts`
 
-- [ ] **Step 1: Add chart snapshot migration tests/readiness check**
+- [x] **Step 1: Add chart snapshot migration tests/readiness check**
 
 Add test coverage that readiness fails if `stock_chart_snapshots` is missing after this phase.
 
@@ -155,7 +155,7 @@ Run:
 node --import tsx --test tests/supabaseRuntimeReadinessTs.test.ts
 ```
 
-- [ ] **Step 2: Add table migration**
+- [x] **Step 2: Add table migration**
 
 Create a table with:
 
@@ -172,7 +172,7 @@ Create a table with:
 
 Retain stale chart data for at least 30 days.
 
-- [ ] **Step 3: Implement `stockChartCache.ts`**
+- [x] **Step 3: Implement `stockChartCache.ts`**
 
 Behavior:
 
@@ -182,17 +182,17 @@ Behavior:
 - miss enqueues refresh without calling KIS from Vercel
 - closed historical bars are kept; only recent bars refresh
 
-- [ ] **Step 4: Teach worker to publish chart snapshots**
+- [x] **Step 4: Teach worker to publish chart snapshots**
 
-Use KIS daily bars and write `stock_chart_snapshots`. Do not call yfinance for technical chart history in production.
+Use the existing KIS technical fast path, extract its `chart_series`, and write `stock_chart_snapshots`. Do not call yfinance for technical chart history in production.
 
-- [ ] **Step 5: Verify Phase 2**
+- [x] **Step 5: Verify Phase 2**
 
 Run:
 
 ```bash
-node --import tsx --test tests/stockChartCache.test.ts tests/supabaseRuntimeReadinessTs.test.ts
-bash scripts/run_python.sh -m unittest tests.test_timeseries_cache
+node --import tsx --test tests/stockChartCache.test.ts tests/stockRefreshQueue.test.ts tests/publishStockSnapshotsTs.test.ts tests/supabaseRuntimeReadinessTs.test.ts tests/stockDataRuntime.test.ts
+bash scripts/run_python.sh -m unittest tests.test_supabase_runtime_readiness
 npm run typecheck
 ```
 

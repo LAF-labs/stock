@@ -21,6 +21,16 @@ test("TypeScript Supabase readiness contract catches missing required checks", (
   assert.deepEqual(payload.missing_rpcs, ["claim_stock_refresh_jobs_by_kind"]);
 });
 
+test("TypeScript Supabase readiness requires chart snapshots", () => {
+  const payload = readinessContractPayload({
+    required_tables: RUNTIME_TABLE_CHECKS.filter((table) => table !== "public.stock_chart_snapshots"),
+    required_rpcs: RUNTIME_RPC_CHECKS,
+  });
+
+  assert.equal(payload.ok, false);
+  assert.deepEqual(payload.missing_tables, ["public.stock_chart_snapshots"]);
+});
+
 test("TypeScript Supabase readiness contract catches RPC signature and grant drift", () => {
   const payload = readinessContractPayload({
     required_tables: RUNTIME_TABLE_CHECKS,

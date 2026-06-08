@@ -156,3 +156,29 @@ test("enqueueStockRefreshJob sends quote jobs without a view mode", async () => 
     p_payload: { reason: "snapshot_miss", requested_ticker: "KR:005930" },
   });
 });
+
+test("enqueueStockRefreshJob sends chart jobs as a high-priority independent lane", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co/";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  let capturedBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_url, init) => {
+    capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({ id: "job-chart", status: "queued" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const result = await enqueueStockRefreshJob({ kind: "chart" as never, ticker: "US:KO" });
+
+  assert.equal(result.queued, true);
+  assert.deepEqual(capturedBody, {
+    p_kind: "chart",
+    p_market: "US",
+    p_symbol: "KO",
+    p_view_mode: null,
+    p_priority: 15,
+    p_payload: { reason: "snapshot_miss", requested_ticker: "US:KO" },
+  });
+});

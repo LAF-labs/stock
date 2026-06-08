@@ -10,6 +10,7 @@ import {
   permanentRefreshFailure,
   publishQueueJob,
   retryAfterSeconds,
+  upsertChartSnapshot,
   run,
   upsertQuoteSnapshot,
 } from "../scripts/publish_stock_snapshots";
@@ -57,6 +58,14 @@ test("TypeScript snapshot worker claims quote jobs with kind-specific RPC", asyn
     p_lock_seconds: 900,
   });
   assert.equal(calls[0].authorization, "Bearer service-role-key");
+});
+
+test("TypeScript snapshot worker accepts chart queue mode", async () => {
+  const options = parseOptions(["--drain-queue", "--kind", "chart", "--worker-id", "worker-chart"], {});
+
+  assert.equal(options.mode, "chart");
+  assert.equal(options.skipQuote, true);
+  assert.equal(options.skipScore, true);
 });
 
 test("TypeScript snapshot worker preflights Supabase runtime before queue drain", async () => {
@@ -176,6 +185,40 @@ test("TypeScript snapshot worker upserts quote snapshots with serving columns", 
   assert.equal(capturedBody?.symbol, "KO");
   assert.equal(capturedBody?.source, "kis");
   assert.equal(capturedBody?.stale_expires_at, "2026-06-07T00:00:00.000Z");
+});
+
+test("TypeScript snapshot worker upserts chart snapshots with serving columns", async () => {
+  let capturedUrl = "";
+  let capturedBody: Record<string, unknown> | undefined;
+  globalThis.fetch = (async (input, init) => {
+    capturedUrl = String(input);
+    capturedBody = JSON.parse(String(init?.body));
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+
+  await upsertChartSnapshot(
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    "US:KO",
+    {
+      ok: true,
+      type: "chart",
+      requested_ticker: "US:KO",
+      market: "US",
+      symbol: "KO",
+      chart_series: [{ date: "2026-06-08", close: 72.25 }],
+    },
+    "2026-06-08T00:00:00.000Z",
+    "2026-06-08T00:15:00.000Z",
+    "2026-07-08T00:00:00.000Z"
+  );
+
+  assert.equal(capturedUrl, "https://example.supabase.co/rest/v1/stock_chart_snapshots?on_conflict=ticker,source");
+  assert.equal(capturedBody?.ticker, "US:KO");
+  assert.equal(capturedBody?.market, "US");
+  assert.equal(capturedBody?.symbol, "KO");
+  assert.equal(capturedBody?.source, "kis");
+  assert.equal(capturedBody?.last_bar_date, "2026-06-08");
+  assert.equal(capturedBody?.stale_expires_at, "2026-07-08T00:00:00.000Z");
 });
 
 test("TypeScript snapshot worker keeps retry and permanent failure contracts", () => {

@@ -4,6 +4,7 @@ import { loadLocalEnvFiles } from "./localEnv";
 export const RUNTIME_TABLE_CHECKS = [
   "public.stock_score_snapshots",
   "public.stock_quote_snapshots",
+  "public.stock_chart_snapshots",
   "public.stock_refresh_jobs",
   "public.stock_api_rate_limits",
   "public.stock_refresh_leases",
@@ -38,6 +39,7 @@ export const RUNTIME_RPC_SIGNATURE_CHECKS = [
 export const PUBLIC_READ_CHECKS = [
   ["stock_score_snapshots", "ticker"],
   ["stock_quote_snapshots", "ticker"],
+  ["stock_chart_snapshots", "ticker"],
   ["stock_fundamental_snapshots", "market"],
   ["market_calendar", "market"],
   ["stock_industry_benchmarks", "metric"],
