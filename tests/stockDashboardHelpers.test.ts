@@ -10,7 +10,9 @@ import {
   dailyToneClass,
   directInputSymbolItem,
   displayTickerInput,
+  factorSummary,
   formatMetricDisplayValue,
+  formatNote,
   formatPrimaryPrice,
   formatPriceWithContext,
   formatRecordValue,
@@ -30,7 +32,9 @@ import {
   stockHeaderIdentity,
   stockJudgmentRequestPayload,
   stockMarketCapDisplay,
+  termTipFor,
   usableChartPoints,
+  visibleLabeledItems,
   visibleRecordEntries,
 } from "../src/components/stockDashboardHelpers";
 import { compactRuleJudgmentStock, tickerFromRuleJudgmentStock, validRuleJudgmentStock } from "../src/lib/ruleBasedJudgment";
@@ -412,6 +416,17 @@ test("shouldUseCompactMetricGrid keeps only short numeric metric groups horizont
   );
 });
 
+test("factorSummary avoids trading-status wording in quality reasons", () => {
+  assert.equal(
+    factorSummary({
+      key: "health",
+      label: "거래 안정성",
+      summary: "거래 상태, 유동성, 규모, 부채와 현금흐름 체력을 봐요.",
+    }),
+    "거래량, 시가총액, 부채 부담, 현금흐름처럼 거래 체력을 봐요.",
+  );
+});
+
 test("stockMarketCapDisplay formats domestic caps in Korean won units", () => {
   assert.deepEqual(
     stockMarketCapDisplay({
@@ -502,6 +517,32 @@ test("dashboard record formatting hides provider-only fields and formats ratio f
   assert.equal(formatRecordValue("totalRevenue", 49_284_001_792, { market: "US", currency: "USD", usd_krw_rate: 1370 }), "67조 5191억원 ($49.3B)");
   assert.equal(formatRecordValue("totalCash", 147_378_078_220_288, { market: "KR", currency: "KRW" }), "147조 3781억원");
   assert.deepEqual(visibleRecordEntries({ source: "provider", price: 123, market_scope: "US" }), [["price", 123]]);
+});
+
+test("dashboard list display removes internal source and company metadata fields", () => {
+  assert.deepEqual(
+    visibleLabeledItems([
+      { label: "회사명", value: "삼성전자" },
+      { label: "상품유형코드", value: "300" },
+      { label: "통화", value: "KRW" },
+      { label: "환율 기준", value: "$1 = 약 1,370원" },
+      { label: "Forward PER", value: "13.40", note: "yfinance" },
+      { label: "거래가능여부", value: "Y" },
+      { label: "신뢰도", value: "80.0%" },
+    ]),
+    [
+      { label: "회사명", value: "삼성전자" },
+      { label: "Forward PER", value: "13.40", note: "yfinance" },
+      { label: "근거 충분도", value: "80.0%" },
+    ],
+  );
+});
+
+test("dashboard hides provider-only notes and explains recommendation mean", () => {
+  assert.equal(formatNote("yfinance"), undefined);
+  assert.equal(formatNote("Yahoo Finance 기준"), undefined);
+  assert.equal(termTipFor("투자의견 평균")?.body, "애널리스트 투자의견을 평균낸 값이에요. 1에 가까울수록 매수 쪽, 5에 가까울수록 매도 쪽이에요.");
+  assert.equal(termTipFor("근거 충분도")?.body, "이 항목 점수에 쓸 데이터가 얼마나 충분했는지 보여줘요.");
 });
 
 test("displayTickerInput strips market prefixes only", () => {

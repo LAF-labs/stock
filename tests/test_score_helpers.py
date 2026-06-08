@@ -318,9 +318,14 @@ class ScoreHelperTests(unittest.TestCase):
             "opportunity_liquidity",
             "opportunity_risk",
         ])
+        self.assertEqual(components[0]["metrics"][0], {"label": "근거 충분도", "value": "80.0%"})
+        self.assertEqual(components[1]["metrics"][0], {"label": "근거 충분도", "value": "70.0%"})
         self.assertEqual(components[2]["metrics"][0], {"label": "목표가 여지", "value": "+25.0%"})
         self.assertEqual(components[2]["metrics"][1], {"label": "애널리스트 수", "value": "7명"})
-        self.assertEqual(components[4]["metrics"][2], {"label": "적용 상한", "value": "speculative_expensive_sales"})
+        for component in components:
+            labels = [metric["label"] for metric in component["metrics"]]
+            self.assertNotIn("신뢰도", labels)
+            self.assertNotIn("적용 상한", labels)
 
     def test_timeseries_helpers_build_chart_rows(self):
         history = pd.DataFrame(

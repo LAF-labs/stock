@@ -25,6 +25,12 @@ def signal_for(score: float, rsi: float | None, return_3m: float | None) -> str:
     return "HOLD"
 
 
+def confidence_pct(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value * 100:.1f}%"
+
+
 def top_like_current(
     symbol: str,
     name: str,
@@ -70,7 +76,7 @@ def opportunity_components_for(
             "score": round(components["momentum"].score, 1),
             "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
             "metrics": [
-                {"label": "신뢰도", "value": pct(components["momentum"].confidence)},
+                {"label": "근거 충분도", "value": confidence_pct(components["momentum"].confidence)},
             ],
         },
         {
@@ -80,7 +86,7 @@ def opportunity_components_for(
             "score": round(components["estimate_growth"].score, 1),
             "summary": "매출과 이익 성장률이 기회로 이어질 수 있는지 봐요.",
             "metrics": [
-                {"label": "신뢰도", "value": pct(components["estimate_growth"].confidence)},
+                {"label": "근거 충분도", "value": confidence_pct(components["estimate_growth"].confidence)},
             ],
         },
         {
@@ -115,7 +121,6 @@ def opportunity_components_for(
             "metrics": [
                 {"label": "ATR14", "value": pct(atr14_pct)},
                 {"label": "베타", "value": f"{beta:.2f}" if beta is not None else "-"},
-                {"label": "적용 상한", "value": ", ".join(opportunity.caps) if opportunity.caps else "-"},
             ],
         },
     ]

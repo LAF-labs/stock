@@ -14,10 +14,10 @@ import {
   formatRecordValue,
   humanizeRecordKey,
   isRecordValue,
-  isSourceOnlyLabel,
   shouldUseCompactMetricGrid,
   termTipFor,
   usableChartPoints,
+  visibleLabeledItems,
   visibleRecordEntries,
 } from "@/components/stockDashboardHelpers";
 import { clampScore, formatDateTimeFromEpoch } from "@/lib/format";
@@ -166,6 +166,7 @@ export function FactorStory({
       <div className="factor-list">
         {components.map((component) => {
           const score = clampScore(component.score);
+          const visibleMetrics = visibleLabeledItems(component.metrics);
           return (
             <article key={component.key || component.label}>
               <div className="factor-heading">
@@ -181,8 +182,8 @@ export function FactorStory({
                 <b style={{ width: `${score}%` }} />
               </i>
               <p>{factorSummary(component)}</p>
-              <ul className={shouldUseCompactMetricGrid(component) ? "compact-metric-grid" : undefined}>
-                {(component.metrics || []).map((metric) => (
+              <ul className={shouldUseCompactMetricGrid({ ...component, metrics: visibleMetrics }) ? "compact-metric-grid" : undefined}>
+                {visibleMetrics.map((metric) => (
                   <li key={`${component.key}-${metric.label}`}>
                     <span>
                       <LabelWithTerm label={metric.label || "항목"} />
@@ -214,7 +215,7 @@ export function SimpleList({
   defaultOpen?: boolean;
   desktopOpen?: boolean;
 }) {
-  const visibleItems = (items || []).filter((item) => !isSourceOnlyLabel(item.label));
+  const visibleItems = visibleLabeledItems(items);
   if (!visibleItems.length) return <EmptyCard title={title} body="표시할 데이터가 없어요." />;
   return (
     <AccordionCard title={title} description={description} defaultOpen={defaultOpen} desktopOpen={desktopOpen}>
