@@ -6,7 +6,10 @@ import { enqueueStockPendingPayload, stockPendingJsonResponse } from "../src/lib
 const ORIGINAL_ENV = {
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS: process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS,
+  STOCK_SCORE_MISS_RETRY_AFTER_SECONDS: process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS,
 };
+const ORIGINAL_FETCH = globalThis.fetch;
 
 test.afterEach(() => {
   for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
@@ -16,6 +19,7 @@ test.afterEach(() => {
       process.env[key] = value;
     }
   }
+  globalThis.fetch = ORIGINAL_FETCH;
 });
 
 test("stock pending response exposes refresh queue outage instead of accepted work", async () => {
@@ -52,6 +56,33 @@ test("stock pending response keeps retry headers only for queued refresh work", 
 
   assert.equal(response.status, 202);
   assert.equal(response.headers.get("retry-after"), "120");
+});
+
+test("queued score snapshot misses return a five second retry header", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS = "300";
+  delete process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS;
+
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ id: "job-score", status: "queued" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  const payload = await enqueueStockPendingPayload({
+    kind: "score",
+    ticker: "US:CLIK",
+    view: "detail",
+    priority: 20,
+    reason: "snapshot_miss",
+  });
+  const response = stockPendingJsonResponse(payload);
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 202);
+  assert.equal(body.retry_after_seconds, 5);
+  assert.equal(response.headers.get("retry-after"), "5");
 });
 
 test("stock pending response preserves stale refresh reasons", async () => {

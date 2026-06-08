@@ -42,6 +42,8 @@ export type StockDataPendingPayload = {
 const SNAPSHOT_ALIASES = new Set(["snapshot", "supabase", "cache", "cache-only", "readonly", "read-only"]);
 const PYTHON_ALIASES = new Set(["python", "collector", "subprocess"]);
 const TRUTHY = new Set(["1", "true", "yes", "on"]);
+const DEFAULT_QUEUE_RETRY_AFTER_SECONDS = 300;
+const DEFAULT_SCORE_MISS_RETRY_AFTER_SECONDS = 5;
 
 export function stockDataRuntimeMode(env: StockDataRuntimeEnv = process.env): StockDataRuntimeMode {
   const raw = (env.STOCK_DATA_RUNTIME || env.STOCK_DATA_BACKEND || "").trim().toLowerCase();
@@ -73,9 +75,15 @@ export function stockDataUnavailablePayload(input: StockDataUnavailableInput): S
   };
 }
 
-export function stockDataPendingRetryAfterSeconds(env: StockDataRuntimeEnv = process.env): number {
-  const parsed = Number(env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 300;
+export function stockDataPendingRetryAfterSeconds(
+  input?: Pick<StockDataUnavailableInput, "kind" | "reason">,
+  env: StockDataRuntimeEnv = process.env
+): number {
+  if (input?.kind === "score" && input.reason === "snapshot_miss") {
+    return positiveSeconds(env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS) ?? DEFAULT_SCORE_MISS_RETRY_AFTER_SECONDS;
+  }
+
+  return positiveSeconds(env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS) ?? DEFAULT_QUEUE_RETRY_AFTER_SECONDS;
 }
 
 export function stockDataPendingPayload(
@@ -92,9 +100,14 @@ export function stockDataPendingPayload(
     ticker: input.ticker,
     ...(input.view ? { view: input.view } : {}),
     reason: input.reason,
-    retry_after_seconds: input.retryAfterSeconds ?? stockDataPendingRetryAfterSeconds(),
+    retry_after_seconds: input.retryAfterSeconds ?? stockDataPendingRetryAfterSeconds(input),
     refresh_request: input.refreshRequest,
   };
+}
+
+function positiveSeconds(value: string | undefined): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export class StockDataUnavailableError extends Error {

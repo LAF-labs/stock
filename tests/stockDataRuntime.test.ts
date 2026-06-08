@@ -11,6 +11,7 @@ import {
 } from "../src/lib/stockDataRuntime";
 
 const ORIGINAL_RETRY_AFTER = process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+const ORIGINAL_SCORE_MISS_RETRY_AFTER = process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS;
 const ORIGINAL_ALLOW_VERCEL_PYTHON = process.env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME;
 
 test.afterEach(() => {
@@ -18,6 +19,11 @@ test.afterEach(() => {
     delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
   } else {
     process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS = ORIGINAL_RETRY_AFTER;
+  }
+  if (ORIGINAL_SCORE_MISS_RETRY_AFTER === undefined) {
+    delete process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS;
+  } else {
+    process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS = ORIGINAL_SCORE_MISS_RETRY_AFTER;
   }
   if (ORIGINAL_ALLOW_VERCEL_PYTHON === undefined) {
     delete process.env.STOCK_ALLOW_VERCEL_PYTHON_RUNTIME;
@@ -138,8 +144,25 @@ test("snapshot pending payload can describe stale refresh work", () => {
 
 test("snapshot pending payload defaults to the queue worker cadence", () => {
   delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+  delete process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS;
 
   assert.equal(stockDataPendingRetryAfterSeconds(), 300);
+
+  const payload = stockDataPendingPayload({
+    kind: "quote",
+    ticker: "US:POET",
+    reason: "snapshot_miss",
+    refreshRequest: { queued: true, job_id: "job-2", status: "queued" },
+  });
+
+  assert.equal(payload.retry_after_seconds, 300);
+});
+
+test("score snapshot misses retry quickly while queued score refresh runs", () => {
+  delete process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS;
+  delete process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS;
+
+  assert.equal(stockDataPendingRetryAfterSeconds({ kind: "score", reason: "snapshot_miss" }), 5);
 
   const payload = stockDataPendingPayload({
     kind: "score",
@@ -149,7 +172,20 @@ test("snapshot pending payload defaults to the queue worker cadence", () => {
     refreshRequest: { queued: true, job_id: "job-2", status: "queued" },
   });
 
-  assert.equal(payload.retry_after_seconds, 300);
+  assert.equal(payload.retry_after_seconds, 5);
+});
+
+test("generic queue retry override does not slow score snapshot misses", () => {
+  process.env.STOCK_REFRESH_QUEUE_RETRY_AFTER_SECONDS = "120";
+  delete process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS;
+
+  assert.equal(stockDataPendingRetryAfterSeconds({ kind: "score", reason: "snapshot_miss" }), 5);
+});
+
+test("score snapshot miss retry hint can be tuned by environment", () => {
+  process.env.STOCK_SCORE_MISS_RETRY_AFTER_SECONDS = "8";
+
+  assert.equal(stockDataPendingRetryAfterSeconds({ kind: "score", reason: "snapshot_miss" }), 8);
 });
 
 test("snapshot pending retry hint can be tuned by environment", () => {
