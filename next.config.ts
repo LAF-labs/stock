@@ -10,6 +10,12 @@ export const PYTHON_COLLECTOR_TRACE_INCLUDES = [
 
 export const SYMBOL_SEARCH_TRACE_INCLUDES = ["./src/data/symbols.generated.json"];
 
+export const SERVER_TRACE_EXCLUDES = [
+  "./next.config.ts",
+  "./services/market-data/target/**",
+  "./output/**",
+];
+
 export function shouldIncludePythonCollector(env: BuildEnv = process.env): boolean {
   const requested =
     env.INCLUDE_PYTHON_COLLECTOR === "1"
@@ -90,9 +96,9 @@ const nextConfig: NextConfig = {
         },
       }),
   outputFileTracingExcludes: {
-    "/api/quote": ["./next.config.ts"],
-    "/api/score": ["./next.config.ts"],
-    "/api/score/batch": ["./next.config.ts"],
+    "/api/quote": SERVER_TRACE_EXCLUDES,
+    "/api/score": SERVER_TRACE_EXCLUDES,
+    "/api/score/batch": SERVER_TRACE_EXCLUDES,
   },
 };
 

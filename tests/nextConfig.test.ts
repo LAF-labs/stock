@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import nextConfig, { PYTHON_COLLECTOR_TRACE_INCLUDES, SYMBOL_SEARCH_TRACE_INCLUDES, shouldIncludePythonCollector } from "../next.config";
+import nextConfig, {
+  PYTHON_COLLECTOR_TRACE_INCLUDES,
+  SERVER_TRACE_EXCLUDES,
+  SYMBOL_SEARCH_TRACE_INCLUDES,
+  shouldIncludePythonCollector,
+} from "../next.config";
 
 test("Next config excludes Python collector by default", () => {
   assert.equal(shouldIncludePythonCollector({}), false);
@@ -32,6 +37,8 @@ test("Next config traces Python helpers and symbol fallback assets", () => {
     "./requirements.txt",
   ]);
   assert.deepEqual(SYMBOL_SEARCH_TRACE_INCLUDES, ["./src/data/symbols.generated.json"]);
+  assert.ok(SERVER_TRACE_EXCLUDES.includes("./services/market-data/target/**"));
+  assert.ok(SERVER_TRACE_EXCLUDES.includes("./output/**"));
 
   const config = nextConfig as {
     outputFileTracingIncludes?: Record<string, string[]>;
@@ -42,6 +49,9 @@ test("Next config traces Python helpers and symbol fallback assets", () => {
   assert.deepEqual(config.outputFileTracingIncludes?.["/api/symbols"], SYMBOL_SEARCH_TRACE_INCLUDES);
   assert.deepEqual(config.outputFileTracingIncludes?.["/api/score"], SYMBOL_SEARCH_TRACE_INCLUDES);
   assert.deepEqual(config.outputFileTracingIncludes?.["/technical"], SYMBOL_SEARCH_TRACE_INCLUDES);
+  assert.deepEqual(config.outputFileTracingExcludes?.["/api/quote"], SERVER_TRACE_EXCLUDES);
+  assert.deepEqual(config.outputFileTracingExcludes?.["/api/score"], SERVER_TRACE_EXCLUDES);
+  assert.deepEqual(config.outputFileTracingExcludes?.["/api/score/batch"], SERVER_TRACE_EXCLUDES);
 });
 
 test("Next config emits strict production security headers", async () => {
