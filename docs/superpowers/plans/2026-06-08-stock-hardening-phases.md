@@ -254,11 +254,11 @@ Goal: Reduce accidental public exposure while preserving intentional public cach
 
 Tasks:
 
-- [ ] Add a snapshot payload sanitizer or deep-scan guard for secret/debug-like keys.
-- [ ] Apply the sanitizer before score and quote snapshot writes.
-- [ ] Add production allowed-origin handling with `STOCK_ALLOWED_ORIGINS`.
-- [ ] Test Host spoofing against same-origin browser write guard.
-- [ ] Defer Supabase public-view migration unless the sanitizer reveals a concrete schema problem.
+- [x] Add a snapshot payload sanitizer or deep-scan guard for secret/debug-like keys.
+- [x] Apply the sanitizer before score and quote snapshot writes.
+- [x] Add production allowed-origin handling with `STOCK_ALLOWED_ORIGINS`.
+- [x] Test Host spoofing against same-origin browser write guard.
+- [x] Defer Supabase public-view migration unless the sanitizer reveals a concrete schema problem.
 
 Verification:
 
@@ -266,6 +266,27 @@ Verification:
 npm test -- tests/apiRouteSecurity.test.ts tests/stockCacheSnapshotMode.test.ts tests/kisQuoteClient.test.ts
 npm run typecheck
 ```
+
+Actual verification:
+
+```bash
+node --import tsx --test tests/snapshotPayloadSanitizer.test.ts tests/apiRouteSecurity.test.ts
+# pass 17 / fail 0
+
+npm test -- tests/snapshotPayloadSanitizer.test.ts tests/apiRouteSecurity.test.ts tests/stockCacheSnapshotMode.test.ts tests/kisQuoteClient.test.ts
+# pass 219 / fail 0
+
+npm run typecheck
+# exit 0
+```
+
+Reflection:
+
+- Snapshot writes now sanitize score and quote payloads at the persistence boundary, keeping served in-memory payload behavior unchanged.
+- The sanitizer removes nested credential and debug-like keys while preserving public contract keys such as `key_metrics` and `fetch.source`.
+- `STOCK_ALLOWED_ORIGINS` lets production pin browser write origins; when configured, Host-derived origins are no longer trusted for that guard.
+- Host spoofing was a real policy gap in the previous guard because `Host` could create an accepted origin candidate.
+- No Supabase public-view migration was added; the sanitizer addresses the concrete exposure risk without changing schema.
 
 ## Phase 7: Performance And CI Cleanup
 

@@ -4,6 +4,7 @@ import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
 
@@ -172,7 +173,7 @@ async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
       body: JSON.stringify({
         ticker: snapshot.ticker,
         view_mode: snapshot.view,
-        payload: snapshot.payload,
+        payload: sanitizeSnapshotPayload(snapshot.payload),
         fetched_at: snapshot.fetchedAt,
         expires_at: snapshot.expiresAt,
       }),

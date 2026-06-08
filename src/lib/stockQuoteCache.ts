@@ -7,6 +7,7 @@ import { QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
@@ -109,7 +110,7 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
         market: target.market,
         symbol: target.symbol,
         source: "kis",
-        payload: snapshot.payload,
+        payload: sanitizeSnapshotPayload(snapshot.payload),
         fetched_at: snapshot.fetchedAt,
         expires_at: snapshot.expiresAt,
         stale_expires_at: snapshot.staleExpiresAt || fallbackStaleExpiresAt(snapshot.fetchedAt, snapshot.expiresAt),

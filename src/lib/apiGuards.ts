@@ -125,6 +125,9 @@ function sameOriginRequestUrl(value: string, request: Request): boolean {
 }
 
 function requestOrigins(request: Request): Set<string> {
+  const configuredOrigins = configuredAllowedOrigins();
+  if (configuredOrigins) return configuredOrigins;
+
   const origins = new Set<string>();
   const requestUrl = new URL(request.url);
   origins.add(requestUrl.origin);
@@ -134,6 +137,23 @@ function requestOrigins(request: Request): Set<string> {
   const protocol = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto : requestUrl.protocol.replace(/:$/, "");
   if (host && protocol) origins.add(`${protocol}://${host}`);
 
+  return origins;
+}
+
+function configuredAllowedOrigins(): Set<string> | undefined {
+  const raw = process.env.STOCK_ALLOWED_ORIGINS?.trim();
+  if (!raw) return undefined;
+
+  const origins = new Set<string>();
+  for (const value of raw.split(",")) {
+    const candidate = value.trim();
+    if (!candidate) continue;
+    try {
+      origins.add(new URL(candidate).origin);
+    } catch {
+      // Invalid configured origins are ignored; if none are valid, browser writes fail closed.
+    }
+  }
   return origins;
 }
 

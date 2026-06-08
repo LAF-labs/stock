@@ -17,6 +17,7 @@ const ENV_KEYS = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "STOCK_RATE_LIMIT_SECRET",
   "STOCK_REFRESH_COOKIE_SECRET",
+  "STOCK_ALLOWED_ORIGINS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -302,6 +303,50 @@ test("judgment route accepts same-origin browser writes when request url and hos
 
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "invalid_stock_payload");
+});
+
+test("judgment route accepts configured production allowed origins", async () => {
+  restoreEnv();
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_ALLOWED_ORIGINS = "https://stock.example.com";
+
+  const response = await postJudgment(
+    request("/api/judgment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Host: "localhost",
+        Origin: "https://stock.example.com",
+        Referer: "https://stock.example.com/?ticker=US:KO",
+      },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "invalid_stock_payload");
+});
+
+test("judgment route rejects Host-spoofed origins when allowed origins are configured", async () => {
+  restoreEnv();
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_ALLOWED_ORIGINS = "https://stock.example.com";
+
+  const response = await postJudgment(
+    request("/api/judgment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Host: "attacker.example",
+        Origin: "http://attacker.example",
+        Referer: "http://attacker.example/?ticker=US:KO",
+      },
+      body: JSON.stringify({ ok: true }),
+    })
+  );
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, "cross_site_request");
 });
 
 test("judgment route rejects null-origin browser writes without same-origin referer", async () => {
