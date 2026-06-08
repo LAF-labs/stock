@@ -332,7 +332,7 @@ test("score stale snapshot enqueues stale refresh work instead of a snapshot mis
     p_market: "US",
     p_symbol: "SCORESTALE",
     p_view_mode: "detail",
-    p_priority: 60,
+    p_priority: 70,
     p_payload: { reason: "stale_refresh", requested_ticker: ticker },
   });
 });
@@ -514,7 +514,7 @@ test("quote stale snapshot returns immediately while inline provider refresh con
   assert.equal(providerCalls > 0, true);
 });
 
-test("quote stale snapshot also enqueues a refresh backstop when Supabase admin is configured", async () => {
+test("quote stale snapshot avoids queued backstop when inline refresh is available", async () => {
   useSnapshotOnlyRuntime();
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
@@ -570,14 +570,7 @@ test("quote stale snapshot also enqueues a refresh backstop when Supabase admin 
   await sleep(20);
 
   assert.equal(result.cache.state, "stale");
-  assert.deepEqual(enqueueBody, {
-    p_kind: "quote",
-    p_market: "KR",
-    p_symbol: "008888",
-    p_view_mode: null,
-    p_priority: 70,
-    p_payload: { reason: "stale_refresh", requested_ticker: ticker },
-  });
+  assert.equal(enqueueBody, undefined);
 });
 
 test("quote cache honors Supabase stale_expires_at over local stale ttl math", async () => {

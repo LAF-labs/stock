@@ -3,16 +3,14 @@ import test from "node:test";
 
 import { parseQueueStatusOptions, refreshQueueStatus } from "../scripts/stock_refresh_queue_status";
 
-test("refresh queue status counts due score jobs from Supabase content-range", async () => {
+test("refresh queue status checks due score job existence without exact counts", async () => {
   const originalFetch = global.fetch;
   let requestedUrl = "";
   global.fetch = async (input) => {
     requestedUrl = String(input);
-    return new Response("[]", {
+    return new Response(JSON.stringify([{ id: "job-score" }]), {
       status: 200,
-      headers: {
-        "Content-Range": "0-0/2",
-      },
+      headers: { "Content-Type": "application/json" },
     });
   };
 
@@ -23,11 +21,41 @@ test("refresh queue status counts due score jobs from Supabase content-range", a
       new Date("2026-06-06T00:00:00Z")
     );
 
-    assert.equal(payload.queued_jobs, 2);
+    assert.equal(payload.queued_jobs, 1);
     assert.equal(payload.should_run, true);
     assert.match(requestedUrl, /kind=eq\.score/);
-    assert.match(requestedUrl, /status=eq\.queued/);
-    assert.match(requestedUrl, /run_after=lte\.2026-06-06T00%3A00%3A00\.000Z/);
+    assert.match(decodeURIComponent(requestedUrl), /status\.eq\.queued/);
+    assert.match(decodeURIComponent(requestedUrl), /run_after\.lte\.2026-06-06T00:00:00\.000Z/);
+    assert.match(decodeURIComponent(requestedUrl), /status\.eq\.running/);
+    assert.match(decodeURIComponent(requestedUrl), /lease_until\.lt\.2026-06-06T00:00:00\.000Z/);
+    assert.doesNotMatch(requestedUrl, /attempts=/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("refresh queue status can check due chart jobs", async () => {
+  const originalFetch = global.fetch;
+  let requestedUrl = "";
+  global.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify([{ id: "job-chart" }]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const payload = await refreshQueueStatus(
+      { url: "https://example.supabase.co", key: "service-role-key" },
+      { kind: "chart", dueOnly: true, json: true, timeoutMs: 1000 },
+      new Date("2026-06-06T00:00:00Z")
+    );
+
+    assert.equal(payload.kind, "chart");
+    assert.equal(payload.queued_jobs, 1);
+    assert.equal(payload.should_run, true);
+    assert.match(requestedUrl, /kind=eq\.chart/);
   } finally {
     global.fetch = originalFetch;
   }
@@ -38,9 +66,7 @@ test("refresh queue status can force execution for manual ticker lists", async (
   global.fetch = async () =>
     new Response("[]", {
       status: 200,
-      headers: {
-        "Content-Range": "*/0",
-      },
+      headers: { "Content-Type": "application/json" },
     });
 
   try {
@@ -65,4 +91,11 @@ test("refresh queue status option parser defaults to score queue checks", () => 
   assert.equal(options.dueOnly, true);
   assert.equal(options.json, true);
   assert.equal(options.githubOutputKey, "run");
+});
+
+test("refresh queue status option parser accepts chart queue checks", () => {
+  const options = parseQueueStatusOptions(["--kind", "chart", "--due-only"]);
+
+  assert.equal(options.kind, "chart");
+  assert.equal(options.dueOnly, true);
 });

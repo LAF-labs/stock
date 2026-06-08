@@ -126,7 +126,7 @@ test("enqueueStockRefreshJob preserves stale refresh reasons", async () => {
     p_market: "US",
     p_symbol: "NVDA",
     p_view_mode: "detail",
-    p_priority: 20,
+    p_priority: 70,
     p_payload: { reason: "stale_refresh", requested_ticker: "US:NVDA" },
   });
 });
@@ -152,7 +152,7 @@ test("enqueueStockRefreshJob sends quote jobs without a view mode", async () => 
     p_market: "KR",
     p_symbol: "005930",
     p_view_mode: null,
-    p_priority: 40,
+    p_priority: 5,
     p_payload: { reason: "snapshot_miss", requested_ticker: "KR:005930" },
   });
 });
@@ -170,7 +170,7 @@ test("enqueueStockRefreshJob sends chart jobs as a high-priority independent lan
     });
   };
 
-  const result = await enqueueStockRefreshJob({ kind: "chart" as never, ticker: "US:KO" });
+  const result = await enqueueStockRefreshJob({ kind: "chart", ticker: "US:KO" });
 
   assert.equal(result.queued, true);
   assert.deepEqual(capturedBody, {

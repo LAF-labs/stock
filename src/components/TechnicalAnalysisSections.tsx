@@ -99,6 +99,7 @@ export function TechnicalAnalysisSkeleton({
       {body ? (
         <div className="skeleton-pending-action">
           <span>{title}</span>
+          <p>{body}</p>
           {actionLabel && onAction ? (
             <button type="button" onClick={onAction}>
               {actionLabel}

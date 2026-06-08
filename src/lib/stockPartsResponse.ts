@@ -86,7 +86,7 @@ export async function pendingPartialStockPayload({
   }
 
   try {
-    const chartResult = await getStockChart(ticker);
+    const chartResult = await getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false });
     chart = attachChartParts(chartResult);
     parts.chart = partFromChartResult(chartResult);
   } catch {

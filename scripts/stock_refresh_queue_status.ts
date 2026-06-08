@@ -3,7 +3,7 @@ import { appendFileSync } from "node:fs";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { loadLocalEnvFiles } from "./localEnv";
 
-type RefreshKind = "quote" | "score";
+type RefreshKind = "quote" | "score" | "chart";
 
 type QueueStatusOptions = {
   kind: RefreshKind;
@@ -16,18 +16,22 @@ type QueueStatusOptions = {
 
 export async function refreshQueueStatus(config: SupabaseConfig, options: QueueStatusOptions, now = new Date()) {
   const url = new URL(`${config.url}/rest/v1/stock_refresh_jobs`);
+  const nowIso = now.toISOString();
   url.searchParams.set("select", "id");
   url.searchParams.set("kind", `eq.${options.kind}`);
-  url.searchParams.set("status", "eq.queued");
   url.searchParams.set("limit", "1");
-  if (options.dueOnly) url.searchParams.set("run_after", `lte.${now.toISOString()}`);
+  url.searchParams.set(
+    "or",
+    options.dueOnly
+      ? `(and(status.eq.queued,run_after.lte.${nowIso}),and(status.eq.running,lease_until.lt.${nowIso}))`
+      : `(status.eq.queued,and(status.eq.running,lease_until.lt.${nowIso}))`
+  );
 
   const response = await fetchWithTimeout(
     url.toString(),
     {
       headers: {
         ...supabaseHeaders(config.key),
-        Prefer: "count=exact",
         "Range-Unit": "items",
         Range: "0-0",
       },
@@ -39,9 +43,8 @@ export async function refreshQueueStatus(config: SupabaseConfig, options: QueueS
     throw new Error(`Supabase refresh queue status query failed: HTTP ${response.status} ${text.slice(0, 500)}`);
   }
 
-  const count = contentRangeCount(response.headers.get("content-range"));
-  const fallbackRows = count === undefined ? await response.json().catch(() => []) : [];
-  const queuedJobs = count ?? (Array.isArray(fallbackRows) ? fallbackRows.length : 0);
+  const rows = await response.json().catch(() => []);
+  const queuedJobs = Array.isArray(rows) && rows.length > 0 ? 1 : 0;
   const forced = hasListItems(options.forceIfList);
   return {
     ok: true,
@@ -85,21 +88,13 @@ export function writeGithubOutput(key: string | undefined, value: string) {
   appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`, "utf8");
 }
 
-function contentRangeCount(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const match = value.match(/\/(\d+|\*)$/);
-  if (!match || match[1] === "*") return undefined;
-  const parsed = Number(match[1]);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
 function hasListItems(value: string | undefined): boolean {
   return !!value?.split(",").some((item) => item.trim());
 }
 
 function parseKind(value: string): RefreshKind {
   const kind = value.trim().toLowerCase();
-  if (kind === "quote" || kind === "score") return kind;
+  if (kind === "quote" || kind === "score" || kind === "chart") return kind;
   throw new Error(`Unsupported refresh kind: ${value}`);
 }
 

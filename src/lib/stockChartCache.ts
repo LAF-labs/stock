@@ -2,6 +2,7 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil } from "@/lib/m
 import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
+import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig, type SupabaseConfig } from "@/lib/supabaseRest";
@@ -126,7 +127,10 @@ function scheduleQueuedRefresh(ticker: string, priority: number, reason: StockDa
   void enqueueStockRefreshJob({ kind: "chart", ticker, priority, reason }).catch(() => undefined);
 }
 
-export async function getStockChart(tickerRef: string, options: { forceRefresh?: boolean } = {}): Promise<StockChartResult> {
+export async function getStockChart(
+  tickerRef: string,
+  options: { forceRefresh?: boolean; enqueueOnMiss?: boolean; enqueueStaleRefresh?: boolean } = {}
+): Promise<StockChartResult> {
   const ticker = normalizeTickerRef(tickerRef);
   const nowMs = Date.now();
   let freshCandidate: StoredChartSnapshot | undefined;
@@ -161,14 +165,22 @@ export async function getStockChart(tickerRef: string, options: { forceRefresh?:
 
   if (!options.forceRefresh && staleCandidate) {
     rememberMemorySnapshot(staleCandidate, nowMs);
-    scheduleQueuedRefresh(ticker, 15, "stale_refresh");
+    if (options.enqueueStaleRefresh !== false) {
+      scheduleQueuedRefresh(ticker, STOCK_REFRESH_PRIORITIES.STALE_CHART_REFRESH, "stale_refresh");
+    }
     return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
   }
 
   if (freshCandidate) return decorate(freshCandidate, "fresh", freshSource, { refreshError: publicRefreshErrorCode(new Error("refresh_background_only")) });
   if (staleCandidate) return decorate(staleCandidate, "stale", staleSource, { refreshError: publicRefreshErrorCode(new Error("refresh_background_only")) });
 
-  scheduleQueuedRefresh(ticker, 15, options.forceRefresh ? "refresh_background_only" : "snapshot_miss");
+  if (options.enqueueOnMiss !== false) {
+    scheduleQueuedRefresh(
+      ticker,
+      options.forceRefresh ? STOCK_REFRESH_PRIORITIES.FORCE_REFRESH : STOCK_REFRESH_PRIORITIES.USER_CHART_MISS,
+      options.forceRefresh ? "refresh_background_only" : "snapshot_miss"
+    );
+  }
   throw new StockDataUnavailableError({
     kind: "chart",
     ticker,

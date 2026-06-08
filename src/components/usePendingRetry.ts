@@ -13,7 +13,7 @@ export function technicalPendingRetryDelayMs(
   random: () => number = Math.random
 ): number {
   void retryAfterSeconds;
-  const retrySecondsByAttempt = [5, 8, 13, 15];
+  const retrySecondsByAttempt = [5, 8, 13, 21, 34, 55, 60];
   const safeAttempt = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
   const baseSeconds = retrySecondsByAttempt[Math.min(safeAttempt, retrySecondsByAttempt.length - 1)] ?? 15;
   const jitter = 0.85 + Math.max(0, Math.min(1, random())) * 0.3;

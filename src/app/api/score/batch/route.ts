@@ -5,6 +5,7 @@ import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload } from "@/lib/stockPendingResponse";
 import { pendingPartialStockPayload } from "@/lib/stockPartsResponse";
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
               kind: "score",
               ticker,
               view: "compare",
-              priority: 30,
+              priority: STOCK_REFRESH_PRIORITIES.USER_COMPARE_SCORE_MISS,
               reason: error.payload.reason,
             });
             if (partial && pendingPayload.error === "snapshot_pending") {

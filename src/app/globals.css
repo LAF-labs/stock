@@ -561,9 +561,9 @@ a:focus-visible {
 
 .skeleton-pending-action {
   pointer-events: auto;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -572,12 +572,24 @@ a:focus-visible {
 }
 
 .skeleton-pending-action span {
+  grid-column: 1;
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
 }
 
+.skeleton-pending-action p {
+  grid-column: 1;
+  margin: -6px 0 0;
+  color: var(--subtext);
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
 .skeleton-pending-action button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -586,6 +598,10 @@ a:focus-visible {
   color: var(--accent);
   font-size: 13px;
   font-weight: 800;
+}
+
+.compare-waiting-card {
+  background: #f8fafc;
 }
 
 .verdict-mini-skeleton {

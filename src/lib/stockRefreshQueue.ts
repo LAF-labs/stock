@@ -1,4 +1,5 @@
 import { safeErrorMessage } from "@/lib/errorSafety";
+import { defaultStockRefreshPriority } from "@/lib/stockRefreshPriorities";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind, StockDataUnavailableReason } from "@/lib/stockDataRuntime";
@@ -32,7 +33,7 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
     p_market: parsed.market,
     p_symbol: parsed.symbol,
     p_view_mode: view ?? null,
-    p_priority: input.priority ?? defaultPriority(input.kind, view),
+    p_priority: input.priority ?? defaultStockRefreshPriority(input.kind, view, input.reason),
     p_payload: {
       reason: input.reason || "snapshot_miss",
       requested_ticker: parsed.ticker,
@@ -67,14 +68,6 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
     });
     return { queued: false, reason: "enqueue_failed" };
   }
-}
-
-function defaultPriority(kind: StockDataKind, view: ScoreView | undefined): number {
-  if (kind === "chart") return 15;
-  if (kind === "score" && view === "detail") return 20;
-  if (kind === "score" && view === "compare") return 20;
-  if (kind === "score" && view === "technical") return 20;
-  return 40;
 }
 
 function pickJobFields(job: Record<string, unknown>): EnqueuedStockRefreshJob {

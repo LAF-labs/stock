@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { getStockQuote } from "@/lib/stockQuoteCache";
 import { getStockScore, type ScoreView, type StockPayload } from "@/lib/stockSnapshotCache";
-import { chartSnapshotExpiresAt, lastBarDateFromChartPayload } from "@/lib/stockChartCache";
+import { chartSnapshotExpiresAt, getStockChart, lastBarDateFromChartPayload, writeSupabaseChartSnapshotWithConfig } from "@/lib/stockChartCache";
 import { QUOTE_CACHE_FRESH_SECONDS, QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { runScoreCollector } from "@/lib/pythonStockCollector";
 import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
@@ -229,32 +229,14 @@ export async function upsertChartSnapshot(config: SupabaseConfig, ticker: string
   const fetched = validIso(fetchedAt) || new Date().toISOString();
   const expires = validIso(expiresAt) || new Date(Date.parse(fetched) + stockCachePolicyFreshSeconds("chart") * 1000).toISOString();
   const stale = validIso(staleExpiresAt) || new Date(Math.max(Date.parse(expires), Date.parse(fetched) + stockCachePolicyStaleSeconds("chart") * 1000)).toISOString();
-  const response = await fetchWithTimeout(
-    `${config.url}/rest/v1/stock_chart_snapshots?on_conflict=ticker,source`,
-    {
-      method: "POST",
-      headers: {
-        ...supabaseHeaders(config.key),
-        Prefer: "resolution=merge-duplicates,return=minimal",
-      },
-      body: JSON.stringify({
-        ticker: target.ticker,
-        market: target.market,
-        symbol: target.symbol,
-        source: "kis",
-        payload,
-        last_bar_date: lastBarDateFromChartPayload(payload),
-        fetched_at: fetched,
-        expires_at: expires,
-        stale_expires_at: stale,
-      }),
-    },
-    5_000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Supabase chart snapshot upsert failed: HTTP ${response.status} ${text.slice(0, 300)}`);
-  }
+  await writeSupabaseChartSnapshotWithConfig(config, {
+    ticker: target.ticker,
+    payload,
+    fetchedAt: fetched,
+    expiresAt: expires,
+    staleExpiresAt: stale,
+    lastBarDate: lastBarDateFromChartPayload(payload),
+  });
 }
 
 function assertFreshQuoteRefresh(cache: { source?: string; refreshError?: string }, ticker: string) {
@@ -286,7 +268,10 @@ async function publishTicker(ticker: string, options: Options, config?: Supabase
         if (!options.allowScorePythonFallback) {
           throw new Error("score publishing requires --allow-score-python-fallback until the Rust score worker owns durable snapshots");
         }
-        if (!options.dryRun) await getStockScore(ticker, view, { forceRefresh: true });
+        if (!options.dryRun) {
+          const result = await getStockScore(ticker, view, { forceRefresh: true });
+          if (config) await tryUpsertChartSnapshotFromTechnicalPayload(config, ticker, view, result.payload);
+        }
         (row.scores as Record<string, unknown>)[view] = options.dryRun ? "dry_run" : "published";
       } catch (error) {
         (row.scores as Record<string, unknown>)[view] = "error";
@@ -307,6 +292,15 @@ async function publishTicker(ticker: string, options: Options, config?: Supabase
 }
 
 export async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, options: Options) {
+  return publishQueueJobWithCollector(job, config, options, (ticker, view) => getStockScore(ticker, view, { forceRefresh: true }));
+}
+
+export async function publishQueueJobWithCollector(
+  job: RefreshJob,
+  config: SupabaseConfig,
+  options: Options,
+  collectScore: (ticker: string, view: ScoreView) => Promise<{ payload: StockPayload }>
+) {
   const jobId = stringValue(job.id);
   const kind = stringValue(job.kind)?.toLowerCase() as RefreshKind | undefined;
   const ticker = jobTicker(job);
@@ -329,7 +323,8 @@ export async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, o
       if (!options.allowScorePythonFallback) {
         throw new Error("score job requires legacy score fallback worker");
       }
-      await getStockScore(ticker, view, { forceRefresh: true });
+      const result = await collectScore(ticker, view);
+      await tryUpsertChartSnapshotFromTechnicalPayload(config, ticker, view, result.payload);
     } else {
       throw new Error(`unsupported refresh job kind: ${String(kind || "")}`);
     }
@@ -348,6 +343,9 @@ export async function publishQueueJob(job: RefreshJob, config: SupabaseConfig, o
 }
 
 async function publishChartSnapshot(ticker: string, config: SupabaseConfig) {
+  const existing = await getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false }).catch(() => undefined);
+  if (existing?.cache.state === "fresh") return;
+
   const payload = await runScoreCollector(ticker, "technical");
   const chartPayload = chartPayloadFromTechnicalPayload(ticker, payload);
   const fetchedAtMs = Date.now();
@@ -356,7 +354,30 @@ async function publishChartSnapshot(ticker: string, config: SupabaseConfig) {
   await upsertChartSnapshot(config, ticker, chartPayload, fetchedAt, expiresAt, staleExpiresAt);
 }
 
-function chartPayloadFromTechnicalPayload(ticker: string, payload: StockPayload): StockPayload {
+export async function maybeUpsertChartSnapshotFromTechnicalPayload(
+  config: SupabaseConfig,
+  ticker: string,
+  view: ScoreView,
+  payload: StockPayload,
+  fetchedAtMs = Date.now()
+) {
+  if (view !== "technical") return;
+  if (!Array.isArray(payload.chart_series) || !payload.chart_series.length) return;
+  const chartPayload = chartPayloadFromTechnicalPayload(ticker, payload);
+  const fetchedAt = new Date(fetchedAtMs).toISOString();
+  const { expiresAt, staleExpiresAt } = await chartSnapshotExpiresAt(ticker, fetchedAtMs);
+  await upsertChartSnapshot(config, ticker, chartPayload, fetchedAt, expiresAt, staleExpiresAt);
+}
+
+async function tryUpsertChartSnapshotFromTechnicalPayload(config: SupabaseConfig, ticker: string, view: ScoreView, payload: StockPayload) {
+  try {
+    await maybeUpsertChartSnapshotFromTechnicalPayload(config, ticker, view, payload);
+  } catch (error) {
+    console.warn("technical_chart_snapshot_sidecar_failed", { ticker, error: publicError(error) });
+  }
+}
+
+export function chartPayloadFromTechnicalPayload(ticker: string, payload: StockPayload): StockPayload {
   const target = parseTickerRef(ticker);
   const chartSeries = Array.isArray(payload.chart_series) ? payload.chart_series : [];
   if (!chartSeries.length) throw new Error(`chart_series_missing:${ticker}`);

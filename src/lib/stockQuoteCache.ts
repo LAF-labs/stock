@@ -7,6 +7,7 @@ import { QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
@@ -255,7 +256,6 @@ function scheduleQueuedRefresh(ticker: string, priority: number, reason: StockDa
 }
 
 function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredQuoteSnapshot) {
-  scheduleQueuedRefresh(ticker, 70, "stale_refresh");
   void (async () => {
     const marketDataResult = await getMarketDataServiceQuote(ticker, { forceRefresh: true });
     if (marketDataResult) return;
@@ -311,7 +311,7 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
       if (inlineQuoteRefreshAvailable()) {
         scheduleInlineRefresh(ticker, staleCandidate);
       } else {
-        scheduleQueuedRefresh(ticker, 70, "stale_refresh");
+        scheduleQueuedRefresh(ticker, STOCK_REFRESH_PRIORITIES.STALE_QUOTE_REFRESH, "stale_refresh");
       }
       return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
     }

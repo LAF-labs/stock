@@ -141,6 +141,52 @@ test("pendingPartialStockPayload returns ready quote and chart parts while score
   assert.equal(Array.isArray(payload?.chart_series), true);
 });
 
+test("pendingPartialStockPayload does not enqueue a separate chart job while score is pending", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  let chartEnqueued = false;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/stock_quote_snapshots")) {
+      return Response.json([
+        {
+          ticker: "US:COLDPART",
+          payload: { ok: true, type: "quote", requested_ticker: "US:COLDPART", market: "US", symbol: "COLDPART", latest_price: 10 },
+          fetched_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 300_000).toISOString(),
+          stale_expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+        },
+      ]);
+    }
+    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      chartEnqueued = true;
+      return Response.json({ id: "job-chart", status: "queued" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const pending = {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "score",
+    ticker: "US:COLDPART",
+    view: "technical",
+    reason: "snapshot_miss",
+    retry_after_seconds: 5,
+    refresh_request: { queued: true, job_id: "job-score", status: "queued" },
+  } satisfies StockPendingPayload;
+
+  const payload = await pendingPartialStockPayload({ pending, ticker: "US:COLDPART", view: "technical" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.equal(chartEnqueued, false);
+});
+
 test("pendingPartialStockPayload returns undefined when no usable parts are ready", async () => {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;

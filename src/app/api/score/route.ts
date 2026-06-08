@@ -4,6 +4,7 @@ import { jsonError } from "@/lib/apiGuards";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { userScoreRefreshPriority } from "@/lib/stockRefreshPriorities";
 import { getStockChart } from "@/lib/stockChartCache";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
         kind: "score",
         ticker,
         view,
-        priority: forceRefresh ? 10 : 20,
+        priority: userScoreRefreshPriority(view, forceRefresh),
         reason: error.payload.reason,
       });
       if (partial && pendingPayload.error === "snapshot_pending") {
@@ -131,7 +132,7 @@ export async function GET(request: NextRequest) {
 async function attachChartForTechnicalView(payload: StockPayload, ticker: string, view: ReturnType<typeof cleanView>): Promise<StockPayload> {
   if (view !== "technical" || hasUsableChartSeries(payload.chart_series)) return payload;
   try {
-    const chartResult = await getStockChart(ticker);
+    const chartResult = await getStockChart(ticker, { enqueueOnMiss: false });
     return attachChartPartToPayload(payload, chartResult);
   } catch {
     // Keep going: older deployments may have detail score snapshots with chart_series

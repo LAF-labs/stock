@@ -27,6 +27,7 @@ import {
   ratioText,
   scoreWord,
   semanticMetricRows,
+  shouldPreserveCompareViewDuringRetry,
   symbolRef,
   toCompareItem,
   type BatchScorePayload,
@@ -70,7 +71,15 @@ export default function StockCompare() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setStates(tickers.map((ticker) => ({ status: "loading", ticker })));
+    setStates((current) => {
+      const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
+      return tickers.map((ticker) => {
+        const existing = currentByTicker.get(ticker);
+        return existing && shouldPreserveCompareViewDuringRetry(existing.status, reloadVersion > 0)
+          ? existing
+          : { status: "loading", ticker };
+      });
+    });
 
     const query = new URLSearchParams({ tickers: tickers.join(","), partial: "1" });
     fetch(`/api/score/batch?${query.toString()}`, {
@@ -122,13 +131,15 @@ export default function StockCompare() {
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
-        setStates(
-          tickers.map((ticker) => ({
-            status: "error" as const,
-            ticker,
-            error: error instanceof Error ? error.message : "데이터를 불러오지 못했어요.",
-          }))
-        );
+        const message = error instanceof Error ? error.message : "데이터를 불러오지 못했어요.";
+        setStates((current) => {
+          const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
+          return tickers.map((ticker) => {
+            const existing = currentByTicker.get(ticker);
+            if (existing && shouldPreserveCompareViewDuringRetry(existing.status, reloadVersion > 0)) return existing;
+            return { status: "error" as const, ticker, error: message };
+          });
+        });
       });
 
     return () => controller.abort();
@@ -139,6 +150,10 @@ export default function StockCompare() {
     [states]
   );
   const partialStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "partial" }> => state.status === "partial"), [states]);
+  const waitingStates = useMemo(
+    () => states.filter((state): state is Extract<LoadState, { status: "loading" | "pending" }> => state.status === "loading" || state.status === "pending"),
+    [states]
+  );
   const isLoading = useMemo(() => states.some((state) => state.status === "loading"), [states]);
   const pendingStates = useMemo(
     () => states.filter((state): state is Extract<LoadState, { status: "pending" | "partial" }> => state.status === "pending" || state.status === "partial"),
@@ -252,11 +267,12 @@ export default function StockCompare() {
 
       {isLoading && !items.length && !partialStates.length ? <CompareSkeleton /> : null}
 
-      {items.length || partialStates.length ? (
+      {items.length || partialStates.length || waitingStates.length ? (
         <div className="compare-feed">
-          {items.length ? <CompareBrief items={items} /> : <ComparePendingOverview count={partialStates.length} />}
-          {items.length ? <CompareCards items={items} baseTicker={baseTickerLabel} /> : null}
+          {items.length ? <CompareBrief items={items} /> : <ComparePendingOverview count={partialStates.length + waitingStates.length} />}
+          {items.length ? <CompareCards items={items} baseTicker={baseTickerLabel} showEmptyCard={tickers.length < 2} /> : null}
           {partialStates.length ? <ComparePendingCards states={partialStates} /> : null}
+          {waitingStates.length ? <CompareWaitingCards states={waitingStates} /> : null}
           {items.length >= 2 ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
@@ -334,6 +350,39 @@ function ComparePendingCards({ states }: { states: Array<Extract<LoadState, { st
   );
 }
 
+function CompareWaitingCards({ states }: { states: Array<Extract<LoadState, { status: "loading" | "pending" }>> }) {
+  return (
+    <section className="compare-section">
+      <div className="section-title">
+        <span>대기 중</span>
+        <h2>선택한 종목을 확인하고 있어요</h2>
+      </div>
+      <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
+        {states.map((state) => (
+          <article className="compare-stock-card compare-waiting-card" key={state.ticker}>
+            <div className="compare-card-top">
+              <div>
+                <span>선택한 종목</span>
+                <strong className="ticker-primary">{displayTickerRef(state.ticker)}</strong>
+                <small>{state.ticker}</small>
+              </div>
+              <em className="price-neutral">대기 중</em>
+            </div>
+            <p>{state.status === "pending" ? state.message : "가격과 점수 데이터를 확인하고 있어요. 준비된 항목부터 화면에 채워집니다."}</p>
+            <div className="compare-score-line">
+              <span>점수</span>
+              <strong>준비 중</strong>
+            </div>
+            <i className="compare-card-scorebar pending" aria-hidden="true">
+              <SkeletonBlock className="bar" />
+            </i>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CompareBrief({ items }: { items: CompareItem[] }) {
   const insights = useMemo(() => ({
     bestScore: bestBy(items, (item) => item.score),
@@ -379,8 +428,8 @@ function Insight({ label, ticker, value }: { label: string; ticker: string | und
   );
 }
 
-function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker: string }) {
-  const slotCount = Math.max(2, items.length);
+function CompareCards({ items, baseTicker, showEmptyCard }: { items: CompareItem[]; baseTicker: string; showEmptyCard: boolean }) {
+  const slotCount = showEmptyCard ? Math.max(2, items.length) : Math.max(1, items.length);
   return (
     <section className="compare-section">
       <span>종목 카드</span>
@@ -424,7 +473,7 @@ function CompareCards({ items, baseTicker }: { items: CompareItem[]; baseTicker:
             </dl>
           </article>
         ))}
-        {items.length < 2 ? <EmptyCompareCard /> : null}
+        {showEmptyCard && items.length < 2 ? <EmptyCompareCard /> : null}
       </div>
     </section>
   );

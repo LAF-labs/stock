@@ -114,6 +114,7 @@ jobs:
       MANUAL_WARM_TICKERS: ${{ github.event.inputs.tickers || '' }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '50' }}
+      STOCK_CHART_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_CHART_SNAPSHOT_QUEUE_LIMIT || '15' }}
       STOCK_LEGACY_SCORE_WORKER_ENABLED: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED || '1' }}
 
     steps:
@@ -140,15 +141,25 @@ jobs:
             --github-output-key run \
             --json
 
+      - name: Check due chart refresh jobs
+        id: chart_queue
+        run: |
+          node --import tsx scripts/stock_refresh_queue_status.ts \
+            --kind chart \
+            --due-only \
+            --force-if-list "$MANUAL_WARM_TICKERS" \
+            --github-output-key run \
+            --json
+
       - name: Set up Python
-        if: steps.legacy_score_queue.outputs.run == '1'
+        if: steps.legacy_score_queue.outputs.run == '1' || steps.chart_queue.outputs.run == '1'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install collector dependencies
-        if: steps.legacy_score_queue.outputs.run == '1'
+        if: steps.legacy_score_queue.outputs.run == '1' || steps.chart_queue.outputs.run == '1'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
@@ -169,4 +180,23 @@ jobs:
             ARGS+=(--tickers "$TICKERS")
           fi
           python scripts/publish_stock_snapshots.py \
+            "${ARGS[@]}"
+
+      - name: Drain chart refresh queue
+        if: always() && steps.chart_queue.outputs.run == '1'
+        run: |
+          TICKERS="${MANUAL_WARM_TICKERS:-}"
+          ARGS=(
+            --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS"
+            --drain-queue
+            --kind chart
+            --queue-limit "$STOCK_CHART_SNAPSHOT_QUEUE_LIMIT"
+            --worker-id "github-chart-${{ github.run_id }}-${{ github.run_attempt }}"
+            --no-warm-from-demand
+            --json
+          )
+          if [ -n "$TICKERS" ]; then
+            ARGS+=(--tickers "$TICKERS")
+          fi
+          node --import tsx scripts/publish_stock_snapshots.ts \
             "${ARGS[@]}"

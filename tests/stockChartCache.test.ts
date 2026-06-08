@@ -102,7 +102,7 @@ test("stock chart cache serves stale snapshots and enqueues a chart refresh", as
     p_market: "US",
     p_symbol: "STALECHART",
     p_view_mode: null,
-    p_priority: 15,
+    p_priority: 60,
     p_payload: { reason: "stale_refresh", requested_ticker: "US:STALECHART" },
   });
 });
@@ -122,4 +122,37 @@ test("stock chart cache reports snapshot misses without provider calls", async (
       return true;
     }
   );
+});
+
+test("stock chart cache queues forced misses before regular chart misses", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  const calls: Array<{ url: string; body?: Record<string, unknown> }> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) return Response.json({ id: "chart-force-job", status: "queued" });
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  await assert.rejects(() => getStockChart("US:FORCECHART", { forceRefresh: true }), (error) => {
+    assert.equal(isStockDataUnavailableError(error), true);
+    if (!isStockDataUnavailableError(error)) return false;
+    assert.equal(error.payload.kind, "chart");
+    assert.equal(error.payload.reason, "refresh_background_only");
+    return true;
+  });
+
+  const enqueue = calls.find((call) => call.url.includes("/rest/v1/rpc/enqueue_stock_refresh_job"));
+  assert.deepEqual(enqueue?.body, {
+    p_kind: "chart",
+    p_market: "US",
+    p_symbol: "FORCECHART",
+    p_view_mode: null,
+    p_priority: 1,
+    p_payload: { reason: "refresh_background_only", requested_ticker: "US:FORCECHART" },
+  });
 });

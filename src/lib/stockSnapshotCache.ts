@@ -4,6 +4,7 @@ import { isCurrentScoreModelPayload, scoreModelVersionFromPayload, SCORE_MODEL_V
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
@@ -331,7 +332,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
         scheduleRefresh(ticker, view);
         return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
       }
-      scheduleQueuedRefresh(ticker, view, 60, "stale_refresh");
+      scheduleQueuedRefresh(ticker, view, STOCK_REFRESH_PRIORITIES.STALE_SCORE_REFRESH, "stale_refresh");
       return decorate(staleCandidate, "stale", staleSource, { refreshStarted: false });
     }
   }

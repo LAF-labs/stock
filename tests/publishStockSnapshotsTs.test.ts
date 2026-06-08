@@ -9,11 +9,13 @@ import {
   parseViews,
   permanentRefreshFailure,
   publishQueueJob,
+  publishQueueJobWithCollector,
   retryAfterSeconds,
   resolveWarmTickers,
   rowHasBlockingErrors,
   selectWarmTickerBatch,
   mergeWarmTickerPool,
+  maybeUpsertChartSnapshotFromTechnicalPayload,
   upsertChartSnapshot,
   run,
   upsertQuoteSnapshot,
@@ -170,11 +172,14 @@ test("TypeScript snapshot worker rejects invalid score views before provider fet
   }) as typeof fetch;
 
   const options = parseOptions(["--drain-queue", "--kind", "score", "--allow-score-python-fallback"], {});
-  const row = await publishQueueJob(
-    { id: "job-1", kind: "score", market: "US", symbol: "NVDA", view_mode: "bogus", attempts: 1 },
-    { url: "https://example.supabase.co", key: "service-role-key" },
-    options
-  );
+	  const row = await publishQueueJobWithCollector(
+	    { id: "job-1", kind: "score", market: "US", symbol: "NVDA", view_mode: "bogus", attempts: 1 },
+	    { url: "https://example.supabase.co", key: "service-role-key" },
+	    options,
+	    async () => {
+	      throw new Error("collector_should_not_be_called");
+	    }
+	  );
 
   assert.equal(row.status, "failed");
   assert.equal(calls.length, 1);
@@ -276,6 +281,167 @@ test("TypeScript snapshot worker upserts chart snapshots with serving columns", 
   assert.equal(capturedBody?.source, "kis");
   assert.equal(capturedBody?.last_bar_date, "2026-06-08");
   assert.equal(capturedBody?.stale_expires_at, "2026-07-08T00:00:00.000Z");
+});
+
+test("TypeScript snapshot worker can reuse technical score payload for chart snapshots", async () => {
+  let capturedUrl = "";
+  let capturedBody: Record<string, unknown> | undefined;
+  globalThis.fetch = (async (input, init) => {
+    capturedUrl = String(input);
+    capturedBody = JSON.parse(String(init?.body));
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+
+  await maybeUpsertChartSnapshotFromTechnicalPayload(
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    "US:KO",
+    "technical",
+    {
+      ok: true,
+      requested_ticker: "US:KO",
+      market: "US",
+      symbol: "KO",
+      name: "Coca-Cola",
+      chart_series: [{ date: "2026-06-08", close: 72.25 }],
+      debug_secret: "do-not-store",
+    },
+    1780939500000
+  );
+
+  assert.equal(capturedUrl, "https://example.supabase.co/rest/v1/stock_chart_snapshots?on_conflict=ticker,source");
+  assert.equal(capturedBody?.ticker, "US:KO");
+  assert.equal(capturedBody?.last_bar_date, "2026-06-08");
+  assert.equal((capturedBody?.payload as Record<string, unknown>).source_payload, "technical_fast_path");
+  assert.equal("debug_secret" in ((capturedBody?.payload as Record<string, unknown>) || {}), false);
+});
+
+test("TypeScript snapshot worker does not chart-upsert non-technical score payloads", async () => {
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+
+  await maybeUpsertChartSnapshotFromTechnicalPayload(
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    "US:KO",
+    "detail",
+    {
+      ok: true,
+      chart_series: [{ date: "2026-06-08", close: 72.25 }],
+    },
+    1780939500000
+  );
+
+  assert.equal(calls, 0);
+});
+
+test("TypeScript snapshot worker does not fail technical score jobs when chart series is absent", async () => {
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+
+  await maybeUpsertChartSnapshotFromTechnicalPayload(
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    "US:NEW",
+    "technical",
+    { ok: true, requested_ticker: "US:NEW" },
+    1780939500000
+  );
+
+  assert.equal(calls, 0);
+});
+
+test("TypeScript snapshot worker completes technical score jobs when optional chart upsert fails", async () => {
+  const calls: Array<{ url: string; body?: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ url, body });
+    if (url.includes("/rest/v1/stock_chart_snapshots")) {
+      return new Response("chart write down", { status: 500 });
+    }
+    return Response.json({});
+  }) as typeof fetch;
+
+  const options = parseOptions(["--drain-queue", "--kind", "score", "--allow-score-python-fallback", "--worker-id", "worker-1"], {});
+  const row = await publishQueueJobWithCollector(
+    { id: "job-technical", kind: "score", market: "US", symbol: "KO", view_mode: "technical", attempts: 1 },
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    options,
+    async () =>
+      ({
+        payload: {
+          ok: true,
+          requested_ticker: "US:KO",
+          market: "US",
+          symbol: "KO",
+          score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+          technical_analysis: { type: "technical_analysis" },
+          chart_series: [{ date: "2026-06-08", close: 72.25 }],
+        },
+      }) as any
+  );
+
+  assert.equal(row.status, "succeeded");
+  assert.ok(calls.some((call) => call.url.includes("/rest/v1/stock_chart_snapshots")));
+  assert.ok(calls.some((call) => call.url.includes("/rest/v1/rpc/complete_stock_refresh_job")));
+  assert.equal(calls.some((call) => call.url.includes("/rest/v1/rpc/fail_stock_refresh_job")), false);
+});
+
+test("TypeScript snapshot worker completes chart jobs without collector when chart snapshot is already fresh", async () => {
+  const previousUrl = process.env.SUPABASE_URL;
+  const previousPublishable = process.env.SUPABASE_PUBLISHABLE_KEY;
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+
+  const calls: Array<{ url: string; body?: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ url, body });
+    if (url.includes("/rest/v1/stock_chart_snapshots")) {
+      return Response.json([
+        {
+          ticker: "US:KO",
+          payload: {
+            ok: true,
+            type: "chart",
+            requested_ticker: "US:KO",
+            market: "US",
+            symbol: "KO",
+            chart_series: [{ date: "2026-06-08", close: 72.25 }],
+          },
+          fetched_at: new Date(Date.now() - 10_000).toISOString(),
+          expires_at: new Date(Date.now() + 300_000).toISOString(),
+          stale_expires_at: new Date(Date.now() + 2_592_000_000).toISOString(),
+          last_bar_date: "2026-06-08",
+        },
+      ]);
+    }
+    return Response.json({});
+  }) as typeof fetch;
+
+  try {
+    const options = parseOptions(["--drain-queue", "--kind", "chart", "--worker-id", "worker-chart"], {});
+    const row = await publishQueueJob(
+      { id: "job-chart", kind: "chart", market: "US", symbol: "KO", attempts: 1 },
+      { url: "https://example.supabase.co", key: "service-role-key" },
+      options
+    );
+
+    assert.equal(row.status, "succeeded");
+    assert.ok(calls.some((call) => call.url.includes("/rest/v1/rpc/complete_stock_refresh_job")));
+    assert.equal(calls.some((call) => call.url.includes("/rest/v1/rpc/fail_stock_refresh_job")), false);
+    assert.equal(calls.filter((call) => call.url.includes("/rest/v1/stock_chart_snapshots")).length, 1);
+  } finally {
+    if (previousUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = previousUrl;
+    if (previousPublishable === undefined) delete process.env.SUPABASE_PUBLISHABLE_KEY;
+    else process.env.SUPABASE_PUBLISHABLE_KEY = previousPublishable;
+  }
 });
 
 test("TypeScript snapshot worker keeps retry and permanent failure contracts", () => {

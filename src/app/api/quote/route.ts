@@ -4,6 +4,7 @@ import { jsonError } from "@/lib/apiGuards";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { attachQuoteParts } from "@/lib/stockPartsResponse";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
       const pendingPayload = await enqueueStockPendingPayload({
         kind: "quote",
         ticker,
-        priority: forceRefresh ? 10 : 40,
+        priority: forceRefresh ? STOCK_REFRESH_PRIORITIES.FORCE_REFRESH : STOCK_REFRESH_PRIORITIES.USER_QUOTE_MISS,
         reason: error.payload.reason,
       });
       const response = stockPendingJsonResponse(pendingPayload);

@@ -17,6 +17,7 @@ import {
   displayTickerInput,
   partialStockDataFromPayload,
   scoreDataWithQuote,
+  shouldPreservePendingViewDuringRetry,
   snapshotPendingFromPayload,
   stringFromUnknown,
   stockHeaderIdentity,
@@ -26,11 +27,11 @@ import { technicalPendingRetryDelayMs, usePendingRetry } from "@/components/useP
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 type LoadState =
-  | { status: "loading"; data?: undefined; error?: undefined; pending?: undefined }
-  | { status: "success"; data: StockScoreResponse; error?: undefined; pending?: undefined }
-  | { status: "partial"; data: StockScoreResponse; error?: undefined; pending: SnapshotPendingState }
-  | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
-  | { status: "error"; data?: undefined; error: string; pending?: undefined };
+  | { status: "loading"; ticker?: string; data?: undefined; error?: undefined; pending?: undefined }
+  | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined; pending?: undefined }
+  | { status: "partial"; ticker: string; data: StockScoreResponse; error?: undefined; pending: SnapshotPendingState }
+  | { status: "pending"; ticker: string; data?: undefined; error?: undefined; pending: SnapshotPendingState }
+  | { status: "error"; ticker: string; data?: undefined; error: string; pending?: undefined };
 
 async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promise<StockQuoteResponse | undefined> {
   try {
@@ -66,7 +67,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     quoteRef.current = quote;
-  }, [quote]);
+  }, [quote, ticker]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,16 +85,19 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   useEffect(() => {
     if (!quote) return;
     setState((current) => {
-      if (current.status === "success") return { status: "success", data: scoreDataWithQuote(current.data, quote) };
-      if (current.status === "partial") return { status: "partial", data: scoreDataWithQuote(current.data, quote), pending: current.pending };
+      if (current.ticker !== ticker) return current;
+      if (current.status === "success") return { status: "success", ticker, data: scoreDataWithQuote(current.data, quote) };
+      if (current.status === "partial") return { status: "partial", ticker, data: scoreDataWithQuote(current.data, quote), pending: current.pending };
       return current;
     });
-  }, [quote]);
+  }, [quote, ticker]);
 
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker, view: "technical", partial: "1" });
-    setState({ status: "loading" });
+    setState((current) =>
+      shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker) ? current : { status: "loading", ticker }
+    );
 
     fetch(`/api/score?${query.toString()}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
@@ -106,11 +110,11 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
         const pending = snapshotPendingFromPayload(payload, ticker);
         const partialData = pending ? partialStockDataFromPayload(payload, ticker) : undefined;
         if (pending && partialData) {
-          setState({ status: "partial", data: scoreDataWithQuote(partialData, quoteRef.current), pending });
+          setState({ status: "partial", ticker, data: scoreDataWithQuote(partialData, quoteRef.current), pending });
           return undefined;
         }
         if (pending) {
-          setState({ status: "pending", pending });
+          setState({ status: "pending", ticker, pending });
           return undefined;
         }
         if (!response.ok) throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
@@ -122,11 +126,14 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
           throw new Error("기술적 분석 데이터를 찾지 못했어요.");
         }
         if (controller.signal.aborted) return;
-        setState({ status: "success", data: scoreDataWithQuote(data, quoteRef.current) });
+        setState({ status: "success", ticker, data: scoreDataWithQuote(data, quoteRef.current) });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
-        setState({ status: "error", error: error instanceof Error ? error.message : "기술적 분석을 불러오지 못했어요." });
+        setState((current) => {
+          if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker)) return current;
+          return { status: "error", ticker, error: error instanceof Error ? error.message : "기술적 분석을 불러오지 못했어요." };
+        });
       });
 
     return () => controller.abort();
