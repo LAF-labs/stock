@@ -4,7 +4,6 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
-import SkeletonBlock from "@/components/SkeletonBlock";
 import StockHeader, { type JudgmentState, type QuoteRefreshState, type QuoteState } from "@/components/StockHeader";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
@@ -16,6 +15,7 @@ import {
   formatPrimaryPrice,
   formatSecondaryPrice,
   pendingRetryTargetForDashboard,
+  partialStockDataFromQuote,
   partialStockDataFromPayload,
   refreshCooldownMessage,
   scoreDataWithQuote,
@@ -68,13 +68,29 @@ function pendingBelongsToTicker(pending: unknown, ticker: string | undefined): b
   return Boolean(ticker && (!pendingTicker || pendingTicker === ticker));
 }
 
+function quoteBelongsToTicker(quote: StockQuoteResponse, ticker: string): boolean {
+  const requested = stringFromUnknown(quote.requested_ticker);
+  if (requested === ticker) return true;
+  const symbol = stringFromUnknown(quote.symbol);
+  const market = stringFromUnknown(quote.market) || (ticker.startsWith("KR:") ? "KR" : ticker.startsWith("US:") ? "US" : undefined);
+  return Boolean(symbol && market && `${market}:${symbol}` === ticker);
+}
+
+function optimisticScorePendingFromQuote(ticker: string): SnapshotPendingState {
+  return {
+    message: "가격 데이터는 먼저 확인했고, 점수와 재무 지표를 이어서 준비하고 있어요.",
+    ticker,
+    queued: false,
+  };
+}
+
 export default function StockDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tickerParam = dashboardTickerFromSearchParam(searchParams.get("ticker"));
 
   const [tickerInput, setTickerInput] = useState(dashboardInputValue(tickerParam));
-  const [state, setState] = useState<LoadState>({ status: "idle" });
+  const [state, setState] = useState<LoadState>(() => (tickerParam ? { status: "loading" } : { status: "idle" }));
   const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
   const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
   const [judgmentState, setJudgmentState] = useState<JudgmentState>({ status: "idle" });
@@ -133,9 +149,12 @@ export default function StockDashboard() {
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
-        setState({
-          status: "error",
-          error: error instanceof Error ? error.message : "데이터를 불러오지 못했어요.",
+        setState((current) => {
+          if (current.status === "partial") return current;
+          return {
+            status: "error",
+            error: error instanceof Error ? error.message : "데이터를 불러오지 못했어요.",
+          };
         });
       });
 
@@ -231,6 +250,21 @@ export default function StockDashboard() {
 
     return () => controller.abort();
   }, [tickerParam, reloadVersion]);
+
+  useEffect(() => {
+    if (!tickerParam || quoteState.status !== "success") return;
+    if (!quoteBelongsToTicker(quoteState.data, tickerParam)) return;
+    const partial = partialStockDataFromQuote(quoteState.data, tickerParam);
+    if (!partial) return;
+    setState((current) => {
+      if (current.status !== "loading") return current;
+      return {
+        status: "partial",
+        data: partial,
+        pending: optimisticScorePendingFromQuote(tickerParam),
+      };
+    });
+  }, [quoteState, tickerParam]);
 
   useEffect(() => {
     const nextAllowedAt = quoteRefreshState.nextAllowedAt;
@@ -509,8 +543,8 @@ function PartialStockFeed({
       <DetailSection id="detail-chart">
         <ChartStory points={data.chart_series} patterns={undefined} />
       </DetailSection>
-      <SectionSkeleton title="품질 점수 이유" eyebrow="점수 이유" />
-      <SectionSkeleton title="핵심 숫자" eyebrow="핵심 숫자" compact />
+      <PendingDetailSection title="품질 점수 이유" eyebrow="점수 이유" />
+      <PendingDetailSection title="핵심 숫자" eyebrow="핵심 숫자" compact />
     </div>
   );
 }
@@ -553,19 +587,19 @@ function PartialStockSummary({
       <div className="quick-read">
         <article className="quick-metric-card">
           <span>강점</span>
-          <SkeletonBlock className="value" />
+          <strong className="partial-pending-value">준비 중</strong>
         </article>
         <article className="quick-metric-card">
           <span>먼저 볼 것</span>
-          <SkeletonBlock className="value" />
+          <strong className="partial-pending-value">준비 중</strong>
         </article>
         <article className="quick-metric-card">
           <span>시가총액</span>
-          <SkeletonBlock className="value wide" />
+          <strong className="partial-pending-value">준비 중</strong>
         </article>
         <article className="score-panel">
           <span>품질 점수</span>
-          <SkeletonBlock className="score" />
+          <strong className="partial-pending-score">--</strong>
         </article>
       </div>
       <div className="hero-verdict neutral partial-verdict">
@@ -580,28 +614,24 @@ function PartialStockSummary({
   );
 }
 
-function SectionSkeleton({ title, eyebrow, compact = false }: { title: string; eyebrow: string; compact?: boolean }) {
+function PendingDetailSection({ title, eyebrow, compact = false }: { title: string; eyebrow: string; compact?: boolean }) {
   return (
-    <section className={compact ? "accordion-card skeleton-accordion" : "factor-card"}>
+    <section className={compact ? "accordion-card partial-pending-section" : "factor-card partial-pending-section"}>
       <div className="section-title">
         <span>{eyebrow}</span>
         <h2>{title}</h2>
       </div>
       {compact ? (
-        <>
-          <SkeletonBlock className="wide" />
-          <SkeletonBlock className="medium" />
-        </>
+        <p>재무 지표를 이어서 준비하고 있어요.</p>
       ) : (
-        <div className="factor-list">
-          {[0, 1, 2].map((item) => (
-            <article key={item}>
+        <div className="factor-list partial-factor-list">
+          {["품질", "기회", "리스크"].map((label) => (
+            <article key={label}>
               <div className="factor-heading">
-                <SkeletonBlock className="value" />
-                <SkeletonBlock className="small" />
+                <strong>{label}</strong>
+                <span>준비 중</span>
               </div>
-              <SkeletonBlock className="bar" />
-              <SkeletonBlock className="wide" />
+              <p>점수 계산이 끝나면 근거를 표시합니다.</p>
             </article>
           ))}
         </div>
@@ -856,92 +886,78 @@ function StatusCard({
 
 function StockSkeleton({ pendingMessage, onRetry }: { pendingMessage?: string; onRetry?: () => void }) {
   return (
-    <div className="stock-feed skeleton-feed" role="status" aria-live="polite" aria-busy="true">
-      <span className="sr-only">{pendingMessage || "주식 데이터를 불러오는 중이에요."}</span>
-      <section className="stock-title-card skeleton-title-card">
+    <div className="stock-feed loading-status-feed" role="status" aria-live="polite">
+      <section className="stock-title-card partial-stock-title-card">
         <div className="stock-hero-main">
-          <div className="stock-name-row skeleton-name">
-            <SkeletonBlock className="meta" />
-            <SkeletonBlock className="ticker" />
-            <SkeletonBlock className="company" />
+          <div className="stock-name-row">
+            <div>
+              <span>종목 데이터</span>
+              <h2>확인 중</h2>
+              <p>{pendingMessage || "가격과 점수 데이터를 확인하고 있어요."}</p>
+            </div>
           </div>
-          <SkeletonBlock className="pill" />
+          <span className="score-time-chip">준비 중</span>
         </div>
-        <div className="price-block skeleton-price">
-          <SkeletonBlock className="price" />
-          <SkeletonBlock className="krw" />
+        <div className="price-strip">
+          <div className="price-block">
+            <strong>-</strong>
+            <span>가격 확인 중</span>
+          </div>
+          <em className="daily-pill price-neutral">대기 중</em>
         </div>
         <div className="quick-read">
           <article>
-            <SkeletonBlock className="label" />
-            <SkeletonBlock className="value" />
+            <span>강점</span>
+            <strong className="partial-pending-value">준비 중</strong>
           </article>
           <article>
-            <SkeletonBlock className="label" />
-            <SkeletonBlock className="value" />
+            <span>먼저 볼 것</span>
+            <strong className="partial-pending-value">준비 중</strong>
           </article>
           <article>
-            <SkeletonBlock className="label" />
-            <SkeletonBlock className="value wide" />
+            <span>시가총액</span>
+            <strong className="partial-pending-value">준비 중</strong>
           </article>
           <article className="score-panel">
-            <SkeletonBlock className="label" />
-            <SkeletonBlock className="score" />
-            <SkeletonBlock className="medium" />
+            <span>품질 점수</span>
+            <strong className="partial-pending-score">--</strong>
           </article>
         </div>
-        <div className="hero-verdict">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="headline" />
-          <SkeletonBlock className="wide" />
-          <SkeletonBlock className="medium" />
+        <div className="hero-verdict neutral partial-verdict">
+          <span>진행 상태</span>
+          <strong>요청을 확인하고 있어요.</strong>
+          <p>{pendingMessage || "가격 데이터가 먼저 준비되면 이 화면에 바로 채워집니다."}</p>
+          {pendingMessage && onRetry ? (
+            <button type="button" className="partial-retry-button" onClick={onRetry}>
+              다시 확인
+            </button>
+          ) : null}
         </div>
       </section>
-      <section className="chart-story">
+      <section className="chart-story partial-pending-section">
         <div className="section-title">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="section-heading" />
+          <span>가격 흐름</span>
+          <h2>데이터 확인 중</h2>
         </div>
-        <SkeletonBlock className="chart-area" />
-        <div className="pattern-chips">
-          {[0, 1, 2].map((item) => (
-            <article key={item}>
-              <SkeletonBlock className="value" />
-              <SkeletonBlock className="wide" />
-            </article>
-          ))}
-        </div>
+        <p>응답 가능한 데이터부터 순서대로 표시합니다.</p>
       </section>
-      <section className="factor-card">
+      <section className="factor-card partial-pending-section">
         <div className="section-title">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="section-heading" />
+          <span>점수 이유</span>
+          <h2>근거 준비 중</h2>
         </div>
-        <div className="factor-list">
+        <div className="factor-list partial-factor-list">
           {[0, 1, 2].map((item) => (
             <article key={item}>
               <div className="factor-heading">
-                <SkeletonBlock className="value" />
-                <SkeletonBlock className="small" />
+                <strong>{["품질", "기회", "리스크"][item]}</strong>
+                <span>준비 중</span>
               </div>
-              <SkeletonBlock className="bar" />
-              <SkeletonBlock className="wide" />
+              <p>점수 계산이 끝나면 근거를 표시합니다.</p>
             </article>
           ))}
         </div>
       </section>
-      <section className="accordion-card skeleton-accordion">
-        <SkeletonBlock className="label" />
-        <SkeletonBlock className="section-heading" />
-      </section>
-      {pendingMessage && onRetry ? (
-        <div className="skeleton-pending-action">
-          <span aria-hidden="true">데이터 준비 중</span>
-          <button type="button" onClick={onRetry}>
-            다시 확인
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

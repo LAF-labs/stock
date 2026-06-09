@@ -15,6 +15,7 @@ import {
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
   displayTickerInput,
+  partialStockDataFromQuote,
   partialStockDataFromPayload,
   scoreDataWithQuote,
   shouldPreservePendingViewDuringRetry,
@@ -43,6 +44,14 @@ async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promi
   } catch {
     return undefined;
   }
+}
+
+function optimisticTechnicalPendingFromQuote(ticker: string): SnapshotPendingState {
+  return {
+    message: "가격 데이터는 먼저 확인했고, 차트 분석을 이어서 준비하고 있어요.",
+    ticker,
+    queued: false,
+  };
 }
 
 export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
@@ -88,6 +97,17 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
       if (current.ticker !== ticker) return current;
       if (current.status === "success") return { status: "success", ticker, data: scoreDataWithQuote(current.data, quote) };
       if (current.status === "partial") return { status: "partial", ticker, data: scoreDataWithQuote(current.data, quote), pending: current.pending };
+      if (current.status === "loading") {
+        const partial = partialStockDataFromQuote(quote, ticker);
+        if (partial) {
+          return {
+            status: "partial",
+            ticker,
+            data: partial,
+            pending: optimisticTechnicalPendingFromQuote(ticker),
+          };
+        }
+      }
       return current;
     });
   }, [quote, ticker]);
@@ -131,6 +151,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
       .catch((error) => {
         if (controller.signal.aborted) return;
         setState((current) => {
+          if (current.status === "partial" && current.ticker === ticker) return current;
           if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker)) return current;
           return { status: "error", ticker, error: error instanceof Error ? error.message : "기술적 분석을 불러오지 못했어요." };
         });

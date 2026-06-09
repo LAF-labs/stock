@@ -3,7 +3,6 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import SkeletonBlock from "@/components/SkeletonBlock";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
@@ -284,17 +283,28 @@ export default function StockCompare() {
 
 function CompareSkeleton() {
   return (
-    <div className="compare-feed skeleton-feed" role="status" aria-live="polite" aria-busy="true">
-      <span className="sr-only">비교 데이터를 불러오는 중이에요.</span>
+    <div className="compare-feed loading-status-feed" role="status" aria-live="polite">
       <section className="compare-section">
-        <span className="skeleton-block label" />
-        <span className="skeleton-block section-heading" />
+        <div className="section-title">
+          <span>비교 준비 중</span>
+          <h2>선택한 종목을 확인하고 있어요</h2>
+        </div>
         <div className="compare-card-grid">
           {[0, 1].map((item) => (
-            <article className="compare-stock-card" key={item}>
-              <span className="skeleton-block value" />
-              <span className="skeleton-block score" />
-              <span className="skeleton-block wide" />
+            <article className="compare-stock-card compare-waiting-card" key={item}>
+              <div className="compare-card-top">
+                <div>
+                  <span>선택한 종목</span>
+                  <strong className="ticker-primary">확인 중</strong>
+                </div>
+                <em className="price-neutral">대기 중</em>
+              </div>
+              <p>가격과 점수 데이터를 확인하고 있어요.</p>
+              <div className="compare-score-line">
+                <span>점수</span>
+                <strong>준비 중</strong>
+              </div>
+              <i className="compare-card-scorebar pending" aria-hidden="true" />
             </article>
           ))}
         </div>
@@ -339,9 +349,7 @@ function ComparePendingCards({ states }: { states: Array<Extract<LoadState, { st
                 <span>현재가</span>
                 <strong>{formatPrimaryPrice(state.data)}</strong>
               </div>
-              <i className="compare-card-scorebar pending" aria-hidden="true">
-                <SkeletonBlock className="bar" />
-              </i>
+              <i className="compare-card-scorebar pending" aria-hidden="true" />
             </article>
           );
         })}
@@ -373,9 +381,7 @@ function CompareWaitingCards({ states }: { states: Array<Extract<LoadState, { st
               <span>점수</span>
               <strong>준비 중</strong>
             </div>
-            <i className="compare-card-scorebar pending" aria-hidden="true">
-              <SkeletonBlock className="bar" />
-            </i>
+            <i className="compare-card-scorebar pending" aria-hidden="true" />
           </article>
         ))}
       </div>

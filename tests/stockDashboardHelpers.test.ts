@@ -18,6 +18,7 @@ import {
   formatRecordValue,
   formatSecondaryPrice,
   opportunityExtremes,
+  partialStockDataFromQuote,
   partialStockDataFromPayload,
   pendingRetryTargetForDashboard,
   scoreDataWithQuote,
@@ -165,6 +166,29 @@ test("dashboard treats identity-only partial snapshots as useful pending data", 
   assert.equal(partial?.requested_ticker, "US:ZVRA");
   assert.equal(partial?.symbol, "ZVRA");
   assert.equal(partial?.name, "지브러 테라퓨틱스");
+  assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+});
+
+test("dashboard can render a useful partial view from quote before score is ready", () => {
+  const quote: StockQuoteResponse = {
+    type: "quote",
+    requested_ticker: "US:CAVA",
+    market: "US",
+    symbol: "CAVA",
+    name: "CAVA GROUP INC",
+    exchange: "NYSE",
+    currency: "USD",
+    latest_price: 76.33,
+    latest_price_label: "$76.33",
+    latest_bar_date: "2026-06-09",
+  };
+
+  const partial = partialStockDataFromQuote(quote, "US:CAVA");
+
+  assert.equal(partial?.requested_ticker, "US:CAVA");
+  assert.equal(partial?.symbol, "CAVA");
+  assert.equal(partial?.latest_price, 76.33);
+  assert.equal(partial?.server_cache?.source, "quote_partial");
   assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
 });
 

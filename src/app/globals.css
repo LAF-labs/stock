@@ -1784,6 +1784,41 @@ a:focus-visible {
   font-weight: 800;
 }
 
+.partial-pending-value,
+.partial-pending-score {
+  display: block;
+  color: var(--subtext);
+  font-weight: 800;
+}
+
+.partial-pending-value {
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.partial-pending-score {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.partial-pending-section p,
+.partial-factor-list p,
+.technical-pending-card p {
+  margin: 0;
+  color: var(--subtext);
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+.partial-factor-list article {
+  gap: 12px;
+}
+
+.technical-pending-card {
+  min-height: 138px;
+  background: #f8fafc;
+}
+
 .technical-signal-grid {
   display: grid;
   gap: 12px;
@@ -2703,6 +2738,10 @@ a:focus-visible {
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
+}
+
+.compare-card-scorebar.pending {
+  background: linear-gradient(90deg, #d5dde7 35%, #edf1f5 35%);
 }
 
 .compare-opportunity-line {

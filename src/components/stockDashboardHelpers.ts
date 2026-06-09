@@ -283,6 +283,32 @@ export function partialStockDataFromPayload(payload: unknown, fallbackTicker: st
   return data.latest_price !== undefined || usableChartPoints(data.chart_series).length > 1 || hasIdentity ? data : undefined;
 }
 
+export function partialStockDataFromQuote(quote: StockQuoteResponse, fallbackTicker: string): StockScoreResponse | undefined {
+  const requestedTicker = stringFromUnknown(quote.requested_ticker) || fallbackTicker;
+  const data: StockScoreResponse = {
+    requested_ticker: requestedTicker,
+    market: quote.market || (requestedTicker.startsWith("KR:") ? "KR" : requestedTicker.startsWith("US:") ? "US" : undefined),
+    symbol: stringFromUnknown(quote.symbol) || cleanTickerSymbol(requestedTicker),
+    name: stringFromUnknown(quote.name),
+    exchange: stringFromUnknown(quote.exchange),
+    currency: stringFromUnknown(quote.currency),
+    latest_price: numberFromUnknown(quote.latest_price),
+    latest_price_label: stringFromUnknown(quote.latest_price_label),
+    latest_bar_date: stringFromUnknown(quote.latest_bar_date),
+    usd_krw_rate: numberFromUnknown(quote.usd_krw_rate),
+    usd_krw_label: stringFromUnknown(quote.usd_krw_label),
+    price_metrics: quote.price_metrics,
+    server_cache: {
+      state: "pending",
+      source: "quote_partial",
+      refresh_started: true,
+    },
+  };
+
+  const hasIdentity = Boolean(data.name || data.symbol || data.exchange);
+  return data.latest_price !== undefined || hasIdentity ? data : undefined;
+}
+
 export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {
   const byDate = new Map<string, UsableChartPoint>();
   for (const point of points || []) {

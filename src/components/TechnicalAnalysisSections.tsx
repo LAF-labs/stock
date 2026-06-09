@@ -1,7 +1,6 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   normalizedTone,
   technicalCoverageLabel,
@@ -69,44 +68,36 @@ export function TechnicalAnalysisSkeleton({
   onAction?: () => void;
 }) {
   return (
-    <div className="technical-feed skeleton-feed" role="status" aria-live="polite" aria-busy="true">
-      {body ? <span className="sr-only">{body}</span> : null}
-      <section className="technical-hero technical-skeleton-hero">
+    <div className="technical-feed loading-status-feed" role="status" aria-live="polite">
+      <section className="technical-hero neutral technical-pending-hero">
         <div className="technical-hero-heading">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="ticker" />
-          <SkeletonBlock className="company" />
+          <span>기술적 분석</span>
+          <h1>{title}</h1>
+          <p>{body || "차트 데이터를 확인하고 있어요."}</p>
         </div>
         <div className="technical-hero-price">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="price" />
-          <SkeletonBlock className="krw" />
+          <span>상태</span>
+          <strong>준비 중</strong>
+          <small>가격 데이터가 먼저 확인되면 이 화면에 바로 채워집니다.</small>
         </div>
         <div className="technical-summary">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="headline" />
-          <SkeletonBlock className="wide" />
-          <SkeletonBlock className="medium" />
-        </div>
-      </section>
-      <section className="technical-chart-panel">
-        <div className="section-title">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="section-heading" />
-        </div>
-        <SkeletonBlock className="chart-area" />
-      </section>
-      {body ? (
-        <div className="skeleton-pending-action">
-          <span>{title}</span>
-          <p>{body}</p>
+          <span>진행 상태</span>
+          <strong>요청을 확인하고 있어요.</strong>
+          <p>{body || "가격과 차트 데이터를 불러오는 중이에요."}</p>
           {actionLabel && onAction ? (
-            <button type="button" onClick={onAction}>
+            <button type="button" className="technical-pending-action" onClick={onAction}>
               {actionLabel}
             </button>
           ) : null}
         </div>
-      ) : null}
+      </section>
+      <section className="technical-chart-panel technical-rule-pending">
+        <div className="section-title">
+          <span>가격 캔들</span>
+          <h2>데이터 확인 중</h2>
+        </div>
+        <p>응답 가능한 데이터부터 순서대로 표시합니다.</p>
+      </section>
     </div>
   );
 }
@@ -190,20 +181,19 @@ export function TechnicalAnalysisPendingFeed({
       </section>
       {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
       <TechnicalOverlayChart points={data.chart_series} />
-      <section className="technical-rule-section technical-rule-skeleton" role="status" aria-live="polite" aria-busy="true">
+      <section className="technical-rule-section technical-rule-pending" role="status" aria-live="polite">
         <div className="section-title">
           <span>룰 기반 해석</span>
-          <h2>보조지표를 계산하고 있어요</h2>
+          <h2>보조지표 준비 중</h2>
         </div>
         <div className="technical-signal-grid">
-          {[0, 1, 2].map((item) => (
-            <article key={item} className="technical-signal-card neutral">
+          {["추세", "모멘텀", "리스크"].map((label) => (
+            <article key={label} className="technical-signal-card neutral technical-pending-card">
               <div>
-                <SkeletonBlock className="label" />
-                <SkeletonBlock className="value" />
+                <span>{label}</span>
+                <strong>준비 중</strong>
               </div>
-              <SkeletonBlock className="wide" />
-              <SkeletonBlock className="medium" />
+              <p>가격 기록을 확인한 뒤 신호를 채웁니다.</p>
             </article>
           ))}
         </div>
