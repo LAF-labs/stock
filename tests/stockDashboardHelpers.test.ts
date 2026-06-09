@@ -238,6 +238,21 @@ test("dashboard coalesces score and quote pending into one retry target", () => 
   assert.equal(pendingRetryTargetForDashboard(undefined, scorePending, quotePending), undefined);
 });
 
+test("dashboard does not auto-retry client-only optimistic pending fallbacks", () => {
+  assert.equal(
+    pendingRetryTargetForDashboard(
+      "US:ZVRA",
+      {
+        message: "종목은 먼저 특정했고, 가격과 점수 데이터는 계속 확인하고 있어요.",
+        ticker: "US:ZVRA",
+        queued: false,
+      },
+      undefined,
+    ),
+    undefined,
+  );
+});
+
 test("dashboard keeps pending UI stable during automatic retry refreshes", () => {
   assert.equal(shouldPreservePendingViewDuringRetry("pending", true), true);
   assert.equal(shouldPreservePendingViewDuringRetry("partial", true), true);

@@ -73,13 +73,14 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   const quoteRef = useRef<StockQuoteResponse | undefined>(undefined);
   const detailHref = `/?ticker=${encodeURIComponent(ticker)}`;
   const pending = state.status === "pending" || state.status === "partial" ? state.pending : undefined;
+  const pendingRetryTarget = pending?.queued === false && pending.retryAfterSeconds === undefined ? undefined : pending;
 
   function retryTechnical() {
     setReloadVersion((version) => version + 1);
   }
 
   usePendingRetry({
-    pending,
+    pending: pendingRetryTarget,
     retryKey: `technical:${ticker}`,
     onRetry: retryTechnical,
     maxAttempts: 24,

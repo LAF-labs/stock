@@ -102,7 +102,15 @@ export default function StockDashboard() {
   const tickerParam = dashboardTickerFromSearchParam(searchParams.get("ticker"));
 
   const [tickerInput, setTickerInput] = useState(dashboardInputValue(tickerParam));
-  const [state, setState] = useState<LoadState>(() => (tickerParam ? { status: "loading" } : { status: "idle" }));
+  const [state, setState] = useState<LoadState>(() =>
+    tickerParam
+      ? {
+          status: "partial",
+          data: partialStockDataFromTicker(tickerParam),
+          pending: deadlinePendingFromTicker(tickerParam),
+        }
+      : { status: "idle" }
+  );
   const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
   const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
   const [judgmentState, setJudgmentState] = useState<JudgmentState>({ status: "idle" });
@@ -133,7 +141,13 @@ export default function StockDashboard() {
 
     setState((current) => {
       const pending = current.status === "pending" || current.status === "partial" ? current.pending : undefined;
-      return shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(pending, tickerParam)) ? current : { status: "loading" };
+      if ((current.status === "pending" || current.status === "partial") && pendingBelongsToTicker(pending, tickerParam)) return current;
+      if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(pending, tickerParam))) return current;
+      return {
+        status: "partial",
+        data: partialStockDataFromTicker(tickerParam),
+        pending: deadlinePendingFromTicker(tickerParam),
+      };
     });
     fetch(`/api/score?${query.toString()}`, {
       signal: controller.signal,

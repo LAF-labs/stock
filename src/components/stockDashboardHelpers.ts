@@ -238,6 +238,7 @@ export function pendingRetryTargetForDashboard(
 ): { pending: DashboardPendingRetryTarget; retryKey: string } | undefined {
   if (!ticker) return undefined;
   const pending = scorePending || quotePending;
+  if (pending?.queued === false && pending.retryAfterSeconds === undefined) return undefined;
   return pending ? { pending, retryKey: `stock:${ticker}` } : undefined;
 }
 
