@@ -96,6 +96,11 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("MARKET_DATA_SERVICE_URL", text)
         self.assertIn("MARKET_DATA_INTERNAL_TOKEN", text)
         self.assertIn("--max-market-data-service-failures 0", text)
+        self.assertIn("Run production latency smoke", text)
+        self.assertIn("node scripts/load_test_stock_latency.mjs", text)
+        self.assertIn("--warmup-iterations", text)
+        self.assertIn("--max-p95-ms", text)
+        self.assertIn("STOCK_LATENCY_BASE_URL", text)
 
     def test_package_ops_check_uses_market_data_threshold(self):
         text = PACKAGE_PATH.read_text(encoding="utf-8")

@@ -25,6 +25,12 @@ jobs:
       STOCK_OPS_MAX_MISSING_QUOTE_PRICE: ${{ vars.STOCK_OPS_MAX_MISSING_QUOTE_PRICE || '25' }}
       MARKET_DATA_SERVICE_URL: ${{ vars.MARKET_DATA_SERVICE_URL }}
       MARKET_DATA_INTERNAL_TOKEN: ${{ secrets.MARKET_DATA_INTERNAL_TOKEN }}
+      STOCK_LATENCY_BASE_URL: ${{ vars.STOCK_LATENCY_BASE_URL || 'https://stock-khaki.vercel.app' }}
+      STOCK_LATENCY_HOT_TICKER: ${{ vars.STOCK_LATENCY_HOT_TICKER || 'US:KO' }}
+      STOCK_LATENCY_COLD_TICKER: ${{ vars.STOCK_LATENCY_COLD_TICKER || 'US:POET' }}
+      STOCK_LATENCY_ITERATIONS: ${{ vars.STOCK_LATENCY_ITERATIONS || '3' }}
+      STOCK_LATENCY_WARMUP_ITERATIONS: ${{ vars.STOCK_LATENCY_WARMUP_ITERATIONS || '1' }}
+      STOCK_LATENCY_MAX_P95_MS: ${{ vars.STOCK_LATENCY_MAX_P95_MS || '1500' }}
 
     steps:
       - name: Check out repository
@@ -56,3 +62,14 @@ jobs:
             --max-expired-industry-benchmark-rows 0 \
             --max-market-calendar-thin-markets 0 \
             --max-market-data-service-failures 0
+
+      - name: Run production latency smoke
+        run: |
+          node scripts/load_test_stock_latency.mjs \
+            --base-url "$STOCK_LATENCY_BASE_URL" \
+            --hot-ticker "$STOCK_LATENCY_HOT_TICKER" \
+            --cold-ticker "$STOCK_LATENCY_COLD_TICKER" \
+            --iterations "$STOCK_LATENCY_ITERATIONS" \
+            --warmup-iterations "$STOCK_LATENCY_WARMUP_ITERATIONS" \
+            --max-p95-ms "$STOCK_LATENCY_MAX_P95_MS" \
+            --json
