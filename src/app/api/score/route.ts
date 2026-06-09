@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const settledScorePromise = settleStockScore(getStockScore(ticker, view, { forceRefresh }));
-    const earlyScore = partial && !forceRefresh ? await waitForPartialStockScore(settledScorePromise) : undefined;
+    const earlyScore = partial && !forceRefresh ? await waitForPartialStockScore(settledScorePromise, { view }) : undefined;
     if (earlyScore?.status === "timeout") {
       const pendingInput = {
         kind: "score",

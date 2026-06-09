@@ -21,6 +21,7 @@ const ENV_KEYS = [
   "STOCK_ALLOWED_ORIGINS",
   "STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS",
   "STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS",
+  "STOCK_PENDING_PARTIAL_TECHNICAL_SCORE_TIMEOUT_MS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -260,6 +261,66 @@ test("technical score route skips symbol profile enrichment after snapshot hit",
   assert.equal(response.status, 200);
   assert.equal(payload.ok, true);
   assert.equal(profileCalls, 0);
+});
+
+test("technical score route waits long enough to return ready technical snapshots", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker: "US:ZVRA",
+    view_mode: "technical",
+    payload: {
+      ok: true,
+      requested_ticker: "US:ZVRA",
+      market: "US",
+      symbol: "ZVRA",
+      name: "Zevra Therapeutics",
+      score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      chart_series: [
+        { date: "2026-06-01", open: 70, high: 71, low: 69, close: 70.5 },
+        { date: "2026-06-02", open: 70.5, high: 72, low: 70, close: 71.5 },
+      ],
+      technical_analysis: {
+        type: "technical_analysis",
+        version: "technical-v1",
+        status: "ready",
+        summary: { headline: "기술 신호 확인", tone: "neutral", bullets: [] },
+        signals: [],
+        indicators: [],
+      },
+    },
+    fetched_at: new Date(nowMs - 30_000).toISOString(),
+    expires_at: new Date(nowMs + 270_000).toISOString(),
+  };
+
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) {
+      await sleep(1_100);
+      return Response.json([snapshot]);
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const response = await getScore(request("/api/score?ticker=US:ZVRA&view=technical&partial=1"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.type, undefined);
+  assert.equal(payload.technical_analysis.type, "technical_analysis");
+  assert.equal(payload.chart_series.length, 2);
 });
 
 test("score route returns identity partial instead of skeleton-only pending on cold detail misses", async () => {

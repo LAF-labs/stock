@@ -17,8 +17,11 @@ export function settleStockScore(promise: Promise<StockScoreResult>): Promise<Se
   );
 }
 
-export async function waitForPartialStockScore(settledPromise: Promise<SettledStockScoreResult>): Promise<TimedStockScoreResult> {
-  const timeoutMs = numericEnv("STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS", 900);
+export async function waitForPartialStockScore(
+  settledPromise: Promise<SettledStockScoreResult>,
+  options: { view?: string; timeoutMs?: number } = {}
+): Promise<TimedStockScoreResult> {
+  const timeoutMs = options.timeoutMs ?? partialStockScoreTimeoutMs(options.view);
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -31,6 +34,15 @@ export async function waitForPartialStockScore(settledPromise: Promise<SettledSt
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+export function partialStockScoreTimeoutMs(view?: string): number {
+  if (view === "technical") {
+    const generic = process.env.STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS;
+    if (generic !== undefined && generic.trim()) return numericEnv("STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS", 900);
+    return numericEnv("STOCK_PENDING_PARTIAL_TECHNICAL_SCORE_TIMEOUT_MS", 3_500);
+  }
+  return numericEnv("STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS", 900);
 }
 
 export function enqueueScoreRefreshAfterUnavailable(
