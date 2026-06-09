@@ -105,6 +105,17 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("--max-p95-ms", text)
         self.assertIn("STOCK_LATENCY_BASE_URL", text)
 
+    def test_workflows_opt_into_node24_actions_runtime(self):
+        for path in [
+            CI_WORKFLOW_PATH,
+            WORKFLOW_PATH,
+            BENCHMARK_WORKFLOW_PATH,
+            OPERATIONS_WORKFLOW_PATH,
+        ]:
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', text)
+
     def test_package_ops_check_uses_market_data_threshold(self):
         text = PACKAGE_PATH.read_text(encoding="utf-8")
 
