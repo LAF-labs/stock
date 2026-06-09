@@ -1,7 +1,6 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   dailyChangeText,
   dailyToneClass,
@@ -183,14 +182,14 @@ export default function StockHeader({
           {stockJudgment?.headline ||
             (judgmentState.status === "loading" ? "숫자를 읽고 있어요" : judgmentState.status === "error" ? "판단을 불러오지 못했어요" : "판단을 준비하고 있어요")}
         </strong>
-        {judgmentState.status === "loading" ? (
-          <div className="verdict-mini-skeleton" aria-hidden="true">
-            <SkeletonBlock className="wide" />
-            <SkeletonBlock className="medium" />
-          </div>
-        ) : (
-          <p>{stockJudgment?.body || (judgmentState.status === "error" ? "잠시 후 다시 검색해보세요." : "가격, 점수, 재무 지표를 묶어서 해석하는 중이에요.")}</p>
-        )}
+        <p>
+          {stockJudgment?.body ||
+            (judgmentState.status === "error"
+              ? "잠시 후 다시 검색해보세요."
+              : judgmentState.status === "loading"
+                ? "가격, 점수, 재무 지표를 묶어서 해석하고 있어요."
+                : "가격, 점수, 재무 지표를 묶어서 해석하는 중이에요.")}
+        </p>
         {stockJudgment?.watch ? <p className="verdict-watch">{stockJudgment.watch}</p> : null}
         {compareHref ? (
           <a className="stock-mobile-action stock-verdict-action" href={compareHref}>
