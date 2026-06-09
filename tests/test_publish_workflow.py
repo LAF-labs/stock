@@ -12,10 +12,11 @@ VERCEL_PREVIEW_DEPLOY_PATH = ROOT / "scripts" / "vercel_preview_deploy.sh"
 
 
 class PublishWorkflowTests(unittest.TestCase):
-    def test_refresh_queue_worker_runs_on_ten_minute_calendar_guarded_backstop(self):
+    def test_refresh_queue_worker_runs_on_five_minute_calendar_guarded_backstop(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-        self.assertIn('- cron: "*/10 * * * *"', text)
+        self.assertIn('- cron: "*/5 * * * *"', text)
+        self.assertNotIn('- cron: "*/10 * * * *"', text)
         self.assertNotIn('- cron: "*/5 * * * 1-5"', text)
         self.assertNotIn('- cron: "*/30 * * * 0,6"', text)
         self.assertIn("market_guard:", text)

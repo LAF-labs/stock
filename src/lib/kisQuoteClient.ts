@@ -28,6 +28,39 @@ type KisUsDiscoveryCacheEntry = {
   search: KisPayload;
   expiresAtMs: number;
 };
+export type KisDailyChartBar = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  currency: string;
+  open_label: string;
+  high_label: string;
+  low_label: string;
+  close_label: string;
+  ohl_label: string;
+  volume_label: string;
+  change_pct?: number;
+  change_label?: string;
+  range_pct?: number;
+  range_label?: string;
+};
+export type KisDailyChartPayload = {
+  requestedTicker: string;
+  market: "US" | "KR";
+  symbol: string;
+  name: string;
+  exchange: string;
+  exchangeCode?: string;
+  currency: string;
+  latestPrice?: number;
+  latestDate?: string;
+  chartSeries: KisDailyChartBar[];
+  priceMetrics: Record<string, unknown>;
+  fetch: Record<string, unknown>;
+};
 
 declare global {
   var __kisQuoteTokenCache: Map<string, KisTokenCacheEntry> | undefined;
@@ -49,6 +82,12 @@ export async function fetchKisQuote(tickerRef: string): Promise<StockPayload> {
   await acquireKisQuoteSlot();
   const { market, symbol } = parseTicker(tickerRef);
   return market === "KR" ? fetchDomesticQuote(symbol) : fetchUsQuote(symbol);
+}
+
+export async function fetchKisDailyChart(tickerRef: string): Promise<KisDailyChartPayload> {
+  await acquireKisQuoteSlot();
+  const { market, symbol } = parseTicker(tickerRef);
+  return market === "KR" ? fetchDomesticDailyChart(symbol) : fetchUsDailyChart(symbol);
 }
 
 export function kisQuoteConfigured(): boolean {
@@ -240,16 +279,132 @@ function readUsDiscoveryCache(cacheKey: string): KisUsDiscoveryCacheEntry | unde
   return cached;
 }
 
-async function kisGet(path: string, trId: string, params: Record<string, string>): Promise<KisPayload> {
+async function fetchDomesticDailyChart(symbol: string): Promise<KisDailyChartPayload> {
+  if (!/^(?:[0-9][A-Z0-9]{5}|Q\d{6})$/.test(symbol)) {
+    throw new KisQuoteError("Invalid KR ticker.");
+  }
+  const now = new Date();
+  const end = dateInSeoul(now).replace(/-/g, "");
+  const start = dateOffset(now, -540, "Asia/Seoul").replace(/-/g, "");
+  const rows = outputList(
+    await kisGet(
+      "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+      "FHKST03010100",
+      {
+        FID_COND_MRKT_DIV_CODE: KIS_DOMESTIC_MARKET_DIV_CODE,
+        FID_INPUT_ISCD: symbol,
+        FID_INPUT_DATE_1: start,
+        FID_INPUT_DATE_2: end,
+        FID_PERIOD_DIV_CODE: "D",
+        FID_ORG_ADJ_PRC: "0",
+      },
+      { timeoutMs: technicalKisTimeoutMs() }
+    ),
+    "output2"
+  );
+  const chartSeries = domesticChartSeries(rows);
+  if (!chartSeries.length) throw new KisQuoteError(`${symbol} daily chart was not found.`);
+  const latest = chartSeries.at(-1);
+  return {
+    requestedTicker: `KR:${symbol}`,
+    market: "KR",
+    symbol,
+    name: symbol,
+    exchange: KIS_DOMESTIC_EXCHANGE_LABEL,
+    currency: "KRW",
+    latestPrice: latest?.close,
+    latestDate: latest?.date,
+    chartSeries,
+    priceMetrics: priceMetricsFromChart(chartSeries),
+    fetch: {
+      source: "market_data",
+      provider_mode: "technical_request_fast_path",
+      daily_price_endpoint: "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+      market_div_code: KIS_DOMESTIC_MARKET_DIV_CODE,
+      history_rows: chartSeries.length,
+      fetched_at: now.toISOString(),
+      cache: "no-store",
+    },
+  };
+}
+
+async function fetchUsDailyChart(symbol: string): Promise<KisDailyChartPayload> {
+  if (!/^[A-Z0-9.-]{1,12}$/.test(symbol)) {
+    throw new KisQuoteError("Invalid US ticker.");
+  }
+  const errors: string[] = [];
+  for (const market of KIS_US_MARKETS) {
+    try {
+      const rows = await fetchUsDailyRowsForMarket(symbol, market);
+      const chartSeries = usChartSeries(rows);
+      if (!chartSeries.length) throw new KisQuoteError("empty daily chart");
+      const latest = chartSeries.at(-1);
+      return {
+        requestedTicker: `US:${symbol}`,
+        market: "US",
+        symbol,
+        name: symbol,
+        exchange: market.label,
+        exchangeCode: market.excd,
+        currency: "USD",
+        latestPrice: latest?.close,
+        latestDate: latest?.date,
+        chartSeries,
+        priceMetrics: priceMetricsFromChart(chartSeries),
+        fetch: {
+          source: "market_data",
+          provider_mode: "technical_request_fast_path",
+          daily_price_endpoint: "/uapi/overseas-price/v1/quotations/dailyprice",
+          exchange_code: market.excd,
+          history_rows: chartSeries.length,
+          fetched_at: new Date().toISOString(),
+          cache: "no-store",
+        },
+      };
+    } catch (error) {
+      errors.push(`${market.excd}: ${safeErrorMessage(error)}`);
+    }
+  }
+  throw new KisQuoteError(errors.slice(-3).join("; ") || `${symbol} daily chart was not found.`);
+}
+
+async function fetchUsDailyRowsForMarket(symbol: string, market: KisUsMarket): Promise<KisPayload[]> {
+  const rowsByDate = new Map<string, KisPayload>();
+  const today = new Date();
+  let before = today;
+  const maxPages = Math.max(1, numericEnvForKis("STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES", 3));
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    const bymd = pageIndex === 0 ? "" : dateInUtc(before).replace(/-/g, "");
+    const payload = await kisGet(
+      "/uapi/overseas-price/v1/quotations/dailyprice",
+      "HHDFS76240000",
+      { AUTH: "", EXCD: market.excd, SYMB: symbol, GUBN: "0", BYMD: bymd, MODP: "1" },
+      { timeoutMs: technicalKisTimeoutMs() }
+    );
+    const rows = outputList(payload, "output2").length ? outputList(payload, "output2") : outputList(payload, "output");
+    const usable = rows.filter((row) => kisDate(row.xymd) && asFloat(row.clos) !== undefined);
+    if (!usable.length) break;
+    for (const row of usable) rowsByDate.set(String(row.xymd || ""), row);
+    const earliest = usable
+      .map((row) => parseKisDate(row.xymd))
+      .filter((value): value is Date => Boolean(value))
+      .sort((left, right) => left.getTime() - right.getTime())[0];
+    if (!earliest) break;
+    before = new Date(earliest.getTime() - 24 * 60 * 60 * 1000);
+  }
+  return [...rowsByDate.values()].sort((left, right) => String(left.xymd || "").localeCompare(String(right.xymd || "")));
+}
+
+async function kisGet(path: string, trId: string, params: Record<string, string>, options: { timeoutMs?: number } = {}): Promise<KisPayload> {
   const config = kisConfig();
   const cacheKey = kisTokenCacheKey(config);
-  const first = await kisGetOnce(config, path, trId, params);
+  const first = await kisGetOnce(config, path, trId, params, options);
   if (first.ok) return first.payload;
 
   if (kisTokenExpiredMessage(first.message)) {
     tokenCache.delete(cacheKey);
     await deleteSharedKisAccessToken(cacheKey);
-    const retry = await kisGetOnce(config, path, trId, params, { skipSharedTokenCache: true });
+    const retry = await kisGetOnce(config, path, trId, params, { ...options, skipSharedTokenCache: true });
     if (retry.ok) return retry.payload;
     throw new KisQuoteError(retry.message);
   }
@@ -262,7 +417,7 @@ async function kisGetOnce(
   path: string,
   trId: string,
   params: Record<string, string>,
-  options: { skipSharedTokenCache?: boolean } = {}
+  options: { skipSharedTokenCache?: boolean; timeoutMs?: number } = {}
 ): Promise<{ ok: true; payload: KisPayload } | { ok: false; message: string }> {
   const url = new URL(`${config.baseUrl}${path}`);
   for (const [key, value] of Object.entries(params)) {
@@ -282,7 +437,7 @@ async function kisGetOnce(
       },
       cache: "no-store",
     },
-    12_000
+    options.timeoutMs ?? 12_000
   );
   const payload = (await response.json().catch(() => undefined)) as KisPayload | undefined;
   if (!response.ok || !payload || String(payload.rt_cd ?? "0") !== "0") {
@@ -377,6 +532,13 @@ function outputObject(payload: KisPayload, key = "output"): KisPayload {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as KisPayload) : {};
 }
 
+function outputList(payload: KisPayload, key = "output"): KisPayload[] {
+  const value = payload[key];
+  if (Array.isArray(value)) return value.filter((item): item is KisPayload => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+  if (value && typeof value === "object" && !Array.isArray(value)) return [value as KisPayload];
+  return [];
+}
+
 function asFloat(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const parsed = Number(String(value).replace(/,/g, ""));
@@ -444,6 +606,126 @@ function pct(value: number | undefined): string {
 function numLabel(value: number | undefined): string {
   if (value === undefined) return "-";
   return value.toLocaleString("ko-KR");
+}
+
+function usChartSeries(rows: KisPayload[]): KisDailyChartBar[] {
+  return rows
+    .map((row, index, all) => {
+      const date = kisDate(row.xymd);
+      const close = asFloat(row.clos);
+      if (!date || close === undefined) return undefined;
+      const open = asFloat(row.open) ?? close;
+      const high = asFloat(row.high) ?? Math.max(open, close);
+      const low = asFloat(row.low) ?? Math.min(open, close);
+      const volume = asInt(row.tvol);
+      const previousClose = index > 0 ? asFloat(all[index - 1]?.clos) : undefined;
+      return chartBar({ date, open, high, low, close, volume, previousClose, currency: "USD" });
+    })
+    .filter((row): row is KisDailyChartBar => Boolean(row));
+}
+
+function domesticChartSeries(rows: KisPayload[]): KisDailyChartBar[] {
+  return rows
+    .map((row, index, all) => {
+      const date = kisDate(row.stck_bsop_date);
+      const close = asFloat(row.stck_clpr);
+      if (!date || close === undefined) return undefined;
+      const open = asFloat(row.stck_oprc) ?? close;
+      const high = asFloat(row.stck_hgpr) ?? Math.max(open, close);
+      const low = asFloat(row.stck_lwpr) ?? Math.min(open, close);
+      const volume = asInt(row.acml_vol);
+      const previousClose = index > 0 ? asFloat(all[index - 1]?.stck_clpr) : undefined;
+      return chartBar({ date, open, high, low, close, volume, previousClose, currency: "KRW" });
+    })
+    .filter((row): row is KisDailyChartBar => Boolean(row));
+}
+
+function chartBar(input: {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  previousClose?: number;
+  currency: string;
+}): KisDailyChartBar {
+  const high = Math.max(input.high, input.open, input.close);
+  const low = Math.min(input.low, input.open, input.close);
+  const rangePct = input.close ? roundRatio((high - low) / input.close) : undefined;
+  const changePct = changeFrom(input.close, input.previousClose);
+  return {
+    date: input.date,
+    open: input.open,
+    high,
+    low,
+    close: input.close,
+    volume: input.volume,
+    currency: input.currency,
+    open_label: priceLabel(input.open, input.currency),
+    high_label: priceLabel(high, input.currency),
+    low_label: priceLabel(low, input.currency),
+    close_label: priceLabel(input.close, input.currency),
+    ohl_label: `${priceLabel(input.open, input.currency)} / ${priceLabel(high, input.currency)} / ${priceLabel(low, input.currency)}`,
+    volume_label: numLabel(input.volume),
+    range_pct: rangePct,
+    range_label: pct(rangePct),
+    change_pct: changePct,
+    change_label: pct(changePct),
+  };
+}
+
+function priceMetricsFromChart(rows: KisDailyChartBar[]): Record<string, unknown> {
+  const latest = rows.at(-1);
+  const previous = rows.at(-2);
+  const closes = rows.map((row) => row.close).filter((value) => Number.isFinite(value));
+  const volumes = rows.map((row) => row.volume).filter((value): value is number => Number.isFinite(value));
+  const year = rows.slice(-252);
+  return {
+    price: latest?.close,
+    previous_close: previous?.close,
+    latest_change: latest?.change_pct,
+    volume: latest?.volume,
+    avg_volume_20: average(volumes.slice(-20)),
+    avg_volume_60: average(volumes.slice(-60)),
+    year_high: year.length ? Math.max(...year.map((row) => row.high)) : undefined,
+    year_low: year.length ? Math.min(...year.map((row) => row.low)) : undefined,
+    ma20: average(closes.slice(-20)),
+    ma50: average(closes.slice(-50)),
+    ma200: average(closes.slice(-200)),
+  };
+}
+
+function average(values: number[]): number | undefined {
+  const usable = values.filter((value) => Number.isFinite(value));
+  if (!usable.length) return undefined;
+  return Math.round((usable.reduce((sum, value) => sum + value, 0) / usable.length) * 1_000_000) / 1_000_000;
+}
+
+function parseKisDate(value: unknown): Date | undefined {
+  const text = String(value || "").trim();
+  if (!/^\d{8}$/.test(text)) return undefined;
+  const ms = Date.UTC(Number(text.slice(0, 4)), Number(text.slice(4, 6)) - 1, Number(text.slice(6, 8)));
+  return Number.isFinite(ms) ? new Date(ms) : undefined;
+}
+
+function dateInUtc(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function dateOffset(date: Date, days: number, timeZone: string): string {
+  const shifted = new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+  if (timeZone === "Asia/Seoul") return dateInSeoul(shifted);
+  return dateInUtc(shifted);
+}
+
+function numericEnvForKis(name: string, fallback: number): number {
+  const parsed = Number(envValue(name));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function technicalKisTimeoutMs(): number {
+  return numericEnvForKis("STOCK_TECHNICAL_KIS_TIMEOUT_MS", 2_500);
 }
 
 function dateInSeoul(date: Date): string {

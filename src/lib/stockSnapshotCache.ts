@@ -211,8 +211,7 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
   if (existing) return existing;
 
   const promise = (async () => {
-    const { runScoreCollector } = await import("@/lib/pythonStockCollector");
-    const payload = await runScoreCollector(ticker, view);
+    const payload = await scoreRefreshPayload(ticker, view);
     const nowMs = Date.now();
     const fetchedAt = new Date(nowMs).toISOString();
     const snapshot: StoredSnapshot = {
@@ -237,6 +236,23 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
   } finally {
     inflightRefreshes.delete(key);
   }
+}
+
+async function scoreRefreshPayload(ticker: string, view: ScoreView): Promise<StockPayload> {
+  if (view === "technical") {
+    const { buildTechnicalScoreFastPathPayload, technicalRequestFastPathEnabled } = await import("@/lib/technicalScoreFastPath");
+    if (technicalRequestFastPathEnabled()) {
+      try {
+        return await buildTechnicalScoreFastPathPayload(ticker);
+      } catch (error) {
+        if (!pythonCollectorEnabled()) throw error;
+        console.warn("technical_request_fast_path_failed", { ticker, error: publicRefreshErrorCode(error) });
+      }
+    }
+  }
+
+  const { runScoreCollector } = await import("@/lib/pythonStockCollector");
+  return runScoreCollector(ticker, view);
 }
 
 function pruneMemoryCache(nowMs: number) {
@@ -354,6 +370,17 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
     if (marketDataResult) return marketDataResult;
 
     if (!pythonCollectorEnabled()) {
+      if (view === "technical") {
+        try {
+          const { technicalRequestFastPathEnabled } = await import("@/lib/technicalScoreFastPath");
+          if (technicalRequestFastPathEnabled()) {
+            const refreshed = await refreshSnapshot(ticker, view);
+            return decorate(refreshed, "miss", "market-data");
+          }
+        } catch (error) {
+          console.warn("technical_request_fast_path_unavailable", { ticker, error: publicRefreshErrorCode(error) });
+        }
+      }
       throw new StockDataUnavailableError({
         kind: "score",
         ticker,
@@ -363,7 +390,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
     }
 
     const refreshed = await refreshSnapshot(ticker, view);
-    return decorate(refreshed, "miss", "collector");
+    return decorate(refreshed, "miss", view === "technical" ? "market-data" : "collector");
   } catch (error) {
     if (freshCandidate) {
       return decorate(freshCandidate, "fresh", freshSource, {
