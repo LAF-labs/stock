@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import pandas as pd
+
 import scripts.fetch_stock_score as score_module
 
 
@@ -18,6 +20,17 @@ def kr_daily_rows():
         {"stck_bsop_date": "20260602", "stck_oprc": 10100, "stck_hgpr": 10500, "stck_lwpr": 10000, "stck_clpr": 10400, "acml_vol": 120000},
         {"stck_bsop_date": "20260603", "stck_oprc": 10400, "stck_hgpr": 10600, "stck_lwpr": 10200, "stck_clpr": 10500, "acml_vol": 130000},
     ]
+
+
+def us_history_frame():
+    return pd.DataFrame(
+        [
+            {"Open": 100.0, "High": 103.0, "Low": 99.0, "Close": 101.0, "Volume": 100000.0},
+            {"Open": 101.0, "High": 105.0, "Low": 100.0, "Close": 104.0, "Volume": 120000.0},
+            {"Open": 104.0, "High": 106.0, "Low": 102.0, "Close": 105.0, "Volume": 130000.0},
+        ],
+        index=pd.to_datetime(["2026-06-01", "2026-06-02", "2026-06-03"]),
+    )
 
 
 class TechnicalFastPathTests(unittest.TestCase):
@@ -61,6 +74,25 @@ class TechnicalFastPathTests(unittest.TestCase):
         stock_info.assert_not_called()
         fundamentals.assert_not_called()
         history.assert_not_called()
+
+    def test_us_technical_view_falls_back_to_yfinance_history_when_kis_discovery_fails(self):
+        with (
+            patch.object(score_module, "read_kis_discovery_cache", return_value=None),
+            patch.object(score_module, "discover_kis_stock", side_effect=score_module.KisApiError("kis_not_found")),
+            patch.object(score_module, "safe_history_for_symbol", return_value=us_history_frame()) as history,
+            patch.object(score_module, "yfinance_fundamentals") as fundamentals,
+        ):
+            payload = score_module.fetch_score_kis_us("NVDA", view="technical")
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["fetch"]["view"], "technical")
+        self.assertEqual(payload["fetch"]["provider_mode"], "technical_fast_path")
+        self.assertEqual(payload["fetch"]["history_source"], "yfinance")
+        self.assertEqual(payload["latest_price"], 105)
+        self.assertEqual(payload["latest_bar_date"], "2026-06-03")
+        self.assertGreaterEqual(len(payload["chart_series"]), 3)
+        history.assert_called_once_with("NVDA")
+        fundamentals.assert_not_called()
 
 
 if __name__ == "__main__":

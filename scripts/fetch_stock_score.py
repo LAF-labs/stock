@@ -49,6 +49,7 @@ try:
     from scripts.stock_score.timeseries import (
         CHART_SERIES_TRADING_YEAR_ROWS,
         atr_percent,
+        build_chart_series,
         kis_chart_series,
         kis_domestic_chart_series,
         return_between,
@@ -59,6 +60,7 @@ except ModuleNotFoundError:
     from stock_score.timeseries import (
         CHART_SERIES_TRADING_YEAR_ROWS,
         atr_percent,
+        build_chart_series,
         kis_chart_series,
         kis_domestic_chart_series,
         return_between,
@@ -302,6 +304,9 @@ def fetch_technical_score_kis_us(raw_ticker: str) -> dict[str, Any]:
         try:
             discovered = discover_kis_stock(symbol)
         except KisApiError as exc:
+            fallback = fetch_technical_score_yfinance_us(raw_ticker, symbol, exc)
+            if fallback.get("ok") is True:
+                return fallback
             return kis_error_payload(exc)
         market = discovered["market"]
         search = discovered.get("search") if isinstance(discovered.get("search"), dict) else {}
@@ -349,6 +354,47 @@ def fetch_technical_score_kis_us(raw_ticker: str) -> dict[str, Any]:
             "exchange_code": excd,
             "history_rows": len(daily_rows),
             "discovery_cache": "hit" if cached else "miss",
+        },
+    )
+
+
+def fetch_technical_score_yfinance_us(raw_ticker: str, symbol: str, error: Exception | None = None) -> dict[str, Any]:
+    history = safe_history_for_symbol(symbol)
+    if history.empty:
+        return {"ok": False, "status": 404, "error": "not_found", "message": f"{symbol}의 기술 분석용 일봉 데이터를 찾지 못했습니다."}
+
+    chart_series = build_chart_series(history, "USD", None)
+    latest_row = chart_series[-1] if chart_series else {}
+    previous_row = chart_series[-2] if len(chart_series) >= 2 else {}
+    latest_price = as_float(latest_row.get("close"))
+    previous_close = as_float(previous_row.get("close"))
+    latest_date = str(latest_row.get("date") or datetime.now(timezone.utc).date().isoformat())
+    price_metrics = technical_price_metrics_from_rows(
+        chart_series,
+        close_key="close",
+        high_key="high",
+        low_key="low",
+        volume_key="volume",
+        latest_price=latest_price,
+        previous_close=previous_close,
+    )
+    return build_technical_score_payload(
+        raw_ticker=raw_ticker,
+        market="US",
+        symbol=symbol,
+        name=symbol,
+        exchange="US",
+        currency="USD",
+        latest_price=latest_price,
+        latest_date=latest_date,
+        chart_series=chart_series,
+        price_metrics=price_metrics,
+        fetch_source="yfinance",
+        fetch_extra={
+            "provider_mode": "technical_fast_path",
+            "history_source": "yfinance",
+            "history_rows": len(chart_series),
+            "kis_fallback_error": str(error or "")[:200] or None,
         },
     )
 
