@@ -46,3 +46,17 @@ test("stock latency load test fails non-2xx responses", async () => {
   assert.equal(report.ok, false);
   assert.equal(report.rows.every((row: { ok: boolean }) => row.ok === false), true);
 });
+
+test("stock latency load test fails when p95 exceeds the configured budget", async () => {
+  const report = await runStockLatencyLoadTest(
+    { baseUrl: "https://stock.example", iterations: 1, maxP95Ms: 1 },
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return Response.json({ ok: true, parts: { score: { state: "fresh" } } });
+    }
+  );
+
+  assert.equal(report.ok, false);
+  assert.equal(report.latency_budget_ok, false);
+  assert.equal(report.latency_budget?.max_p95_ms, 1);
+});

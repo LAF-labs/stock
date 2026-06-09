@@ -1,4 +1,4 @@
-import { findExactSymbol } from "@/lib/symbolSearch";
+import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import {
   technicalEligibilityFromPayload,
@@ -18,7 +18,7 @@ export async function technicalEligibilityForTicker(tickerRef: string): Promise<
   const ticker = tickerFromInput(tickerRef);
   if (!ticker) return { eligible: false, ticker: "US:KO", reason: "invalid_ticker" };
 
-  const item = await findExactSymbol(ticker);
+  const item = await findExactLocalSymbol(ticker);
   if (!item) return { eligible: true, ticker };
   const payload = payloadFromSymbolItem(item, ticker);
   return technicalEligibilityFromPayload(payload);

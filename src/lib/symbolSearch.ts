@@ -63,11 +63,16 @@ export async function searchLocalSymbolsForTests(items: SymbolMasterItem[], inpu
 
 export async function findExactSymbol(tickerRef: string): Promise<SymbolSearchItem | undefined> {
   const parsed = parseTickerRef(tickerRef);
-  const localExact = exactSymbolFromIndex((await localSymbolIndex()).entries, parsed);
+  const localExact = await findExactLocalSymbol(tickerRef);
   if (localExact) return localExact;
 
   const items = await searchSymbols({ query: parsed.symbol, market: parsed.market, limit: 20 });
   return items.find((item) => item.market === parsed.market && item.ticker.toUpperCase() === parsed.symbol);
+}
+
+export async function findExactLocalSymbol(tickerRef: string): Promise<SymbolSearchItem | undefined> {
+  const parsed = parseTickerRef(tickerRef);
+  return exactSymbolFromIndex((await localSymbolIndex()).entries, parsed);
 }
 
 export async function enrichStockPayloadWithSymbolDisplay<T extends Record<string, unknown>>(payload: T): Promise<T & Record<string, unknown>> {

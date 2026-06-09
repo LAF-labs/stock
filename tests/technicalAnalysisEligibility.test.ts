@@ -9,6 +9,23 @@ import {
   technicalUnsupportedProductPayload,
 } from "../src/lib/technicalAnalysisEligibility";
 
+const originalFetch = globalThis.fetch;
+const originalEnv = {
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+};
+
+function restore() {
+  globalThis.fetch = originalFetch;
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+test.afterEach(restore);
+
 test("technical analysis allows ordinary single stocks", () => {
   const eligibility = technicalEligibilityFromPayload({
     requested_ticker: "KR:005930",
@@ -50,6 +67,22 @@ test("technical analysis blocks product-like names even when symbol master marks
     ticker: "KR:0194M0",
     reason: "unsupported_product",
   });
+});
+
+test("technical eligibility does not wait for remote symbol search on local exact misses", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+
+  let remoteCalls = 0;
+  globalThis.fetch = (async () => {
+    remoteCalls += 1;
+    return Response.json([]);
+  }) as typeof fetch;
+
+  const eligibility = await technicalEligibilityForTicker("US:ZZZLOCALMISS");
+
+  assert.deepEqual(eligibility, { eligible: true, ticker: "US:ZZZLOCALMISS" });
+  assert.equal(remoteCalls, 0);
 });
 
 test("technical forced entry redirects to the detail page", () => {

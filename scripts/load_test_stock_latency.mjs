@@ -86,12 +86,18 @@ export async function runStockLatencyLoadTest(options = {}, fetchImpl = fetch) {
 
   const durations = rows.map((row) => row.duration_ms).sort((a, b) => a - b);
   const providerViolations = rows.flatMap((row) => row.provider_guard_violations.map((violation) => ({ scenario: row.scenario, violation })));
+  const p50Ms = percentile(durations, 0.5);
+  const p95Ms = percentile(durations, 0.95);
+  const maxP95Ms = positiveNumber(options.maxP95Ms);
+  const latencyBudgetOk = maxP95Ms === undefined || (p95Ms !== null && p95Ms <= maxP95Ms);
   return {
-    ok: rows.every((row) => row.ok && !row.error && row.provider_guard_violations.length === 0),
+    ok: rows.every((row) => row.ok && !row.error && row.provider_guard_violations.length === 0) && latencyBudgetOk,
     iterations,
     requests: rows.length,
-    p50_ms: percentile(durations, 0.5),
-    p95_ms: percentile(durations, 0.95),
+    p50_ms: p50Ms,
+    p95_ms: p95Ms,
+    latency_budget_ok: latencyBudgetOk,
+    latency_budget: maxP95Ms === undefined ? undefined : { max_p95_ms: maxP95Ms },
     provider_guard_ok: providerViolations.length === 0,
     provider_guard_violations: providerViolations,
     rows,
@@ -110,6 +116,7 @@ function parseCliOptions(argv, env = process.env) {
     hotTicker: env.STOCK_LATENCY_HOT_TICKER || DEFAULT_HOT_TICKER,
     coldTicker: env.STOCK_LATENCY_COLD_TICKER || DEFAULT_COLD_TICKER,
     iterations: Number(env.STOCK_LATENCY_ITERATIONS || 1),
+    maxP95Ms: positiveNumber(env.STOCK_LATENCY_MAX_P95_MS),
     json: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -123,10 +130,16 @@ function parseCliOptions(argv, env = process.env) {
     else if (arg === "--hot-ticker") options.hotTicker = next();
     else if (arg === "--cold-ticker") options.coldTicker = next();
     else if (arg === "--iterations") options.iterations = Number(next());
+    else if (arg === "--max-p95-ms") options.maxP95Ms = positiveNumber(next());
     else if (arg === "--json") options.json = true;
     else throw new Error(`Unsupported argument: ${arg}`);
   }
   return options;
+}
+
+function positiveNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 async function main() {

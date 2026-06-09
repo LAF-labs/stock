@@ -4,4 +4,11 @@ export function providerGuardViolations(payload: unknown): string[];
 export function runStockLatencyLoadTest(
   options?: Record<string, unknown>,
   fetchImpl?: typeof fetch
-): Promise<{ ok: boolean; rows: Array<{ ok: boolean }> }>;
+): Promise<{
+  ok: boolean;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  latency_budget_ok: boolean;
+  latency_budget?: { max_p95_ms: number };
+  rows: Array<{ ok: boolean }>;
+}>;
