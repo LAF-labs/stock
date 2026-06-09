@@ -48,7 +48,7 @@ class PublishWorkflowTests(unittest.TestCase):
     def test_refresh_queue_worker_uses_typescript_quote_worker_and_isolates_legacy_score(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("actions/setup-node@v4", text)
+        self.assertIn("actions/setup-node@v6", text)
         self.assertIn("npm ci", text)
         self.assertIn("node --import tsx scripts/publish_stock_snapshots.ts", text)
         self.assertIn("--kind quote", text)
@@ -87,7 +87,7 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn('cron: "*/15 * * * 1-5"', text)
         self.assertIn('cron: "0 */3 * * 0,6"', text)
         self.assertIn("workflow_dispatch:", text)
-        self.assertIn("actions/setup-node@v4", text)
+        self.assertIn("actions/setup-node@v6", text)
         self.assertIn("npm ci", text)
         self.assertIn("node --import tsx scripts/stock_operations_report.ts", text)
         self.assertNotIn("actions/setup-python", text)
@@ -115,6 +115,26 @@ class PublishWorkflowTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', text)
+
+    def test_workflows_use_node24_ready_action_majors(self):
+        combined = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                CI_WORKFLOW_PATH,
+                WORKFLOW_PATH,
+                BENCHMARK_WORKFLOW_PATH,
+                OPERATIONS_WORKFLOW_PATH,
+            ]
+        )
+
+        self.assertIn("actions/checkout@v6", combined)
+        self.assertIn("actions/setup-node@v6", combined)
+        self.assertIn("actions/setup-python@v6", combined)
+        self.assertIn("actions/cache@v5", combined)
+        self.assertNotIn("actions/checkout@v4", combined)
+        self.assertNotIn("actions/setup-node@v4", combined)
+        self.assertNotIn("actions/setup-python@v5", combined)
+        self.assertNotIn("actions/cache@v4", combined)
 
     def test_package_ops_check_uses_market_data_threshold(self):
         text = PACKAGE_PATH.read_text(encoding="utf-8")
