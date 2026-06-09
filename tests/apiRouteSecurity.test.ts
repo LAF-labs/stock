@@ -342,6 +342,49 @@ test("score route returns identity partial before slow refresh enqueue finishes"
   assert.ok(elapsedMs < 150, `expected partial response before slow enqueue, got ${elapsedMs}ms`);
 });
 
+test("score route returns identity partial before slow score snapshot miss finishes", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+
+  let enqueueCalls = 0;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) {
+      await sleep(250);
+      return Response.json([]);
+    }
+    if (url.includes("/rest/v1/stock_quote_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      enqueueCalls += 1;
+      return Response.json({ id: "job-zvra", status: "queued" });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const startedAt = performance.now();
+  const response = await getScore(request("/api/score?ticker=US:ZVRA&partial=1"));
+  const elapsedMs = performance.now() - startedAt;
+  const payload = await response.json();
+  await sleep(280);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.type, "partial_stock_snapshot");
+  assert.equal(payload.parts.identity.state, "fresh");
+  assert.equal(enqueueCalls, 1);
+  assert.ok(elapsedMs < 180, `expected partial response before slow score miss, got ${elapsedMs}ms`);
+});
+
 test("batch score rejects unsupported refresh before production rate limit guard", async () => {
   restoreEnv();
   process.env.VERCEL = "1";
@@ -442,6 +485,48 @@ test("batch score returns identity partials before slow refresh enqueues finish"
   assert.deepEqual(payload.results.map((item: Record<string, unknown>) => (item.parts as Record<string, Record<string, unknown>>).identity.state), ["fresh", "fresh"]);
   assert.equal(enqueueCalls, 2);
   assert.ok(elapsedMs < 180, `expected batch partials before slow enqueues, got ${elapsedMs}ms`);
+});
+
+test("batch score returns identity partials before slow score snapshot misses finish", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+
+  let enqueueCalls = 0;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) {
+      await sleep(250);
+      return Response.json([]);
+    }
+    if (url.includes("/rest/v1/stock_quote_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      enqueueCalls += 1;
+      return Response.json({ id: `job-${enqueueCalls}`, status: "queued" });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const startedAt = performance.now();
+  const response = await getBatchScore(request("/api/score/batch?tickers=US:ZVRA,US:AFRM&partial=1"));
+  const elapsedMs = performance.now() - startedAt;
+  const payload = await response.json();
+  await sleep(280);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload.results.map((item: Record<string, unknown>) => item.type), ["partial_stock_snapshot", "partial_stock_snapshot"]);
+  assert.equal(enqueueCalls, 2);
+  assert.ok(elapsedMs < 180, `expected batch partials before slow score misses, got ${elapsedMs}ms`);
 });
 
 test("judgment route requires JSON content type", async () => {

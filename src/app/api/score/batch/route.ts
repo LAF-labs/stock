@@ -9,6 +9,7 @@ import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, optimisticStockPendingPayload } from "@/lib/stockPendingResponse";
 import { pendingPartialStockPayload } from "@/lib/stockPartsResponse";
+import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
 import { getStockScore, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -60,7 +61,28 @@ export async function GET(request: NextRequest) {
       BATCH_CONCURRENCY,
       async ({ ticker }): Promise<{ payload: StockPayload; cache?: StockScoreResult["cache"] }> => {
         try {
-          const result = await getStockScore(ticker, "compare");
+          const settledScorePromise = settleStockScore(getStockScore(ticker, "compare"));
+          const earlyScore = partial ? await waitForPartialStockScore(settledScorePromise) : undefined;
+          if (earlyScore?.status === "timeout") {
+            const pendingInput = {
+              kind: "score",
+              ticker,
+              view: "compare",
+              priority: STOCK_REFRESH_PRIORITIES.USER_COMPARE_SCORE_MISS,
+              reason: "snapshot_miss",
+            } as const;
+            const partialPayload = await pendingPartialStockPayload({ pending: optimisticStockPendingPayload(pendingInput), ticker, view: "compare" });
+            if (partialPayload) {
+              enqueueScoreRefreshAfterUnavailable(settledScorePromise, pendingInput, { ticker, view: "compare" });
+              return { payload: partialPayload };
+            }
+          } else if (earlyScore?.status === "rejected") {
+            throw earlyScore.error;
+          }
+
+          const settledScore = earlyScore?.status === "fulfilled" ? earlyScore : await settledScorePromise;
+          if (settledScore.status === "rejected") throw settledScore.error;
+          const result = settledScore.value;
           const payload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(result.payload));
           return { payload, cache: result.cache };
         } catch (error) {

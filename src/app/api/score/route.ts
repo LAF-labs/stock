@@ -9,6 +9,7 @@ import { getStockChart } from "@/lib/stockChartCache";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
+import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -74,7 +75,30 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await getStockScore(ticker, view, { forceRefresh });
+    const settledScorePromise = settleStockScore(getStockScore(ticker, view, { forceRefresh }));
+    const earlyScore = partial && !forceRefresh ? await waitForPartialStockScore(settledScorePromise) : undefined;
+    if (earlyScore?.status === "timeout") {
+      const pendingInput = {
+        kind: "score",
+        ticker,
+        view,
+        priority: userScoreRefreshPriority(view, forceRefresh),
+        reason: "snapshot_miss",
+      } as const;
+      const partialPayload = await pendingPartialStockPayload({ pending: optimisticStockPendingPayload(pendingInput), ticker, view });
+      if (partialPayload) {
+        enqueueScoreRefreshAfterUnavailable(settledScorePromise, pendingInput, { ticker, view });
+        const response = NextResponse.json(partialPayload, { status: 200, headers: privateNoStoreHeaders() });
+        if (cooldown) applyRefreshUserCookie(response, cooldown);
+        return response;
+      }
+    } else if (earlyScore?.status === "rejected") {
+      throw earlyScore.error;
+    }
+
+    const settledScore = earlyScore?.status === "fulfilled" ? earlyScore : await settledScorePromise;
+    if (settledScore.status === "rejected") throw settledScore.error;
+    const result = settledScore.value;
     const scorePayload = await attachChartForTechnicalView(attachScoreParts(result), ticker, view);
     const enrichedPayload = await enrichScorePayloadForView(scorePayload, view);
     const payload = forceRefresh
