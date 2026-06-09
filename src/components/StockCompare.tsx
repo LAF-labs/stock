@@ -47,6 +47,15 @@ type LoadState =
   | { status: "pending"; ticker: string; data?: undefined; error?: undefined; message: string; retryAfterSeconds?: number }
   | { status: "error"; ticker: string; data?: undefined; error: string };
 
+function optimisticComparePendingState(ticker: string): Extract<LoadState, { status: "partial" }> {
+  return {
+    status: "partial",
+    ticker,
+    data: partialStockDataFromTicker(ticker),
+    message: "종목은 먼저 특정했고, 비교 점수와 가격 데이터는 계속 확인하고 있어요.",
+  };
+}
+
 function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[]) {
   router.push(`/compare?tickers=${encodeURIComponent(tickers.join(","))}`);
 }
@@ -66,7 +75,7 @@ export default function StockCompare() {
   const baseTicker = tickers[0] || "US:KO";
   const baseTickerLabel = displayTickerRef(baseTicker);
   const [input, setInput] = useState("");
-  const [states, setStates] = useState<LoadState[]>(tickers.map((ticker) => ({ status: "loading", ticker })));
+  const [states, setStates] = useState<LoadState[]>(() => tickers.map(optimisticComparePendingState));
   const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
@@ -75,9 +84,9 @@ export default function StockCompare() {
       const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
       return tickers.map((ticker) => {
         const existing = currentByTicker.get(ticker);
-        return existing && shouldPreserveCompareViewDuringRetry(existing.status, reloadVersion > 0)
+        return existing && (existing.status === "partial" || shouldPreserveCompareViewDuringRetry(existing.status, reloadVersion > 0))
           ? existing
-          : { status: "loading", ticker };
+          : optimisticComparePendingState(ticker);
       });
     });
 
@@ -189,7 +198,7 @@ export default function StockCompare() {
     const retryHints = pendingStates
       .map((state) => state.retryAfterSeconds)
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-    return { retryAfterSeconds: retryHints.length ? Math.min(...retryHints) : undefined };
+    return retryHints.length ? { retryAfterSeconds: Math.min(...retryHints) } : undefined;
   }, [pendingStates]);
   const errorStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "error" }> => state.status === "error"), [states]);
   const selectedCount = tickers.length;

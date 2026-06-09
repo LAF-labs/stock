@@ -67,7 +67,12 @@ function deadlineTechnicalPendingFromTicker(ticker: string, message?: string, re
 }
 
 export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [state, setState] = useState<LoadState>(() => ({
+    status: "partial",
+    ticker,
+    data: partialStockDataFromTicker(ticker),
+    pending: deadlineTechnicalPendingFromTicker(ticker),
+  }));
   const [quote, setQuote] = useState<StockQuoteResponse | undefined>();
   const [reloadVersion, setReloadVersion] = useState(0);
   const quoteRef = useRef<StockQuoteResponse | undefined>(undefined);
@@ -128,9 +133,16 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker, view: "technical", partial: "1" });
-    setState((current) =>
-      shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker) ? current : { status: "loading", ticker }
-    );
+    setState((current) => {
+      if ((current.status === "pending" || current.status === "partial") && current.ticker === ticker) return current;
+      if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker)) return current;
+      return {
+        status: "partial",
+        ticker,
+        data: partialStockDataFromTicker(ticker),
+        pending: deadlineTechnicalPendingFromTicker(ticker),
+      };
+    });
 
     fetch(`/api/score?${query.toString()}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
