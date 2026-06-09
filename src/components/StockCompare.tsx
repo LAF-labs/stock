@@ -32,12 +32,13 @@ import {
   type BatchScorePayload,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
+import { formatPrimaryPrice, partialStockDataFromTicker, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import { usePendingRetry } from "@/components/usePendingRetry";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockScoreResponse } from "@/lib/types";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
+const FIRST_USEFUL_DATA_DEADLINE_MS = 5_000;
 
 type LoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
@@ -94,8 +95,10 @@ export default function StockCompare() {
       })
       .then((results) => {
         if (controller.signal.aborted) return;
-        setStates(
-          tickers.map((ticker, index) => {
+        setStates((current) => {
+          const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
+          return tickers.map((ticker, index) => {
+            const existing = currentByTicker.get(ticker);
             const result = results[index];
             if (isPartialCompareResult(result)) {
               const data = comparePartialData(result, ticker);
@@ -110,6 +113,7 @@ export default function StockCompare() {
               }
             }
             if (isSnapshotPending(result)) {
+              if (existing?.status === "partial") return existing;
               return {
                 status: "pending" as const,
                 ticker,
@@ -125,8 +129,8 @@ export default function StockCompare() {
               };
             }
             return { status: "success" as const, ticker, data: result as StockScoreResponse };
-          })
-        );
+          });
+        });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -144,6 +148,29 @@ export default function StockCompare() {
     return () => controller.abort();
   }, [tickers, reloadVersion]);
 
+  useEffect(() => {
+    if (!tickers.length) return;
+
+    const timer = window.setTimeout(() => {
+      setStates((current) => {
+        const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
+        return tickers.map((ticker) => {
+          const existing = currentByTicker.get(ticker);
+          if (existing && existing.status !== "loading" && existing.status !== "pending") return existing;
+          return {
+            status: "partial" as const,
+            ticker,
+            data: partialStockDataFromTicker(ticker),
+            message: existing?.status === "pending" ? existing.message : "종목은 먼저 특정했고, 비교 점수와 가격 데이터는 계속 확인하고 있어요.",
+            retryAfterSeconds: existing?.status === "pending" ? existing.retryAfterSeconds : undefined,
+          };
+        });
+      });
+    }, FIRST_USEFUL_DATA_DEADLINE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [tickers, reloadVersion]);
+
   const items = useMemo(
     () => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
     [states]
@@ -153,7 +180,6 @@ export default function StockCompare() {
     () => states.filter((state): state is Extract<LoadState, { status: "loading" | "pending" }> => state.status === "loading" || state.status === "pending"),
     [states]
   );
-  const isLoading = useMemo(() => states.some((state) => state.status === "loading"), [states]);
   const pendingStates = useMemo(
     () => states.filter((state): state is Extract<LoadState, { status: "pending" | "partial" }> => state.status === "pending" || state.status === "partial"),
     [states]
@@ -264,8 +290,6 @@ export default function StockCompare() {
         </section>
       ) : null}
 
-      {isLoading && !items.length && !partialStates.length ? <CompareSkeleton /> : null}
-
       {items.length || partialStates.length || waitingStates.length ? (
         <div className="compare-feed">
           {items.length ? <CompareBrief items={items} /> : <ComparePendingOverview count={partialStates.length + waitingStates.length} />}
@@ -281,38 +305,6 @@ export default function StockCompare() {
   );
 }
 
-function CompareSkeleton() {
-  return (
-    <div className="compare-feed loading-status-feed" role="status" aria-live="polite">
-      <section className="compare-section">
-        <div className="section-title">
-          <span>비교 준비 중</span>
-          <h2>선택한 종목을 확인하고 있어요</h2>
-        </div>
-        <div className="compare-card-grid">
-          {[0, 1].map((item) => (
-            <article className="compare-stock-card compare-waiting-card" key={item}>
-              <div className="compare-card-top">
-                <div>
-                  <span>선택한 종목</span>
-                  <strong className="ticker-primary">확인 중</strong>
-                </div>
-                <em className="price-neutral">대기 중</em>
-              </div>
-              <p>가격과 점수 데이터를 확인하고 있어요.</p>
-              <div className="compare-score-line">
-                <span>점수</span>
-                <strong>준비 중</strong>
-              </div>
-              <i className="compare-card-scorebar pending" aria-hidden="true" />
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function ComparePendingOverview({ count }: { count: number }) {
   return (
     <section className="compare-section compare-brief">
@@ -320,7 +312,7 @@ function ComparePendingOverview({ count }: { count: number }) {
         <span>비교 준비 중</span>
         <h2>준비된 종목부터 채우고 있어요</h2>
       </div>
-      <p>{count}개 종목의 가격 데이터는 확인했고, 비교 점수와 재무 지표를 이어서 준비하고 있어요.</p>
+      <p>{count}개 종목을 먼저 표시했고, 비교 점수와 가격 데이터는 이어서 준비하고 있어요.</p>
     </section>
   );
 }

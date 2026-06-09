@@ -309,6 +309,25 @@ export function partialStockDataFromQuote(quote: StockQuoteResponse, fallbackTic
   return data.latest_price !== undefined || hasIdentity ? data : undefined;
 }
 
+export function partialStockDataFromTicker(ticker: string): StockScoreResponse {
+  const requestedTicker = dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase();
+  const market = requestedTicker.startsWith("KR:") ? "KR" : "US";
+  const rawSymbol = requestedTicker.replace(/^(US|KR):/i, "");
+  const symbol = cleanTickerSymbol(rawSymbol) || rawSymbol;
+
+  return {
+    requested_ticker: requestedTicker,
+    market,
+    symbol,
+    currency: market === "KR" ? "KRW" : "USD",
+    server_cache: {
+      state: "pending",
+      source: "client_deadline",
+      refresh_started: true,
+    },
+  };
+}
+
 export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {
   const byDate = new Map<string, UsableChartPoint>();
   for (const point of points || []) {

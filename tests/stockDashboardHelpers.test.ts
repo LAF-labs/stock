@@ -19,6 +19,7 @@ import {
   formatSecondaryPrice,
   opportunityExtremes,
   partialStockDataFromQuote,
+  partialStockDataFromTicker,
   partialStockDataFromPayload,
   pendingRetryTargetForDashboard,
   scoreDataWithQuote,
@@ -189,6 +190,18 @@ test("dashboard can render a useful partial view from quote before score is read
   assert.equal(partial?.symbol, "CAVA");
   assert.equal(partial?.latest_price, 76.33);
   assert.equal(partial?.server_cache?.source, "quote_partial");
+  assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+});
+
+test("dashboard can render a deadline partial view from ticker identity only", () => {
+  const partial = partialStockDataFromTicker("US:AFRM");
+
+  assert.equal(partial.requested_ticker, "US:AFRM");
+  assert.equal(partial.market, "US");
+  assert.equal(partial.symbol, "AFRM");
+  assert.equal(partial.currency, "USD");
+  assert.equal(partial.server_cache?.source, "client_deadline");
+  assert.equal(stockHeaderIdentity(partial).primary, "AFRM");
   assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
 });
 

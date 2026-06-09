@@ -16,6 +16,7 @@ import {
   formatSecondaryPrice,
   pendingRetryTargetForDashboard,
   partialStockDataFromQuote,
+  partialStockDataFromTicker,
   partialStockDataFromPayload,
   refreshCooldownMessage,
   scoreDataWithQuote,
@@ -43,6 +44,8 @@ const DETAIL_SECTIONS = [
   { id: "detail-valuation", label: "가격 부담" },
   { id: "detail-financials", label: "재무 요약" },
 ] as const;
+
+const FIRST_USEFUL_DATA_DEADLINE_MS = 5_000;
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
 
@@ -81,6 +84,15 @@ function optimisticScorePendingFromQuote(ticker: string): SnapshotPendingState {
     message: "가격 데이터는 먼저 확인했고, 점수와 재무 지표를 이어서 준비하고 있어요.",
     ticker,
     queued: false,
+  };
+}
+
+function deadlinePendingFromTicker(ticker: string, message?: string, retryAfterSeconds?: number): SnapshotPendingState {
+  return {
+    message: message || "종목은 먼저 특정했고, 가격과 점수 데이터는 계속 확인하고 있어요.",
+    ticker,
+    queued: false,
+    retryAfterSeconds,
   };
 }
 
@@ -136,7 +148,7 @@ export default function StockDashboard() {
           return undefined;
         }
         if (pending) {
-          setState({ status: "pending", pending });
+          setState((current) => (current.status === "partial" ? current : { status: "pending", pending }));
           return undefined;
         }
         if (!response.ok) {
@@ -159,6 +171,27 @@ export default function StockDashboard() {
       });
 
     return () => controller.abort();
+  }, [tickerParam, reloadVersion]);
+
+  useEffect(() => {
+    if (!tickerParam) return;
+
+    const timer = window.setTimeout(() => {
+      setState((current) => {
+        if (current.status === "success" || current.status === "partial" || current.status === "error") return current;
+        const pending =
+          current.status === "pending"
+            ? deadlinePendingFromTicker(tickerParam, current.pending.message, current.pending.retryAfterSeconds)
+            : deadlinePendingFromTicker(tickerParam);
+        return {
+          status: "partial",
+          data: partialStockDataFromTicker(tickerParam),
+          pending,
+        };
+      });
+    }, FIRST_USEFUL_DATA_DEADLINE_MS);
+
+    return () => window.clearTimeout(timer);
   }, [tickerParam, reloadVersion]);
 
   useEffect(() => {
@@ -464,7 +497,7 @@ export default function StockDashboard() {
       </section>
 
       {tickerParam && shouldShowStockSkeleton(state.status, Boolean(partialData)) && (
-        <StockSkeleton pendingMessage={state.status === "pending" ? state.pending.message : undefined} onRetry={retryLoad} />
+        <StockSkeleton ticker={tickerParam} pendingMessage={state.status === "pending" ? state.pending.message : undefined} onRetry={retryLoad} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
@@ -564,6 +597,7 @@ function PartialStockSummary({
   const identity = stockHeaderIdentity(displayData, quote);
   const daily = dailyChangeText(displayData, quote);
   const latestBarDate = quote?.latest_bar_date || displayData.latest_bar_date || "최근 가격";
+  const hasPrice = typeof displayData.latest_price === "number" && Number.isFinite(displayData.latest_price);
 
   return (
     <section className="stock-title-card partial-stock-title-card">
@@ -604,7 +638,7 @@ function PartialStockSummary({
       </div>
       <div className="hero-verdict neutral partial-verdict">
         <span>오늘의 판단</span>
-        <strong>가격 데이터부터 먼저 보여드려요.</strong>
+        <strong>{hasPrice ? "가격 데이터부터 먼저 보여드려요." : "종목부터 먼저 보여드려요."}</strong>
         <p>{pending?.message || "점수와 재무 지표를 준비하는 중이에요. 준비가 끝나면 이 영역이 자동으로 채워집니다."}</p>
         <button type="button" className="partial-retry-button" onClick={onRetry}>
           다시 확인
@@ -884,7 +918,8 @@ function StatusCard({
   );
 }
 
-function StockSkeleton({ pendingMessage, onRetry }: { pendingMessage?: string; onRetry?: () => void }) {
+function StockSkeleton({ ticker, pendingMessage, onRetry }: { ticker?: string; pendingMessage?: string; onRetry?: () => void }) {
+  const tickerLabel = ticker ? dashboardInputValue(ticker) : undefined;
   return (
     <div className="stock-feed loading-status-feed" role="status" aria-live="polite">
       <section className="stock-title-card partial-stock-title-card">
@@ -892,7 +927,7 @@ function StockSkeleton({ pendingMessage, onRetry }: { pendingMessage?: string; o
           <div className="stock-name-row">
             <div>
               <span>종목 데이터</span>
-              <h2>확인 중</h2>
+              <h2>{tickerLabel || "확인 중"}</h2>
               <p>{pendingMessage || "가격과 점수 데이터를 확인하고 있어요."}</p>
             </div>
           </div>

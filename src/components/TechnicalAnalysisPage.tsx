@@ -16,6 +16,7 @@ import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi"
 import {
   displayTickerInput,
   partialStockDataFromQuote,
+  partialStockDataFromTicker,
   partialStockDataFromPayload,
   scoreDataWithQuote,
   shouldPreservePendingViewDuringRetry,
@@ -34,6 +35,8 @@ type LoadState =
   | { status: "pending"; ticker: string; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; ticker: string; data?: undefined; error: string; pending?: undefined };
 
+const FIRST_USEFUL_DATA_DEADLINE_MS = 5_000;
+
 async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promise<StockQuoteResponse | undefined> {
   try {
     const query = new URLSearchParams({ ticker });
@@ -51,6 +54,15 @@ function optimisticTechnicalPendingFromQuote(ticker: string): SnapshotPendingSta
     message: "가격 데이터는 먼저 확인했고, 차트 분석을 이어서 준비하고 있어요.",
     ticker,
     queued: false,
+  };
+}
+
+function deadlineTechnicalPendingFromTicker(ticker: string, message?: string, retryAfterSeconds?: number): SnapshotPendingState {
+  return {
+    message: message || "종목은 먼저 특정했고, 가격 캔들과 보조지표는 계속 확인하고 있어요.",
+    ticker,
+    queued: false,
+    retryAfterSeconds,
   };
 }
 
@@ -134,7 +146,7 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
           return undefined;
         }
         if (pending) {
-          setState({ status: "pending", ticker, pending });
+          setState((current) => (current.status === "partial" && current.ticker === ticker ? current : { status: "pending", ticker, pending }));
           return undefined;
         }
         if (!response.ok) throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
@@ -158,6 +170,27 @@ export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
       });
 
     return () => controller.abort();
+  }, [ticker, reloadVersion]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setState((current) => {
+        if (current.ticker && current.ticker !== ticker) return current;
+        if (current.status === "success" || current.status === "partial" || current.status === "error") return current;
+        const pending =
+          current.status === "pending"
+            ? deadlineTechnicalPendingFromTicker(ticker, current.pending.message, current.pending.retryAfterSeconds)
+            : deadlineTechnicalPendingFromTicker(ticker);
+        return {
+          status: "partial",
+          ticker,
+          data: scoreDataWithQuote(partialStockDataFromTicker(ticker), quoteRef.current),
+          pending,
+        };
+      });
+    }, FIRST_USEFUL_DATA_DEADLINE_MS);
+
+    return () => window.clearTimeout(timer);
   }, [ticker, reloadVersion]);
 
   const data = state.status === "success" || state.status === "partial" ? state.data : undefined;

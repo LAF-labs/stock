@@ -152,6 +152,7 @@ export function TechnicalAnalysisPendingFeed({
   onRetry: () => void;
 }) {
   const chartPointCount = usableChartPoints(data.chart_series).length;
+  const hasPriceOrChart = chartPointCount > 1 || (typeof data.latest_price === "number" && Number.isFinite(data.latest_price));
   const limitedWarnings =
     chartPointCount > 1 && chartPointCount < 80
       ? ["상장 후 가격 기록이 아직 짧아요. 이동평균, 피보나치, FVG/OB 같은 신호는 충분한 봉이 쌓이면 더 안정적으로 표시됩니다."]
@@ -172,7 +173,7 @@ export function TechnicalAnalysisPendingFeed({
         </div>
         <div className="technical-summary">
           <span>분석 준비 중</span>
-          <strong>가격 캔들부터 먼저 보여드려요.</strong>
+          <strong>{hasPriceOrChart ? "가격 캔들부터 먼저 보여드려요." : "종목부터 먼저 보여드려요."}</strong>
           <p>{pending.message}</p>
           <button type="button" className="technical-pending-action" onClick={onRetry}>
             다시 확인
