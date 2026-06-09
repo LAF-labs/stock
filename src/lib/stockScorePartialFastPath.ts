@@ -18,7 +18,7 @@ export function settleStockScore(promise: Promise<StockScoreResult>): Promise<Se
 }
 
 export async function waitForPartialStockScore(settledPromise: Promise<SettledStockScoreResult>): Promise<TimedStockScoreResult> {
-  const timeoutMs = numericEnv("STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS", 120);
+  const timeoutMs = numericEnv("STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS", 900);
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

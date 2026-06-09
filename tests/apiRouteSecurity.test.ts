@@ -20,6 +20,7 @@ const ENV_KEYS = [
   "STOCK_REFRESH_COOKIE_SECRET",
   "STOCK_ALLOWED_ORIGINS",
   "STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS",
+  "STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -308,6 +309,8 @@ test("score route returns identity partial before slow refresh enqueue finishes"
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
   process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+  process.env.STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS = "25";
+  process.env.STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS = "25";
 
   let enqueueStarted = false;
   let enqueueFinished = false;
@@ -352,6 +355,7 @@ test("score route returns identity partial before slow score snapshot miss finis
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
   process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+  process.env.STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS = "25";
 
   let enqueueCalls = 0;
   globalThis.fetch = (async (input, init) => {
@@ -455,6 +459,7 @@ test("batch score returns identity partials before slow refresh enqueues finish"
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
   process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+  process.env.STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS = "25";
 
   let enqueueCalls = 0;
   globalThis.fetch = (async (input, init) => {
@@ -497,6 +502,7 @@ test("batch score returns identity partials before slow score snapshot misses fi
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
   process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+  process.env.STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS = "25";
 
   let enqueueCalls = 0;
   globalThis.fetch = (async (input, init) => {
