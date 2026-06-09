@@ -73,6 +73,7 @@ export async function runStockLatencyLoadTest(options = {}, fetchImpl = fetch) {
       }
       const durationMs = Math.round((performance.now() - started) * 10) / 10;
       rows.push({
+        iteration,
         scenario: request.name,
         status,
         ok,
@@ -84,7 +85,9 @@ export async function runStockLatencyLoadTest(options = {}, fetchImpl = fetch) {
     }
   }
 
-  const durations = rows.map((row) => row.duration_ms).sort((a, b) => a - b);
+  const warmupIterations = Math.max(0, Number(options.warmupIterations || 0));
+  const measuredRows = rows.filter((row) => row.iteration >= warmupIterations);
+  const durations = measuredRows.map((row) => row.duration_ms).sort((a, b) => a - b);
   const providerViolations = rows.flatMap((row) => row.provider_guard_violations.map((violation) => ({ scenario: row.scenario, violation })));
   const p50Ms = percentile(durations, 0.5);
   const p95Ms = percentile(durations, 0.95);
@@ -94,6 +97,9 @@ export async function runStockLatencyLoadTest(options = {}, fetchImpl = fetch) {
     ok: rows.every((row) => row.ok && !row.error && row.provider_guard_violations.length === 0) && latencyBudgetOk,
     iterations,
     requests: rows.length,
+    warmup_iterations: warmupIterations,
+    warmup_requests: rows.length - measuredRows.length,
+    measured_requests: measuredRows.length,
     p50_ms: p50Ms,
     p95_ms: p95Ms,
     latency_budget_ok: latencyBudgetOk,
@@ -116,6 +122,7 @@ function parseCliOptions(argv, env = process.env) {
     hotTicker: env.STOCK_LATENCY_HOT_TICKER || DEFAULT_HOT_TICKER,
     coldTicker: env.STOCK_LATENCY_COLD_TICKER || DEFAULT_COLD_TICKER,
     iterations: Number(env.STOCK_LATENCY_ITERATIONS || 1),
+    warmupIterations: Number(env.STOCK_LATENCY_WARMUP_ITERATIONS || 0),
     maxP95Ms: positiveNumber(env.STOCK_LATENCY_MAX_P95_MS),
     json: false,
   };
@@ -130,6 +137,7 @@ function parseCliOptions(argv, env = process.env) {
     else if (arg === "--hot-ticker") options.hotTicker = next();
     else if (arg === "--cold-ticker") options.coldTicker = next();
     else if (arg === "--iterations") options.iterations = Number(next());
+    else if (arg === "--warmup-iterations") options.warmupIterations = Number(next());
     else if (arg === "--max-p95-ms") options.maxP95Ms = positiveNumber(next());
     else if (arg === "--json") options.json = true;
     else throw new Error(`Unsupported argument: ${arg}`);

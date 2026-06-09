@@ -60,3 +60,20 @@ test("stock latency load test fails when p95 exceeds the configured budget", asy
   assert.equal(report.latency_budget_ok, false);
   assert.equal(report.latency_budget?.max_p95_ms, 1);
 });
+
+test("stock latency load test can exclude warmup iterations from latency budget", async () => {
+  let call = 0;
+  const report = await runStockLatencyLoadTest(
+    { baseUrl: "https://stock.example", iterations: 2, warmupIterations: 1, maxP95Ms: 20 },
+    async () => {
+      call += 1;
+      await new Promise((resolve) => setTimeout(resolve, call <= 5 ? 30 : 1));
+      return Response.json({ ok: true, parts: { score: { state: "fresh" } } });
+    }
+  );
+
+  assert.equal(report.ok, true);
+  assert.equal(report.latency_budget_ok, true);
+  assert.equal(report.measured_requests, 5);
+  assert.equal(report.warmup_requests, 5);
+});

@@ -6,6 +6,10 @@ export function runStockLatencyLoadTest(
   fetchImpl?: typeof fetch
 ): Promise<{
   ok: boolean;
+  requests: number;
+  warmup_iterations: number;
+  warmup_requests: number;
+  measured_requests: number;
   p50_ms: number | null;
   p95_ms: number | null;
   latency_budget_ok: boolean;
