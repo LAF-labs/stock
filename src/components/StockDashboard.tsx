@@ -45,7 +45,7 @@ const DETAIL_SECTIONS = [
   { id: "detail-financials", label: "재무 요약" },
 ] as const;
 
-const FIRST_USEFUL_DATA_DEADLINE_MS = 5_000;
+const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
 

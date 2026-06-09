@@ -38,7 +38,7 @@ import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockScoreResponse } from "@/lib/types";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
-const FIRST_USEFUL_DATA_DEADLINE_MS = 5_000;
+const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
 
 type LoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }

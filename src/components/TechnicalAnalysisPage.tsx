@@ -35,7 +35,7 @@ type LoadState =
   | { status: "pending"; ticker: string; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; ticker: string; data?: undefined; error: string; pending?: undefined };
 
-const FIRST_USEFUL_DATA_DEADLINE_MS = 5_000;
+const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
 
 async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promise<StockQuoteResponse | undefined> {
   try {
