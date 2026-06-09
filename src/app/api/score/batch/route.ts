@@ -7,7 +7,7 @@ import { safeErrorMessage } from "@/lib/errorSafety";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
-import { enqueueStockPendingPayload } from "@/lib/stockPendingResponse";
+import { enqueueStockPendingPayload, optimisticStockPendingPayload } from "@/lib/stockPendingResponse";
 import { pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { getStockScore, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
@@ -66,17 +66,22 @@ export async function GET(request: NextRequest) {
         } catch (error) {
           if (isStockDataUnavailableError(error)) {
             console.info("batch_stock_snapshot_unavailable", { ticker, reason: error.payload.reason });
-            const pendingPayload = await enqueueStockPendingPayload({
+            const pendingInput = {
               kind: "score",
               ticker,
               view: "compare",
               priority: STOCK_REFRESH_PRIORITIES.USER_COMPARE_SCORE_MISS,
               reason: error.payload.reason,
-            });
-            if (partial && pendingPayload.error === "snapshot_pending") {
-              const partialPayload = await pendingPartialStockPayload({ pending: pendingPayload, ticker, view: "compare" });
-              if (partialPayload) return { payload: partialPayload };
+            } as const;
+            const pendingPayloadPromise = enqueueStockPendingPayload(pendingInput);
+            if (partial) {
+              const partialPayload = await pendingPartialStockPayload({ pending: optimisticStockPendingPayload(pendingInput), ticker, view: "compare" });
+              if (partialPayload) {
+                void pendingPayloadPromise.catch(() => undefined);
+                return { payload: partialPayload };
+              }
             }
+            const pendingPayload = await pendingPayloadPromise;
             return {
               payload: pendingPayload,
             };

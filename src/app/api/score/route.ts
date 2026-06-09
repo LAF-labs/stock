@@ -7,7 +7,7 @@ import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privat
 import { userScoreRefreshPriority } from "@/lib/stockRefreshPriorities";
 import { getStockChart } from "@/lib/stockChartCache";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
-import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
+import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
@@ -95,21 +95,24 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("stock_snapshot_unavailable", { ticker, view, reason: error.payload.reason });
-      const pendingPayload = await enqueueStockPendingPayload({
+      const pendingInput = {
         kind: "score",
         ticker,
         view,
         priority: userScoreRefreshPriority(view, forceRefresh),
         reason: error.payload.reason,
-      });
-      if (partial && pendingPayload.error === "snapshot_pending") {
-        const partialPayload = await pendingPartialStockPayload({ pending: pendingPayload, ticker, view });
+      } as const;
+      const pendingPayloadPromise = enqueueStockPendingPayload(pendingInput);
+      if (partial) {
+        const partialPayload = await pendingPartialStockPayload({ pending: optimisticStockPendingPayload(pendingInput), ticker, view });
         if (partialPayload) {
+          void pendingPayloadPromise.catch(() => undefined);
           const response = NextResponse.json(partialPayload, { status: 200, headers: privateNoStoreHeaders() });
           if (cooldown) applyRefreshUserCookie(response, cooldown);
           return response;
         }
       }
+      const pendingPayload = await pendingPayloadPromise;
       const response = stockPendingJsonResponse(pendingPayload);
       if (cooldown) applyRefreshUserCookie(response, cooldown);
       return response;

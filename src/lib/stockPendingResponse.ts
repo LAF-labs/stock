@@ -24,6 +24,16 @@ export type StockRefreshQueueUnavailablePayload = Omit<StockDataPendingPayload, 
 
 export type StockPendingPayload = StockDataPendingPayload | StockRefreshQueueUnavailablePayload;
 
+export function optimisticStockPendingPayload(input: StockPendingInput): StockDataPendingPayload {
+  return stockDataPendingPayload({
+    kind: input.kind,
+    ticker: input.ticker,
+    view: input.view,
+    reason: input.reason,
+    refreshRequest: { queued: true, status: "queued" },
+  });
+}
+
 export async function enqueueStockPendingPayload(input: StockPendingInput): Promise<StockPendingPayload> {
   const refreshRequest = await enqueueStockRefreshJob({
     kind: input.kind,
