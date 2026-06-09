@@ -102,7 +102,7 @@ jobs:
 
   score:
     needs: market_guard
-    if: needs.market_guard.outputs.run == '1'
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -136,10 +136,14 @@ jobs:
         id: legacy_score_queue
         if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
         run: |
+          FORCE_TICKERS="${MANUAL_WARM_TICKERS:-}"
+          if [ "${{ needs.market_guard.outputs.run }}" = "1" ] && [ -n "$STOCK_SCORE_WARM_TICKERS" ]; then
+            FORCE_TICKERS="$FORCE_TICKERS,$STOCK_SCORE_WARM_TICKERS"
+          fi
           node --import tsx scripts/stock_refresh_queue_status.ts \
             --kind score \
             --due-only \
-            --force-if-list "$MANUAL_WARM_TICKERS,$STOCK_SCORE_WARM_TICKERS" \
+            --force-if-list "$FORCE_TICKERS" \
             --github-output-key run \
             --json
 
@@ -169,9 +173,9 @@ jobs:
       - name: Drain legacy score refresh queue
         if: steps.legacy_score_queue.outputs.run == '1'
         run: |
-          TICKERS="${STOCK_SCORE_WARM_TICKERS:-}"
-          if [ -n "$MANUAL_WARM_TICKERS" ]; then
-            TICKERS="$MANUAL_WARM_TICKERS"
+          TICKERS="${MANUAL_WARM_TICKERS:-}"
+          if [ "${{ needs.market_guard.outputs.run }}" = "1" ] && [ -z "$MANUAL_WARM_TICKERS" ]; then
+            TICKERS="${STOCK_SCORE_WARM_TICKERS:-}"
           fi
           ARGS=(
             --sleep-seconds "$STOCK_SNAPSHOT_SLEEP_SECONDS"

@@ -26,5 +26,8 @@ test("stock cache workflow prewarms hot technical score snapshots", () => {
   assert.match(workflowSource, /NVDA,TSLA,GOOGL/);
   assert.match(workflowSource, /005930,000660/);
   assert.match(workflowSource, /--views "\$STOCK_SCORE_WARM_VIEWS"/);
-  assert.match(workflowSource, /--force-if-list "\$MANUAL_WARM_TICKERS,\$STOCK_SCORE_WARM_TICKERS"/);
+  assert.match(workflowSource, /FORCE_TICKERS="\$\{MANUAL_WARM_TICKERS:-\}"/);
+  assert.match(workflowSource, /needs\.market_guard\.outputs\.run/);
+  assert.match(workflowSource, /FORCE_TICKERS="\$FORCE_TICKERS,\$STOCK_SCORE_WARM_TICKERS"/);
+  assert.match(workflowSource, /--force-if-list "\$FORCE_TICKERS"/);
 });

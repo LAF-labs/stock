@@ -40,7 +40,8 @@ class PublishWorkflowTests(unittest.TestCase):
         score_header = score_block.split("\n    env:", 1)[0]
         self.assertNotIn("needs: quote", score_block)
         self.assertIn("needs: market_guard", score_header)
-        self.assertIn("needs.market_guard.outputs.run == '1'", score_header)
+        self.assertIn("if: always()", score_header)
+        self.assertNotIn("needs.market_guard.outputs.run == '1'", score_header)
         self.assertIn("Check due legacy score refresh jobs", score_block)
         self.assertIn("Drain legacy score refresh queue", score_block)
 
@@ -54,7 +55,9 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("github-quote-${{ github.run_id }}-${{ github.run_attempt }}", text)
         self.assertIn("STOCK_LEGACY_SCORE_WORKER_ENABLED", text)
         self.assertIn("node --import tsx scripts/stock_refresh_queue_status.ts", text)
-        self.assertIn("--force-if-list \"$MANUAL_WARM_TICKERS,$STOCK_SCORE_WARM_TICKERS\"", text)
+        self.assertIn("FORCE_TICKERS=\"${MANUAL_WARM_TICKERS:-}\"", text)
+        self.assertIn("needs.market_guard.outputs.run", text)
+        self.assertIn("--force-if-list \"$FORCE_TICKERS\"", text)
         self.assertIn("steps.legacy_score_queue.outputs.run == '1'", text)
         self.assertIn("--queue-kind score", text)
         self.assertIn("--views \"$STOCK_SCORE_WARM_VIEWS\"", text)
