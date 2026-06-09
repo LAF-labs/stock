@@ -13,6 +13,10 @@ export function numericEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+export function layeredNumericEnv(primaryName: string, fallbackName: string, fallback: number): number {
+  return numericEnv(primaryName, numericEnv(fallbackName, fallback));
+}
+
 export function supabaseReadConfig(): SupabaseConfig | undefined {
   const url = envValue("SUPABASE_URL")?.replace(/\/$/, "");
   const publishableKey = envValue("SUPABASE_PUBLISHABLE_KEY");

@@ -8,7 +8,7 @@ test("refresh queue status checks due score job existence without exact counts",
   let requestedUrl = "";
   global.fetch = async (input) => {
     requestedUrl = String(input);
-    return new Response(JSON.stringify([{ id: "job-score" }]), {
+    return new Response(JSON.stringify([{ id: "job-score", status: "queued" }]), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -22,6 +22,8 @@ test("refresh queue status checks due score job existence without exact counts",
     );
 
     assert.equal(payload.queued_jobs, 1);
+    assert.equal(payload.matching_jobs, 1);
+    assert.equal(payload.stale_running_jobs, 0);
     assert.equal(payload.should_run, true);
     assert.match(requestedUrl, /kind=eq\.score/);
     assert.match(decodeURIComponent(requestedUrl), /status\.eq\.queued/);
@@ -31,6 +33,34 @@ test("refresh queue status checks due score job existence without exact counts",
     assert.match(decodeURIComponent(requestedUrl), /locked_until\.is\.null/);
     assert.doesNotMatch(decodeURIComponent(requestedUrl), /lease_until/);
     assert.doesNotMatch(requestedUrl, /attempts=/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("refresh queue status reports expired running jobs separately from queued jobs", async () => {
+  const originalFetch = global.fetch;
+  let requestedUrl = "";
+  global.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify([{ id: "job-running", status: "running" }]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const payload = await refreshQueueStatus(
+      { url: "https://example.supabase.co", key: "service-role-key" },
+      { kind: "score", dueOnly: true, json: true, timeoutMs: 1000 },
+      new Date("2026-06-06T00:00:00Z")
+    );
+
+    assert.equal(payload.matching_jobs, 1);
+    assert.equal(payload.queued_jobs, 0);
+    assert.equal(payload.stale_running_jobs, 1);
+    assert.equal(payload.should_run, true);
+    assert.match(decodeURIComponent(requestedUrl), /status\.eq\.running/);
   } finally {
     global.fetch = originalFetch;
   }
@@ -56,6 +86,7 @@ test("refresh queue status can check due chart jobs", async () => {
 
     assert.equal(payload.kind, "chart");
     assert.equal(payload.queued_jobs, 1);
+    assert.equal(payload.matching_jobs, 1);
     assert.equal(payload.should_run, true);
     assert.match(requestedUrl, /kind=eq\.chart/);
   } finally {

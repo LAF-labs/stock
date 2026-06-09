@@ -5,7 +5,7 @@ import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/li
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
-import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig, type SupabaseConfig } from "@/lib/supabaseRest";
+import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig, type SupabaseConfig } from "@/lib/supabaseRest";
 import { normalizeTickerRef } from "@/lib/tickerRef";
 
 export type ChartPayload = Record<string, unknown>;
@@ -69,7 +69,7 @@ async function readSupabaseSnapshot(ticker: string): Promise<StoredChartSnapshot
 
   try {
     const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,payload,fetched_at,expires_at,stale_expires_at,last_bar_date&limit=1`;
-    const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" });
+    const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" }, chartSupabaseReadTimeoutMs());
     if (!response.ok) return undefined;
     const rows = (await response.json()) as SupabaseChartRow[];
     const row = rows[0];
@@ -217,7 +217,7 @@ export async function writeSupabaseChartSnapshotWithConfig(config: SupabaseConfi
         stale_expires_at: snapshot.staleExpiresAt,
       }),
     },
-    5_000
+    chartSupabaseWriteTimeoutMs()
   );
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -251,6 +251,14 @@ export function chartResponseCacheHeaders(result: StockChartResult): HeadersInit
   return {
     "Cache-Control": `public, max-age=5, s-maxage=${seconds}, stale-while-revalidate=120`,
   };
+}
+
+function chartSupabaseReadTimeoutMs(): number {
+  return layeredNumericEnv("STOCK_CHART_SUPABASE_READ_TIMEOUT_MS", "SUPABASE_READ_TIMEOUT_MS", 1_500);
+}
+
+function chartSupabaseWriteTimeoutMs(): number {
+  return layeredNumericEnv("STOCK_CHART_SUPABASE_WRITE_TIMEOUT_MS", "SUPABASE_WRITE_TIMEOUT_MS", 5_000);
 }
 
 function pruneMemoryCache(nowMs: number) {

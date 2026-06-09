@@ -77,19 +77,22 @@ export async function pendingPartialStockPayload({
   let quote: StockPayload | undefined;
   let chart: StockPayload | undefined;
 
-  try {
-    const quoteResult = await getStockQuote(ticker);
-    quote = attachQuoteParts(quoteResult);
-    parts.quote = partFromQuoteResult(quoteResult);
-  } catch {
+  const [quoteResult, chartResult] = await Promise.allSettled([
+    getStockQuote(ticker),
+    getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false }),
+  ]);
+
+  if (quoteResult.status === "fulfilled") {
+    quote = attachQuoteParts(quoteResult.value);
+    parts.quote = partFromQuoteResult(quoteResult.value);
+  } else {
     // Partial responses are best effort; the original pending payload remains the fallback.
   }
 
-  try {
-    const chartResult = await getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false });
-    chart = attachChartParts(chartResult);
-    parts.chart = partFromChartResult(chartResult);
-  } catch {
+  if (chartResult.status === "fulfilled") {
+    chart = attachChartParts(chartResult.value);
+    parts.chart = partFromChartResult(chartResult.value);
+  } else {
     // Missing chart should not hide a ready quote.
   }
 

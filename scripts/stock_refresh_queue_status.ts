@@ -17,7 +17,7 @@ type QueueStatusOptions = {
 export async function refreshQueueStatus(config: SupabaseConfig, options: QueueStatusOptions, now = new Date()) {
   const url = new URL(`${config.url}/rest/v1/stock_refresh_jobs`);
   const nowIso = now.toISOString();
-  url.searchParams.set("select", "id");
+  url.searchParams.set("select", "id,status");
   url.searchParams.set("kind", `eq.${options.kind}`);
   url.searchParams.set("limit", "1");
   url.searchParams.set(
@@ -44,15 +44,21 @@ export async function refreshQueueStatus(config: SupabaseConfig, options: QueueS
   }
 
   const rows = await response.json().catch(() => []);
-  const queuedJobs = Array.isArray(rows) && rows.length > 0 ? 1 : 0;
+  const row = Array.isArray(rows) ? rows[0] : undefined;
+  const status = row && typeof row === "object" && !Array.isArray(row) ? String((row as Record<string, unknown>).status || "") : "";
+  const matchingJobs = row ? 1 : 0;
+  const queuedJobs = matchingJobs && status !== "running" ? 1 : 0;
+  const staleRunningJobs = status === "running" ? 1 : 0;
   const forced = hasListItems(options.forceIfList);
   return {
     ok: true,
     kind: options.kind,
     due_only: options.dueOnly,
+    matching_jobs: matchingJobs,
     queued_jobs: queuedJobs,
+    stale_running_jobs: staleRunningJobs,
     forced,
-    should_run: forced || queuedJobs > 0,
+    should_run: forced || matchingJobs > 0,
   };
 }
 
@@ -119,7 +125,7 @@ async function main() {
   const payload = await refreshQueueStatus(config, options);
   writeGithubOutput(options.githubOutputKey, payload.should_run ? "1" : "0");
   if (options.json) console.log(JSON.stringify(payload, null, 2));
-  else console.log(`${payload.kind} queued=${payload.queued_jobs} should_run=${payload.should_run ? "1" : "0"}`);
+  else console.log(`${payload.kind} matching=${payload.matching_jobs} queued=${payload.queued_jobs} stale_running=${payload.stale_running_jobs} should_run=${payload.should_run ? "1" : "0"}`);
 }
 
 if (isMainModule()) {

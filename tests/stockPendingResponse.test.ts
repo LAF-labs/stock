@@ -40,6 +40,34 @@ test("stock pending response exposes refresh queue outage instead of accepted wo
   assert.equal(payload.refresh_request.reason, "missing_supabase_admin_config");
   assert.equal(response.status, 503);
   assert.equal(response.headers.get("retry-after"), null);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+});
+
+test("stock pending response treats enqueue RPC failure as unavailable work", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: "rpc down" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  const payload = await enqueueStockPendingPayload({
+    kind: "score",
+    ticker: "US:NVDA",
+    view: "technical",
+    priority: 20,
+    reason: "snapshot_miss",
+  });
+  const response = stockPendingJsonResponse(payload);
+
+  assert.equal(payload.error, "refresh_queue_unavailable");
+  assert.equal(payload.refresh_request.queued, false);
+  assert.equal(payload.refresh_request.reason, "enqueue_failed");
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("retry-after"), null);
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
 });
 
 test("stock pending response keeps retry headers only for queued refresh work", () => {

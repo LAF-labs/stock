@@ -7,7 +7,7 @@ import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
-import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
 
 export { normalizeTickerRef } from "@/lib/tickerRef";
@@ -156,7 +156,7 @@ async function readSupabaseSnapshot(ticker: string, view: ScoreView): Promise<St
 
   try {
     const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&view_mode=eq.${view}&select=ticker,view_mode,payload,fetched_at,expires_at&limit=1`;
-    const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" });
+    const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" }, scoreSupabaseReadTimeoutMs());
     if (!response.ok) return undefined;
     const rows = (await response.json()) as SupabaseSnapshotRow[];
     const row = rows[0];
@@ -178,20 +178,24 @@ async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
   if (!config) return;
 
   try {
-    const response = await fetchWithTimeout(`${config.url}/rest/v1/${SUPABASE_TABLE}?on_conflict=ticker,view_mode`, {
-      method: "POST",
-      headers: {
-        ...supabaseHeaders(config.key),
-        Prefer: "resolution=merge-duplicates,return=minimal",
+    const response = await fetchWithTimeout(
+      `${config.url}/rest/v1/${SUPABASE_TABLE}?on_conflict=ticker,view_mode`,
+      {
+        method: "POST",
+        headers: {
+          ...supabaseHeaders(config.key),
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({
+          ticker: snapshot.ticker,
+          view_mode: snapshot.view,
+          payload: sanitizeSnapshotPayload(snapshot.payload),
+          fetched_at: snapshot.fetchedAt,
+          expires_at: snapshot.expiresAt,
+        }),
       },
-      body: JSON.stringify({
-        ticker: snapshot.ticker,
-        view_mode: snapshot.view,
-        payload: sanitizeSnapshotPayload(snapshot.payload),
-        fetched_at: snapshot.fetchedAt,
-        expires_at: snapshot.expiresAt,
-      }),
-    });
+      scoreSupabaseWriteTimeoutMs()
+    );
     if (!response.ok) {
       console.warn("stock_score_cache_write_failed", { ticker: snapshot.ticker, view: snapshot.view, status: response.status });
     }
@@ -285,6 +289,14 @@ function scheduleRefresh(ticker: string, view: ScoreView) {
   const key = cacheKey(ticker, view);
   if (inflightRefreshes.has(key)) return;
   void refreshSnapshot(ticker, view).catch(() => undefined);
+}
+
+function scoreSupabaseReadTimeoutMs(): number {
+  return layeredNumericEnv("STOCK_SCORE_SUPABASE_READ_TIMEOUT_MS", "SUPABASE_READ_TIMEOUT_MS", 1_500);
+}
+
+function scoreSupabaseWriteTimeoutMs(): number {
+  return layeredNumericEnv("STOCK_SCORE_SUPABASE_WRITE_TIMEOUT_MS", "SUPABASE_WRITE_TIMEOUT_MS", 5_000);
 }
 
 function scheduleQueuedRefresh(ticker: string, view: ScoreView, priority: number, reason: StockDataUnavailableReason) {

@@ -10,6 +10,10 @@ const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function restore() {
   for (const key of ENV_KEYS) {
     const value = originalEnv[key];
@@ -139,6 +143,72 @@ test("pendingPartialStockPayload returns ready quote and chart parts while score
   assert.equal((payload?.parts as Record<string, Record<string, unknown>>).quote.state, "fresh");
   assert.equal((payload?.parts as Record<string, Record<string, unknown>>).chart.state, "fresh");
   assert.equal(Array.isArray(payload?.chart_series), true);
+});
+
+test("pendingPartialStockPayload reads quote and chart snapshots concurrently", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+
+  const nowMs = Date.now();
+  const events: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/stock_quote_snapshots")) {
+      events.push("quote:start");
+      await sleep(35);
+      events.push("quote:end");
+      return Response.json([
+        {
+          ticker: "US:FASTPART",
+          payload: { ok: true, type: "quote", requested_ticker: "US:FASTPART", market: "US", symbol: "FASTPART", latest_price: 10 },
+          fetched_at: new Date(nowMs - 10_000).toISOString(),
+          expires_at: new Date(nowMs + 300_000).toISOString(),
+          stale_expires_at: new Date(nowMs + 86_400_000).toISOString(),
+        },
+      ]);
+    }
+    if (url.includes("/rest/v1/stock_chart_snapshots")) {
+      events.push("chart:start");
+      await sleep(5);
+      events.push("chart:end");
+      return Response.json([
+        {
+          ticker: "US:FASTPART",
+          payload: {
+            ok: true,
+            type: "chart",
+            requested_ticker: "US:FASTPART",
+            market: "US",
+            symbol: "FASTPART",
+            chart_series: [{ date: "2026-06-08", close: 10 }],
+          },
+          fetched_at: new Date(nowMs - 10_000).toISOString(),
+          expires_at: new Date(nowMs + 300_000).toISOString(),
+          stale_expires_at: new Date(nowMs + 2_592_000_000).toISOString(),
+          last_bar_date: "2026-06-08",
+        },
+      ]);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const pending = {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "score",
+    ticker: "US:FASTPART",
+    view: "technical",
+    reason: "snapshot_miss",
+    retry_after_seconds: 5,
+    refresh_request: { queued: true, job_id: "job-score", status: "queued" },
+  } satisfies StockPendingPayload;
+
+  const payload = await pendingPartialStockPayload({ pending, ticker: "US:FASTPART", view: "technical" });
+
+  assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.ok(events.indexOf("chart:start") > -1);
+  assert.ok(events.indexOf("chart:start") < events.indexOf("quote:end"));
 });
 
 test("pendingPartialStockPayload does not enqueue a separate chart job while score is pending", async () => {

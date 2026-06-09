@@ -9,7 +9,7 @@ import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/st
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
-import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
 
@@ -77,7 +77,7 @@ async function readSupabaseSnapshot(ticker: string): Promise<StoredQuoteSnapshot
 
   try {
     const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,payload,fetched_at,expires_at,stale_expires_at&limit=1`;
-    const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" });
+    const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" }, quoteSupabaseReadTimeoutMs());
     if (!response.ok) return undefined;
     const rows = (await response.json()) as SupabaseQuoteRow[];
     const row = rows[0];
@@ -100,23 +100,27 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
 
   try {
     const target = parseTickerRef(snapshot.ticker);
-    const response = await fetchWithTimeout(`${config.url}/rest/v1/${SUPABASE_TABLE}?on_conflict=ticker`, {
-      method: "POST",
-      headers: {
-        ...supabaseHeaders(config.key),
-        Prefer: "resolution=merge-duplicates,return=minimal",
+    const response = await fetchWithTimeout(
+      `${config.url}/rest/v1/${SUPABASE_TABLE}?on_conflict=ticker`,
+      {
+        method: "POST",
+        headers: {
+          ...supabaseHeaders(config.key),
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({
+          ticker: snapshot.ticker,
+          market: target.market,
+          symbol: target.symbol,
+          source: "kis",
+          payload: sanitizeSnapshotPayload(snapshot.payload),
+          fetched_at: snapshot.fetchedAt,
+          expires_at: snapshot.expiresAt,
+          stale_expires_at: snapshot.staleExpiresAt || fallbackStaleExpiresAt(snapshot.fetchedAt, snapshot.expiresAt),
+        }),
       },
-      body: JSON.stringify({
-        ticker: snapshot.ticker,
-        market: target.market,
-        symbol: target.symbol,
-        source: "kis",
-        payload: sanitizeSnapshotPayload(snapshot.payload),
-        fetched_at: snapshot.fetchedAt,
-        expires_at: snapshot.expiresAt,
-        stale_expires_at: snapshot.staleExpiresAt || fallbackStaleExpiresAt(snapshot.fetchedAt, snapshot.expiresAt),
-      }),
-    });
+      quoteSupabaseWriteTimeoutMs()
+    );
     if (!response.ok) {
       console.warn("stock_quote_cache_write_failed", { ticker: snapshot.ticker, status: response.status });
     }
@@ -248,6 +252,14 @@ function fallbackStaleExpiresAt(fetchedAt: string, expiresAt: string): string {
   const staleExpiresAtMs = Number.isFinite(fetchedAtMs) ? fetchedAtMs + staleTtlSeconds() * 1000 : NaN;
   const fallbackMs = Math.max(Number.isFinite(expiresAtMs) ? expiresAtMs : 0, Number.isFinite(staleExpiresAtMs) ? staleExpiresAtMs : 0);
   return new Date(fallbackMs || Date.now()).toISOString();
+}
+
+function quoteSupabaseReadTimeoutMs(): number {
+  return layeredNumericEnv("STOCK_QUOTE_SUPABASE_READ_TIMEOUT_MS", "SUPABASE_READ_TIMEOUT_MS", 1_500);
+}
+
+function quoteSupabaseWriteTimeoutMs(): number {
+  return layeredNumericEnv("STOCK_QUOTE_SUPABASE_WRITE_TIMEOUT_MS", "SUPABASE_WRITE_TIMEOUT_MS", 5_000);
 }
 
 function scheduleQueuedRefresh(ticker: string, priority: number, reason: StockDataUnavailableReason) {

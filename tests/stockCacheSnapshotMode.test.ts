@@ -22,6 +22,12 @@ const ENV_KEYS = [
   "STOCK_API_BASE",
   "STOCK_QUOTE_CACHE_STALE_SECONDS",
   "STOCK_SCORE_CACHE_STALE_SECONDS",
+  "SUPABASE_READ_TIMEOUT_MS",
+  "SUPABASE_WRITE_TIMEOUT_MS",
+  "STOCK_SCORE_SUPABASE_READ_TIMEOUT_MS",
+  "STOCK_SCORE_SUPABASE_WRITE_TIMEOUT_MS",
+  "STOCK_QUOTE_SUPABASE_READ_TIMEOUT_MS",
+  "STOCK_QUOTE_SUPABASE_WRITE_TIMEOUT_MS",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -379,8 +385,61 @@ test("score stale snapshot enqueues stale refresh work instead of a snapshot mis
     p_symbol: "SCORESTALE",
     p_view_mode: "detail",
     p_priority: 70,
-    p_payload: { reason: "stale_refresh", requested_ticker: ticker },
+    p_payload: {
+      reason: "stale_refresh",
+      reason_bucket: "stale_refresh",
+      requested_ticker: ticker,
+      dedupe_key: "score:US:SCORESTALE:detail:stale_refresh",
+    },
   });
+});
+
+test("score cache uses the score-specific Supabase read timeout", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_READ_TIMEOUT_MS = "250";
+  process.env.STOCK_SCORE_SUPABASE_READ_TIMEOUT_MS = "15";
+
+  let abortedAtMs: number | undefined;
+  const startMs = Date.now();
+  globalThis.fetch = async (_url, init) => {
+    await new Promise((resolve) => init?.signal?.addEventListener("abort", resolve, { once: true }));
+    abortedAtMs = Date.now() - startMs;
+    throw new DOMException("The operation was aborted.", "AbortError");
+  };
+
+  await assert.rejects(() => getStockScore("US:SCORETIMEOUT", "detail"), (error) => {
+    assert.equal(isStockDataUnavailableError(error), true);
+    return true;
+  });
+
+  assert.ok(abortedAtMs !== undefined);
+  assert.ok(abortedAtMs < 150);
+});
+
+test("quote cache uses the quote-specific Supabase read timeout", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_READ_TIMEOUT_MS = "250";
+  process.env.STOCK_QUOTE_SUPABASE_READ_TIMEOUT_MS = "15";
+
+  let abortedAtMs: number | undefined;
+  const startMs = Date.now();
+  globalThis.fetch = async (_url, init) => {
+    await new Promise((resolve) => init?.signal?.addEventListener("abort", resolve, { once: true }));
+    abortedAtMs = Date.now() - startMs;
+    throw new DOMException("The operation was aborted.", "AbortError");
+  };
+
+  await assert.rejects(() => getStockQuote("US:QUOTETIMEOUT"), (error) => {
+    assert.equal(isStockDataUnavailableError(error), true);
+    return true;
+  });
+
+  assert.ok(abortedAtMs !== undefined);
+  assert.ok(abortedAtMs < 150);
 });
 
 test("quote force refresh can use Node KIS quote client in Vercel snapshot mode", async () => {

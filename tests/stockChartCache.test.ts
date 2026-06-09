@@ -4,7 +4,15 @@ import assert from "node:assert/strict";
 import { isStockDataUnavailableError } from "../src/lib/stockDataRuntime";
 import { getStockChart } from "../src/lib/stockChartCache";
 
-const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+const ENV_KEYS = [
+  "SUPABASE_URL",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_READ_TIMEOUT_MS",
+  "SUPABASE_WRITE_TIMEOUT_MS",
+  "STOCK_CHART_SUPABASE_READ_TIMEOUT_MS",
+  "STOCK_CHART_SUPABASE_WRITE_TIMEOUT_MS",
+] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 
@@ -103,7 +111,12 @@ test("stock chart cache serves stale snapshots and enqueues a chart refresh", as
     p_symbol: "STALECHART",
     p_view_mode: null,
     p_priority: 60,
-    p_payload: { reason: "stale_refresh", requested_ticker: "US:STALECHART" },
+    p_payload: {
+      reason: "stale_refresh",
+      reason_bucket: "stale_refresh",
+      requested_ticker: "US:STALECHART",
+      dedupe_key: "chart:US:STALECHART:-:stale_refresh",
+    },
   });
 });
 
@@ -153,6 +166,34 @@ test("stock chart cache queues forced misses before regular chart misses", async
     p_symbol: "FORCECHART",
     p_view_mode: null,
     p_priority: 1,
-    p_payload: { reason: "refresh_background_only", requested_ticker: "US:FORCECHART" },
+    p_payload: {
+      reason: "refresh_background_only",
+      reason_bucket: "refresh_background_only",
+      requested_ticker: "US:FORCECHART",
+      dedupe_key: "chart:US:FORCECHART:-:refresh_background_only",
+    },
   });
+});
+
+test("stock chart cache uses the chart-specific Supabase read timeout", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_READ_TIMEOUT_MS = "250";
+  process.env.STOCK_CHART_SUPABASE_READ_TIMEOUT_MS = "15";
+
+  let abortedAtMs: number | undefined;
+  const startMs = Date.now();
+  globalThis.fetch = async (_url, init) => {
+    await new Promise((resolve) => init?.signal?.addEventListener("abort", resolve, { once: true }));
+    abortedAtMs = Date.now() - startMs;
+    throw new DOMException("The operation was aborted.", "AbortError");
+  };
+
+  await assert.rejects(() => getStockChart("US:CHARTTIMEOUT"), (error) => {
+    assert.equal(isStockDataUnavailableError(error), true);
+    return true;
+  });
+
+  assert.ok(abortedAtMs !== undefined);
+  assert.ok(abortedAtMs < 150);
 });
