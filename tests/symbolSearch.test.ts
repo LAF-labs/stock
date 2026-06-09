@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { searchLocalSymbolsForTests, searchSymbols } from "../src/lib/symbolSearch";
+import { findExactSymbol, searchLocalSymbolsForTests, searchSymbols } from "../src/lib/symbolSearch";
 
 const originalFetch = globalThis.fetch;
 const originalEnv = {
@@ -115,6 +115,22 @@ test("symbol search falls back to the generated universe when Supabase is unavai
   const items = await searchSymbols({ query: "nvda", limit: 8, market: "US" });
 
   assert.equal(items.some((item) => item.key === "US:NVDA"), true);
+});
+
+test("exact symbol lookup uses the generated universe before Supabase RPC", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return Response.json([]);
+  }) as typeof fetch;
+
+  const item = await findExactSymbol("KR:005930");
+
+  assert.equal(item?.key, "KR:005930");
+  assert.deepEqual(calls, []);
 });
 
 test("local symbol search excludes delisted rows and keeps newly listed rows searchable", async () => {

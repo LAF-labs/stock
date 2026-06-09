@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await getStockScore(ticker, view, { forceRefresh });
     const scorePayload = await attachChartForTechnicalView(attachScoreParts(result), ticker, view);
-    const enrichedPayload = await enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(scorePayload));
+    const enrichedPayload = await enrichScorePayloadForView(scorePayload, view);
     const payload = forceRefresh
       ? {
           ...enrichedPayload,
@@ -127,6 +127,11 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   }
+}
+
+async function enrichScorePayloadForView(payload: StockPayload, view: ReturnType<typeof cleanView>): Promise<StockPayload> {
+  if (view === "technical") return enrichStockPayloadWithSymbolDisplay(payload);
+  return enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(payload));
 }
 
 async function attachChartForTechnicalView(payload: StockPayload, ticker: string, view: ReturnType<typeof cleanView>): Promise<StockPayload> {

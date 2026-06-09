@@ -6,6 +6,7 @@ import { GET as getQuote } from "../src/app/api/quote/route";
 import { GET as getScore } from "../src/app/api/score/route";
 import { GET as getBatchScore } from "../src/app/api/score/batch/route";
 import { POST as postJudgment } from "../src/app/api/judgment/route";
+import { clearSymbolProfileCacheForTests } from "../src/lib/symbolProfiles";
 
 const ENV_KEYS = [
   "VERCEL",
@@ -33,6 +34,7 @@ function restoreEnv() {
     }
   }
   globalThis.fetch = originalFetch;
+  clearSymbolProfileCacheForTests();
 }
 
 type StrictRequestInit = Omit<RequestInit, "headers" | "signal"> & {
@@ -187,6 +189,71 @@ test("score route blocks technical analysis for domestic derivative master ticke
   assert.equal(payload.ticker, "KR:0194M0");
   assert.equal(payload.redirect_to, "/?ticker=KR%3A0194M0");
   assert.match(response.headers.get("Cache-Control") || "", /no-store/);
+});
+
+test("technical score route skips symbol profile enrichment after snapshot hit", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  const nowMs = Date.now();
+  let profileCalls = 0;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(nowMs + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) {
+      return Response.json([
+        {
+          ticker: "US:KO",
+          view_mode: "technical",
+          payload: {
+            ok: true,
+            score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+            requested_ticker: "US:KO",
+            market: "US",
+            symbol: "KO",
+            name: "COCA-COLA CO",
+            chart_series: [
+              { date: "2026-06-08", open: 70, high: 72, low: 69, close: 71 },
+              { date: "2026-06-09", open: 71, high: 73, low: 70, close: 72 },
+            ],
+            technical_analysis: {
+              type: "technical_analysis",
+              version: "technical-v1",
+              status: "ready",
+              data_window: { available_days: 2, required_days: 60 },
+              summary: { headline: "기술 신호 확인", tone: "neutral", bullets: [] },
+              indicators: [],
+            },
+          },
+          fetched_at: new Date(nowMs - 1_000).toISOString(),
+          expires_at: new Date(nowMs + 60_000).toISOString(),
+        },
+      ]);
+    }
+    if (url.includes("/rest/v1/rpc/search_stock_symbols")) {
+      return Response.json([]);
+    }
+    if (url.includes("/rest/v1/stock_symbol_profiles")) {
+      profileCalls += 1;
+      return Response.json([]);
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const response = await getScore(request("/api/score?ticker=US:KO&view=technical&partial=1"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(profileCalls, 0);
 });
 
 test("batch score rejects unsupported refresh before production rate limit guard", async () => {

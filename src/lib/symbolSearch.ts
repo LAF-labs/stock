@@ -3,7 +3,7 @@ import path from "node:path";
 import { symbolDisplayName } from "@/lib/symbolDisplay";
 import { fetchWithTimeout, numericEnv, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 import type { SymbolListingStatus, SymbolMarket, SymbolMasterItem, SymbolSearchItem } from "@/lib/symbolTypes";
-import { parseTickerRef, resolveTickerAlias, validTickerSymbolForMarket, type TickerAliasResolution } from "@/lib/tickerRef";
+import { parseTickerRef, resolveTickerAlias, validTickerSymbolForMarket, type ParsedTickerRef, type TickerAliasResolution } from "@/lib/tickerRef";
 
 type SymbolSearchInput = {
   query?: string;
@@ -63,6 +63,9 @@ export async function searchLocalSymbolsForTests(items: SymbolMasterItem[], inpu
 
 export async function findExactSymbol(tickerRef: string): Promise<SymbolSearchItem | undefined> {
   const parsed = parseTickerRef(tickerRef);
+  const localExact = exactSymbolFromIndex((await localSymbolIndex()).entries, parsed);
+  if (localExact) return localExact;
+
   const items = await searchSymbols({ query: parsed.symbol, market: parsed.market, limit: 20 });
   return items.find((item) => item.market === parsed.market && item.ticker.toUpperCase() === parsed.symbol);
 }
@@ -126,6 +129,11 @@ function exactAliasFromIndex(index: IndexedSymbol[], query: string, market: Symb
   if (!isDeterministicAlias(alias)) return undefined;
   if (market && market !== alias.market) return undefined;
   const entry = index.find((item) => item.item.market === alias.market && item.item.ticker.toUpperCase() === alias.symbol && item.item.listingStatus !== "delisted");
+  return entry ? toSearchItem(entry.item) : undefined;
+}
+
+function exactSymbolFromIndex(index: IndexedSymbol[], parsed: ParsedTickerRef): SymbolSearchItem | undefined {
+  const entry = index.find((item) => item.item.market === parsed.market && item.item.ticker.toUpperCase() === parsed.symbol && item.item.listingStatus !== "delisted");
   return entry ? toSearchItem(entry.item) : undefined;
 }
 

@@ -99,8 +99,9 @@ export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
     byKind[kind] = (byKind[kind] || 0) + jobs;
     staleRunning += intValue(row.stale_running_jobs);
     const runAfter = stringValue(row.oldest_run_after);
-    if (runAfter && (oldestRunAfter === null || runAfter < oldestRunAfter)) oldestRunAfter = runAfter;
-    if (runAfter && (!oldestRunAfterByKind[kind] || runAfter < oldestRunAfterByKind[kind])) oldestRunAfterByKind[kind] = runAfter;
+    const canBeDue = status === "queued" || status === "running";
+    if (canBeDue && runAfter && (oldestRunAfter === null || runAfter < oldestRunAfter)) oldestRunAfter = runAfter;
+    if (canBeDue && runAfter && (!oldestRunAfterByKind[kind] || runAfter < oldestRunAfterByKind[kind])) oldestRunAfterByKind[kind] = runAfter;
   }
 
   const oldestRunAfterDate = parseDateTime(oldestRunAfter);

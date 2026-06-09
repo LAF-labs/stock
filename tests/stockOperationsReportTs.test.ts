@@ -32,10 +32,39 @@ test("TypeScript operations report summarizes queue backlog and stale locks", ()
   assert.equal(summary.running_jobs, 3);
   assert.equal(summary.dead_jobs, 1);
   assert.equal(summary.stale_running_jobs, 2);
-  assert.equal(summary.oldest_due_age_minutes, 60.0);
-  assert.deepEqual(summary.oldest_due_age_minutes_by_kind, { score: 60.0, quote: 20.0, chart: 10.0 });
+  assert.equal(summary.oldest_due_age_minutes, 30.0);
+  assert.deepEqual(summary.oldest_due_age_minutes_by_kind, { score: 30.0, quote: 20.0, chart: 10.0 });
   assert.equal(summary.by_status.queued, 14);
   assert.equal(summary.by_kind.score, 13);
+});
+
+test("TypeScript operations report ignores completed jobs when calculating due queue age", () => {
+  const summary = summarizeQueueRows(
+    [
+      { kind: "score", status: "succeeded", jobs: 20, oldest_run_after: "2026-06-01T00:00:00+00:00", stale_running_jobs: 0 },
+      { kind: "quote", status: "failed", jobs: 2, oldest_run_after: "2026-06-02T00:00:00+00:00", stale_running_jobs: 0 },
+    ],
+    new Date("2026-06-05T11:30:00+00:00")
+  );
+
+  assert.equal(summary.queued_jobs, 0);
+  assert.equal(summary.running_jobs, 0);
+  assert.equal(summary.oldest_run_after, null);
+  assert.equal(summary.oldest_due_age_minutes, null);
+  assert.deepEqual(summary.oldest_due_age_minutes_by_kind, {});
+});
+
+test("TypeScript operations report uses only queued and running jobs for due queue age", () => {
+  const summary = summarizeQueueRows(
+    [
+      { kind: "score", status: "succeeded", jobs: 20, oldest_run_after: "2026-06-01T00:00:00+00:00", stale_running_jobs: 0 },
+      { kind: "quote", status: "queued", jobs: 1, oldest_run_after: "2026-06-05T11:00:00+00:00", stale_running_jobs: 0 },
+    ],
+    new Date("2026-06-05T11:30:00+00:00")
+  );
+
+  assert.equal(summary.oldest_due_age_minutes, 30);
+  assert.deepEqual(summary.oldest_due_age_minutes_by_kind, { quote: 30 });
 });
 
 test("TypeScript operations report catches duplicate scores and low-confidence high scores", () => {
