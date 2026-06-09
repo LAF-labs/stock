@@ -285,6 +285,42 @@ test("pendingPartialStockPayload returns identity partial when only symbol metad
   assert.equal((payload?.parts as Record<string, Record<string, unknown>>).score.state, "pending");
 });
 
+test("pendingPartialStockPayload does not wait for slow quote and chart misses when identity is ready", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS = "25";
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/stock_quote_snapshots") || url.includes("/rest/v1/stock_chart_snapshots")) {
+      await sleep(250);
+      return Response.json([]);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const pending = {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "score",
+    ticker: "US:ZVRA",
+    view: "technical",
+    reason: "snapshot_miss",
+    retry_after_seconds: 5,
+    refresh_request: { queued: true },
+  } satisfies StockPendingPayload;
+
+  const startedAt = performance.now();
+  const payload = await pendingPartialStockPayload({ pending, ticker: "US:ZVRA", view: "technical" });
+  const elapsedMs = performance.now() - startedAt;
+
+  assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.equal(payload?.symbol, "ZVRA");
+  assert.equal((payload?.parts as Record<string, Record<string, unknown>>).identity.state, "fresh");
+  assert.ok(elapsedMs < 150, `expected identity partial without waiting for slow parts, got ${elapsedMs}ms`);
+});
+
 test("pendingPartialStockPayload returns undefined when no usable parts or identity are ready", async () => {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;

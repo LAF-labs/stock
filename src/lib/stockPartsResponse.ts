@@ -2,6 +2,7 @@ import { getStockChart, type StockChartResult } from "@/lib/stockChartCache";
 import { getStockQuote, type StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { StockPendingPayload } from "@/lib/stockPendingResponse";
 import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
+import { numericEnv } from "@/lib/supabaseRest";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 
 export type StockPartName = "identity" | "quote" | "chart" | "score" | "technical" | "fundamentals";
@@ -22,6 +23,12 @@ export type StockPartStatus = {
 };
 
 export type StockParts = Partial<Record<StockPartName, StockPartStatus>>;
+
+type PendingPartialReadyPart =
+  | { kind: "quote"; status: "fulfilled"; value: StockQuoteResult }
+  | { kind: "quote"; status: "rejected" }
+  | { kind: "chart"; status: "fulfilled"; value: StockChartResult }
+  | { kind: "chart"; status: "rejected" };
 
 export function attachScoreParts(result: StockScoreResult): StockPayload {
   const parts: StockParts = {
@@ -78,32 +85,43 @@ export async function pendingPartialStockPayload({
   let quote: StockPayload | undefined;
   let chart: StockPayload | undefined;
 
-  const [quoteResult, chartResult] = await Promise.allSettled([
-    getStockQuote(ticker),
-    getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false }),
-  ]);
+  const readyParts: PendingPartialReadyPart[] = [];
+  const quotePromise = trackReadyPart(readyParts, "quote", getStockQuote(ticker));
+  const chartPromise = trackReadyPart(
+    readyParts,
+    "chart",
+    getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false })
+  );
+  const partsPromise = Promise.all([quotePromise, chartPromise]);
+  const identity = await localIdentityPayload(ticker);
 
-  if (quoteResult.status === "fulfilled") {
-    quote = attachQuoteParts(quoteResult.value);
-    parts.quote = partFromQuoteResult(quoteResult.value);
+  if (identity) {
+    await waitForPendingPartialParts(partsPromise);
   } else {
-    // Partial responses are best effort; the original pending payload remains the fallback.
+    await partsPromise;
   }
 
-  if (chartResult.status === "fulfilled") {
-    chart = attachChartParts(chartResult.value);
-    parts.chart = partFromChartResult(chartResult.value);
-  } else {
-    // Missing chart should not hide a ready quote.
+  void partsPromise.catch(() => undefined);
+
+  for (const readyPart of readyParts) {
+    if (readyPart.kind === "quote" && readyPart.status === "fulfilled") {
+      quote = attachQuoteParts(readyPart.value);
+      parts.quote = partFromQuoteResult(readyPart.value);
+    }
+
+    if (readyPart.kind === "chart" && readyPart.status === "fulfilled") {
+      chart = attachChartParts(readyPart.value);
+      parts.chart = partFromChartResult(readyPart.value);
+    }
   }
 
-  const identity = quote || chart || await localIdentityPayload(ticker);
-  if (!identity) return undefined;
+  const identityPayload = quote || chart || identity;
+  if (!identityPayload) return undefined;
   if (!quote && !chart) {
     parts.identity = { state: "fresh", source: "symbol_master" };
   }
 
-  const identitySource = identity;
+  const identitySource = identityPayload;
   return attachParts(
     {
       ok: true,
@@ -122,6 +140,55 @@ export async function pendingPartialStockPayload({
     },
     parts
   );
+}
+
+async function trackReadyPart(
+  readyParts: PendingPartialReadyPart[],
+  kind: "quote",
+  promise: Promise<StockQuoteResult>
+): Promise<void>;
+async function trackReadyPart(
+  readyParts: PendingPartialReadyPart[],
+  kind: "chart",
+  promise: Promise<StockChartResult>
+): Promise<void>;
+async function trackReadyPart(
+  readyParts: PendingPartialReadyPart[],
+  kind: "quote" | "chart",
+  promise: Promise<StockQuoteResult> | Promise<StockChartResult>
+): Promise<void> {
+  try {
+    const value = await promise;
+    if (kind === "quote") {
+      readyParts.push({ kind, status: "fulfilled", value: value as StockQuoteResult });
+    } else {
+      readyParts.push({ kind, status: "fulfilled", value: value as StockChartResult });
+    }
+  } catch {
+    readyParts.push({ kind, status: "rejected" });
+  }
+}
+
+async function waitForPendingPartialParts(partsPromise: Promise<unknown>): Promise<void> {
+  const timeoutMs = numericEnv("STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS", 120);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      partsPromise,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+        unrefTimer(timeout);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function unrefTimer(timeout: ReturnType<typeof setTimeout>) {
+  if (typeof timeout === "object" && timeout && "unref" in timeout && typeof timeout.unref === "function") {
+    timeout.unref();
+  }
 }
 
 async function localIdentityPayload(ticker: string): Promise<StockPayload | undefined> {
