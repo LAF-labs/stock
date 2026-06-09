@@ -2,6 +2,7 @@ import { getStockChart, type StockChartResult } from "@/lib/stockChartCache";
 import { getStockQuote, type StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { StockPendingPayload } from "@/lib/stockPendingResponse";
 import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
+import { findExactLocalSymbol } from "@/lib/symbolSearch";
 
 export type StockPartName = "identity" | "quote" | "chart" | "score" | "technical" | "fundamentals";
 export type StockPartState = "fresh" | "stale" | "pending" | "miss" | "unavailable";
@@ -96,9 +97,13 @@ export async function pendingPartialStockPayload({
     // Missing chart should not hide a ready quote.
   }
 
-  if (!quote && !chart) return undefined;
+  const identity = quote || chart || await localIdentityPayload(ticker);
+  if (!identity) return undefined;
+  if (!quote && !chart) {
+    parts.identity = { state: "fresh", source: "symbol_master" };
+  }
 
-  const identitySource = quote || chart || {};
+  const identitySource = identity;
   return attachParts(
     {
       ok: true,
@@ -117,6 +122,22 @@ export async function pendingPartialStockPayload({
     },
     parts
   );
+}
+
+async function localIdentityPayload(ticker: string): Promise<StockPayload | undefined> {
+  const item = await findExactLocalSymbol(ticker);
+  if (!item) return undefined;
+  return {
+    market: item.market,
+    symbol: item.ticker,
+    name: item.displayName || item.koreanName || item.englishName,
+    exchange: item.exchangeName || item.exchange,
+    currency: item.currency,
+    display_name: item.displayName,
+    korean_name: item.koreanName || undefined,
+    english_name: item.englishName || undefined,
+    instrument_type: item.instrumentType,
+  };
 }
 
 function attachParts(payload: StockPayload, parts: StockParts): StockPayload {

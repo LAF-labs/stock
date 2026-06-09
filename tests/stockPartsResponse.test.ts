@@ -257,7 +257,35 @@ test("pendingPartialStockPayload does not enqueue a separate chart job while sco
   assert.equal(chartEnqueued, false);
 });
 
-test("pendingPartialStockPayload returns undefined when no usable parts are ready", async () => {
+test("pendingPartialStockPayload returns identity partial when only symbol metadata is ready", async () => {
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const pending = {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "score",
+    ticker: "US:ZVRA",
+    view: "detail",
+    reason: "snapshot_miss",
+    retry_after_seconds: 300,
+    refresh_request: { queued: true },
+  } satisfies StockPendingPayload;
+
+  const payload = await pendingPartialStockPayload({ pending, ticker: "US:ZVRA", view: "detail" });
+
+  assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.equal(payload?.ticker, "US:ZVRA");
+  assert.equal(payload?.market, "US");
+  assert.equal(payload?.symbol, "ZVRA");
+  assert.equal(typeof payload?.name, "string");
+  assert.equal((payload?.parts as Record<string, Record<string, unknown>>).identity.state, "fresh");
+  assert.equal((payload?.parts as Record<string, Record<string, unknown>>).score.state, "pending");
+});
+
+test("pendingPartialStockPayload returns undefined when no usable parts or identity are ready", async () => {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;

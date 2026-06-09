@@ -140,6 +140,34 @@ test("dashboard recognizes partial stock snapshots and keeps pending retry metad
   assert.equal(partial?.chart_series?.length, 2);
 });
 
+test("dashboard treats identity-only partial snapshots as useful pending data", () => {
+  const payload = {
+    ok: true,
+    type: "partial_stock_snapshot",
+    ticker: "US:ZVRA",
+    requested_ticker: "US:ZVRA",
+    market: "US",
+    symbol: "ZVRA",
+    name: "지브러 테라퓨틱스",
+    exchange: "나스닥",
+    currency: "USD",
+    pending_snapshot: {
+      error: "snapshot_pending",
+      reason: "snapshot_miss",
+      ticker: "US:ZVRA",
+      retry_after_seconds: 5,
+      refresh_request: { queued: true },
+    },
+  };
+
+  const partial = partialStockDataFromPayload(payload, "US:ZVRA");
+
+  assert.equal(partial?.requested_ticker, "US:ZVRA");
+  assert.equal(partial?.symbol, "ZVRA");
+  assert.equal(partial?.name, "지브러 테라퓨틱스");
+  assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+});
+
 test("dashboard uses full skeleton only when no useful partial data is present", () => {
   assert.equal(shouldShowStockSkeleton("loading"), true);
   assert.equal(shouldShowStockSkeleton("pending"), true);

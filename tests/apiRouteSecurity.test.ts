@@ -256,6 +256,43 @@ test("technical score route skips symbol profile enrichment after snapshot hit",
   assert.equal(profileCalls, 0);
 });
 
+test("score route returns identity partial instead of skeleton-only pending on cold detail misses", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_quote_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      return Response.json({ id: "job-zvra", status: "queued" });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const response = await getScore(request("/api/score?ticker=US:ZVRA&partial=1"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.type, "partial_stock_snapshot");
+  assert.equal(payload.ticker, "US:ZVRA");
+  assert.equal(payload.symbol, "ZVRA");
+  assert.equal(payload.pending_snapshot.error, "snapshot_pending");
+  assert.equal(payload.parts.identity.state, "fresh");
+  assert.equal(payload.parts.score.state, "pending");
+});
+
 test("batch score rejects unsupported refresh before production rate limit guard", async () => {
   restoreEnv();
   process.env.VERCEL = "1";

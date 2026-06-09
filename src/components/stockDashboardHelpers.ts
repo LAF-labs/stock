@@ -279,7 +279,8 @@ export function partialStockDataFromPayload(payload: unknown, fallbackTicker: st
     },
   };
 
-  return data.latest_price !== undefined || usableChartPoints(data.chart_series).length > 1 ? data : undefined;
+  const hasIdentity = Boolean(data.name || data.symbol || data.exchange);
+  return data.latest_price !== undefined || usableChartPoints(data.chart_series).length > 1 || hasIdentity ? data : undefined;
 }
 
 export function usableChartPoints(points: ChartSeriesPoint[] | undefined): UsableChartPoint[] {

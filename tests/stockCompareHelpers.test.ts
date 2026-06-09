@@ -156,6 +156,27 @@ test("compare helpers keep partial snapshots out of scored compare items", () =>
   assert.equal(comparePartialData(result, "US:POET")?.symbol, "POET");
 });
 
+test("compare helpers treat identity-only partial snapshots as progress", () => {
+  const result = {
+    ok: true,
+    type: "partial_stock_snapshot",
+    requested_ticker: "US:ZVRA",
+    market: "US",
+    symbol: "ZVRA",
+    name: "지브러 테라퓨틱스",
+    exchange: "나스닥",
+    currency: "USD",
+    pending_snapshot: {
+      error: "snapshot_pending",
+      refresh_request: { queued: true },
+    },
+  } as any;
+
+  assert.equal(isPartialCompareResult(result), true);
+  assert.equal(comparePartialData(result, "US:ZVRA")?.symbol, "ZVRA");
+  assert.equal(comparePartialData(result, "US:ZVRA")?.name, "지브러 테라퓨틱스");
+});
+
 test("compare keeps visible progress during automatic pending retries", () => {
   assert.equal(shouldPreserveCompareViewDuringRetry("success", true), true);
   assert.equal(shouldPreserveCompareViewDuringRetry("partial", true), true);
