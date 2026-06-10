@@ -53,7 +53,9 @@ function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse
   const rawSymbol = stringFromUnknown(quote?.symbol) || stringFromUnknown(data.symbol) || stringFromUnknown(data.requested_ticker) || fallbackTicker;
   const symbol = rawSymbol.replace(/^(US|KR):/i, "");
   const market = stringFromUnknown(quote?.market) || stringFromUnknown(data.market) || (fallbackTicker.startsWith("KR:") ? "KR" : "US");
-  return `/compare?tickers=${encodeURIComponent(`${market === "KR" ? "KR" : "US"}:${symbol}`)}`;
+  const ticker = `${market === "KR" ? "KR" : "US"}:${symbol}`;
+  const params = new URLSearchParams({ tickers: ticker, origin: ticker });
+  return `/compare?${params.toString()}`;
 }
 
 

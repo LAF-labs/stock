@@ -9,7 +9,7 @@ test("stock query keys keep score views separate", () => {
   assert.deepEqual(stockQueryKeys.score("KR:004020", "technical"), ["stock", "score", "technical", "KR:004020"]);
 });
 
-test("compare query keys preserve order because first ticker is the base", () => {
+test("compare query keys preserve the user selected display order", () => {
   assert.deepEqual(stockQueryKeys.compare(["KR:004020", "US:KO"]), ["stock", "compare", "KR:004020,US:KO"]);
   assert.deepEqual(stockQueryKeys.compare(["US:KO", "KR:004020"]), ["stock", "compare", "US:KO,KR:004020"]);
   assert.notDeepEqual(stockQueryKeys.compare(["KR:004020", "US:KO"]), stockQueryKeys.compare(["US:KO", "KR:004020"]));

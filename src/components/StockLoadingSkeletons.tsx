@@ -9,19 +9,6 @@ export function SkeletonSectionTitle() {
   );
 }
 
-export function ComparePendingRowsSkeleton({ tickers }: { tickers: readonly string[] }) {
-  return (
-    <>
-      {tickers.map((ticker) => (
-        <div className="compare-pending-row" key={ticker}>
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="wide" />
-        </div>
-      ))}
-    </>
-  );
-}
-
 export function ComparePendingOverviewSkeleton() {
   return (
     <section className="compare-section compare-brief">
@@ -29,35 +16,6 @@ export function ComparePendingOverviewSkeleton() {
       <SkeletonSectionTitle />
       <SkeletonBlock className="wide" />
       <SkeletonBlock className="medium" />
-    </section>
-  );
-}
-
-export function CompareWaitingCardsSkeleton({ tickers }: { tickers: readonly string[] }) {
-  return (
-    <section className="compare-section">
-      <span className="sr-only">선택한 종목 카드가 구성되고 있습니다.</span>
-      <SkeletonSectionTitle />
-      <div className="compare-card-grid">
-        {tickers.map((ticker) => (
-          <article className="compare-stock-card compare-waiting-card" key={ticker}>
-            <div className="compare-card-top">
-              <div>
-                <SkeletonBlock className="label" />
-                <SkeletonBlock className="company" />
-                <SkeletonBlock className="medium" />
-              </div>
-              <SkeletonBlock className="pill" />
-            </div>
-            <SkeletonBlock className="wide" />
-            <div className="compare-score-line">
-              <SkeletonBlock className="small" />
-              <SkeletonBlock className="score" />
-            </div>
-            <i className="compare-card-scorebar pending" aria-hidden="true" />
-          </article>
-        ))}
-      </div>
     </section>
   );
 }

@@ -4,21 +4,17 @@ import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import {
-  ComparePendingOverviewSkeleton,
-  ComparePendingRowsSkeleton,
-  CompareWaitingCardsSkeleton,
-} from "@/components/StockLoadingSkeletons";
+import { ComparePendingOverviewSkeleton } from "@/components/StockLoadingSkeletons";
 import {
   MAX_COMPARE,
   bestBy,
+  compareDateAlignedSeries,
   compareItemSubtitle,
   compareItemTitle,
   comparePriceTone,
   componentScore,
   displayTickerRef,
   normalizeTicker,
-  normalizedPoints,
   parseTickers,
   percentText,
   removeCompareTicker,
@@ -35,8 +31,16 @@ import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
 
-function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[]) {
-  router.push(tickers.length ? `/compare?tickers=${encodeURIComponent(tickers.join(","))}` : "/compare");
+function compareHrefForTickers(tickers: string[], originTicker: string) {
+  const params = new URLSearchParams();
+  if (tickers.length) params.set("tickers", tickers.join(","));
+  if (originTicker) params.set("origin", originTicker);
+  const query = params.toString();
+  return query ? `/compare?${query}` : "/compare";
+}
+
+function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[], originTicker: string) {
+  router.push(compareHrefForTickers(tickers, originTicker));
 }
 
 function subjectParticle(value: string): string {
@@ -55,20 +59,21 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const router = useRouter();
   const searchParams = useSearchParams();
   const tickers = useMemo(() => parseTickers(searchParams.get("tickers") || searchParams.get("ticker")), [searchParams]);
-  const baseTicker = tickers[0];
-  const baseTickerLabel = baseTicker ? displayTickerRef(baseTicker) : "";
+  const firstTicker = tickers[0] || "";
+  const firstTickerLabel = firstTicker ? displayTickerRef(firstTicker) : "";
+  const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
   const [input, setInput] = useState("");
-  const { items, partialStates, waitingStates, pendingStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
+  const { states, items, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
-  const baseItem = useMemo(() => (baseTicker ? items.find((item) => item.ticker === baseTickerLabel) : undefined), [baseTicker, items, baseTickerLabel]);
-  const hasCompareChart = useMemo(() => items.some((item) => normalizedPoints(item).length >= 2), [items]);
-  const detailHref = baseTicker ? `/?ticker=${encodeURIComponent(baseTicker)}` : "/";
+  const firstItem = useMemo(() => (firstTicker ? items.find((item) => item.ticker === firstTickerLabel) : undefined), [firstTicker, items, firstTickerLabel]);
+  const hasCompareChart = useMemo(() => compareDateAlignedSeries(items).series.some((entry) => entry.points.length >= 2), [items]);
+  const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
 
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
     if (!ticker || tickers.includes(ticker) || tickers.length >= MAX_COMPARE) return;
     setInput("");
-    pushTickers(router, [...tickers, ticker]);
+    pushTickers(router, [...tickers, ticker], originTicker);
   }
 
   function addSymbol(item: SymbolSearchItem) {
@@ -78,14 +83,14 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   function removeTicker(ticker: string) {
     if (tickers.length <= 1) return;
     const next = removeCompareTicker(tickers, ticker);
-    if (next.length !== tickers.length) pushTickers(router, next);
+    if (next.length !== tickers.length) pushTickers(router, next, originTicker);
   }
 
   return (
     <main className="stock-app compare-app">
       <nav className="compare-side-index" aria-label="비교 화면 이동">
         <a href="/">홈으로 돌아가기</a>
-        <a href={detailHref}>{baseTicker ? "상세 분석으로 돌아가기" : "검색으로 돌아가기"}</a>
+        <a href={detailHref}>{originTicker ? "상세 분석으로 돌아가기" : "검색으로 돌아가기"}</a>
       </nav>
 
       <section className="compare-landing">
@@ -97,7 +102,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
               {selectedCount === 0
                 ? "비교할 종목을 검색해서 추가해주세요. 최대 5개까지 같은 기준으로 볼 수 있어요."
                 : selectedCount === 1
-                ? `${baseItem ? compareItemTitle(baseItem) : baseTickerLabel}${subjectParticle(baseItem ? compareItemTitle(baseItem) : baseTickerLabel)} 선택되어 있어요. 비교할 종목을 추가하면 같은 기준으로 차이를 보여드릴게요.`
+                ? `${firstItem ? compareItemTitle(firstItem) : firstTickerLabel}${subjectParticle(firstItem ? compareItemTitle(firstItem) : firstTickerLabel)} 선택되어 있어요. 비교할 종목을 추가하면 같은 기준으로 차이를 보여드릴게요.`
                 : `${selectedCount}개 종목을 점수, 가격 흐름, 재무 지표 기준으로 나란히 정리했어요.`}
             </p>
           </div>
@@ -105,14 +110,14 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </section>
 
         <section className="compare-picks" aria-label="선택된 종목">
-          {tickers.length ? tickers.map((ticker, index) => {
+          {tickers.length ? tickers.map((ticker) => {
             const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
             const partial = partialStates.find((state) => state.ticker === ticker);
             const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
             const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
             const removeDisabled = tickers.length <= 1;
             return (
-              <span key={ticker} className={index === 0 ? "base" : ""}>
+              <span key={ticker}>
                 {label}
                 <button
                   type="button"
@@ -153,20 +158,10 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </section>
       ) : null}
 
-      {pendingStates.length && !items.length ? (
-        <section className="compare-status compare-pending" role="status" aria-live="polite">
-          <span className="sr-only">비교 화면을 구성하고 있습니다.</span>
-          <ComparePendingRowsSkeleton tickers={pendingStates.map((state) => state.ticker)} />
-          <button type="button" onClick={retryCompare} className="sr-only">다시 확인</button>
-        </section>
-      ) : null}
-
-      {items.length || partialStates.length || waitingStates.length ? (
+      {states.length ? (
         <div className="compare-feed">
           {!items.length ? <ComparePendingOverviewSkeleton /> : null}
-          {items.length ? <CompareCards items={items} baseTicker={baseTickerLabel} showEmptyCard={tickers.length < 2} /> : null}
-          {partialStates.length ? <ComparePendingCards states={partialStates} /> : null}
-          {waitingStates.length ? <CompareWaitingCardsSkeleton tickers={waitingStates.map((state) => state.ticker)} /> : null}
+          <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
           {items.length >= 2 && hasCompareChart ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
@@ -176,84 +171,103 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   );
 }
 
-function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadState, { status: "partial" }>> }) {
-  return (
-    <section className="compare-section">
-      <div className="section-title">
-        <span>종목 정보</span>
-        <h2>종목 정보</h2>
-      </div>
-      <div className="compare-card-grid">
-        {states.map((state) => {
-          const identity = stockHeaderIdentity(state.data);
-          return (
-            <article className="compare-stock-card compare-pending-card" key={state.ticker}>
-              <div className="compare-card-top">
-                <div>
-                  <strong className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</strong>
-                  {identity.secondary ? <small>{identity.secondary}</small> : null}
-                </div>
-                <em className="price-neutral">{formatPrimaryPrice(state.data) || "종목 확인"}</em>
-              </div>
-              <div className="compare-score-line">
-                <span>현재가</span>
-                <strong>{formatPrimaryPrice(state.data)}</strong>
-              </div>
-              <i className="compare-card-scorebar pending" aria-hidden="true" />
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function CompareCards({ items, baseTicker, showEmptyCard }: { items: CompareItem[]; baseTicker: string; showEmptyCard: boolean }) {
+function CompareCards({ states, items, showEmptyCard }: { states: CompareLoadState[]; items: CompareItem[]; showEmptyCard: boolean }) {
+  const itemByTicker = new Map(items.map((item) => [item.ticker, item]));
   return (
     <section className="compare-section">
       <span>종목 카드</span>
       <h2>각 종목의 현재 인상이에요</h2>
       <div className="compare-card-grid">
-        {items.map((item) => (
-          <article className="compare-stock-card" key={item.ticker}>
-            <div className="compare-card-top">
-              <div>
-                <span>{item.ticker === baseTicker ? "선택한 종목" : "비교 종목"}</span>
-                <strong className={item.identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{compareItemTitle(item)}</strong>
-                {compareItemSubtitle(item) ? <small>{compareItemSubtitle(item)}</small> : null}
-              </div>
-              <em className={comparePriceTone(item.daily)}>{percentText(item.daily)}</em>
-            </div>
-            <div className="compare-score-line">
-              <strong>{item.score.toFixed(1)}점</strong>
-              <span>{item.provisional ? item.provisionalLabel || "현재 점수" : `품질 ${scoreWord(item.score)}`}</span>
-            </div>
-            <i className="compare-card-scorebar" aria-hidden="true">
-              <em style={{ width: `${item.score}%` }} />
-            </i>
-            <div className="compare-opportunity-line">
-              <span>기회</span>
-              <strong>{item.opportunityScore === undefined ? "-" : `${item.opportunityScore.toFixed(1)}점`}</strong>
-            </div>
-            <dl>
-              <div>
-                <dt>시가총액</dt>
-                <dd>{item.marketCap}</dd>
-              </div>
-              <div>
-                <dt>강점</dt>
-                <dd>{item.strongest?.label || "-"}</dd>
-              </div>
-              <div>
-                <dt>먼저 볼 것</dt>
-                <dd>{item.weakest?.label || "-"}</dd>
-              </div>
-            </dl>
-          </article>
-        ))}
+        {states.map((state) => {
+          const item = itemByTicker.get(displayTickerRef(state.ticker));
+          if (item) return <CompareReadyCard item={item} key={state.ticker} />;
+          if (state.status === "partial") return <ComparePartialCard state={state} key={state.ticker} />;
+          if (state.status === "loading" || state.status === "pending") return <CompareSkeletonCard ticker={state.ticker} key={state.ticker} />;
+          return null;
+        })}
         {showEmptyCard && items.length < 2 ? <EmptyCompareCard /> : null}
       </div>
     </section>
+  );
+}
+
+function CompareReadyCard({ item }: { item: CompareItem }) {
+  return (
+    <article className="compare-stock-card">
+      <div className="compare-card-top">
+        <div>
+          <span>비교 종목</span>
+          <strong className={item.identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{compareItemTitle(item)}</strong>
+          {compareItemSubtitle(item) ? <small>{compareItemSubtitle(item)}</small> : null}
+        </div>
+        <em className={comparePriceTone(item.daily)}>{percentText(item.daily)}</em>
+      </div>
+      <div className="compare-score-line">
+        <strong>{item.score.toFixed(1)}점</strong>
+        <span>{item.provisional ? item.provisionalLabel || "현재 점수" : `품질 ${scoreWord(item.score)}`}</span>
+      </div>
+      <i className="compare-card-scorebar" aria-hidden="true">
+        <em style={{ width: `${item.score}%` }} />
+      </i>
+      <div className="compare-opportunity-line">
+        <span>기회</span>
+        <strong>{item.opportunityScore === undefined ? "-" : `${item.opportunityScore.toFixed(1)}점`}</strong>
+      </div>
+      <dl>
+        <div>
+          <dt>시가총액</dt>
+          <dd>{item.marketCap}</dd>
+        </div>
+        <div>
+          <dt>강점</dt>
+          <dd>{item.strongest?.label || "-"}</dd>
+        </div>
+        <div>
+          <dt>먼저 볼 것</dt>
+          <dd>{item.weakest?.label || "-"}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function ComparePartialCard({ state }: { state: Extract<CompareLoadState, { status: "partial" }> }) {
+  const identity = stockHeaderIdentity(state.data);
+  return (
+    <article className="compare-stock-card compare-pending-card">
+      <div className="compare-card-top">
+        <div>
+          <span>비교 종목</span>
+          <strong className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</strong>
+          {identity.secondary ? <small>{identity.secondary}</small> : null}
+        </div>
+        <em className="price-neutral">{formatPrimaryPrice(state.data) || "종목 확인"}</em>
+      </div>
+      <div className="compare-score-line">
+        <span>현재가</span>
+        <strong>{formatPrimaryPrice(state.data)}</strong>
+      </div>
+      <i className="compare-card-scorebar pending" aria-hidden="true" />
+    </article>
+  );
+}
+
+function CompareSkeletonCard({ ticker }: { ticker: string }) {
+  return (
+    <article className="compare-stock-card compare-waiting-card" aria-label={`${displayTickerRef(ticker)} 비교 카드 구성 중`}>
+      <div className="compare-card-top">
+        <div>
+          <span>비교 종목</span>
+          <strong>{displayTickerRef(ticker)}</strong>
+        </div>
+        <em className="price-neutral">확인 중</em>
+      </div>
+      <div className="compare-score-line">
+        <span className="skeleton-block small" />
+        <span className="skeleton-block score" />
+      </div>
+      <i className="compare-card-scorebar pending" aria-hidden="true" />
+    </article>
   );
 }
 
@@ -270,11 +284,11 @@ function EmptyCompareCard() {
 }
 
 function CompareChart({ items }: { items: CompareItem[] }) {
-  const series = items
-    .map((item, index) => ({
-      item,
+  const aligned = compareDateAlignedSeries(items);
+  const series = aligned.series
+    .map((entry, index) => ({
+      ...entry,
       color: LINE_COLORS[index % LINE_COLORS.length],
-      points: normalizedPoints(item),
     }))
     .filter((entry) => entry.points.length >= 2);
 
@@ -297,8 +311,7 @@ function CompareChart({ items }: { items: CompareItem[] }) {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = Math.max(1, max - min);
-  const maxLength = Math.max(...series.map((entry) => entry.points.length));
-  const x = (index: number) => padX + (width - padX * 2) * (index / Math.max(1, maxLength - 1));
+  const x = (dateIndex: number) => padX + (width - padX * 2) * (dateIndex / Math.max(1, aligned.dates.length - 1));
   const y = (value: number) => height - padBottom - (height - padTop - padBottom) * ((value - min) / span);
   const chartSummary = series
     .map((entry) => {
@@ -319,7 +332,7 @@ function CompareChart({ items }: { items: CompareItem[] }) {
           {series.map((entry) => (
             <polyline
               key={entry.item.ticker}
-              points={entry.points.map((point, index) => `${x(index)},${y(point.value)}`).join(" ")}
+              points={entry.points.map((point) => `${x(point.dateIndex)},${y(point.value)}`).join(" ")}
               fill="none"
               stroke={entry.color}
               strokeWidth="4"

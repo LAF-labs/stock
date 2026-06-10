@@ -52,6 +52,18 @@ export type CompareItem = {
   weakest?: ScoreComponent;
 };
 
+export type CompareAlignedPoint = {
+  date: string;
+  value: number;
+  dateIndex: number;
+};
+
+export type CompareAlignedSeries = {
+  item: CompareItem;
+  ticker: string;
+  points: CompareAlignedPoint[];
+};
+
 const KO_KR_RATIO_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 
 export function normalizeTicker(value: string): string {
@@ -254,4 +266,23 @@ export function normalizedPoints(item: CompareItem) {
     date: point.date,
     value: (point.close / first) * 100,
   }));
+}
+
+export function compareDateAlignedSeries(items: readonly CompareItem[]): { dates: string[]; series: CompareAlignedSeries[] } {
+  const dateSet = new Set<string>();
+  const rawSeries = items.map((item) => {
+    const points = normalizedPoints(item);
+    points.forEach((point) => dateSet.add(point.date));
+    return { item, ticker: item.ticker, points };
+  });
+  const dates = Array.from(dateSet).sort();
+  const dateIndex = new Map(dates.map((date, index) => [date, index]));
+  const series = rawSeries.map((entry) => ({
+    ...entry,
+    points: entry.points.flatMap((point) => {
+      const index = dateIndex.get(point.date);
+      return index === undefined ? [] : [{ ...point, dateIndex: index }];
+    }),
+  }));
+  return { dates, series };
 }

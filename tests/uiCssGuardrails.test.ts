@@ -126,9 +126,9 @@ test("chart story does not truncate fetched history on the client", () => {
 test("waiting states use shared skeletons instead of error containers", () => {
   assert.match(loadingSkeletonSource, /function StockDetailLoadingSkeleton/);
   assert.match(loadingSkeletonSource, /function TechnicalAnalysisLoadingSkeleton/);
-  assert.match(loadingSkeletonSource, /function CompareWaitingCardsSkeleton/);
+  assert.doesNotMatch(loadingSkeletonSource, /function CompareWaitingCardsSkeleton|function ComparePendingRowsSkeleton/);
   assert.match(dashboardSource, /<StockDetailLoadingSkeleton/);
-  assert.match(compareSource, /className="compare-status compare-pending"/);
+  assert.match(compareSource, /function CompareSkeletonCard/);
   assert.doesNotMatch(compareSource, /className="compare-errors compare-pending"/);
   assert.doesNotMatch(css, /skeleton-pending-action|technical-pending-action/);
 });
@@ -138,7 +138,17 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /tickers\.length <= 1/);
   assert.match(compareSource, /disabled=\{removeDisabled\}/);
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
-  assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|--compare-count/);
+  assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
   assert.match(css, /\.compare-card-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
   assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?repeat\(var\(--compare-cols\), minmax\(96px, 1fr\)\)/);
+});
+
+test("compare page separates detail origin from neutral compare rows", () => {
+  assert.match(dashboardSource, /origin/);
+  assert.match(compareSource, /searchParams\.get\("origin"\)/);
+  assert.match(compareSource, /originTicker/);
+  assert.match(compareSource, /detailHref = originTicker/);
+  assert.doesNotMatch(compareSource, /item\.ticker === baseTicker \? "선택한 종목" : "비교 종목"/);
+  assert.doesNotMatch(compareSource, /className=\{index === 0 \? "base" : ""\}/);
+  assert.doesNotMatch(compareSource, /ComparePendingCards|CompareWaitingCardsSkeleton|ComparePendingRowsSkeleton/);
 });

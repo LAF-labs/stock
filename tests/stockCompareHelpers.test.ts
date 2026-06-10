@@ -5,6 +5,7 @@ import {
   MAX_COMPARE,
   bestBy,
   compareItemTitle,
+  compareDateAlignedSeries,
   comparePartialData,
   comparePriceTone,
   isPartialCompareResult,
@@ -109,6 +110,39 @@ test("compare helpers choose best values and normalize chart series", () => {
     { date: "2026-06-01", value: 100 },
     { date: "2026-06-02", value: 125 },
   ]);
+});
+
+test("compare chart series align by trading date instead of point index", () => {
+  const first = {
+    ticker: "A",
+    score: 70,
+    data: {
+      chart_series: [
+        { date: "2026-06-01", close: 100 },
+        { date: "2026-06-03", close: 120 },
+      ],
+    },
+  } as any;
+  const second = {
+    ticker: "B",
+    score: 90,
+    data: {
+      chart_series: [
+        { date: "2026-06-01", close: 50 },
+        { date: "2026-06-02", close: 55 },
+        { date: "2026-06-03", close: 60 },
+      ],
+    },
+  } as any;
+
+  const aligned = compareDateAlignedSeries([first, second]);
+
+  assert.deepEqual(aligned.dates, ["2026-06-01", "2026-06-02", "2026-06-03"]);
+  assert.deepEqual(aligned.series.map((entry) => entry.ticker), ["A", "B"]);
+  assert.deepEqual(aligned.series[0].points.map((point) => point.date), ["2026-06-01", "2026-06-03"]);
+  assert.deepEqual(aligned.series[1].points.map((point) => point.date), ["2026-06-01", "2026-06-02", "2026-06-03"]);
+  assert.equal(aligned.series[0].points[1].value, 120);
+  assert.equal(aligned.series[1].points[2].value, 120);
 });
 
 test("compare bestBy evaluates each item once", () => {

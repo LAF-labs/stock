@@ -558,11 +558,6 @@ a:focus-visible {
   background: #f8fafc;
 }
 
-.compare-pending-row {
-  display: grid;
-  gap: 10px;
-}
-
 .verdict-mini-skeleton {
   display: grid;
   gap: 9px;
@@ -2433,11 +2428,6 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.compare-picks span.base {
-  background: var(--accent);
-  color: #fff;
-}
-
 .compare-picks button {
   width: 32px;
   height: 32px;
@@ -2448,11 +2438,6 @@ a:focus-visible {
   color: var(--subtext);
   font-size: 17px;
   line-height: 1;
-}
-
-.compare-picks span.base button {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
 }
 
 .compare-picks button:disabled {
@@ -2662,6 +2647,7 @@ a:focus-visible {
 .compare-score-line span {
   color: var(--subtext);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .compare-card-scorebar {
@@ -2726,10 +2712,6 @@ a:focus-visible {
   line-height: 1.45;
   font-weight: 700;
   overflow-wrap: anywhere;
-}
-
-.compare-pending-card {
-  display: block;
 }
 
 .compare-chart {
