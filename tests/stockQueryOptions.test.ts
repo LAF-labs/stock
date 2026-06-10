@@ -20,6 +20,7 @@ import {
   technicalScoreQueryOptions,
 } from "../src/lib/stockQueryOptions";
 import type { CompareQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
+import type { StockScoreResponse } from "../src/lib/types";
 
 test("stock query option factories use canonical keys and cache windows", () => {
   const score = scoreQueryOptions("KR:004020", "detail");
@@ -84,6 +85,29 @@ test("pending polling follows the shared backoff and stops on non-pollable state
   assert.equal(stockQueryRefetchIntervalMs(queuedPending, STOCK_QUERY_MAX_PENDING_POLLS), false);
   assert.equal(stockQueryShouldPoll(clientOnlyPending), false);
   assert.equal(stockQueryRefetchIntervalMs({ state: "ready", status: 200, payload: {}, data: {} }, 0), false);
+});
+
+test("ready-looking quote-only fast path keeps polling until full detail data lands", () => {
+  const fastPath: ScoreQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: {
+      ok: true,
+      requested_ticker: "KR:064350",
+      chart_series: [],
+      fetch: { quote_only_fast_path: true, pending_enrichment: true },
+    },
+    data: {
+      requested_ticker: "KR:064350",
+      symbol: "064350",
+      chart_series: [],
+      fetch: { quote_only_fast_path: true, pending_enrichment: true },
+    } as StockScoreResponse,
+  };
+
+  assert.equal(stockQueryShouldPoll(fastPath), true);
+  assert.equal(stockQueryRefetchOnMount(fastPath), "always");
+  assert.equal(stockQueryRefetchIntervalMs(fastPath, 0), 1_000);
 });
 
 test("persisted stock data refetches on mount without freezing placeholder views", () => {

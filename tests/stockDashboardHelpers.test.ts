@@ -22,9 +22,11 @@ import {
   partialStockDataFromQuote,
   partialStockDataFromTicker,
   partialStockDataFromPayload,
+  riskLevelLabel,
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
+  signalLabel,
   stockHeaderFreshnessTimeChip,
   shouldShowStockSkeleton,
   isPartialStockSnapshotPayload,
@@ -349,7 +351,7 @@ test("scoreFreshnessSummary separates score snapshot freshness from quote freshn
 
   assert.deepEqual(scoreFreshnessSummary(staleScore), {
     label: "점수 기준",
-    value: "오래된 스냅샷",
+    value: "업데이트 확인 중",
     detail: "새 점수 준비 중",
     tone: "stale",
   });
@@ -368,7 +370,7 @@ test("scoreFreshnessSummary hides implementation cache labels", () => {
 
   assert.deepEqual(scoreFreshnessSummary(cachedScore), {
     label: "점수 기준",
-    value: "오래된 스냅샷",
+    value: "업데이트 확인 중",
     detail: "새 점수 준비 중",
     tone: "stale",
   });
@@ -386,8 +388,8 @@ test("scoreFreshnessSummary accepts Rust cache millisecond timestamps", () => {
 
   assert.deepEqual(scoreFreshnessSummary(freshScore), {
     label: "점수 기준",
-    value: "최신 스냅샷",
-    detail: "스냅샷 준비 완료",
+    value: "최신 데이터",
+    detail: "점수 준비 완료",
     tone: "fresh",
   });
 });
@@ -400,7 +402,7 @@ test("scoreFreshnessTimeChip uses product-state copy instead of local minute chi
     },
   } satisfies StockScoreResponse;
 
-  assert.equal(scoreFreshnessTimeChip(score), "최신 스냅샷");
+  assert.equal(scoreFreshnessTimeChip(score), "최신 데이터");
 });
 
 test("stockHeaderFreshnessTimeChip uses product-state copy instead of local time chips", () => {
@@ -423,8 +425,8 @@ test("stockHeaderFreshnessTimeChip uses product-state copy instead of local time
     },
   } satisfies StockQuoteResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, olderQuote), "최신 스냅샷");
-  assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "최신 스냅샷");
+  assert.equal(stockHeaderFreshnessTimeChip(score, olderQuote), "최신 데이터");
+  assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "최신 데이터");
 });
 
 test("stockHeaderFreshnessTimeChip hides implementation cache labels and local time in the compact header", () => {
@@ -436,7 +438,7 @@ test("stockHeaderFreshnessTimeChip hides implementation cache labels and local t
     },
   } satisfies StockScoreResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "스냅샷 확인 중");
+  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "업데이트 확인 중");
 });
 
 test("stockHeaderFreshnessTimeChip hides implementation cache labels and local time when a fresher quote is present", () => {
@@ -455,7 +457,30 @@ test("stockHeaderFreshnessTimeChip hides implementation cache labels and local t
     },
   } satisfies StockQuoteResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "최신 스냅샷");
+  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "최신 데이터");
+});
+
+test("header signal labels translate internal enums into Korean product copy", () => {
+  assert.equal(signalLabel("price_momentum_positive"), "흐름 우호");
+  assert.equal(signalLabel("price_risk_watch"), "리스크 확인");
+  assert.equal(signalLabel("price_neutral"), "중립");
+  assert.equal(signalLabel("HOLD"), "관망");
+  assert.equal(signalLabel("unknown_internal_key"), "확인 중");
+  assert.equal(riskLevelLabel("medium"), "보통");
+  assert.equal(riskLevelLabel("HIGH"), "높음");
+});
+
+test("visible record entries hide fast-path implementation fields", () => {
+  const visible = visibleRecordEntries({
+    source: "pending_enrichment",
+    quote_only_fast_path: true,
+    detail_fast_path: true,
+    pending_enrichment: true,
+    message: "차트와 정식 재무 데이터는 백그라운드 점수 스냅샷에서 보강됩니다.",
+    totalRevenue: 1234,
+  });
+
+  assert.deepEqual(visible, [["totalRevenue", 1234]]);
 });
 
 test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-first", () => {

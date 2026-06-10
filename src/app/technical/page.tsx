@@ -12,8 +12,11 @@ type TechnicalRouteProps = {
 
 export default async function TechnicalPage({ searchParams }: TechnicalRouteProps) {
   const params = await searchParams;
-  const ticker = firstParam(params?.ticker) || "US:KO";
-  const eligibility = await technicalEligibilityForTicker(ticker);
+  const rawTicker = firstParam(params?.ticker)?.trim();
+  if (!rawTicker) {
+    redirect("/");
+  }
+  const eligibility = await technicalEligibilityForTicker(rawTicker);
 
   if (!eligibility.eligible) {
     redirect(detailPathForTicker(eligibility.ticker));

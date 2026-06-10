@@ -31,7 +31,7 @@ import type { SymbolSearchItem } from "@/lib/symbolTypes";
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
 
 function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[]) {
-  router.push(`/compare?tickers=${encodeURIComponent(tickers.join(","))}`);
+  router.push(tickers.length ? `/compare?tickers=${encodeURIComponent(tickers.join(","))}` : "/compare");
 }
 
 function subjectParticle(value: string): string {
@@ -46,13 +46,13 @@ export default function StockCompare() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tickers = useMemo(() => parseTickers(searchParams.get("tickers") || searchParams.get("ticker")), [searchParams]);
-  const baseTicker = tickers[0] || "US:KO";
-  const baseTickerLabel = displayTickerRef(baseTicker);
+  const baseTicker = tickers[0];
+  const baseTickerLabel = baseTicker ? displayTickerRef(baseTicker) : "";
   const [input, setInput] = useState("");
   const { items, partialStates, waitingStates, pendingStates, errorStates, retryCompare } = useStockCompareQueries(tickers);
   const selectedCount = tickers.length;
-  const baseItem = useMemo(() => items.find((item) => item.ticker === baseTickerLabel), [items, baseTickerLabel]);
-  const detailHref = `/?ticker=${encodeURIComponent(baseTicker)}`;
+  const baseItem = useMemo(() => (baseTicker ? items.find((item) => item.ticker === baseTickerLabel) : undefined), [baseTicker, items, baseTickerLabel]);
+  const detailHref = baseTicker ? `/?ticker=${encodeURIComponent(baseTicker)}` : "/";
 
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
@@ -73,7 +73,7 @@ export default function StockCompare() {
   return (
     <main className="stock-app compare-app">
       <nav className="compare-side-index" aria-label="비교 화면 이동">
-        <a href={detailHref}>상세 분석으로 돌아가기</a>
+        <a href={detailHref}>{baseTicker ? "상세 분석으로 돌아가기" : "검색으로 돌아가기"}</a>
       </nav>
 
       <section className="compare-landing">
@@ -82,7 +82,9 @@ export default function StockCompare() {
             <span>종목 비교</span>
             <h1>선택한 종목을 함께 보기</h1>
             <p>
-              {selectedCount === 1
+              {selectedCount === 0
+                ? "비교할 종목을 검색해서 추가해주세요. 최대 5개까지 같은 기준으로 볼 수 있어요."
+                : selectedCount === 1
                 ? `${baseItem ? compareItemTitle(baseItem) : baseTickerLabel}${subjectParticle(baseItem ? compareItemTitle(baseItem) : baseTickerLabel)} 선택되어 있어요. 비교할 종목을 추가하면 같은 기준으로 차이를 보여드릴게요.`
                 : `${selectedCount}개 종목을 점수, 가격 흐름, 재무 지표 기준으로 나란히 정리했어요.`}
             </p>
@@ -91,7 +93,7 @@ export default function StockCompare() {
         </section>
 
         <section className="compare-picks" aria-label="선택된 종목">
-          {tickers.map((ticker, index) => {
+          {tickers.length ? tickers.map((ticker, index) => {
             const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
             const partial = partialStates.find((state) => state.ticker === ticker);
             const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
@@ -102,7 +104,7 @@ export default function StockCompare() {
                 {index === 0 ? <b>선택됨</b> : <button type="button" onClick={() => removeTicker(ticker)} aria-label={`${label} 삭제`}>×</button>}
               </span>
             );
-          })}
+          }) : <span>비교할 종목을 추가해주세요</span>}
         </section>
       </section>
 

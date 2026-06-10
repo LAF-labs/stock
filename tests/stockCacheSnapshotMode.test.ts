@@ -229,6 +229,7 @@ test("detail score cache falls back to a quote-only fast path when daily rows ar
   process.env.STOCK_API_APP_KEY = "app-key";
   process.env.STOCK_API_APP_SECRET = "app-secret";
   process.env.STOCK_API_BASE = "https://kis.example";
+  process.env.STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS = "15";
 
   globalThis.fetch = async (url) => {
     const text = String(url);
@@ -278,6 +279,67 @@ test("detail score cache falls back to a quote-only fast path when daily rows ar
   assert.equal(typeof result.payload.score, "number");
   assert.equal(result.cache.source, "market-data");
   assert.equal(result.cache.state, "miss");
+});
+
+test("detail quote-only fast path is not stored as a durable score snapshot", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS = "15";
+
+  const writes: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_score_snapshots") && !init?.method) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (text.includes("/rest/v1/stock_score_snapshots") && init?.method === "POST") {
+      writes.push(text);
+      return new Response("", { status: 201 });
+    }
+    if (text.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      return Response.json({ id: "job-quote-fast-no-store", status: "queued" });
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-detail-quote-no-store", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return Response.json({ rt_cd: "0", output2: [] });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "24.50",
+          base: "24.00",
+          rate: "2.08",
+          tvol: "12345",
+          curr: "USD",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Quote Fast No Store Inc",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("US:QFASTNOSTORE", "detail");
+
+  assert.equal((result.payload.fetch as Record<string, unknown>).quote_only_fast_path, true);
+  assert.deepEqual(writes, []);
 });
 
 test("compare score cache skips daily rows and uses the quote-only fast path immediately", async () => {
@@ -337,7 +399,7 @@ test("compare score cache skips daily rows and uses the quote-only fast path imm
   assert.equal(result.cache.state, "miss");
 });
 
-test("compare score cache does not wait for slow Supabase score writes", async () => {
+test("compare quote-only score cache skips slow Supabase score writes", async () => {
   useSnapshotOnlyRuntime();
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
@@ -408,12 +470,9 @@ test("compare score cache does not wait for slow Supabase score writes", async (
 
   assert.equal(result.payload.ok, true);
   assert.equal(result.payload.requested_ticker, "US:APGE");
-  assert.equal(writeStarted, true);
+  assert.equal(writeStarted, false);
   assert.equal(writeFinished, false);
-  assert.ok(elapsedMs < 200, `compare score waited ${elapsedMs}ms for the score write`);
-
-  await sleep(300);
-  assert.equal(writeFinished, true);
+  assert.ok(elapsedMs < 200, `compare score waited ${elapsedMs}ms for a skipped score write`);
 });
 
 test("compare score cache returns an identity fast path when quote data is unavailable", async () => {

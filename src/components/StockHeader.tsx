@@ -7,7 +7,9 @@ import {
   formatPrimaryPrice,
   formatSecondaryPrice,
   opportunityExtremes,
+  riskLevelLabel,
   scoreDataWithQuote,
+  signalLabel,
   stockHeaderFreshnessTimeChip,
   strongestAndWeakest,
   stringFromUnknown,
@@ -76,8 +78,8 @@ export default function StockHeader({
           ? `현재가 업데이트 실패: ${quoteState.error}`
           : undefined;
   const marketCap = stockMarketCapDisplay(data);
-  const signal = data.sia_snapshot?.raw_signal || "-";
-  const risk = data.sia_snapshot?.risk_level || "-";
+  const signal = signalLabel(data.sia_snapshot?.raw_signal);
+  const risk = riskLevelLabel(data.sia_snapshot?.risk_level);
   const { strongest, weakest } = strongestAndWeakest(data);
   const opportunity = opportunityExtremes(data.opportunity_components);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;

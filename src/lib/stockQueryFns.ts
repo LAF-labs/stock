@@ -1,4 +1,5 @@
 import { apiJson, apiPayloadMessage, stringFromUnknown, type ClientApiPayload } from "@/lib/clientApi";
+import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import type {
   ApiCooldown,
   ApiError,
@@ -142,6 +143,7 @@ export function classifyScorePayload(payload: ClientApiPayload, status: number):
   if (pending) return pending;
 
   if (status >= 400 || payload.ok === false) throwStockQueryError(payload, status, "score_failed");
+  if (stockScorePayloadNeedsEnrichment(payload)) return enrichmentPartialResult<StockScoreResponse>(payload, status);
   return readyResult(payload as StockScoreResponse, payload, status);
 }
 
@@ -206,6 +208,30 @@ function partialResult<TData extends ClientApiPayload>(payload: ClientApiPayload
     payload,
     data: payload as TData,
     pending: pendingResult(objectFromUnknown(payload.pending_snapshot), status),
+  };
+}
+
+function enrichmentPartialResult<TData extends ClientApiPayload>(payload: ClientApiPayload, status: number): ApiPartial<TData> {
+  return {
+    state: "partial",
+    status,
+    payload,
+    data: payload as TData,
+    pending: pendingResult(enrichmentPendingPayload(payload), 202),
+  };
+}
+
+function enrichmentPendingPayload(payload: ClientApiPayload): ClientApiPayload {
+  const ticker = stringFromUnknown(payload.requested_ticker) || stringFromUnknown(payload.ticker);
+  return {
+    ok: false,
+    error: "snapshot_pending",
+    ticker,
+    requested_ticker: ticker,
+    reason: "pending_enrichment",
+    message: "가격 데이터는 먼저 확인했고, 차트와 점수 데이터를 이어서 준비하고 있어요.",
+    retry_after_seconds: 5,
+    refresh_request: { queued: true },
   };
 }
 

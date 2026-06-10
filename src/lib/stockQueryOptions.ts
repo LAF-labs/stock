@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "@/components/QueryProvider";
 import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
+import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import { fetchCompareScores, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
@@ -141,12 +142,14 @@ export function stockQueryShouldPoll(
   if ("results" in result) {
     return result.results.some(({ result: itemResult }) => {
       if (itemResult.state === "pending" || itemResult.state === "partial") return true;
+      if (itemResult.state === "ready") return stockScorePayloadNeedsEnrichment(itemResult.data) || stockScorePayloadNeedsEnrichment(itemResult.payload);
       return false;
     });
   }
   if (result.state === "pending") return isPollablePending(result);
   if (result.state === "partial") return isPollablePending(result.pending);
-  if (result.state === "unsupported" || result.state === "ready") return false;
+  if (result.state === "ready") return stockScorePayloadNeedsEnrichment(result.data) || stockScorePayloadNeedsEnrichment(result.payload);
+  if (result.state === "unsupported") return false;
   return false;
 }
 
@@ -154,6 +157,7 @@ export function stockQueryRefetchOnMount(
   result: ScoreQueryResult | TechnicalScoreQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean | "always" {
   if (!result) return true;
+  if (stockQueryShouldPoll(result)) return "always";
   if (result.state === "ready") return true;
   if (result.state === "unsupported") return false;
   return "always";

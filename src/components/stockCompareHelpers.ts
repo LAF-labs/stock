@@ -66,7 +66,7 @@ export function symbolRef(item: SymbolSearchItem): string {
 }
 
 export function parseTickers(raw: string | null): string[] {
-  const source = raw || "KO";
+  const source = raw || "";
   const unique: string[] = [];
   source
     .split(",")

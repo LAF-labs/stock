@@ -5,8 +5,11 @@ import { join } from "node:path";
 
 const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
+const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
 const autocompleteSource = readFileSync(join(process.cwd(), "src/components/SymbolAutocomplete.tsx"), "utf8");
 const stockDetailSectionsSource = readFileSync(join(process.cwd(), "src/components/StockDetailSections.tsx"), "utf8");
+const compareRouteSource = readFileSync(join(process.cwd(), "src/app/compare/page.tsx"), "utf8");
+const technicalRouteSource = readFileSync(join(process.cwd(), "src/app/technical/page.tsx"), "utf8");
 
 test("visited link color is scoped to news links", () => {
   assert.doesNotMatch(css, /(^|})\s*a:visited\s*\{/);
@@ -52,6 +55,15 @@ test("home screen has no old default ticker fallback and renders animated landin
   assert.match(css, /@keyframes landing-pulse/);
 });
 
+test("compare and technical routes do not invent a default stock selection", () => {
+  assert.doesNotMatch(compareSource, /tickers\[0\]\s*\|\|\s*"US:KO"/);
+  assert.doesNotMatch(compareSource, /encodeURIComponent\(baseTicker\)[\s\S]*"US:KO"/);
+  assert.doesNotMatch(compareRouteSource, /parseTickers\([\s\S]*\|\|\s*"KO"/);
+  assert.match(compareRouteSource, /hasTickers \?[\s\S]*비교할 종목을 검색해서 추가해주세요/);
+  assert.doesNotMatch(technicalRouteSource, /firstParam\(params\?\.ticker\)\s*\|\|\s*"US:KO"/);
+  assert.match(technicalRouteSource, /if \(!rawTicker\) \{\s*redirect\("\/"\);/);
+});
+
 test("landing hero has four scrollable headline sections and a seamless stock loop", () => {
   const storyMatches = dashboardSource.match(/className="landing-story-section/g) || [];
   const proofMatches = dashboardSource.match(/className="landing-proof-list"/g) || [];
@@ -91,6 +103,13 @@ test("home search is a floating pill that collapses to an icon-only circle", () 
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed\s*\{[\s\S]*?width:\s*56px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed input\s*\{[\s\S]*?opacity:\s*0;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed \.symbol-search-action\s*\{[\s\S]*?border-radius:\s*50%;/);
+});
+
+test("detail search keeps user draft edits separate from server identity sync", () => {
+  assert.match(dashboardSource, /isSearchEditing/);
+  assert.match(dashboardSource, /handleTickerInputChange/);
+  assert.match(dashboardSource, /onValueChange=\{handleTickerInputChange\}/);
+  assert.doesNotMatch(dashboardSource, /onValueChange=\{setTickerInput\}/);
 });
 
 test("chart story does not truncate fetched history on the client", () => {

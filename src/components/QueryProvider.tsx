@@ -6,9 +6,10 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { del, get, set } from "idb-keyval";
 import { useState, type ReactNode } from "react";
+import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 
 export const STOCK_QUERY_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
-export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v3";
+export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v4";
 export const STOCK_QUERY_PERSIST_THROTTLE_MS = 1_000;
 
 type RetryableStockError = {
@@ -69,7 +70,9 @@ export function shouldPersistStockQuery(query: PersistableStockQuery): boolean {
 
   const feature = query.queryKey[1];
   if (feature === "quote" || feature === "symbols" || feature === "judgment") return true;
-  return feature === "score" && query.queryKey[2] === "detail";
+  if (feature !== "score" || query.queryKey[2] !== "detail") return false;
+  const scoreResult = query.state.data && typeof query.state.data === "object" ? query.state.data as { data?: unknown; payload?: unknown } : undefined;
+  return !stockScorePayloadNeedsEnrichment(scoreResult?.data) && !stockScorePayloadNeedsEnrichment(scoreResult?.payload);
 }
 
 function createStockQueryPersister() {

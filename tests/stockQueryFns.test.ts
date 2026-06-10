@@ -56,6 +56,32 @@ test("score classifier keeps partial snapshots as successful query data", () => 
   assert.equal(result.pending?.queued, true);
 });
 
+test("score classifier keeps quote-only fast path as partial until enrichment lands", () => {
+  const result = classifyScorePayload(
+    {
+      ok: true,
+      requested_ticker: "KR:064350",
+      symbol: "064350",
+      name: "현대로템",
+      latest_price: 187_400,
+      chart_series: [],
+      data_quality: "quote_fast_path",
+      server_cache: { state: "miss", source: "market-data" },
+      fetch: {
+        quote_only_fast_path: true,
+        pending_enrichment: true,
+      },
+    },
+    200,
+  );
+
+  assert.equal(result.state, "partial");
+  assert.equal(result.data.name, "현대로템");
+  assert.equal(result.pending?.state, "pending");
+  assert.equal(result.pending?.queued, true);
+  assert.equal(result.pending?.retryAfterSeconds, 5);
+});
+
 test("score classifier models queued pending without throwing", () => {
   const result = classifyScorePayload(
     {
@@ -120,6 +146,31 @@ test("compare classifier keeps result order aligned to input tickers", () => {
   assert.equal(result.results[0].result.state, "ready");
   assert.equal(result.results[1].ticker, "US:KO");
   assert.equal(result.results[1].result.state, "partial");
+});
+
+test("compare classifier treats quote-only fast path members as partial work", () => {
+  const result = classifyComparePayload(
+    {
+      ok: true,
+      results: [
+        {
+          ok: true,
+          requested_ticker: "KR:064350",
+          symbol: "064350",
+          chart_series: [],
+          data_quality: "quote_fast_path",
+          fetch: { quote_only_fast_path: true, pending_enrichment: true },
+        },
+        { ok: true, requested_ticker: "US:MDB", symbol: "MDB", chart_series: [{ date: "2026-06-10", close: 10 }, { date: "2026-06-11", close: 11 }] },
+      ],
+    },
+    200,
+    ["KR:064350", "US:MDB"],
+  );
+
+  assert.equal(result.state, "partial");
+  assert.equal(result.results[0].result.state, "partial");
+  assert.equal(result.results[1].result.state, "ready");
 });
 
 test("stock query functions build the expected API requests", async () => {

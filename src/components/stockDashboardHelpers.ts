@@ -56,7 +56,22 @@ const RECORD_LABELS: Record<string, string> = {
   opportunity_confidence: "기회 근거 충분도",
 };
 
-const HIDDEN_RECORD_KEYS = new Set(["source", "signal_source", "market_scope"]);
+const HIDDEN_RECORD_KEYS = new Set([
+  "source",
+  "signal_source",
+  "market_scope",
+  "cache",
+  "input_mode",
+  "message",
+  "quote_only_fast_path",
+  "detail_fast_path",
+  "identity_only_fast_path",
+  "pending_enrichment",
+  "request_fast_path",
+  "provider_mode",
+  "daily_timeout_ms",
+  "timeout_ms",
+]);
 export const SOURCE_VENDOR_TEXT = ["K", "I", "S"].join("");
 const SOURCE_LABEL_TEXT = ["데이터", "출처"].join(" ");
 
@@ -117,13 +132,6 @@ const LABEL_REPLACEMENTS: Record<string, string> = {
 const SOURCE_NOTE_RE = /^(?:yfinance|yahoo finance(?:\s*기준)?|data source|source)$/i;
 
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
-const KST_TIME_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Seoul",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
 const NOTE_COPY: Record<string, string> = {
   "TTM 이익 대비 가격": "지난 12개월 이익과 비교한 가격이에요.",
   "예상 이익 대비 가격": "앞으로 예상되는 이익과 비교한 가격이에요.",
@@ -582,6 +590,49 @@ export function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteRe
   return nextData;
 }
 
+const SIGNAL_LABELS: Record<string, string> = {
+  price_momentum_positive: "흐름 우호",
+  price_risk_watch: "리스크 확인",
+  price_neutral: "중립",
+  buy: "매수 우세",
+  sell: "매도 주의",
+  hold: "관망",
+  bullish: "흐름 우호",
+  bearish: "리스크 확인",
+  neutral: "중립",
+};
+
+const RISK_LEVEL_LABELS: Record<string, string> = {
+  low: "낮음",
+  medium: "보통",
+  moderate: "보통",
+  high: "높음",
+  elevated: "높음",
+};
+
+export function signalLabel(value: unknown): string {
+  const raw = stringFromUnknown(value);
+  if (!raw || raw === "-") return "-";
+  const key = raw.trim().toLowerCase();
+  if (SIGNAL_LABELS[key]) return SIGNAL_LABELS[key];
+  if (key.includes("momentum") || key.includes("positive") || key.includes("bull")) return "흐름 우호";
+  if (key.includes("risk") || key.includes("bear") || key.includes("negative")) return "리스크 확인";
+  if (key.includes("hold")) return "관망";
+  if (key.includes("neutral")) return "중립";
+  return "확인 중";
+}
+
+export function riskLevelLabel(value: unknown): string {
+  const raw = stringFromUnknown(value);
+  if (!raw || raw === "-") return "-";
+  const key = raw.trim().toLowerCase();
+  if (RISK_LEVEL_LABELS[key]) return RISK_LEVEL_LABELS[key];
+  if (key.includes("high")) return "높음";
+  if (key.includes("low")) return "낮음";
+  if (key.includes("medium") || key.includes("moderate")) return "보통";
+  return "확인 중";
+}
+
 export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessSummary {
   const cache = recordFromUnknown(data.server_cache);
   const state = stringFromUnknown(cache?.state);
@@ -591,7 +642,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   if (state === "fresh") {
     return {
       label: "점수 기준",
-      value: "최신 스냅샷",
+      value: "최신 데이터",
       detail,
       tone: "fresh",
     };
@@ -600,7 +651,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   if (state === "stale") {
     return {
       label: "점수 기준",
-      value: "오래된 스냅샷",
+      value: "업데이트 확인 중",
       detail,
       tone: "stale",
     };
@@ -609,7 +660,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   if (state === "miss") {
     return {
       label: "점수 기준",
-      value: "생성 대기",
+      value: "데이터 준비 중",
       detail,
       tone: "pending",
     };
@@ -617,7 +668,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
 
   return {
     label: "점수 기준",
-    value: "기준 확인 중",
+    value: "상태 확인 중",
     detail,
     tone: "unknown",
   };
@@ -638,24 +689,24 @@ export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: St
     fetchedAt = quoteFetchedAt;
   }
   const newestCache = fetchedAt && quoteFetchedAt === fetchedAt ? quoteCache : scoreCache;
-  return freshnessChipLabel(newestCache) || (fetchedAt ? "스냅샷 확인 완료" : undefined);
+  return freshnessChipLabel(newestCache) || (fetchedAt ? "데이터 확인 완료" : undefined);
 }
 
 function scoreFreshnessDetail(state: string | undefined, refreshStarted: boolean): string {
   if (refreshStarted) return "새 점수 준비 중";
-  if (state === "fresh") return "스냅샷 준비 완료";
+  if (state === "fresh") return "점수 준비 완료";
   if (state === "stale") return "최신 점수 확인 중";
-  if (state === "miss") return "스냅샷 생성 대기";
-  return "스냅샷 상태 확인 중";
+  if (state === "miss") return "데이터 준비 중";
+  return "데이터 상태 확인 중";
 }
 
 function freshnessChipLabel(cache: Record<string, unknown> | undefined): string | undefined {
   const state = stringFromUnknown(cache?.state);
   if (cache?.refresh_started === true) return "최신 데이터 준비 중";
-  if (state === "fresh") return "최신 스냅샷";
-  if (state === "stale") return "스냅샷 확인 중";
-  if (state === "miss") return "스냅샷 생성 대기";
-  return cacheTimestamp(cache, "fetched_at") ? "스냅샷 확인 완료" : undefined;
+  if (state === "fresh") return "최신 데이터";
+  if (state === "stale") return "업데이트 확인 중";
+  if (state === "miss") return "데이터 준비 중";
+  return cacheTimestamp(cache, "fetched_at") ? "데이터 확인 완료" : undefined;
 }
 
 function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -664,17 +715,6 @@ function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string)
   const millis = numberFromUnknown(cache?.[`${key}_ms`]);
   if (millis === undefined) return undefined;
   return new Date(millis).toISOString();
-}
-
-function formatKstTime(value: string): string | undefined {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return undefined;
-  const parts = KST_TIME_FORMATTER.formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
-  const hour = part("hour");
-  const minute = part("minute");
-  if (!hour || !minute) return undefined;
-  return `${hour}:${minute}`;
 }
 
 export function dailyChangeText(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string {
@@ -726,7 +766,7 @@ export function compactChartNumber(value: number): string {
 
 export function refreshCooldownMessage(nextAllowedAt: string | undefined): string | undefined {
   if (!nextAllowedAt || Date.parse(nextAllowedAt) <= Date.now()) return undefined;
-  return `${formatKstTime(nextAllowedAt) || new Date(nextAllowedAt).toLocaleTimeString("ko-KR")} 이후 새로고침 가능`;
+  return "잠시 후 새로고침 가능";
 }
 
 function removeSourceText(text: string): string {

@@ -53,6 +53,7 @@ export default function StockDashboard() {
   const tickerParam = dashboardTickerFromSearchParam(searchParams.get("ticker"));
 
   const [tickerInput, setTickerInput] = useState(dashboardInputValue(tickerParam));
+  const [isSearchEditing, setIsSearchEditing] = useState(false);
   const {
     state,
     quoteState,
@@ -68,6 +69,7 @@ export default function StockDashboard() {
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
   const isSearchCollapsedRef = useRef(false);
+  const previousTickerParamRef = useRef(tickerParam);
 
   function setSearchCollapsed(nextCollapsed: boolean) {
     if (isSearchCollapsedRef.current === nextCollapsed) return;
@@ -107,15 +109,31 @@ export default function StockDashboard() {
 
   useEffect(() => {
     if (!tickerParam) {
+      previousTickerParamRef.current = tickerParam;
+      setIsSearchEditing(false);
       setTickerInput("");
       return;
     }
+    const tickerChanged = previousTickerParamRef.current !== tickerParam;
+    if (tickerChanged) {
+      previousTickerParamRef.current = tickerParam;
+      setIsSearchEditing(false);
+      setTickerInput(dashboardInputValue(tickerParam));
+      return;
+    }
+    if (isSearchEditing) return;
     const stockData = data || partialData;
     if (!stockData && !quoteData) return;
     setTickerInput(dashboardSearchInputValue(stockData, quoteData, tickerParam));
-  }, [data, partialData, quoteData, tickerParam]);
+  }, [data, isSearchEditing, partialData, quoteData, tickerParam]);
+
+  function handleTickerInputChange(value: string) {
+    setIsSearchEditing(true);
+    setTickerInput(value);
+  }
 
   function selectSymbol(item: SymbolSearchItem) {
+    setIsSearchEditing(false);
     router.push(`/?ticker=${encodeURIComponent(symbolRef(item))}`);
   }
 
@@ -174,7 +192,7 @@ export default function StockDashboard() {
         <SymbolAutocomplete
           id="ticker"
           value={tickerInput}
-          onValueChange={setTickerInput}
+          onValueChange={handleTickerInputChange}
           onSelect={selectSymbol}
           placeholder="종목명이나 티커 검색"
           label="국내·미국 주식 검색"
@@ -418,9 +436,9 @@ function DashboardLandingHero() {
             </div>
           </div>
           <div className="landing-console">
-            <span>signal.ready</span>
+            <span>신호 확인</span>
             <i />
-            <span>score.synced</span>
+            <span>점수 동기화</span>
           </div>
         </div>
       </article>

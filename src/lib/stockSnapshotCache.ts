@@ -8,6 +8,7 @@ import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
+import { stockScorePayloadNeedsEnrichment, stockScorePayloadIsDurable } from "@/lib/stockQueryCompleteness";
 import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
 
@@ -109,7 +110,7 @@ function isServeableStale(snapshot: StoredSnapshot, nowMs: number): boolean {
 
 function isCurrentScoreSnapshot(snapshot: StoredSnapshot): boolean {
   if (snapshot.view === "technical") return isCurrentTechnicalScoreSnapshotPayload(snapshot.payload);
-  return isCurrentScorePayload(snapshot.payload);
+  return isCurrentScorePayload(snapshot.payload) && stockScorePayloadIsDurable(snapshot.payload);
 }
 
 export function isCurrentScorePayload(payload: StockPayload): boolean {
@@ -223,7 +224,7 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
       expiresAt: await expiresAtFrom(nowMs, ticker, view),
     };
 
-    if (payload.ok !== false) {
+    if (payload.ok !== false && stockScorePayloadIsDurable(payload)) {
       rememberMemorySnapshot(key, snapshot, nowMs);
       if (snapshot.view === "compare") {
         void writeSupabaseSnapshot(snapshot);
@@ -441,7 +442,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
 }
 
 export function responseCacheHeaders(result: StockScoreResult): HeadersInit {
-  if (result.payload.ok === false) {
+  if (result.payload.ok === false || stockScorePayloadNeedsEnrichment(result.payload)) {
     return { "Cache-Control": "no-store" };
   }
 

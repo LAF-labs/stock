@@ -147,7 +147,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
     financials: {
       source: "pending_enrichment",
       detail_fast_path: true,
-      message: "정식 재무 데이터는 백그라운드 점수 스냅샷에서 보강됩니다.",
+      message: "정식 재무 데이터는 백그라운드에서 보강됩니다.",
     },
     sia_snapshot: {
       symbol: daily.symbol,
@@ -280,7 +280,7 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
     financials: {
       source: "pending_enrichment",
       quote_only_fast_path: true,
-      message: "차트와 정식 재무 데이터는 백그라운드 점수 스냅샷에서 보강됩니다.",
+      message: "차트와 정식 재무 데이터는 백그라운드에서 보강됩니다.",
     },
     sia_snapshot: {
       symbol,
@@ -354,7 +354,7 @@ async function buildCompareIdentityScorePayload(ticker: string, view: ScoreView)
     financials: {
       ...(isRecord(payload.financials) ? payload.financials : {}),
       identity_only_fast_path: true,
-      message: "현재가, 차트, 정식 재무 데이터는 백그라운드 점수 스냅샷에서 보강됩니다.",
+      message: "현재가, 차트, 정식 재무 데이터는 백그라운드에서 보강됩니다.",
     },
     fetch: {
       ...(isRecord(payload.fetch) ? payload.fetch : {}),
@@ -558,7 +558,7 @@ function opportunityScoreComponents(signals: PriceSignals): ScoreComponent[] {
       key: "opportunity_analyst",
       label: "분석 보강",
       score: NEUTRAL_SCORE,
-      summary: "애널리스트 데이터는 백그라운드 스냅샷에서 보강됩니다.",
+      summary: "애널리스트 데이터는 백그라운드에서 보강됩니다.",
       metrics: [{ label: "보강 상태", value: "대기" }],
     },
     {
@@ -795,5 +795,5 @@ function detailRequestFastPathTimeoutMs(): number {
 
 function detailDailyFastPathTimeoutMs(): number {
   const parsed = Number(envValue("STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS"));
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 650;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 2_800;
 }
