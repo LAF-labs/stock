@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
-import { fetchKisQuote } from "../src/lib/kisQuoteClient";
+import { fetchKisDailyChart, fetchKisQuote } from "../src/lib/kisQuoteClient";
 
 const ENV_KEYS = [
   "STOCK_API_APP_KEY",
@@ -14,6 +14,7 @@ const ENV_KEYS = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_PUBLISHABLE_KEY",
+  "STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES",
 ] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
@@ -32,6 +33,7 @@ function setupEnv() {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES;
   globalWithKisCache.__kisQuoteTokenCache?.clear();
   globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
 }
@@ -189,6 +191,42 @@ test("fetchKisQuote reuses successful US discovery inside the server instance", 
   assert.equal(payload.exchange_code, "NAS");
   assert.equal(priceDetailCalls, 2);
   assert.equal(searchInfoCalls, 1);
+});
+
+test("fetchKisDailyChart uses two US daily pages by default", async () => {
+  setupEnv();
+
+  let dailyCalls = 0;
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-daily", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      dailyCalls += 1;
+      const pageDate = dailyCalls === 1 ? "20260605" : "20260228";
+      return Response.json({
+        rt_cd: "0",
+        output2: [
+          {
+            xymd: pageDate,
+            open: "70",
+            high: "72",
+            low: "69",
+            clos: dailyCalls === 1 ? "71" : "65",
+            tvol: "1000",
+          },
+        ],
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const payload = await fetchKisDailyChart("US:FAST");
+
+  assert.equal(dailyCalls, 2);
+  assert.equal(payload.chartSeries.length, 2);
+  assert.equal(payload.fetch.history_rows, 2);
 });
 
 test("fetchKisQuote reuses a valid Supabase KIS token cache entry", async () => {
