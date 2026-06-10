@@ -1,0 +1,277 @@
+import { apiJson, apiPayloadMessage, stringFromUnknown, type ClientApiPayload } from "@/lib/clientApi";
+import type {
+  ApiCooldown,
+  ApiError,
+  ApiPartial,
+  ApiPending,
+  ApiReady,
+  ApiUnsupported,
+  CompareQueryResult,
+  CompareScoreItemResult,
+  JudgmentQueryResult,
+  QuoteQueryResult,
+  QuoteRefreshMutationResult,
+  ScoreQueryResult,
+  StockScoreView,
+  SymbolSearchQueryResult,
+  TechnicalScoreQueryResult,
+} from "@/lib/stockQueryTypes";
+import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
+import type { SymbolSearchItem } from "@/lib/symbolTypes";
+
+type ApiJsonInit = RequestInit & { signal?: AbortSignal };
+
+export class StockQueryError extends Error {
+  status: number;
+  code: string;
+  payload?: ClientApiPayload;
+
+  constructor(error: ApiError) {
+    super(error.message);
+    this.name = "StockQueryError";
+    this.status = error.status;
+    this.code = error.error;
+    this.payload = error.payload;
+  }
+}
+
+export async function fetchStockScore({
+  ticker,
+  view = "detail",
+  signal,
+}: {
+  ticker: string;
+  view?: StockScoreView;
+  signal?: AbortSignal;
+}): Promise<ScoreQueryResult> {
+  const query = new URLSearchParams({ ticker, partial: "1" });
+  if (view !== "detail") query.set("view", view);
+  const { payload, response } = await apiJson(`/api/score?${query.toString()}`, noStoreInit(signal));
+  return classifyScorePayload(payload, response.status);
+}
+
+export async function fetchTechnicalScore(ticker: string, signal?: AbortSignal): Promise<TechnicalScoreQueryResult> {
+  return fetchStockScore({ ticker, view: "technical", signal });
+}
+
+export async function fetchStockQuote(ticker: string, signal?: AbortSignal): Promise<QuoteQueryResult> {
+  const query = new URLSearchParams({ ticker });
+  const { payload, response } = await apiJson(`/api/quote?${query.toString()}`, noStoreInit(signal));
+  return classifyQuotePayload(payload, response.status);
+}
+
+export async function refreshQuote(ticker: string, signal?: AbortSignal): Promise<QuoteRefreshMutationResult> {
+  const query = new URLSearchParams({ ticker, refresh: "1" });
+  const { payload, response } = await apiJson(`/api/quote?${query.toString()}`, noStoreInit(signal));
+  if (isRefreshCooldownPayload(payload)) return cooldownResult(payload, response.status);
+  return classifyQuotePayload(payload, response.status);
+}
+
+export async function fetchCompareScores(tickers: readonly string[], signal?: AbortSignal): Promise<CompareQueryResult> {
+  const query = new URLSearchParams({ tickers: tickers.join(","), partial: "1" });
+  const { payload, response } = await apiJson(`/api/score/batch?${query.toString()}`, noStoreInit(signal));
+  return classifyComparePayload(payload, response.status, tickers);
+}
+
+export async function fetchSymbols({
+  query,
+  market,
+  limit = 8,
+  signal,
+}: {
+  query: string;
+  market?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<SymbolSearchQueryResult> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  if (market) params.set("market", market);
+  const { payload, response } = await apiJson(`/api/symbols?${params.toString()}`, { signal });
+  if (!response.ok || payload.ok === false) throwStockQueryError(payload, response.status, "symbol_search_failed");
+  return {
+    state: "ready",
+    status: response.status,
+    payload,
+    data: {
+      query: stringFromUnknown(payload.query) || query,
+      total: numberFromUnknown(payload.total) ?? itemsFromPayload(payload).length,
+      items: itemsFromPayload(payload),
+    },
+  };
+}
+
+export async function postJudgment(payload: Record<string, unknown>, signal?: AbortSignal): Promise<JudgmentQueryResult> {
+  const { payload: responsePayload, response } = await apiJson("/api/judgment", {
+    ...noStoreInit(signal),
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok || responsePayload.ok === false) throwStockQueryError(responsePayload, response.status, "judgment_failed");
+  const judgment = responsePayload.judgment;
+  if (!judgment || typeof judgment !== "object" || Array.isArray(judgment)) {
+    throwStockQueryError(responsePayload, response.status, "judgment_missing");
+  }
+  return {
+    state: "ready",
+    status: response.status,
+    payload: responsePayload,
+    data: judgment as StockJudgment,
+  };
+}
+
+export function classifyScorePayload(payload: ClientApiPayload, status: number): ScoreQueryResult {
+  const unsupported = unsupportedResult(payload, status);
+  if (unsupported) return unsupported;
+
+  const partial = partialResult<StockScoreResponse>(payload, status);
+  if (partial) return partial;
+
+  const pending = pendingResult(payload, status);
+  if (pending) return pending;
+
+  if (status >= 400 || payload.ok === false) throwStockQueryError(payload, status, "score_failed");
+  return readyResult(payload as StockScoreResponse, payload, status);
+}
+
+export function classifyQuotePayload(payload: ClientApiPayload, status: number): QuoteQueryResult {
+  const pending = pendingResult(payload, status);
+  if (pending) return pending;
+  if (status >= 400 || payload.ok === false) throwStockQueryError(payload, status, "quote_failed");
+  return readyResult(payload as StockQuoteResponse, payload, status);
+}
+
+export function classifyComparePayload(payload: ClientApiPayload, status: number, tickers: readonly string[]): CompareQueryResult {
+  const rawResults = Array.isArray(payload.results) ? payload.results : [];
+  if (status >= 400 && !rawResults.length) throwStockQueryError(payload, status, "compare_failed");
+
+  const results: CompareScoreItemResult[] = tickers.map((ticker, index) => {
+    const itemPayload = objectFromUnknown(rawResults[index]);
+    if (!itemPayload) {
+      return { ticker, result: errorResult(undefined, status, "missing_compare_result", "비교 결과를 찾지 못했어요.") };
+    }
+    try {
+      return { ticker, result: classifyScorePayload(itemPayload, itemStatus(itemPayload, status)) };
+    } catch (error) {
+      if (error instanceof StockQueryError) {
+        return { ticker, result: errorResult(error.payload, error.status, error.code, error.message) };
+      }
+      throw error;
+    }
+  });
+
+  const hasPending = results.some(({ result }) => result.state === "pending");
+  const hasPartial = results.some(({ result }) => result.state === "partial");
+  const hasReady = results.some(({ result }) => result.state === "ready");
+  return {
+    state: hasPending ? "pending" : hasPartial || !hasReady ? "partial" : "ready",
+    status,
+    payload,
+    results,
+  };
+}
+
+function noStoreInit(signal?: AbortSignal): ApiJsonInit {
+  return {
+    cache: "no-store",
+    signal,
+  };
+}
+
+function readyResult<TData extends ClientApiPayload>(data: TData, payload: ClientApiPayload, status: number): ApiReady<TData> {
+  return {
+    state: "ready",
+    status,
+    payload,
+    data,
+  };
+}
+
+function partialResult<TData extends ClientApiPayload>(payload: ClientApiPayload, status: number): ApiPartial<TData> | undefined {
+  if (payload.type !== "partial_stock_snapshot") return undefined;
+  return {
+    state: "partial",
+    status,
+    payload,
+    data: payload as TData,
+    pending: pendingResult(objectFromUnknown(payload.pending_snapshot), status),
+  };
+}
+
+function pendingResult(payload: ClientApiPayload | undefined, status: number): ApiPending | undefined {
+  if (!payload) return undefined;
+  const error = payload?.error;
+  if (error !== "snapshot_pending" && error !== "snapshot_unavailable") return undefined;
+  const refreshRequest = objectFromUnknown(payload.refresh_request);
+  return {
+    state: "pending",
+    status,
+    payload,
+    error,
+    message: stringFromUnknown(payload.message) || stringFromUnknown(payload.reason) || "데이터를 준비하고 있어요.",
+    ticker: stringFromUnknown(payload.ticker) || stringFromUnknown(payload.requested_ticker),
+    queued: refreshRequest?.queued === true,
+    retryAfterSeconds: numberFromUnknown(payload.retry_after_seconds),
+  };
+}
+
+function unsupportedResult(payload: ClientApiPayload, status: number): ApiUnsupported | undefined {
+  if (payload.error !== "technical_unsupported_product") return undefined;
+  return {
+    state: "unsupported",
+    status,
+    payload,
+    error: "technical_unsupported_product",
+    ticker: stringFromUnknown(payload.ticker),
+    redirectTo: stringFromUnknown(payload.redirect_to),
+  };
+}
+
+function cooldownResult(payload: ClientApiPayload, status: number): ApiCooldown<StockQuoteResponse> {
+  const cooldown = objectFromUnknown(payload.refresh_cooldown);
+  return {
+    state: "cooldown",
+    status,
+    payload,
+    data: payload.ok === false ? undefined : payload as StockQuoteResponse,
+    message: apiPayloadMessage(payload, "Manual refresh is cooling down."),
+    nextAllowedAt: stringFromUnknown(cooldown?.next_allowed_at),
+  };
+}
+
+function isRefreshCooldownPayload(payload: ClientApiPayload): boolean {
+  return payload.error === "refresh_cooldown" || objectFromUnknown(payload.refresh_cooldown) !== undefined;
+}
+
+function throwStockQueryError(payload: ClientApiPayload | undefined, status: number, fallback: string): never {
+  throw new StockQueryError(errorResult(payload, status, stringFromUnknown(payload?.error) || fallback, apiPayloadMessage(payload || {}, fallback)));
+}
+
+function errorResult(payload: ClientApiPayload | undefined, status: number, error: string, message: string): ApiError {
+  return {
+    state: "error",
+    status,
+    payload,
+    error,
+    message,
+  };
+}
+
+function itemsFromPayload(payload: ClientApiPayload): SymbolSearchItem[] {
+  return Array.isArray(payload.items) ? payload.items as SymbolSearchItem[] : [];
+}
+
+function itemStatus(payload: ClientApiPayload, fallbackStatus: number): number {
+  const status = numberFromUnknown(payload.status);
+  return status === undefined ? fallbackStatus : status;
+}
+
+function objectFromUnknown(value: unknown): ClientApiPayload | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ClientApiPayload : undefined;
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
