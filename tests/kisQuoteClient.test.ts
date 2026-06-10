@@ -193,7 +193,7 @@ test("fetchKisQuote reuses successful US discovery inside the server instance", 
   assert.equal(searchInfoCalls, 1);
 });
 
-test("fetchKisDailyChart uses two US daily pages by default", async () => {
+test("fetchKisDailyChart uses one US daily page by default", async () => {
   setupEnv();
 
   let dailyCalls = 0;
@@ -224,9 +224,9 @@ test("fetchKisDailyChart uses two US daily pages by default", async () => {
 
   const payload = await fetchKisDailyChart("US:FAST");
 
-  assert.equal(dailyCalls, 2);
-  assert.equal(payload.chartSeries.length, 2);
-  assert.equal(payload.fetch.history_rows, 2);
+  assert.equal(dailyCalls, 1);
+  assert.equal(payload.chartSeries.length, 1);
+  assert.equal(payload.fetch.history_rows, 1);
 });
 
 test("fetchKisQuote reuses a valid Supabase KIS token cache entry", async () => {

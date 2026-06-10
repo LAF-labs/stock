@@ -372,7 +372,7 @@ async function fetchUsDailyRowsForMarket(symbol: string, market: KisUsMarket): P
   const rowsByDate = new Map<string, KisPayload>();
   const today = new Date();
   let before = today;
-  const maxPages = Math.max(1, numericEnvForKis("STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES", 2));
+  const maxPages = Math.max(1, numericEnvForKis("STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES", 1));
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
     const bymd = pageIndex === 0 ? "" : dateInUtc(before).replace(/-/g, "");
     const payload = await kisGet(
