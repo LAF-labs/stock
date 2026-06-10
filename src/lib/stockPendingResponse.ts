@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stockPartialResponseCacheHeaders as stockPartialResponseCacheHeadersFromPolicy } from "@/lib/httpCacheHeaders";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import {
   stockDataPendingPayload,
@@ -73,6 +74,10 @@ export function stockPendingHeaders(payload: StockPendingPayload): HeadersInit {
     ...privateNoStoreHeaders(),
     "Retry-After": String(payload.retry_after_seconds),
   };
+}
+
+export function stockPartialResponseCacheHeaders(): HeadersInit {
+  return stockPartialResponseCacheHeadersFromPolicy();
 }
 
 function publicRefreshRequestFromResult(refreshRequest: EnqueueStockRefreshResult): StockDataPendingPayload["refresh_request"] {

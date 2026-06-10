@@ -439,6 +439,8 @@ test("score route returns identity partial instead of skeleton-only pending on c
   assert.equal(payload.pending_snapshot.error, "snapshot_pending");
   assert.equal(payload.parts.identity.state, "fresh");
   assert.equal(payload.parts.score.state, "pending");
+  assert.equal(response.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.match(response.headers.get("vercel-cdn-cache-control") || "", /s-maxage=1/);
 });
 
 test("score route returns identity partial before slow refresh enqueue finishes", async () => {
@@ -482,6 +484,8 @@ test("score route returns identity partial before slow refresh enqueue finishes"
   assert.equal(response.status, 200);
   assert.equal(payload.type, "partial_stock_snapshot");
   assert.equal(payload.parts.identity.state, "fresh");
+  assert.equal(response.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.match(response.headers.get("vercel-cdn-cache-control") || "", /s-maxage=1/);
   assert.equal(enqueueStarted, true);
   assert.equal(enqueueFinished, true);
   assert.ok(elapsedMs < 150, `expected partial response before slow enqueue, got ${elapsedMs}ms`);
@@ -527,6 +531,8 @@ test("score route returns identity partial before slow score snapshot miss finis
   assert.equal(response.status, 200);
   assert.equal(payload.type, "partial_stock_snapshot");
   assert.equal(payload.parts.identity.state, "fresh");
+  assert.equal(response.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.match(response.headers.get("vercel-cdn-cache-control") || "", /s-maxage=1/);
   assert.equal(enqueueCalls, 1);
   assert.ok(elapsedMs < 180, `expected partial response before slow score miss, got ${elapsedMs}ms`);
 });

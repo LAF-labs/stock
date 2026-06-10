@@ -2,6 +2,7 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSe
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
 import { isCurrentScoreModelPayload, scoreModelVersionFromPayload, SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
+import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
@@ -416,9 +417,11 @@ export function responseCacheHeaders(result: StockScoreResult): HeadersInit {
     result.cache.state === "stale"
       ? 15
       : Math.max(15, Math.min(secondsUntil(result.cache.expiresAt, Date.now(), freshTtlSeconds(result.cache.view)), numericEnv("STOCK_SCORE_HTTP_CACHE_MAX_SECONDS", 3_600)));
-  return {
-    "Cache-Control": `public, max-age=10, s-maxage=${seconds}, stale-while-revalidate=300`,
-  };
+  return publicVercelCdnCacheHeaders({
+    sMaxAgeSeconds: seconds,
+    staleWhileRevalidateSeconds: numericEnv("STOCK_SCORE_HTTP_STALE_WHILE_REVALIDATE_SECONDS", 300),
+    staleIfErrorSeconds: numericEnv("STOCK_SCORE_HTTP_STALE_IF_ERROR_SECONDS", 1_800),
+  });
 }
 
 export const stockSnapshotCacheTestHooks = {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acquireRateLimit, apiLimitPolicy, clientRateLimitKey, rateLimitHeaders } from "@/lib/apiRateLimit";
 import { jsonError } from "@/lib/apiGuards";
+import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { searchSymbols } from "@/lib/symbolSearch";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,11 @@ export async function GET(request: NextRequest) {
       items,
     },
     {
-      headers: {
-        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
-      },
+      headers: publicVercelCdnCacheHeaders({
+        sMaxAgeSeconds: 86_400,
+        staleWhileRevalidateSeconds: 604_800,
+        staleIfErrorSeconds: 604_800,
+      }),
     }
   );
 }

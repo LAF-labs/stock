@@ -7,10 +7,8 @@ import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/com
 import StockHeader, { type JudgmentState, type QuoteRefreshState, type QuoteState } from "@/components/StockHeader";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
+import { readDashboardClientCache, rememberDashboardClientCache } from "@/components/stockDashboardClientCache";
 import {
-  dashboardClientCacheFromJson,
-  dashboardClientCacheJson,
-  dashboardClientCacheKey,
   dashboardInputValue,
   dashboardSearchInputValue,
   dashboardTickerFromSearchParam,
@@ -50,7 +48,6 @@ const DETAIL_SECTIONS = [
 ] as const;
 
 const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
-const DASHBOARD_CLIENT_CACHE_MAX_CHARS = 750_000;
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
 
@@ -90,27 +87,6 @@ function scoreBelongsToTicker(score: StockScoreResponse, ticker: string): boolea
   const symbol = stringFromUnknown(score.symbol);
   const market = stringFromUnknown(score.market) || (ticker.startsWith("KR:") ? "KR" : ticker.startsWith("US:") ? "US" : undefined);
   return Boolean(symbol && market && `${market}:${symbol}` === ticker);
-}
-
-function readDashboardClientCache(ticker: string) {
-  if (typeof window === "undefined") return undefined;
-  try {
-    return dashboardClientCacheFromJson(window.localStorage.getItem(dashboardClientCacheKey(ticker)), ticker);
-  } catch {
-    return undefined;
-  }
-}
-
-function rememberDashboardClientCache(ticker: string, score: StockScoreResponse | undefined, quote: StockQuoteResponse | undefined) {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = dashboardClientCacheJson({ ticker, score, quote });
-    if (!raw) return;
-    if (raw.length > DASHBOARD_CLIENT_CACHE_MAX_CHARS) return;
-    window.localStorage.setItem(dashboardClientCacheKey(ticker), raw);
-  } catch {
-    // localStorage can be unavailable in private browsing or quota pressure.
-  }
 }
 
 function optimisticScorePendingFromQuote(ticker: string): SnapshotPendingState {

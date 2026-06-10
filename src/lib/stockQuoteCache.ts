@@ -1,5 +1,6 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
+import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { formatCurrencyAmount } from "@/lib/format";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
@@ -407,7 +408,11 @@ export function quoteResponseCacheHeaders(result: StockQuoteResult): HeadersInit
   }
 
   return {
-    "Cache-Control": `public, max-age=5, s-maxage=${Math.max(15, Math.min(secondsUntil(result.cache.expiresAt), numericEnv("STOCK_QUOTE_HTTP_CACHE_MAX_SECONDS", 300)))}, stale-while-revalidate=60`,
+    ...publicVercelCdnCacheHeaders({
+      sMaxAgeSeconds: Math.max(15, Math.min(secondsUntil(result.cache.expiresAt), numericEnv("STOCK_QUOTE_HTTP_CACHE_MAX_SECONDS", 300))),
+      staleWhileRevalidateSeconds: numericEnv("STOCK_QUOTE_HTTP_STALE_WHILE_REVALIDATE_SECONDS", 60),
+      staleIfErrorSeconds: numericEnv("STOCK_QUOTE_HTTP_STALE_IF_ERROR_SECONDS", 300),
+    }),
     "X-Quote-Cache-Seconds": String(secondsUntil(result.cache.expiresAt)),
   };
 }

@@ -7,7 +7,7 @@ import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privat
 import { userScoreRefreshPriority } from "@/lib/stockRefreshPriorities";
 import { getStockChart } from "@/lib/stockChartCache";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
-import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
+import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPartialResponseCacheHeaders, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
       const partialPayload = await pendingPartialStockPayload({ pending: optimisticStockPendingPayload(pendingInput), ticker, view });
       if (partialPayload) {
         enqueueScoreRefreshAfterUnavailable(settledScorePromise, pendingInput, { ticker, view });
-        const response = NextResponse.json(partialPayload, { status: 200, headers: privateNoStoreHeaders() });
+        const response = NextResponse.json(partialPayload, { status: 200, headers: stockPartialResponseCacheHeaders() });
         if (cooldown) applyRefreshUserCookie(response, cooldown);
         return response;
       }
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
         const partialPayload = await pendingPartialStockPayload({ pending: optimisticStockPendingPayload(pendingInput), ticker, view });
         if (partialPayload) {
           void pendingPayloadPromise.catch(() => undefined);
-          const response = NextResponse.json(partialPayload, { status: 200, headers: privateNoStoreHeaders() });
+          const response = NextResponse.json(partialPayload, { status: 200, headers: cooldown ? privateNoStoreHeaders() : stockPartialResponseCacheHeaders() });
           if (cooldown) applyRefreshUserCookie(response, cooldown);
           return response;
         }

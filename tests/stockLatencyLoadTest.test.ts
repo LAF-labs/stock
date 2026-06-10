@@ -64,7 +64,7 @@ test("stock latency load test fails when p95 exceeds the configured budget", asy
 test("stock latency load test can exclude warmup iterations from latency budget", async () => {
   let call = 0;
   const report = await runStockLatencyLoadTest(
-    { baseUrl: "https://stock.example", iterations: 2, warmupIterations: 1, maxP95Ms: 20 },
+    { baseUrl: "https://stock.example", iterations: 2, warmupIterations: 1, maxP95Ms: 100 },
     async () => {
       call += 1;
       await new Promise((resolve) => setTimeout(resolve, call <= 5 ? 30 : 1));

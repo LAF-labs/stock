@@ -1,4 +1,5 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil } from "@/lib/marketCalendar";
+import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
@@ -248,9 +249,11 @@ export function chartResponseCacheHeaders(result: StockChartResult): HeadersInit
     result.cache.state === "stale"
       ? 15
       : Math.max(15, Math.min(secondsUntil(result.cache.expiresAt, Date.now(), stockCachePolicyFreshSeconds("chart")), numericEnv("STOCK_CHART_HTTP_CACHE_MAX_SECONDS", 900)));
-  return {
-    "Cache-Control": `public, max-age=5, s-maxage=${seconds}, stale-while-revalidate=120`,
-  };
+  return publicVercelCdnCacheHeaders({
+    sMaxAgeSeconds: seconds,
+    staleWhileRevalidateSeconds: numericEnv("STOCK_CHART_HTTP_STALE_WHILE_REVALIDATE_SECONDS", 120),
+    staleIfErrorSeconds: numericEnv("STOCK_CHART_HTTP_STALE_IF_ERROR_SECONDS", 900),
+  });
 }
 
 function chartSupabaseReadTimeoutMs(): number {

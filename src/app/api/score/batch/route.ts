@@ -7,7 +7,7 @@ import { safeErrorMessage } from "@/lib/errorSafety";
 import { privateNoStoreHeaders } from "@/lib/refreshCooldown";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
-import { enqueueStockPendingPayload, optimisticStockPendingPayload } from "@/lib/stockPendingResponse";
+import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPartialResponseCacheHeaders } from "@/lib/stockPendingResponse";
 import { pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
 import { getStockScore, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
@@ -136,7 +136,13 @@ export async function GET(request: NextRequest) {
     };
 
     const successfulItems = resultItems.filter((item) => item.payload.ok === true && item.cache);
-    const headers = successfulItems.length === resultItems.length ? batchResponseCacheHeaders(successfulItems as Array<{ payload: StockPayload; cache: StockScoreResult["cache"] }>) : privateNoStoreHeaders();
+    const hasOnlyUsablePartialProgress = results.length > 0 && results.every((result) => result.ok === true && result.type === "partial_stock_snapshot");
+    const headers =
+      successfulItems.length === resultItems.length
+        ? batchResponseCacheHeaders(successfulItems as Array<{ payload: StockPayload; cache: StockScoreResult["cache"] }>)
+        : hasOnlyUsablePartialProgress
+          ? stockPartialResponseCacheHeaders()
+          : privateNoStoreHeaders();
 
     return NextResponse.json(payload, { status: batchStatusFromResults(results), headers });
   } catch (error) {

@@ -47,6 +47,8 @@ test("symbols API rate limits repeated search requests", async () => {
   const payload = await second.json();
 
   assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.match(first.headers.get("vercel-cdn-cache-control") || "", /s-maxage=86400/);
   assert.equal(second.status, 429);
   assert.equal(payload.error, "rate_limited");
 });
