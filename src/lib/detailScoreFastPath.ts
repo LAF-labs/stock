@@ -47,6 +47,16 @@ export function detailRequestFastPathEnabled(env: Record<string, string | undefi
 }
 
 export async function buildDetailScoreFastPathPayload(ticker: string, view: ScoreView = "detail"): Promise<StockPayload> {
+  if (view === "compare") {
+    try {
+      const quote = await fetchKisQuote(ticker);
+      return buildQuoteOnlyDetailScorePayload(quote, view);
+    } catch {
+      // If the quote endpoint is temporarily unavailable, the daily chart path is
+      // still a useful fallback for compare cards.
+    }
+  }
+
   const dailyPromise = fetchKisDailyChart(ticker);
   const daily = await withTimeout(dailyPromise, detailDailyFastPathTimeoutMs()).catch(() => undefined);
   if (!daily) {

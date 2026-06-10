@@ -280,6 +280,63 @@ test("detail score cache falls back to a quote-only fast path when daily rows ar
   assert.equal(result.cache.state, "miss");
 });
 
+test("compare score cache skips daily rows and uses the quote-only fast path immediately", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+  process.env.STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS = "15";
+
+  let dailyCalls = 0;
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-compare-quote", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      dailyCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output2: [{ xymd: "20260605", open: "10", high: "11", low: "9", clos: "10.5", tvol: "1000" }],
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "18.25",
+          base: "18.00",
+          rate: "1.39",
+          tvol: "22000",
+          curr: "USD",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Anixa Biosciences",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("US:ANIX", "compare");
+
+  assert.equal(dailyCalls, 0);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.requested_ticker, "US:ANIX");
+  assert.equal(result.payload.data_quality, "quote_fast_path");
+  assert.equal((result.payload.fetch as Record<string, unknown>).provider_mode, "detail_quote_fast_path");
+  assert.equal((result.payload.chart_series as unknown[]).length, 0);
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.cache.state, "miss");
+});
+
 test("quote cache reports background-only refresh in Vercel snapshot mode", async () => {
   useSnapshotOnlyRuntime();
 
