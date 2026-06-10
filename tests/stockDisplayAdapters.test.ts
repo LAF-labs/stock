@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { stockScoreDataFromDisplayPayload } from "../src/components/stockDisplayAdapters";
+import { stockDisplayPayloadIsComplete, stockScoreDataFromDisplayPayload } from "../src/components/stockDisplayAdapters";
 import type { StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 
 test("display payload adapter promotes identity, price, chart, and score without pending copy", () => {
@@ -22,12 +22,23 @@ test("display payload adapter promotes identity, price, chart, and score without
 });
 
 test("display payload adapter keeps identity usable when other parts are still recovering", () => {
-  const adapted = stockScoreDataFromDisplayPayload(displayPayload({}));
+  const payload = displayPayload({});
+  const adapted = stockScoreDataFromDisplayPayload(payload);
 
   assert.equal(adapted.requested_ticker, "KR:005930");
   assert.equal(adapted.symbol, "005930");
   assert.equal(adapted.name, "삼성전자");
   assert.equal(adapted.server_cache?.state, "recovering");
+  assert.equal(stockDisplayPayloadIsComplete(payload), false);
+});
+
+test("display payload completeness separates full data from recoverable partials", () => {
+  assert.equal(stockDisplayPayloadIsComplete(displayPayload({
+    price: { latest_price: 187400 },
+    chart: { chart_series: [{ date: "2026-06-09", close: 180000 }, { date: "2026-06-10", close: 187400 }] },
+    score: { score: 72, quality_score: 72 },
+  })), true);
+  assert.equal(stockDisplayPayloadIsComplete(displayPayload({})), false);
 });
 
 function displayPayload(parts: {

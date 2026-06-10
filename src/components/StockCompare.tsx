@@ -145,7 +145,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
       ) : null}
 
       {pendingStates.length && !items.length ? (
-        <section className="compare-errors compare-pending" role="status" aria-live="polite">
+        <section className="compare-status compare-pending" role="status" aria-live="polite">
           <span className="sr-only">비교 화면을 구성하고 있습니다.</span>
           <ComparePendingRowsSkeleton tickers={pendingStates.map((state) => state.ticker)} />
           <button type="button" onClick={retryCompare} className="sr-only">다시 확인</button>

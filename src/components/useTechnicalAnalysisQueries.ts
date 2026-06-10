@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTechnicalAnalysisPayload, safeInternalRedirectPath } from "@/components/technicalAnalysisHelpers";
 import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
+  chooseRicherStockData,
   partialStockDataFromPayload,
   partialStockDataFromQuote,
   partialStockDataFromTicker,
@@ -98,26 +99,22 @@ function technicalStateFromQuery(
 
   if (result?.state === "partial") {
     const pending = snapshotPendingFromPayload(result.payload, ticker) || pendingFromApiPending(result.pending, ticker) || pendingFromTicker(ticker);
-    const partial = displayData || partialStockDataFromPayload(result.payload, ticker) || result.data || partialStockDataFromTicker(ticker);
+    const partial = chooseRicherStockData(
+      displayData,
+      partialStockDataFromPayload(result.payload, ticker) || result.data || partialStockDataFromTicker(ticker),
+    ) || partialStockDataFromTicker(ticker);
     return { status: "partial", ticker, data: scoreDataWithQuote(partial, quote), pending };
   }
 
   if (result?.state === "pending") {
-    if (displayData) {
-      return {
-        status: "partial",
-        ticker,
-        data: scoreDataWithQuote(displayData, quote),
-        pending: quoteFirstPending(ticker),
-      };
-    }
     const pending = pendingFromApiPending(result, ticker);
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
-    if (quotePartial) {
+    const partial = chooseRicherStockData(displayData, quotePartial);
+    if (partial) {
       return {
         status: "partial",
         ticker,
-        data: quotePartial,
+        data: scoreDataWithQuote(partial, quote),
         pending: pending || quoteFirstPending(ticker),
       };
     }
@@ -129,20 +126,13 @@ function technicalStateFromQuery(
   }
 
   if (error) {
-    if (displayData) {
-      return {
-        status: "partial",
-        ticker,
-        data: scoreDataWithQuote(displayData, quote),
-        pending: quoteFirstPending(ticker),
-      };
-    }
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
-    if (quotePartial) {
+    const partial = chooseRicherStockData(displayData, quotePartial);
+    if (partial) {
       return {
         status: "partial",
         ticker,
-        data: quotePartial,
+        data: scoreDataWithQuote(partial, quote),
         pending: quoteFirstPending(ticker),
       };
     }
@@ -150,27 +140,29 @@ function technicalStateFromQuery(
   }
 
   if (isLoading) {
-    if (displayData) {
+    const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
+    const partial = chooseRicherStockData(displayData, quotePartial);
+    if (partial) {
       return {
         status: "partial",
         ticker,
-        data: scoreDataWithQuote(displayData, quote),
+        data: scoreDataWithQuote(partial, quote),
         pending: quoteFirstPending(ticker),
       };
     }
-    const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     return {
       status: "partial",
-      ticker,
       data: quotePartial || partialStockDataFromTicker(ticker),
+      ticker,
       pending: quotePartial ? quoteFirstPending(ticker) : pendingFromTicker(ticker),
     };
   }
 
+  const fallbackPartial = chooseRicherStockData(displayData, partialStockDataFromTicker(ticker)) || partialStockDataFromTicker(ticker);
   return {
     status: "partial",
     ticker,
-    data: displayData || partialStockDataFromTicker(ticker),
+    data: fallbackPartial,
     pending: pendingFromTicker(ticker),
   };
 }

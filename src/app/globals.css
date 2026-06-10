@@ -2465,11 +2465,15 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.compare-errors {
+.compare-errors,
+.compare-status {
   display: grid;
   gap: 8px;
   padding: 18px 20px;
   border-top: 12px solid #f2f4f6;
+}
+
+.compare-errors {
   background: #fff7f8;
   color: var(--red);
 }
@@ -3316,6 +3320,7 @@ a:focus-visible {
   .compare-landing,
   .compare-toolbar,
   .compare-errors,
+  .compare-status,
   .compare-feed {
     grid-column: 2;
   }

@@ -10,7 +10,7 @@ import {
   toCompareItem,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
+import { chooseRicherStockData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
 import { compareQueryOptions, displayQueryOptions } from "@/lib/stockQueryOptions";
 import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult, DisplayQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
@@ -151,7 +151,7 @@ function stateFromCompareItem(ticker: string, item: CompareScoreItemResult | und
   }
 
   if (result.state === "partial") {
-    return partialStateFromResult(ticker, result);
+    return partialStateFromResult(ticker, result, displayFallback);
   }
 
   if (result.state === "pending") {
@@ -182,8 +182,13 @@ function displayCompareState(ticker: string, data: StockScoreResponse): Extract<
   };
 }
 
-function partialStateFromResult(ticker: string, result: ApiPartial<StockScoreResponse>): Extract<CompareLoadState, { status: "partial" }> {
-  const data = comparePartialData(result.payload as StockScoreResponse, ticker) || result.data || partialStockDataFromTicker(ticker);
+function partialStateFromResult(
+  ticker: string,
+  result: ApiPartial<StockScoreResponse>,
+  displayFallback: StockScoreResponse | undefined,
+): Extract<CompareLoadState, { status: "partial" }> {
+  const partial = comparePartialData(result.payload as StockScoreResponse, ticker) || result.data || partialStockDataFromTicker(ticker);
+  const data = chooseRicherStockData(displayFallback, partial) || partial;
   return {
     status: "partial",
     ticker,

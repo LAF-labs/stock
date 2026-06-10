@@ -82,8 +82,33 @@ function displayPayloadIsPersistable(data: unknown): boolean {
   if (result.state !== "ready") return false;
   const payload = result.data;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-  const record = payload as { ok?: unknown; identity?: unknown };
-  return record.ok === true && Boolean(record.identity);
+  const record = payload as Record<string, unknown> & { ok?: unknown; identity?: unknown; completion?: unknown; refresh?: unknown };
+  if (record.ok !== true || !record.identity) return false;
+
+  const active = displayPayloadHasActiveRecovery(record);
+  if (!active) return true;
+  return displayPayloadHasUsefulPart(record);
+}
+
+function displayPayloadHasActiveRecovery(record: { completion?: unknown; refresh?: unknown }): boolean {
+  const refresh = record.refresh && typeof record.refresh === "object" && !Array.isArray(record.refresh) ? record.refresh as { active?: unknown; recoveringParts?: unknown } : undefined;
+  if (refresh?.active === true) return true;
+  if (arrayHasItems(refresh?.recoveringParts)) return true;
+
+  const completion = record.completion && typeof record.completion === "object" && !Array.isArray(record.completion) ? record.completion as { recoveringParts?: unknown } : undefined;
+  return arrayHasItems(completion?.recoveringParts);
+}
+
+function displayPayloadHasUsefulPart(record: Record<string, unknown>): boolean {
+  const completion = record.completion && typeof record.completion === "object" && !Array.isArray(record.completion)
+    ? record.completion as { presentParts?: unknown }
+    : undefined;
+  const presentParts = Array.isArray(completion?.presentParts) ? completion.presentParts : [];
+  return ["price", "chart", "score", "technical"].some((part) => record[part] || presentParts.includes(part));
+}
+
+function arrayHasItems(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
 }
 
 function createStockQueryPersister() {

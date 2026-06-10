@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   chartSummary,
   chartPointPriceLabel,
+  chooseRicherStockData,
   dashboardInputValue,
   dashboardSearchInputValue,
   dashboardSearchSyncDecision,
@@ -323,6 +324,23 @@ test("scoreDataWithQuote overlays fresh quote fields without losing score fields
     latest_bar_date: "2026-06-06",
     usd_krw_rate: 1360,
   });
+});
+
+test("chooseRicherStockData prefers display partials with price chart and score over identity placeholders", () => {
+  const identityOnly = partialStockDataFromTicker("US:LANES");
+  const displayPartial = {
+    requested_ticker: "US:LANES",
+    market: "US",
+    symbol: "LANES",
+    name: "Lane Test",
+    latest_price: 10,
+    quality_score: 51,
+    chart_series: [{ date: "2026-06-09", close: 9 }, { date: "2026-06-10", close: 10 }],
+    key_metrics: [{ label: "현재가", value: "$10.00" }],
+  } satisfies StockScoreResponse;
+
+  assert.equal(chooseRicherStockData(displayPartial, identityOnly), displayPartial);
+  assert.equal(chooseRicherStockData(identityOnly, displayPartial), displayPartial);
 });
 
 test("stockJudgmentRequestPayload stays compact with one year of chart data", () => {

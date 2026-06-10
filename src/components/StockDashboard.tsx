@@ -7,8 +7,9 @@ import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/com
 import StockHeader from "@/components/StockHeader";
 import { StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
+import { stockDisplayPayloadIsComplete, stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
+  chooseRicherStockData,
   dashboardInputValue,
   dashboardSearchInputValue,
   dashboardSearchSyncDecision,
@@ -68,6 +69,9 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     () => initialDisplayPayload && initialDisplayPayload.ticker === tickerParam ? stockScoreDataFromDisplayPayload(initialDisplayPayload) : undefined,
     [initialDisplayPayload, tickerParam]
   );
+  const initialDisplayComplete = Boolean(
+    initialDisplayPayload && initialDisplayPayload.ticker === tickerParam && stockDisplayPayloadIsComplete(initialDisplayPayload),
+  );
 
   const [tickerInput, setTickerInput] = useState(() => (
     tickerParam ? dashboardSearchInputValue(initialDisplayData, undefined, tickerParam) : ""
@@ -84,8 +88,8 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     retryLoad,
     refreshPrice,
   } = useStockDashboardQueries(tickerParam);
-  const displayData = data || initialDisplayData;
-  const displayPartialData = partialData || (!data ? initialDisplayData : undefined);
+  const displayData = data || (initialDisplayComplete ? initialDisplayData : undefined);
+  const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);

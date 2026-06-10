@@ -52,6 +52,22 @@ test("stock query persistence stores only compact ready query results", () => {
         },
       }),
     ),
+    false,
+  );
+  assert.equal(
+    shouldPersistStockQuery(
+      query(["stock", "display", "detail", "KR:004020"], "success", {
+        state: "ready",
+        data: {
+          ok: true,
+          ticker: "KR:004020",
+          identity: { value: { ticker: "KR:004020", market: "KR", symbol: "004020", name: "현대제철" } },
+          price: { value: { latest_price: 40200 } },
+          completion: { presentParts: ["identity", "price"], recoveringParts: ["chart", "score"] },
+          refresh: { active: true, recoveringParts: ["chart", "score"] },
+        },
+      }),
+    ),
     true,
   );
   assert.equal(shouldPersistStockQuery(query(["stock", "score", "detail", "KR:004020"], "success", { state: "ready" })), true);

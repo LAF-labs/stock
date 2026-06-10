@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import type { StockDisplayView } from "@/lib/stockDisplayTypes";
@@ -42,11 +43,15 @@ function cleanDisplayView(value: string | null): StockDisplayView {
 
 function displayResponseHeaders(refreshActive: boolean): HeadersInit {
   if (refreshActive) {
-    return {
-      "Cache-Control": "public, s-maxage=3, stale-while-revalidate=30, stale-if-error=300",
-    };
+    return publicVercelCdnCacheHeaders({
+      sMaxAgeSeconds: 3,
+      staleWhileRevalidateSeconds: 30,
+      staleIfErrorSeconds: 300,
+    });
   }
-  return {
-    "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300, stale-if-error=900",
-  };
+  return publicVercelCdnCacheHeaders({
+    sMaxAgeSeconds: 60,
+    staleWhileRevalidateSeconds: 300,
+    staleIfErrorSeconds: 900,
+  });
 }

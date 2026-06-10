@@ -1,6 +1,14 @@
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { ChartSeriesPoint, StockScoreResponse } from "@/lib/types";
 
+export function stockDisplayPayloadIsComplete(payload: StockDisplayPayload): boolean {
+  return (
+    payload.refresh.active !== true &&
+    payload.completion.missingParts.length === 0 &&
+    payload.completion.recoveringParts.length === 0
+  );
+}
+
 export function stockScoreDataFromDisplayPayload(payload: StockDisplayPayload): StockScoreResponse {
   const identity = payload.identity.value;
   const price = payload.price?.value || {};

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { JudgmentState, PriceRefreshState, QuoteState } from "@/components/StockHeader";
 import {
+  chooseRicherStockData,
   partialStockDataFromPayload,
   partialStockDataFromQuote,
   partialStockDataFromTicker,
@@ -186,7 +187,10 @@ function dashboardStateFromQuery({
 
   if (scoreResult?.state === "partial") {
     const pending = snapshotPendingFromPayload(scoreResult.payload, ticker) || pendingFromApiPending(scoreResult.pending, ticker) || pendingFromTicker(ticker);
-    const partial = partialStockDataFromPayload(scoreResult.payload, ticker) || scoreResult.data || partialStockDataFromTicker(ticker);
+    const partial = chooseRicherStockData(
+      displayData,
+      partialStockDataFromPayload(scoreResult.payload, ticker) || scoreResult.data || partialStockDataFromTicker(ticker),
+    ) || partialStockDataFromTicker(ticker);
     return { status: "partial", data: scoreDataWithQuote(partial, quoteData), pending };
   }
 

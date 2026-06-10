@@ -289,6 +289,34 @@ export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = f
   return status === "loading" || (status === "pending" && !hasUsefulPartialData);
 }
 
+export function chooseRicherStockData(
+  first: StockScoreResponse | undefined,
+  second: StockScoreResponse | undefined,
+): StockScoreResponse | undefined {
+  if (!first) return second;
+  if (!second) return first;
+  return stockDataUsefulness(first) >= stockDataUsefulness(second) ? first : second;
+}
+
+export function stockDataUsefulness(data: StockScoreResponse | undefined): number {
+  if (!data) return 0;
+  const record = data as Record<string, unknown>;
+  let score = 0;
+
+  if (stringFromUnknown(record.name) || stringFromUnknown(record.display_name) || stringFromUnknown(record.symbol)) score += 1;
+  if (numberFromUnknown(record.latest_price) !== undefined || stringFromUnknown(record.latest_price_label)) score += 4;
+  if (usableChartPoints(data.chart_series).length >= 2) score += 4;
+  if (numberFromUnknown(record.quality_score) !== undefined || numberFromUnknown(record.score) !== undefined) score += 4;
+  if (arrayFromUnknown(record.key_metrics)?.length) score += 2;
+  if (arrayFromUnknown(record.valuation_rows)?.length) score += 2;
+  if (arrayFromUnknown(record.components)?.length || arrayFromUnknown(record.opportunity_components)?.length) score += 2;
+  if (arrayFromUnknown(record.stock_profile)?.length) score += 1;
+  if (recordFromUnknown(record.financials)) score += 1;
+  if (recordFromUnknown(record.technical_analysis)) score += 1;
+
+  return score;
+}
+
 export function isPartialStockSnapshotPayload(payload: unknown): payload is PartialStockSnapshotPayload {
   return recordFromUnknown(payload)?.type === "partial_stock_snapshot";
 }

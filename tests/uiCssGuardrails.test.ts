@@ -8,6 +8,7 @@ const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDa
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
 const autocompleteSource = readFileSync(join(process.cwd(), "src/components/SymbolAutocomplete.tsx"), "utf8");
 const stockDetailSectionsSource = readFileSync(join(process.cwd(), "src/components/StockDetailSections.tsx"), "utf8");
+const loadingSkeletonSource = readFileSync(join(process.cwd(), "src/components/StockLoadingSkeletons.tsx"), "utf8");
 const compareRouteSource = readFileSync(join(process.cwd(), "src/app/compare/page.tsx"), "utf8");
 const technicalRouteSource = readFileSync(join(process.cwd(), "src/app/technical/page.tsx"), "utf8");
 
@@ -120,4 +121,14 @@ test("chart story does not truncate fetched history on the client", () => {
   assert.doesNotMatch(stockDetailSectionsSource, /usable\.slice\(-260\)/);
   assert.match(stockDetailSectionsSource, /const chartPoints = usable;/);
   assert.match(stockDetailSectionsSource, /<LazyTradingPriceChart points=\{chartPoints\}/);
+});
+
+test("waiting states use shared skeletons instead of error containers", () => {
+  assert.match(loadingSkeletonSource, /function StockDetailLoadingSkeleton/);
+  assert.match(loadingSkeletonSource, /function TechnicalAnalysisLoadingSkeleton/);
+  assert.match(loadingSkeletonSource, /function CompareWaitingCardsSkeleton/);
+  assert.match(dashboardSource, /<StockDetailLoadingSkeleton/);
+  assert.match(compareSource, /className="compare-status compare-pending"/);
+  assert.doesNotMatch(compareSource, /className="compare-errors compare-pending"/);
+  assert.doesNotMatch(css, /skeleton-pending-action|technical-pending-action/);
 });
