@@ -327,17 +327,17 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Replace `quoteForTechnicalPage` and quote `useEffect` with `useQuery(quoteQueryOptions(ticker))`.
-- [ ] Replace technical score `useEffect` with `useQuery(technicalScoreQueryOptions(ticker))`.
-- [ ] Convert unsupported product redirects into query result handling or keep the existing server route redirect as the primary path.
-- [ ] Remove `quoteRef`, `reloadVersion`, `usePendingRetry`, and useful-data timer.
-- [ ] Derive `TechnicalAnalysisFeed` vs `TechnicalAnalysisPendingFeed` from query state and classified payload.
-- [ ] Preserve server route eligibility in `src/app/technical/page.tsx`; do not shift ETF/ETN/product filtering entirely to the browser.
-- [ ] Keep `TechnicalOverlayChart` overlay visibility in local state; do not persist overlay toggles in server-state cache.
-- [ ] Ensure quote query data enriches technical hero price even when technical score is partial or pending.
-- [ ] Ensure `technical_analysis` absence in an otherwise ok score payload becomes a typed technical data error with stable copy.
-- [ ] Ensure limited/newly listed coverage renders warnings and disabled overlay buttons without polling forever.
-- [ ] Validation: `npm test -- tests/technicalAnalysisHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts` and smoke `/technical?ticker=KR:004020`.
+- [x] Replace `quoteForTechnicalPage` and quote `useEffect` with `useQuery(quoteQueryOptions(ticker))`.
+- [x] Replace technical score `useEffect` with `useQuery(technicalScoreQueryOptions(ticker))`.
+- [x] Convert unsupported product redirects into query result handling or keep the existing server route redirect as the primary path.
+- [x] Remove `quoteRef`, `reloadVersion`, `usePendingRetry`, and useful-data timer.
+- [x] Derive `TechnicalAnalysisFeed` vs `TechnicalAnalysisPendingFeed` from query state and classified payload.
+- [x] Preserve server route eligibility in `src/app/technical/page.tsx`; do not shift ETF/ETN/product filtering entirely to the browser.
+- [x] Keep `TechnicalOverlayChart` overlay visibility in local state; do not persist overlay toggles in server-state cache.
+- [x] Ensure quote query data enriches technical hero price even when technical score is partial or pending.
+- [x] Ensure `technical_analysis` absence in an otherwise ok score payload becomes a typed technical data error with stable copy.
+- [x] Ensure limited/newly listed coverage renders warnings and disabled overlay buttons without polling forever.
+- [x] Validation: `npm test -- tests/technicalAnalysisHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts` and smoke `/technical?ticker=KR:004020`.
 
 ## Phase 6: Migrate Compare Page
 

@@ -41,16 +41,25 @@ test("detail dashboard uses the TanStack query pipeline instead of legacy fetch 
   assert.match(dashboard, /useStockDashboardQueries/, "detail dashboard should delegate server state to the query adapter");
 });
 
-test("remaining phase 4 legacy client pipeline owners are recorded before migration", () => {
-  const compare = componentSource("StockCompare.tsx");
+test("technical analysis page uses the TanStack query pipeline instead of legacy fetch state", () => {
   const technical = componentSource("TechnicalAnalysisPage.tsx");
+
+  assert.doesNotMatch(technical, /fetch\s*\(\s*`\/api\/score\?/, "technical page must not fetch technical score directly");
+  assert.doesNotMatch(technical, /fetch\s*\(\s*`\/api\/quote\?/, "technical page must not fetch quote directly");
+  assert.doesNotMatch(
+    technical,
+    /quoteRef|reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|usePendingRetry|readClientApiPayload|apiPayloadMessage/,
+    "technical page must not keep legacy cache/retry/ref state",
+  );
+  assert.match(technical, /useTechnicalAnalysisQueries/, "technical page should delegate server state to the query adapter");
+});
+
+test("remaining phase 5 legacy client pipeline owners are recorded before migration", () => {
+  const compare = componentSource("StockCompare.tsx");
   const autocomplete = componentSource("SymbolAutocomplete.tsx");
 
   assert.match(compare, /fetch\s*\(\s*`\/api\/score\/batch\?/);
   assert.match(compare, /reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|usePendingRetry/);
-
-  assert.match(technical, /fetch\s*\(\s*`\/api\/score\?/);
-  assert.match(technical, /quoteRef|reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|usePendingRetry/);
 
   assert.match(autocomplete, /fetch\s*\(\s*`\/api\/symbols\?/);
 });

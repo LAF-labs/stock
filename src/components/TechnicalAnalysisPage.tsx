@@ -1,10 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  isTechnicalAnalysisPayload,
-  safeInternalRedirectPath,
-} from "@/components/technicalAnalysisHelpers";
+import { isTechnicalAnalysisPayload } from "@/components/technicalAnalysisHelpers";
 import {
   TechnicalAnalysisFeed,
   TechnicalAnalysisPendingFeed,
@@ -12,199 +8,16 @@ import {
   TechnicalAnalysisTopbar,
   TechnicalStatus,
 } from "@/components/TechnicalAnalysisSections";
-import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
   displayTickerInput,
-  partialStockDataFromQuote,
-  partialStockDataFromTicker,
-  partialStockDataFromPayload,
-  scoreDataWithQuote,
-  shouldPreservePendingViewDuringRetry,
-  snapshotPendingFromPayload,
   stringFromUnknown,
   stockHeaderIdentity,
-  type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
-import { technicalPendingRetryDelayMs, usePendingRetry } from "@/components/usePendingRetry";
-import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
-
-type LoadState =
-  | { status: "loading"; ticker?: string; data?: undefined; error?: undefined; pending?: undefined }
-  | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined; pending?: undefined }
-  | { status: "partial"; ticker: string; data: StockScoreResponse; error?: undefined; pending: SnapshotPendingState }
-  | { status: "pending"; ticker: string; data?: undefined; error?: undefined; pending: SnapshotPendingState }
-  | { status: "error"; ticker: string; data?: undefined; error: string; pending?: undefined };
-
-const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
-
-async function quoteForTechnicalPage(ticker: string, signal: AbortSignal): Promise<StockQuoteResponse | undefined> {
-  try {
-    const query = new URLSearchParams({ ticker });
-    const response = await fetch(`/api/quote?${query.toString()}`, { cache: "no-store", signal });
-    if (!response.ok) return undefined;
-    const payload = await readClientApiPayload(response);
-    return payload as StockQuoteResponse;
-  } catch {
-    return undefined;
-  }
-}
-
-function optimisticTechnicalPendingFromQuote(ticker: string): SnapshotPendingState {
-  return {
-    message: "가격 데이터는 먼저 확인했고, 차트 분석을 이어서 준비하고 있어요.",
-    ticker,
-    queued: false,
-  };
-}
-
-function deadlineTechnicalPendingFromTicker(ticker: string, message?: string, retryAfterSeconds?: number): SnapshotPendingState {
-  return {
-    message: message || "종목은 먼저 특정했고, 가격 캔들과 보조지표는 계속 확인하고 있어요.",
-    ticker,
-    queued: false,
-    retryAfterSeconds,
-  };
-}
+import { useTechnicalAnalysisQueries } from "@/components/useTechnicalAnalysisQueries";
 
 export default function TechnicalAnalysisPage({ ticker }: { ticker: string }) {
-  const [state, setState] = useState<LoadState>(() => ({
-    status: "partial",
-    ticker,
-    data: partialStockDataFromTicker(ticker),
-    pending: deadlineTechnicalPendingFromTicker(ticker),
-  }));
-  const [quote, setQuote] = useState<StockQuoteResponse | undefined>();
-  const [reloadVersion, setReloadVersion] = useState(0);
-  const quoteRef = useRef<StockQuoteResponse | undefined>(undefined);
   const detailHref = `/?ticker=${encodeURIComponent(ticker)}`;
-  const pending = state.status === "pending" || state.status === "partial" ? state.pending : undefined;
-  const pendingRetryTarget = pending?.queued === false && pending.retryAfterSeconds === undefined ? undefined : pending;
-
-  function retryTechnical() {
-    setReloadVersion((version) => version + 1);
-  }
-
-  usePendingRetry({
-    pending: pendingRetryTarget,
-    retryKey: `technical:${ticker}`,
-    onRetry: retryTechnical,
-    maxAttempts: 24,
-    delayMs: (target, attempt) => technicalPendingRetryDelayMs(target.retryAfterSeconds, attempt),
-  });
-
-  useEffect(() => {
-    quoteRef.current = quote;
-  }, [quote, ticker]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setQuote(undefined);
-    quoteRef.current = undefined;
-
-    quoteForTechnicalPage(ticker, controller.signal).then((nextQuote) => {
-      if (controller.signal.aborted) return;
-      setQuote(nextQuote);
-    });
-
-    return () => controller.abort();
-  }, [ticker]);
-
-  useEffect(() => {
-    if (!quote) return;
-    setState((current) => {
-      if (current.ticker !== ticker) return current;
-      if (current.status === "success") return { status: "success", ticker, data: scoreDataWithQuote(current.data, quote) };
-      if (current.status === "partial") return { status: "partial", ticker, data: scoreDataWithQuote(current.data, quote), pending: current.pending };
-      if (current.status === "loading") {
-        const partial = partialStockDataFromQuote(quote, ticker);
-        if (partial) {
-          return {
-            status: "partial",
-            ticker,
-            data: partial,
-            pending: optimisticTechnicalPendingFromQuote(ticker),
-          };
-        }
-      }
-      return current;
-    });
-  }, [quote, ticker]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const query = new URLSearchParams({ ticker, view: "technical", partial: "1" });
-    setState((current) => {
-      if ((current.status === "pending" || current.status === "partial") && current.ticker === ticker) return current;
-      if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker)) return current;
-      return {
-        status: "partial",
-        ticker,
-        data: partialStockDataFromTicker(ticker),
-        pending: deadlineTechnicalPendingFromTicker(ticker),
-      };
-    });
-
-    fetch(`/api/score?${query.toString()}`, { signal: controller.signal, cache: "no-store" })
-      .then(async (response) => {
-        const payload = await readClientApiPayload(response);
-        const redirectTo = stringFromUnknown(payload.redirect_to);
-        if (!response.ok && payload.error === "technical_unsupported_product" && redirectTo) {
-          window.location.assign(safeInternalRedirectPath(redirectTo, detailHref));
-          return undefined;
-        }
-        const pending = snapshotPendingFromPayload(payload, ticker);
-        const partialData = pending ? partialStockDataFromPayload(payload, ticker) : undefined;
-        if (pending && partialData) {
-          setState({ status: "partial", ticker, data: scoreDataWithQuote(partialData, quoteRef.current), pending });
-          return undefined;
-        }
-        if (pending) {
-          setState((current) => (current.status === "partial" && current.ticker === ticker ? current : { status: "pending", ticker, pending }));
-          return undefined;
-        }
-        if (!response.ok) throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
-        return payload as StockScoreResponse;
-      })
-      .then(async (data) => {
-        if (!data) return;
-        if (!isTechnicalAnalysisPayload(data.technical_analysis)) {
-          throw new Error("기술적 분석 데이터를 찾지 못했어요.");
-        }
-        if (controller.signal.aborted) return;
-        setState({ status: "success", ticker, data: scoreDataWithQuote(data, quoteRef.current) });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState((current) => {
-          if (current.status === "partial" && current.ticker === ticker) return current;
-          if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && current.ticker === ticker)) return current;
-          return { status: "error", ticker, error: error instanceof Error ? error.message : "기술적 분석을 불러오지 못했어요." };
-        });
-      });
-
-    return () => controller.abort();
-  }, [ticker, reloadVersion]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setState((current) => {
-        if (current.ticker && current.ticker !== ticker) return current;
-        if (current.status === "success" || current.status === "partial" || current.status === "error") return current;
-        const pending =
-          current.status === "pending"
-            ? deadlineTechnicalPendingFromTicker(ticker, current.pending.message, current.pending.retryAfterSeconds)
-            : deadlineTechnicalPendingFromTicker(ticker);
-        return {
-          status: "partial",
-          ticker,
-          data: scoreDataWithQuote(partialStockDataFromTicker(ticker), quoteRef.current),
-          pending,
-        };
-      });
-    }, FIRST_USEFUL_DATA_DEADLINE_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [ticker, reloadVersion]);
+  const { state, quote, retryTechnical } = useTechnicalAnalysisQueries(ticker, detailHref);
 
   const data = state.status === "success" || state.status === "partial" ? state.data : undefined;
   const technical = state.status === "success" && isTechnicalAnalysisPayload(data?.technical_analysis) ? data.technical_analysis : undefined;
