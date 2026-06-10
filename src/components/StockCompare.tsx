@@ -1,60 +1,34 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
   MAX_COMPARE,
   bestBy,
   compareItemSubtitle,
   compareItemSummary,
   compareItemTitle,
-  comparePartialData,
   comparePriceTone,
   componentScore,
   displayTickerRef,
-  isPartialCompareResult,
-  isSnapshotPending,
   normalizeTicker,
   normalizedPoints,
   parseTickers,
-  pendingMessage,
   percentText,
   removeCompareTicker,
   ratioText,
   scoreWord,
   semanticMetricRows,
-  shouldPreserveCompareViewDuringRetry,
   symbolRef,
-  toCompareItem,
-  type BatchScorePayload,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { formatPrimaryPrice, partialStockDataFromTicker, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
-import { usePendingRetry } from "@/components/usePendingRetry";
+import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
+import { useStockCompareQueries, type CompareLoadState } from "@/components/useStockCompareQueries";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import type { StockScoreResponse } from "@/lib/types";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
-const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
-
-type LoadState =
-  | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
-  | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined }
-  | { status: "partial"; ticker: string; data: StockScoreResponse; error?: undefined; message: string; retryAfterSeconds?: number }
-  | { status: "pending"; ticker: string; data?: undefined; error?: undefined; message: string; retryAfterSeconds?: number }
-  | { status: "error"; ticker: string; data?: undefined; error: string };
-
-function optimisticComparePendingState(ticker: string): Extract<LoadState, { status: "partial" }> {
-  return {
-    status: "partial",
-    ticker,
-    data: partialStockDataFromTicker(ticker),
-    message: "종목은 먼저 특정했고, 비교 점수와 가격 데이터는 계속 확인하고 있어요.",
-  };
-}
 
 function pushTickers(router: ReturnType<typeof useRouter>, tickers: string[]) {
   router.push(`/compare?tickers=${encodeURIComponent(tickers.join(","))}`);
@@ -75,132 +49,7 @@ export default function StockCompare() {
   const baseTicker = tickers[0] || "US:KO";
   const baseTickerLabel = displayTickerRef(baseTicker);
   const [input, setInput] = useState("");
-  const [states, setStates] = useState<LoadState[]>(() => tickers.map(optimisticComparePendingState));
-  const [reloadVersion, setReloadVersion] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setStates((current) => {
-      const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
-      return tickers.map((ticker) => {
-        const existing = currentByTicker.get(ticker);
-        return existing && (existing.status === "partial" || shouldPreserveCompareViewDuringRetry(existing.status, reloadVersion > 0))
-          ? existing
-          : optimisticComparePendingState(ticker);
-      });
-    });
-
-    const query = new URLSearchParams({ tickers: tickers.join(","), partial: "1" });
-    fetch(`/api/score/batch?${query.toString()}`, {
-      signal: controller.signal,
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const payload = (await readClientApiPayload(response)) as BatchScorePayload;
-        if (!response.ok) {
-          throw new Error(apiPayloadMessage(payload as Record<string, unknown>, `HTTP ${response.status}`));
-        }
-        return payload.results || [];
-      })
-      .then((results) => {
-        if (controller.signal.aborted) return;
-        setStates((current) => {
-          const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
-          return tickers.map((ticker, index) => {
-            const existing = currentByTicker.get(ticker);
-            const result = results[index];
-            if (isPartialCompareResult(result)) {
-              const data = comparePartialData(result, ticker);
-              if (data) {
-                return {
-                  status: "partial" as const,
-                  ticker,
-                  data,
-                  message: pendingMessage(result),
-                  retryAfterSeconds: result?.retry_after_seconds,
-                };
-              }
-            }
-            if (isSnapshotPending(result)) {
-              if (existing?.status === "partial") return existing;
-              return {
-                status: "pending" as const,
-                ticker,
-                message: pendingMessage(result),
-                retryAfterSeconds: result?.retry_after_seconds,
-              };
-            }
-            if (!result || result.ok === false) {
-              return {
-                status: "error" as const,
-                ticker,
-                error: result?.message || result?.error || "데이터를 불러오지 못했어요.",
-              };
-            }
-            return { status: "success" as const, ticker, data: result as StockScoreResponse };
-          });
-        });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : "데이터를 불러오지 못했어요.";
-        setStates((current) => {
-          const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
-          return tickers.map((ticker) => {
-            const existing = currentByTicker.get(ticker);
-            if (existing && shouldPreserveCompareViewDuringRetry(existing.status, reloadVersion > 0)) return existing;
-            return { status: "error" as const, ticker, error: message };
-          });
-        });
-      });
-
-    return () => controller.abort();
-  }, [tickers, reloadVersion]);
-
-  useEffect(() => {
-    if (!tickers.length) return;
-
-    const timer = window.setTimeout(() => {
-      setStates((current) => {
-        const currentByTicker = new Map(current.map((state) => [state.ticker, state]));
-        return tickers.map((ticker) => {
-          const existing = currentByTicker.get(ticker);
-          if (existing && existing.status !== "loading" && existing.status !== "pending") return existing;
-          return {
-            status: "partial" as const,
-            ticker,
-            data: partialStockDataFromTicker(ticker),
-            message: existing?.status === "pending" ? existing.message : "종목은 먼저 특정했고, 비교 점수와 가격 데이터는 계속 확인하고 있어요.",
-            retryAfterSeconds: existing?.status === "pending" ? existing.retryAfterSeconds : undefined,
-          };
-        });
-      });
-    }, FIRST_USEFUL_DATA_DEADLINE_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [tickers, reloadVersion]);
-
-  const items = useMemo(
-    () => states.filter((state): state is Extract<LoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
-    [states]
-  );
-  const partialStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "partial" }> => state.status === "partial"), [states]);
-  const waitingStates = useMemo(
-    () => states.filter((state): state is Extract<LoadState, { status: "loading" | "pending" }> => state.status === "loading" || state.status === "pending"),
-    [states]
-  );
-  const pendingStates = useMemo(
-    () => states.filter((state): state is Extract<LoadState, { status: "pending" | "partial" }> => state.status === "pending" || state.status === "partial"),
-    [states]
-  );
-  const pendingRetry = useMemo(() => {
-    if (!pendingStates.length) return undefined;
-    const retryHints = pendingStates
-      .map((state) => state.retryAfterSeconds)
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-    return retryHints.length ? { retryAfterSeconds: Math.min(...retryHints) } : undefined;
-  }, [pendingStates]);
-  const errorStates = useMemo(() => states.filter((state): state is Extract<LoadState, { status: "error" }> => state.status === "error"), [states]);
+  const { items, partialStates, waitingStates, pendingStates, errorStates, retryCompare } = useStockCompareQueries(tickers);
   const selectedCount = tickers.length;
   const baseItem = useMemo(() => items.find((item) => item.ticker === baseTickerLabel), [items, baseTickerLabel]);
   const detailHref = `/?ticker=${encodeURIComponent(baseTicker)}`;
@@ -220,12 +69,6 @@ export default function StockCompare() {
     const next = removeCompareTicker(tickers, ticker);
     if (next.length !== tickers.length) pushTickers(router, next);
   }
-
-  function retryCompare() {
-    setReloadVersion((version) => version + 1);
-  }
-
-  usePendingRetry({ pending: pendingRetry, retryKey: `compare:${tickers.join(",")}`, onRetry: retryCompare });
 
   return (
     <main className="stock-app compare-app">
@@ -326,7 +169,7 @@ function ComparePendingOverview({ count }: { count: number }) {
   );
 }
 
-function ComparePendingCards({ states }: { states: Array<Extract<LoadState, { status: "partial" }>> }) {
+function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadState, { status: "partial" }>> }) {
   return (
     <section className="compare-section">
       <div className="section-title">
@@ -359,7 +202,7 @@ function ComparePendingCards({ states }: { states: Array<Extract<LoadState, { st
   );
 }
 
-function CompareWaitingCards({ states }: { states: Array<Extract<LoadState, { status: "loading" | "pending" }>> }) {
+function CompareWaitingCards({ states }: { states: Array<Extract<CompareLoadState, { status: "loading" | "pending" }>> }) {
   return (
     <section className="compare-section">
       <div className="section-title">

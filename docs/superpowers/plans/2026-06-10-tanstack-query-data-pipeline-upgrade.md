@@ -352,17 +352,17 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Replace batch score `useEffect` with `useQuery(compareQueryOptions(tickers))`.
-- [ ] Derive `states`, `items`, partial states, waiting states, and errors from the compare query result.
-- [ ] Remove `reloadVersion`, `usePendingRetry`, useful-data timer, and manual `AbortController`.
-- [ ] On add/remove ticker, rely on URL state and query key change.
-- [ ] Use `placeholderData` to keep existing compare cards while a changed ticker set refetches.
-- [ ] Preserve ticker order in query keys and view models because first ticker is the selected/base ticker.
-- [ ] Build a `compareViewModelFromQuery` helper that derives loaded items, partial states, waiting states, pending retry hints, and error states from one query result.
-- [ ] Keep partially ready tickers visible while other tickers are pending, even when the batch response status is 202.
-- [ ] Verify batch result index-to-ticker mapping is tested and never inferred from display ticker labels.
-- [ ] Ensure removing a non-base ticker does not invalidate the quote query for the base detail page.
-- [ ] Validation: `npm test -- tests/stockCompareHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts` and smoke `/compare?tickers=KR:004020,US:KO`.
+- [x] Replace batch score `useEffect` with `useQuery(compareQueryOptions(tickers))`.
+- [x] Derive `states`, `items`, partial states, waiting states, and errors from the compare query result.
+- [x] Remove `reloadVersion`, `usePendingRetry`, useful-data timer, and manual `AbortController`.
+- [x] On add/remove ticker, rely on URL state and query key change.
+- [x] Use `placeholderData` to keep existing compare cards while a changed ticker set refetches.
+- [x] Preserve ticker order in query keys and view models because first ticker is the selected/base ticker.
+- [x] Build a `compareViewModelFromQuery` helper that derives loaded items, partial states, waiting states, pending retry hints, and error states from one query result.
+- [x] Keep partially ready tickers visible while other tickers are pending, even when the batch response status is 202.
+- [x] Verify batch result index-to-ticker mapping is tested and never inferred from display ticker labels.
+- [x] Ensure removing a non-base ticker does not invalidate the quote query for the base detail page.
+- [x] Validation: `npm test -- tests/stockCompareHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts` and smoke `/compare?tickers=KR:004020,US:KO`.
 
 ## Phase 7: Migrate Symbol Autocomplete
 
