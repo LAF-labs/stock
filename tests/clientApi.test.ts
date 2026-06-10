@@ -26,19 +26,19 @@ test("readClientApiPayload parses object payloads and extracts safe messages", a
 });
 
 test("pending retry delay uses short interactive polling instead of queue retry hints", () => {
-  assert.equal(pendingRetryDelayMs(300, 0, () => 0.5), 5_000);
-  assert.equal(pendingRetryDelayMs(300, 1, () => 0.5), 8_000);
-  assert.equal(pendingRetryDelayMs(300, 2, () => 0.5), 13_000);
+  assert.equal(pendingRetryDelayMs(300, 0, () => 0.5), 1_000);
+  assert.equal(pendingRetryDelayMs(300, 1, () => 0.5), 2_000);
+  assert.equal(pendingRetryDelayMs(300, 2, () => 0.5), 3_000);
   assert.equal(pendingRetryDelayMs(300, 9, () => 0.5), 60_000);
-  assert.equal(pendingRetryDelayMs(undefined, 0, () => 0), 4_250);
+  assert.equal(pendingRetryDelayMs(undefined, 0, () => 0), 850);
 });
 
 test("technical pending retry uses short polling instead of the queue retry hint", () => {
-  assert.equal(technicalPendingRetryDelayMs(300, 0, () => 0.5), 5_000);
-  assert.equal(technicalPendingRetryDelayMs(300, 1, () => 0.5), 8_000);
-  assert.equal(technicalPendingRetryDelayMs(300, 2, () => 0.5), 13_000);
+  assert.equal(technicalPendingRetryDelayMs(300, 0, () => 0.5), 1_000);
+  assert.equal(technicalPendingRetryDelayMs(300, 1, () => 0.5), 2_000);
+  assert.equal(technicalPendingRetryDelayMs(300, 2, () => 0.5), 3_000);
   assert.equal(technicalPendingRetryDelayMs(300, 9, () => 0.5), 60_000);
-  assert.equal(technicalPendingRetryDelayMs(1, 0, () => 0), 4_250);
+  assert.equal(technicalPendingRetryDelayMs(1, 0, () => 0), 850);
 });
 
 test("pending retry scheduler caps attempts and pauses while hidden", () => {

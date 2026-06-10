@@ -323,6 +323,87 @@ test("technical score route waits long enough to return ready technical snapshot
   assert.equal(payload.chart_series.length, 2);
 });
 
+test("score route waits long enough to return ready detail snapshots", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  const nowMs = Date.now();
+  const snapshot = {
+    ticker: "KR:004020",
+    view_mode: "detail",
+    payload: {
+      ok: true,
+      requested_ticker: "KR:004020",
+      market: "KR",
+      symbol: "004020",
+      name: "현대제철",
+      latest_price: 33250,
+      score: 43.8,
+      quality_score: 43.8,
+      opportunity_score: 44.8,
+      opportunity_confidence: 0.9,
+      score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      sia_snapshot: {
+        confidence: 0.9,
+        quality_score: 0.438,
+        opportunity_score: 0.448,
+        score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+      },
+      components: [
+        { key: "profitability", label: "이익성", score: 26.1 },
+        { key: "growth", label: "성장 흐름", score: 30.9 },
+        { key: "health", label: "거래 안정성", score: 44.4 },
+        { key: "momentum", label: "모멘텀", score: 22.6 },
+        { key: "valuation", label: "밸류에이션", score: 99.2 },
+      ],
+      opportunity_components: [
+        { key: "opportunity_momentum", label: "기회 모멘텀", score: 22.6 },
+        { key: "opportunity_growth", label: "추정 성장", score: 15.7 },
+        { key: "opportunity_analyst", label: "목표가 여지", score: 96 },
+        { key: "opportunity_liquidity", label: "유동성 관심", score: 49.8 },
+        { key: "opportunity_risk", label: "위험 제어", score: 41.6 },
+      ],
+    },
+    fetched_at: new Date(nowMs - 30_000).toISOString(),
+    expires_at: new Date(nowMs + 270_000).toISOString(),
+  };
+
+  let enqueueCalls = 0;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots")) {
+      await sleep(1_100);
+      return Response.json([snapshot]);
+    }
+    if (url.includes("/rest/v1/rpc/search_stock_symbols")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_symbol_profiles")) return Response.json([]);
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      enqueueCalls += 1;
+      return Response.json({ id: "job-score", status: "queued" });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const response = await getScore(request("/api/score?ticker=KR:004020&partial=1"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.type, undefined);
+  assert.equal(payload.name, "현대제철");
+  assert.equal(payload.score, 43.8);
+  assert.equal(enqueueCalls, 0);
+});
+
 test("score route returns identity partial instead of skeleton-only pending on cold detail misses", async () => {
   restoreEnv();
   process.env.VERCEL = "1";

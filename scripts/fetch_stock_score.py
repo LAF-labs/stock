@@ -951,13 +951,15 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     except Exception:
         daily_rows = []
     try:
-        search = kis_domestic_search_info(symbol)
-    except Exception:
-        search = {}
-    try:
         stock_info = kis_domestic_stock_info(symbol)
     except Exception:
         stock_info = {}
+    search: dict[str, Any] = {}
+    if not domestic_stock_info_has_name(stock_info):
+        try:
+            search = kis_domestic_search_info(symbol)
+        except Exception:
+            search = {}
 
     currency = "KRW"
     name = str(
@@ -1462,6 +1464,10 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "history_source": history_source,
         },
     }
+
+
+def domestic_stock_info_has_name(stock_info: dict[str, Any]) -> bool:
+    return any(str(stock_info.get(key) or "").strip() for key in ("prdt_abrv_name", "prdt_name", "prdt_eng_name"))
 
 
 def fetch_score(raw_ticker: str, view: str = "detail", usd_krw_override: float | None = None, use_rate_override: bool = False) -> dict[str, Any]:

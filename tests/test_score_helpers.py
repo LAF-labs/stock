@@ -507,6 +507,64 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertEqual(domestic_yfinance_symbol("253590", "KOSDAQ"), "253590.KQ")
         self.assertEqual(domestic_yfinance_symbol("Q123456", "KONEX"), "123456.KQ")
 
+    def test_domestic_detail_skips_search_info_when_stock_info_has_identity(self):
+        rows = []
+        start = date(2025, 1, 1)
+        for index in range(260):
+            current = start + timedelta(days=index)
+            close = 30000 + index
+            rows.append(
+                {
+                    "stck_bsop_date": current.strftime("%Y%m%d"),
+                    "stck_oprc": str(close - 100),
+                    "stck_hgpr": str(close + 200),
+                    "stck_lwpr": str(close - 200),
+                    "stck_clpr": str(close),
+                    "acml_vol": "1000000",
+                }
+            )
+
+        with (
+            patch.object(
+                score_module,
+                "kis_domestic_price",
+                return_value={
+                    "stck_prpr": "33250",
+                    "stck_sdpr": "33000",
+                    "prdy_ctrt": "0.76",
+                    "lstn_stcn": "133445785",
+                    "hts_avls": "44371",
+                    "w52_hgpr": "50400",
+                    "w52_lwpr": "28350",
+                    "per": "8.5",
+                    "pbr": "0.23",
+                    "eps": "3900",
+                    "bps": "147255",
+                    "acml_vol": "893853",
+                },
+            ),
+            patch.object(score_module, "kis_domestic_daily_rows", return_value=rows),
+            patch.object(score_module, "kis_domestic_search_info") as search_info,
+            patch.object(
+                score_module,
+                "kis_domestic_stock_info",
+                return_value={
+                    "prdt_abrv_name": "현대제철",
+                    "prdt_eng_name": "HYUNDAI STEEL",
+                    "scts_mket_lstg_dt": "19870523",
+                    "lstg_stqt": "133445785",
+                },
+            ),
+            patch.object(score_module, "yfinance_fundamentals", return_value=({}, {"cache": "miss"})),
+            patch.object(score_module, "kis_domestic_news", return_value=[]),
+        ):
+            payload = score_module.fetch_score_kis_domestic("004020", view="detail")
+
+        search_info.assert_not_called()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["name"], "현대제철")
+        self.assertEqual(payload["exchange"], "KOSPI")
+
     def test_opportunity_score_lifts_speculative_growth_setup_but_caps_risk(self):
         opportunity = opportunity_factor_score(
             market="KR",

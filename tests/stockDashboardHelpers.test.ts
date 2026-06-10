@@ -4,7 +4,11 @@ import assert from "node:assert/strict";
 import {
   chartSummary,
   chartPointPriceLabel,
+  dashboardClientCacheFromJson,
+  dashboardClientCacheJson,
+  dashboardClientCacheKey,
   dashboardInputValue,
+  dashboardSearchInputValue,
   dashboardTickerFromSearchParam,
   dailyChangeText,
   dailyToneClass,
@@ -47,6 +51,53 @@ test("dashboard starts without a default ticker when the URL has no ticker", () 
   assert.equal(dashboardTickerFromSearchParam(""), undefined);
   assert.equal(dashboardTickerFromSearchParam("   "), undefined);
   assert.equal(dashboardInputValue(undefined), "");
+});
+
+test("dashboard client cache restores same-ticker score and quote as stale data", () => {
+  const score: StockScoreResponse = {
+    requested_ticker: "KR:004020",
+    market: "KR",
+    symbol: "004020",
+    name: "현대제철",
+    score: 43.8,
+    server_cache: { state: "fresh", source: "supabase", fetched_at: "2026-06-10T06:50:00.000Z" },
+  };
+  const quote: StockQuoteResponse = {
+    type: "quote",
+    requested_ticker: "KR:004020",
+    market: "KR",
+    symbol: "004020",
+    name: "현대제철",
+    currency: "KRW",
+    latest_price: 28550,
+    server_cache: { state: "fresh", source: "supabase", fetched_at: "2026-06-10T06:51:00.000Z" },
+  };
+
+  const raw = dashboardClientCacheJson({ ticker: "KR:004020", score, quote, savedAtMs: 1_000 });
+  const cached = dashboardClientCacheFromJson(raw, "KR:004020", 2_000);
+
+  assert.equal(dashboardClientCacheKey("kr:004020"), "stock-dashboard:v1:KR:004020");
+  assert.equal(cached?.score?.name, "현대제철");
+  assert.equal(cached?.score?.score, 43.8);
+  assert.equal(cached?.score?.server_cache?.state, "stale");
+  assert.equal(cached?.score?.server_cache?.source, "client_cache");
+  assert.equal(cached?.score?.server_cache?.refresh_started, true);
+  assert.equal(cached?.quote?.latest_price, 28550);
+  assert.equal(cached?.quote?.server_cache?.state, "stale");
+  assert.equal(cached?.quote?.server_cache?.source, "client_cache");
+});
+
+test("dashboard client cache rejects malformed stale and mismatched entries", () => {
+  const raw = dashboardClientCacheJson({
+    ticker: "US:KO",
+    score: { requested_ticker: "US:KO", market: "US", symbol: "KO", name: "코카콜라", score: 70 },
+    savedAtMs: 1_000,
+  });
+
+  assert.equal(dashboardClientCacheFromJson("{", "US:KO", 2_000), undefined);
+  assert.equal(dashboardClientCacheFromJson(raw, "US:NVDA", 2_000), undefined);
+  assert.equal(dashboardClientCacheFromJson(raw, "US:KO", 9_001, 8_000), undefined);
+  assert.equal(dashboardClientCacheJson({ ticker: "US:KO", savedAtMs: 1_000 }), undefined);
 });
 
 test("dashboard preserves explicit ticker params instead of normalizing to the old landing default", () => {
@@ -168,6 +219,34 @@ test("dashboard treats identity-only partial snapshots as useful pending data", 
   assert.equal(partial?.symbol, "ZVRA");
   assert.equal(partial?.name, "지브러 테라퓨틱스");
   assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+});
+
+test("dashboard search input prefers stock names from partial data", () => {
+  const partial = partialStockDataFromPayload(
+    {
+      ok: true,
+      type: "partial_stock_snapshot",
+      ticker: "KR:004020",
+      requested_ticker: "KR:004020",
+      market: "KR",
+      symbol: "004020",
+      name: "현대제철",
+      exchange: "KOSPI",
+      currency: "KRW",
+      pending_snapshot: {
+        error: "snapshot_pending",
+        reason: "snapshot_miss",
+        ticker: "KR:004020",
+        retry_after_seconds: 5,
+        refresh_request: { queued: true },
+      },
+    },
+    "KR:004020",
+  );
+
+  assert.ok(partial);
+  assert.equal(dashboardSearchInputValue(partial, undefined, "KR:004020"), "현대제철");
+  assert.equal(dashboardSearchInputValue(partialStockDataFromTicker("KR:004020"), undefined, "KR:004020"), "004020");
 });
 
 test("dashboard can render a useful partial view from quote before score is ready", () => {
@@ -353,6 +432,25 @@ test("scoreFreshnessSummary separates score snapshot freshness from quote freshn
   });
 });
 
+test("scoreFreshnessSummary labels browser cached snapshots", () => {
+  const cachedScore = {
+    requested_ticker: "KR:004020",
+    server_cache: {
+      state: "stale",
+      source: "client_cache",
+      refresh_started: true,
+      client_cached_at: "2026-06-10T06:50:00.000Z",
+    },
+  } satisfies StockScoreResponse;
+
+  assert.deepEqual(scoreFreshnessSummary(cachedScore), {
+    label: "점수 기준",
+    value: "오래된 스냅샷",
+    detail: "브라우저 캐시 · 새 점수 준비 중",
+    tone: "stale",
+  });
+});
+
 test("scoreFreshnessSummary accepts Rust cache millisecond timestamps", () => {
   const freshScore = {
     requested_ticker: "KR:005930",
@@ -400,6 +498,37 @@ test("stockHeaderFreshnessTimeChip uses the newest score or quote update time", 
 
   assert.equal(stockHeaderFreshnessTimeChip(score, olderQuote), "18:08 기준");
   assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "18:12 기준");
+});
+
+test("stockHeaderFreshnessTimeChip labels browser cache in the compact header", () => {
+  const score = {
+    server_cache: {
+      state: "stale",
+      source: "client_cache",
+      fetched_at: "2026-06-06T09:08:00.000Z",
+    },
+  } satisfies StockScoreResponse;
+
+  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "브라우저 캐시 · 18:08 기준");
+});
+
+test("stockHeaderFreshnessTimeChip keeps browser cache label when a fresher quote is present", () => {
+  const score = {
+    server_cache: {
+      state: "stale",
+      source: "client_cache",
+      fetched_at: "2026-06-06T09:08:00.000Z",
+    },
+  } satisfies StockScoreResponse;
+  const quote = {
+    server_cache: {
+      state: "fresh",
+      source: "supabase",
+      fetched_at: "2026-06-06T09:12:00.000Z",
+    },
+  } satisfies StockQuoteResponse;
+
+  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "브라우저 캐시 · 18:12 기준");
 });
 
 test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-first", () => {

@@ -8,7 +8,11 @@ import StockHeader, { type JudgmentState, type QuoteRefreshState, type QuoteStat
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
 import {
+  dashboardClientCacheFromJson,
+  dashboardClientCacheJson,
+  dashboardClientCacheKey,
   dashboardInputValue,
+  dashboardSearchInputValue,
   dashboardTickerFromSearchParam,
   dailyChangeText,
   dailyToneClass,
@@ -46,6 +50,7 @@ const DETAIL_SECTIONS = [
 ] as const;
 
 const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
+const DASHBOARD_CLIENT_CACHE_MAX_CHARS = 750_000;
 
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
 
@@ -77,6 +82,35 @@ function quoteBelongsToTicker(quote: StockQuoteResponse, ticker: string): boolea
   const symbol = stringFromUnknown(quote.symbol);
   const market = stringFromUnknown(quote.market) || (ticker.startsWith("KR:") ? "KR" : ticker.startsWith("US:") ? "US" : undefined);
   return Boolean(symbol && market && `${market}:${symbol}` === ticker);
+}
+
+function scoreBelongsToTicker(score: StockScoreResponse, ticker: string): boolean {
+  const requested = dashboardTickerFromSearchParam(stringFromUnknown(score.requested_ticker) || "");
+  if (requested === ticker) return true;
+  const symbol = stringFromUnknown(score.symbol);
+  const market = stringFromUnknown(score.market) || (ticker.startsWith("KR:") ? "KR" : ticker.startsWith("US:") ? "US" : undefined);
+  return Boolean(symbol && market && `${market}:${symbol}` === ticker);
+}
+
+function readDashboardClientCache(ticker: string) {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return dashboardClientCacheFromJson(window.localStorage.getItem(dashboardClientCacheKey(ticker)), ticker);
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberDashboardClientCache(ticker: string, score: StockScoreResponse | undefined, quote: StockQuoteResponse | undefined) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = dashboardClientCacheJson({ ticker, score, quote });
+    if (!raw) return;
+    if (raw.length > DASHBOARD_CLIENT_CACHE_MAX_CHARS) return;
+    window.localStorage.setItem(dashboardClientCacheKey(ticker), raw);
+  } catch {
+    // localStorage can be unavailable in private browsing or quota pressure.
+  }
 }
 
 function optimisticScorePendingFromQuote(ticker: string): SnapshotPendingState {
@@ -117,7 +151,10 @@ export default function StockDashboard() {
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [reloadVersion, setReloadVersion] = useState(0);
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
+  const [scoreBackgroundPending, setScoreBackgroundPending] = useState<SnapshotPendingState | undefined>(undefined);
   const currentTickerRef = useRef(tickerParam);
+  const latestScoreRef = useRef<StockScoreResponse | undefined>(undefined);
+  const latestQuoteRef = useRef<StockQuoteResponse | undefined>(undefined);
   const quoteRefreshControllerRef = useRef<AbortController | null>(null);
   const lastScrollYRef = useRef(0);
   const isSearchCollapsedRef = useRef(false);
@@ -133,13 +170,22 @@ export default function StockDashboard() {
     quoteRefreshControllerRef.current?.abort();
     setTickerInput(dashboardInputValue(tickerParam));
     if (!tickerParam) {
+      latestScoreRef.current = undefined;
+      latestQuoteRef.current = undefined;
+      setScoreBackgroundPending(undefined);
       setState({ status: "idle" });
       return;
     }
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker: tickerParam, partial: "1" });
+    const cached = readDashboardClientCache(tickerParam);
+    latestScoreRef.current = cached?.score;
+    latestQuoteRef.current = cached?.quote;
+    setScoreBackgroundPending(undefined);
 
     setState((current) => {
+      if (cached?.score) return { status: "success", data: cached.score };
+      if (current.status === "success" && scoreBelongsToTicker(current.data, tickerParam)) return current;
       const pending = current.status === "pending" || current.status === "partial" ? current.pending : undefined;
       if ((current.status === "pending" || current.status === "partial") && pendingBelongsToTicker(pending, tickerParam)) return current;
       if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(pending, tickerParam))) return current;
@@ -158,11 +204,16 @@ export default function StockDashboard() {
         const pending = snapshotPendingFromPayload(payload, tickerParam);
         const partialData = pending ? partialStockDataFromPayload(payload, tickerParam) : undefined;
         if (pending && partialData) {
-          setState({ status: "partial", data: partialData, pending });
+          setScoreBackgroundPending(pending);
+          setState((current) => (current.status === "success" && scoreBelongsToTicker(current.data, tickerParam) ? current : { status: "partial", data: partialData, pending }));
           return undefined;
         }
         if (pending) {
-          setState((current) => (current.status === "partial" ? current : { status: "pending", pending }));
+          setScoreBackgroundPending(pending);
+          setState((current) => {
+            if (current.status === "success" && scoreBelongsToTicker(current.data, tickerParam)) return current;
+            return current.status === "partial" ? current : { status: "pending", pending };
+          });
           return undefined;
         }
         if (!response.ok) {
@@ -171,12 +222,16 @@ export default function StockDashboard() {
         return payload as StockScoreResponse;
       })
       .then((data) => {
-        if (data) setState({ status: "success", data });
+        if (!data) return;
+        latestScoreRef.current = data;
+        setScoreBackgroundPending(undefined);
+        setState({ status: "success", data });
+        rememberDashboardClientCache(tickerParam, data, latestQuoteRef.current);
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
         setState((current) => {
-          if (current.status === "partial") return current;
+          if (current.status === "success" || current.status === "partial") return current;
           return {
             status: "error",
             error: error instanceof Error ? error.message : "데이터를 불러오지 못했어요.",
@@ -239,25 +294,32 @@ export default function StockDashboard() {
   }, []);
 
   useEffect(() => {
-    if (state.status !== "success") return;
-    const identity = stockHeaderIdentity(state.data);
-    setTickerInput(identity.primary || dashboardInputValue(tickerParam));
-  }, [state, tickerParam]);
+    if (!tickerParam) return;
+    const stockData = state.status === "success" || state.status === "partial" ? state.data : undefined;
+    const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
+    if (!stockData && !quoteData) return;
+    setTickerInput(dashboardSearchInputValue(stockData, quoteData, tickerParam));
+  }, [state, quoteState, tickerParam]);
 
   useEffect(() => {
     if (!tickerParam) {
       setQuoteState({ status: "idle" });
       setQuoteRefreshState({ status: "idle" });
+      latestQuoteRef.current = undefined;
       return;
     }
     const controller = new AbortController();
     const query = new URLSearchParams({ ticker: tickerParam });
+    const cached = readDashboardClientCache(tickerParam);
+    if (cached?.quote) latestQuoteRef.current = cached.quote;
 
-    setQuoteState((current) =>
-      shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(current.status === "pending" ? current.pending : undefined, tickerParam))
+    setQuoteState((current) => {
+      if (current.status === "success" && quoteBelongsToTicker(current.data, tickerParam)) return current;
+      if (cached?.quote) return { status: "success", data: cached.quote };
+      return shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(current.status === "pending" ? current.pending : undefined, tickerParam))
         ? current
-        : { status: "loading" }
-    );
+        : { status: "loading" };
+    });
     setQuoteRefreshState((current) => (reloadVersion > 0 && current.status === "pending" ? current : { status: "idle" }));
     fetch(`/api/quote?${query.toString()}`, {
       signal: controller.signal,
@@ -267,7 +329,7 @@ export default function StockDashboard() {
         const payload = await readClientApiPayload(response);
         const pending = snapshotPendingFromPayload(payload, tickerParam);
         if (pending) {
-          setQuoteState({ status: "pending", pending });
+          setQuoteState((current) => (current.status === "success" && quoteBelongsToTicker(current.data, tickerParam) ? current : { status: "pending", pending }));
           setQuoteRefreshState({ status: "pending", message: pending.message });
           return undefined;
         }
@@ -278,7 +340,9 @@ export default function StockDashboard() {
       })
       .then((data) => {
         if (!data) return;
+        latestQuoteRef.current = data;
         setQuoteState({ status: "success", data });
+        rememberDashboardClientCache(tickerParam, latestScoreRef.current, data);
         const nextAllowedAt = stringFromUnknown(data.refresh_cooldown?.next_allowed_at);
         const message = refreshCooldownMessage(nextAllowedAt);
         if (message) {
@@ -289,10 +353,14 @@ export default function StockDashboard() {
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
-        setQuoteState({
-          status: "error",
-          error: error instanceof Error ? error.message : "quote_fetch_failed",
-        });
+        setQuoteState((current) =>
+          current.status === "success" && quoteBelongsToTicker(current.data, tickerParam)
+            ? current
+            : {
+                status: "error",
+                error: error instanceof Error ? error.message : "quote_fetch_failed",
+              }
+        );
       });
 
     return () => controller.abort();
@@ -377,7 +445,13 @@ export default function StockDashboard() {
     setReloadVersion((version) => version + 1);
   }
 
-  const scorePending = tickerParam && (state.status === "pending" || state.status === "partial") ? state.pending : undefined;
+  const scorePending = tickerParam
+    ? state.status === "pending" || state.status === "partial"
+      ? state.pending
+      : scoreBackgroundPending && pendingBelongsToTicker(scoreBackgroundPending, tickerParam)
+        ? scoreBackgroundPending
+        : undefined
+    : undefined;
   const quotePending = tickerParam && quoteState.status === "pending" ? quoteState.pending : undefined;
   const pendingRetryTarget = pendingRetryTargetForDashboard(tickerParam, scorePending, quotePending);
   usePendingRetry({ pending: pendingRetryTarget?.pending, retryKey: pendingRetryTarget?.retryKey || "stock:none", onRetry: retryLoad });

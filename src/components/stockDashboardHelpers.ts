@@ -211,7 +211,14 @@ export type PartialStockSnapshotPayload = StockScoreResponse & {
   pending_snapshot?: unknown;
 };
 
+export type DashboardClientCacheSnapshot = {
+  score?: StockScoreResponse;
+  quote?: StockQuoteResponse;
+};
+
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DASHBOARD_CLIENT_CACHE_VERSION = 1;
+const DASHBOARD_CLIENT_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export function dashboardTickerFromSearchParam(value: string | null): string | undefined {
   const resolved = resolveTickerAlias(value);
@@ -220,8 +227,93 @@ export function dashboardTickerFromSearchParam(value: string | null): string | u
   return ticker || undefined;
 }
 
+export function dashboardClientCacheKey(ticker: string): string {
+  return `stock-dashboard:v${DASHBOARD_CLIENT_CACHE_VERSION}:${dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase()}`;
+}
+
+export function dashboardClientCacheJson({
+  ticker,
+  score,
+  quote,
+  savedAtMs = Date.now(),
+}: {
+  ticker: string;
+  score?: StockScoreResponse;
+  quote?: StockQuoteResponse;
+  savedAtMs?: number;
+}): string | undefined {
+  const normalizedTicker = dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase();
+  const scorePayload = score && dashboardPayloadBelongsToTicker(score, normalizedTicker) ? score : undefined;
+  const quotePayload = quote && dashboardPayloadBelongsToTicker(quote, normalizedTicker) ? quote : undefined;
+  if (!scorePayload && !quotePayload) return undefined;
+
+  return JSON.stringify({
+    version: DASHBOARD_CLIENT_CACHE_VERSION,
+    ticker: normalizedTicker,
+    saved_at_ms: savedAtMs,
+    score: scorePayload,
+    quote: quotePayload,
+  });
+}
+
+export function dashboardClientCacheFromJson(
+  raw: string | undefined | null,
+  ticker: string,
+  nowMs = Date.now(),
+  maxAgeMs = DASHBOARD_CLIENT_CACHE_MAX_AGE_MS
+): DashboardClientCacheSnapshot | undefined {
+  if (!raw) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+
+  const record = recordFromUnknown(parsed);
+  const normalizedTicker = dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase();
+  const cacheTicker = stringFromUnknown(record?.ticker);
+  const savedAtMs = numberFromUnknown(record?.saved_at_ms);
+  if (record?.version !== DASHBOARD_CLIENT_CACHE_VERSION || cacheTicker !== normalizedTicker || savedAtMs === undefined) return undefined;
+  const ageMs = nowMs - savedAtMs;
+  if (ageMs < 0 || ageMs > maxAgeMs) return undefined;
+
+  const score = recordFromUnknown(record?.score);
+  const quote = recordFromUnknown(record?.quote);
+  const snapshot: DashboardClientCacheSnapshot = {};
+  if (score && dashboardPayloadBelongsToTicker(score, normalizedTicker)) {
+    snapshot.score = clientCachedPayload(score as StockScoreResponse, savedAtMs);
+  }
+  if (quote && dashboardPayloadBelongsToTicker(quote, normalizedTicker)) {
+    snapshot.quote = clientCachedPayload(quote as StockQuoteResponse, savedAtMs);
+  }
+  return snapshot.score || snapshot.quote ? snapshot : undefined;
+}
+
 export function dashboardInputValue(ticker: string | undefined): string {
   return ticker ? displayTickerInput(ticker) : "";
+}
+
+export function dashboardSearchInputValue(
+  data: StockScoreResponse | undefined,
+  quote: StockQuoteResponse | undefined,
+  fallbackTicker: string | undefined
+): string {
+  if (data) {
+    const identity = stockHeaderIdentity(data, quote);
+    if (identity.primaryKind === "name") return identity.primary;
+  }
+
+  if (quote) {
+    const quoteData = partialStockDataFromQuote(quote, fallbackTicker || stringFromUnknown(quote.requested_ticker) || "");
+    if (quoteData) {
+      const identity = stockHeaderIdentity(quoteData, quote);
+      if (identity.primaryKind === "name") return identity.primary;
+    }
+  }
+
+  return dashboardInputValue(fallbackTicker);
 }
 
 export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = false): boolean {
@@ -520,6 +612,30 @@ function recordFromUnknown(value: unknown): Record<string, unknown> | undefined 
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
+function dashboardPayloadBelongsToTicker(payload: Record<string, unknown>, ticker: string): boolean {
+  const requestedTicker = stringFromUnknown(payload.requested_ticker);
+  if (requestedTicker && dashboardTickerFromSearchParam(requestedTicker) === ticker) return true;
+
+  const market = stringFromUnknown(payload.market);
+  const symbol = stringFromUnknown(payload.symbol);
+  if (!market || !symbol) return false;
+  return `${market}:${cleanTickerSymbol(symbol)}` === ticker;
+}
+
+function clientCachedPayload<T extends StockScoreResponse | StockQuoteResponse>(payload: T, savedAtMs: number): T {
+  const serverCache = recordFromUnknown(payload.server_cache);
+  return {
+    ...payload,
+    server_cache: compactRecord({
+      ...serverCache,
+      state: "stale",
+      source: "client_cache",
+      refresh_started: true,
+      client_cached_at: new Date(savedAtMs).toISOString(),
+    }) as Record<string, JsonValue>,
+  };
+}
+
 export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: string): SnapshotPendingState | undefined {
   const record = recordFromUnknown(payload);
   if (record?.type === "partial_stock_snapshot" && record.pending_snapshot) {
@@ -641,16 +757,26 @@ export function scoreFreshnessTimeChip(data: StockScoreResponse): string | undef
 }
 
 export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string | undefined {
-  const scoreFetchedAt = cacheTimestamp(recordFromUnknown(data.server_cache), "fetched_at");
-  const quoteFetchedAt = cacheTimestamp(recordFromUnknown(quote?.server_cache), "fetched_at");
-  const fetchedAt = newestTimestamp(scoreFetchedAt, quoteFetchedAt);
+  const scoreCache = recordFromUnknown(data.server_cache);
+  const quoteCache = recordFromUnknown(quote?.server_cache);
+  const scoreFetchedAt = cacheTimestamp(scoreCache, "fetched_at");
+  const quoteFetchedAt = cacheTimestamp(quoteCache, "fetched_at");
+  const scoreSource = stringFromUnknown(scoreCache?.source);
+  let fetchedAt = scoreFetchedAt;
+  let source = scoreSource;
+  if (quoteFetchedAt && (!scoreFetchedAt || Date.parse(quoteFetchedAt) > Date.parse(scoreFetchedAt))) {
+    fetchedAt = quoteFetchedAt;
+    source = stringFromUnknown(quoteCache?.source);
+  }
   const time = fetchedAt ? formatKstTime(fetchedAt) : undefined;
-  return time ? `${time} 기준` : undefined;
+  if (!time) return undefined;
+  return scoreSource === "client_cache" || source === "client_cache" ? `브라우저 캐시 · ${time} 기준` : `${time} 기준`;
 }
 
 function scoreFreshnessSourceLabel(source: string | undefined): string {
   if (source === "supabase") return "Supabase";
   if (source === "market-data") return "Rust market-data";
+  if (source === "client_cache") return "브라우저 캐시";
   if (source === "cache") return "Rust cache";
   if (source === "queue") return "Refresh queue";
   if (source === "provider") return "Provider";
@@ -663,19 +789,6 @@ function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string)
   const millis = numberFromUnknown(cache?.[`${key}_ms`]);
   if (millis === undefined) return undefined;
   return new Date(millis).toISOString();
-}
-
-function newestTimestamp(...values: Array<string | undefined>): string | undefined {
-  let newest: string | undefined;
-  let newestMs = Number.NEGATIVE_INFINITY;
-  for (const value of values) {
-    if (!value) continue;
-    const millis = Date.parse(value);
-    if (!Number.isFinite(millis) || millis <= newestMs) continue;
-    newest = value;
-    newestMs = millis;
-  }
-  return newest;
 }
 
 function formatKstMinute(value: string): string | undefined {

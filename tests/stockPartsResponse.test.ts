@@ -145,6 +145,51 @@ test("pendingPartialStockPayload returns ready quote and chart parts while score
   assert.equal(Array.isArray(payload?.chart_series), true);
 });
 
+test("pendingPartialStockPayload prefers symbol master names over numeric quote names", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+
+  const nowMs = Date.now();
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/stock_quote_snapshots")) {
+      return Response.json([
+        {
+          ticker: "KR:004020",
+          payload: { ok: true, type: "quote", requested_ticker: "KR:004020", market: "KR", symbol: "004020", name: "004020", latest_price: 28550 },
+          fetched_at: new Date(nowMs - 10_000).toISOString(),
+          expires_at: new Date(nowMs + 300_000).toISOString(),
+          stale_expires_at: new Date(nowMs + 86_400_000).toISOString(),
+        },
+      ]);
+    }
+    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const pending = {
+    ok: false,
+    error: "snapshot_pending",
+    message: "Stock data is being prepared. Please retry shortly.",
+    kind: "score",
+    ticker: "KR:004020",
+    view: "detail",
+    reason: "snapshot_miss",
+    retry_after_seconds: 5,
+    refresh_request: { queued: true, job_id: "job-score", status: "queued" },
+  } satisfies StockPendingPayload;
+
+  const payload = await pendingPartialStockPayload({ pending, ticker: "KR:004020", view: "detail" });
+
+  assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.equal(payload?.symbol, "004020");
+  assert.equal(payload?.name, "현대제철");
+  assert.equal(payload?.display_name, "현대제철");
+  assert.equal(payload?.korean_name, "현대제철");
+  assert.equal((payload?.parts as Record<string, Record<string, unknown>>).quote.state, "fresh");
+  assert.equal((payload?.parts as Record<string, Record<string, unknown>>).score.state, "pending");
+});
+
 test("pendingPartialStockPayload reads quote and chart snapshots concurrently", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";

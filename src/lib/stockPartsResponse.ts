@@ -115,7 +115,7 @@ export async function pendingPartialStockPayload({
     }
   }
 
-  const identityPayload = quote || chart || identity;
+  const identityPayload = identity || quote || chart;
   if (!identityPayload) return undefined;
   if (!quote && !chart) {
     parts.identity = { state: "fresh", source: "symbol_master" };
@@ -133,6 +133,10 @@ export async function pendingPartialStockPayload({
       name: stringField(identitySource.name),
       exchange: stringField(identitySource.exchange),
       currency: stringField(identitySource.currency),
+      display_name: stringField(identitySource.display_name),
+      korean_name: stringField(identitySource.korean_name),
+      english_name: stringField(identitySource.english_name),
+      instrument_type: stringField(identitySource.instrument_type),
       quote,
       chart,
       chart_series: Array.isArray(chart?.chart_series) ? chart?.chart_series : undefined,
