@@ -337,6 +337,85 @@ test("compare score cache skips daily rows and uses the quote-only fast path imm
   assert.equal(result.cache.state, "miss");
 });
 
+test("compare score cache does not wait for slow Supabase score writes", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  let writeStarted = false;
+  let writeFinished = false;
+  globalThis.fetch = async (url, init) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_score_snapshots") && init?.method === "POST") {
+      writeStarted = true;
+      await sleep(250);
+      writeFinished = true;
+      return new Response(null, { status: 204 });
+    }
+    if (text.includes("/rest/v1/stock_score_snapshots")) {
+      return Response.json([]);
+    }
+    if (text.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 10, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (text.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      return Response.json({ id: "job-compare-write-behind", status: "queued" });
+    }
+    if (text.includes("/rest/v1/rpc/acquire_kis_token_issue_lock")) {
+      return Response.json({ acquired: true });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens") && init?.method === "POST") {
+      return new Response(null, { status: 204 });
+    }
+    if (text.includes("/rest/v1/kis_access_tokens")) {
+      return Response.json([]);
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-compare-write", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "21.25",
+          base: "21.00",
+          rate: "1.19",
+          tvol: "32000",
+          curr: "USD",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Apogee Therapeutics",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const startedAt = Date.now();
+  const result = await getStockScore("US:APGE", "compare");
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.requested_ticker, "US:APGE");
+  assert.equal(writeStarted, true);
+  assert.equal(writeFinished, false);
+  assert.ok(elapsedMs < 200, `compare score waited ${elapsedMs}ms for the score write`);
+
+  await sleep(300);
+  assert.equal(writeFinished, true);
+});
+
 test("quote cache reports background-only refresh in Vercel snapshot mode", async () => {
   useSnapshotOnlyRuntime();
 

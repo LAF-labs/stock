@@ -225,7 +225,11 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
 
     if (payload.ok !== false) {
       rememberMemorySnapshot(key, snapshot, nowMs);
-      await writeSupabaseSnapshot(snapshot);
+      if (snapshot.view === "compare") {
+        void writeSupabaseSnapshot(snapshot);
+      } else {
+        await writeSupabaseSnapshot(snapshot);
+      }
     }
 
     return snapshot;
