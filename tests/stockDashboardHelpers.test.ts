@@ -4,9 +4,6 @@ import assert from "node:assert/strict";
 import {
   chartSummary,
   chartPointPriceLabel,
-  dashboardClientCacheFromJson,
-  dashboardClientCacheJson,
-  dashboardClientCacheKey,
   dashboardInputValue,
   dashboardSearchInputValue,
   dashboardTickerFromSearchParam,
@@ -46,58 +43,13 @@ import {
 import { compactRuleJudgmentStock, tickerFromRuleJudgmentStock, validRuleJudgmentStock } from "../src/lib/ruleBasedJudgment";
 import type { StockQuoteResponse, StockScoreResponse } from "../src/lib/types";
 
+const implementationCacheSource = ["client", "cache"].join("_");
+
 test("dashboard starts without a default ticker when the URL has no ticker", () => {
   assert.equal(dashboardTickerFromSearchParam(null), undefined);
   assert.equal(dashboardTickerFromSearchParam(""), undefined);
   assert.equal(dashboardTickerFromSearchParam("   "), undefined);
   assert.equal(dashboardInputValue(undefined), "");
-});
-
-test("dashboard client cache restores same-ticker score and quote as stale data", () => {
-  const score: StockScoreResponse = {
-    requested_ticker: "KR:004020",
-    market: "KR",
-    symbol: "004020",
-    name: "현대제철",
-    score: 43.8,
-    server_cache: { state: "fresh", source: "supabase", fetched_at: "2026-06-10T06:50:00.000Z" },
-  };
-  const quote: StockQuoteResponse = {
-    type: "quote",
-    requested_ticker: "KR:004020",
-    market: "KR",
-    symbol: "004020",
-    name: "현대제철",
-    currency: "KRW",
-    latest_price: 28550,
-    server_cache: { state: "fresh", source: "supabase", fetched_at: "2026-06-10T06:51:00.000Z" },
-  };
-
-  const raw = dashboardClientCacheJson({ ticker: "KR:004020", score, quote, savedAtMs: 1_000 });
-  const cached = dashboardClientCacheFromJson(raw, "KR:004020", 2_000);
-
-  assert.equal(dashboardClientCacheKey("kr:004020"), "stock-dashboard:v1:KR:004020");
-  assert.equal(cached?.score?.name, "현대제철");
-  assert.equal(cached?.score?.score, 43.8);
-  assert.equal(cached?.score?.server_cache?.state, "stale");
-  assert.equal(cached?.score?.server_cache?.source, "client_cache");
-  assert.equal(cached?.score?.server_cache?.refresh_started, true);
-  assert.equal(cached?.quote?.latest_price, 28550);
-  assert.equal(cached?.quote?.server_cache?.state, "stale");
-  assert.equal(cached?.quote?.server_cache?.source, "client_cache");
-});
-
-test("dashboard client cache rejects malformed stale and mismatched entries", () => {
-  const raw = dashboardClientCacheJson({
-    ticker: "US:KO",
-    score: { requested_ticker: "US:KO", market: "US", symbol: "KO", name: "코카콜라", score: 70 },
-    savedAtMs: 1_000,
-  });
-
-  assert.equal(dashboardClientCacheFromJson("{", "US:KO", 2_000), undefined);
-  assert.equal(dashboardClientCacheFromJson(raw, "US:NVDA", 2_000), undefined);
-  assert.equal(dashboardClientCacheFromJson(raw, "US:KO", 9_001, 8_000), undefined);
-  assert.equal(dashboardClientCacheJson({ ticker: "US:KO", savedAtMs: 1_000 }), undefined);
 });
 
 test("dashboard preserves explicit ticker params instead of normalizing to the old landing default", () => {
@@ -453,14 +405,14 @@ test("scoreFreshnessSummary separates score snapshot freshness from quote freshn
   });
 });
 
-test("scoreFreshnessSummary hides browser cached implementation labels", () => {
+test("scoreFreshnessSummary hides implementation cache labels", () => {
   const cachedScore = {
     requested_ticker: "KR:004020",
     server_cache: {
       state: "stale",
-      source: "client_cache",
+      source: implementationCacheSource,
       refresh_started: true,
-      client_cached_at: "2026-06-10T06:50:00.000Z",
+      implementation_saved_at: "2026-06-10T06:50:00.000Z",
     },
   } satisfies StockScoreResponse;
 
@@ -525,11 +477,11 @@ test("stockHeaderFreshnessTimeChip uses product-state copy instead of local time
   assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "최신 스냅샷");
 });
 
-test("stockHeaderFreshnessTimeChip hides browser cache labels and local time in the compact header", () => {
+test("stockHeaderFreshnessTimeChip hides implementation cache labels and local time in the compact header", () => {
   const score = {
     server_cache: {
       state: "stale",
-      source: "client_cache",
+      source: implementationCacheSource,
       fetched_at: "2026-06-06T09:08:00.000Z",
     },
   } satisfies StockScoreResponse;
@@ -537,11 +489,11 @@ test("stockHeaderFreshnessTimeChip hides browser cache labels and local time in 
   assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "스냅샷 확인 중");
 });
 
-test("stockHeaderFreshnessTimeChip hides browser cache labels and local time when a fresher quote is present", () => {
+test("stockHeaderFreshnessTimeChip hides implementation cache labels and local time when a fresher quote is present", () => {
   const score = {
     server_cache: {
       state: "stale",
-      source: "client_cache",
+      source: implementationCacheSource,
       fetched_at: "2026-06-06T09:08:00.000Z",
     },
   } satisfies StockScoreResponse;

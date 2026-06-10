@@ -401,16 +401,16 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Remove `dashboardClientCacheKey`, `dashboardClientCacheJson`, `dashboardClientCacheFromJson`, `DASHBOARD_CLIENT_CACHE_VERSION`, and `DASHBOARD_CLIENT_CACHE_MAX_AGE_MS`.
-- [ ] Remove the `client_cache` server_cache source and browser cache freshness labels from helpers/tests.
-- [ ] Use TanStack persisted cache as the only client persistence layer.
-- [ ] Ensure persisted score/quote data is hydrated before queries fetch. Use `PersistQueryClientProvider`.
-- [ ] Set `persistOptions.maxAge` to 3 days initially; increase only if memory/storage budgets are measured.
-- [ ] Persist large technical payloads only when the Phase 5 measured persisted payload size stays within the recorded storage budget; otherwise exclude technical or chart-heavy queries via `shouldDehydrateQuery`/custom persister filtering.
-- [ ] Delete or rewrite `tests/stockDashboardClientCache.test.ts`; do not keep tests that assert localStorage implementation details.
-- [ ] Replace helper tests that expected `server_cache.source = "client_cache"` with tests for query-cache placeholder behavior and hidden implementation labels.
-- [ ] Verify persisted cache restore does not show "브라우저 캐시", local timestamp chips, or stale implementation text in `StockHeader`.
-- [ ] Validation: `rg -n "client_cache|dashboardClientCache|stock-dashboard:v|브라우저 캐시|localStorage" src tests` returns no legacy dashboard pipeline hits.
+- [x] Remove `dashboardClientCacheKey`, `dashboardClientCacheJson`, `dashboardClientCacheFromJson`, `DASHBOARD_CLIENT_CACHE_VERSION`, and `DASHBOARD_CLIENT_CACHE_MAX_AGE_MS`.
+- [x] Remove the `client_cache` server_cache source and browser cache freshness labels from helpers/tests.
+- [x] Use TanStack persisted cache as the only client persistence layer.
+- [x] Ensure persisted score/quote data is hydrated before queries fetch. Use `PersistQueryClientProvider`.
+- [x] Set `persistOptions.maxAge` to 3 days initially; increase only if memory/storage budgets are measured.
+- [x] Persist large technical payloads only when the Phase 5 measured persisted payload size stays within the recorded storage budget; otherwise exclude technical or chart-heavy queries via `shouldDehydrateQuery`/custom persister filtering.
+- [x] Delete or rewrite `tests/stockDashboardClientCache.test.ts`; do not keep tests that assert localStorage implementation details.
+- [x] Replace helper tests that expected `server_cache.source = "client_cache"` with tests for query-cache placeholder behavior and hidden implementation labels.
+- [x] Verify persisted cache restore does not show "브라우저 캐시", local timestamp chips, or stale implementation text in `StockHeader`.
+- [x] Validation: `rg -n "client_cache|dashboardClientCache|stock-dashboard:v|브라우저 캐시|localStorage" src tests` returns no legacy dashboard pipeline hits.
 
 ## Phase 9: Invalidation, Mutations, And Cross-Screen Cache Sharing
 

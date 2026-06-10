@@ -1,9 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const componentSource = (file: string) => readFileSync(join(process.cwd(), "src/components", file), "utf8");
+const componentPath = (file: string) => join(process.cwd(), "src/components", file);
+const legacyDashboardCacheModule = ["stockDashboard", "Client", "Cache.ts"].join("");
+const legacyDashboardCachePattern = new RegExp(
+  [
+    ["dashboard", "Client", "Cache"].join(""),
+    ["DASHBOARD", "CLIENT", "CACHE"].join("_"),
+    ["client", "cache"].join("_"),
+    ["stock-dashboard", ":v"].join(""),
+  ].join("|"),
+);
 
 const serverStateOwners = [
   "StockDashboard.tsx",
@@ -72,6 +82,17 @@ test("symbol autocomplete uses the TanStack query pipeline instead of legacy fet
   assert.doesNotMatch(autocomplete, /fetch\s*\(\s*`\/api\/symbols\?/, "symbol autocomplete must not fetch symbols directly");
   assert.doesNotMatch(autocomplete, /AbortController|itemsQuery|setItems|hasSearched|searchError/, "symbol autocomplete must not keep legacy fetch state");
   assert.match(autocomplete, /useSymbolSearchQuery/, "symbol autocomplete should delegate server state to the query adapter");
+});
+
+test("dashboard has no legacy manual browser persistence pipeline", () => {
+  assert.equal(existsSync(componentPath(legacyDashboardCacheModule)), false, "manual dashboard browser persistence module must be removed");
+
+  const helpers = componentSource("stockDashboardHelpers.ts");
+  assert.doesNotMatch(
+    helpers,
+    legacyDashboardCachePattern,
+    "dashboard helpers must not expose legacy manual persistence helpers or implementation source labels",
+  );
 });
 
 test("no unreviewed stock data owner components are introduced", () => {

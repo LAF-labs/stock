@@ -202,84 +202,13 @@ export type PartialStockSnapshotPayload = StockScoreResponse & {
   pending_snapshot?: unknown;
 };
 
-export type DashboardClientCacheSnapshot = {
-  score?: StockScoreResponse;
-  quote?: StockQuoteResponse;
-};
-
 const CHART_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DASHBOARD_CLIENT_CACHE_VERSION = 1;
-const DASHBOARD_CLIENT_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export function dashboardTickerFromSearchParam(value: string | null): string | undefined {
   const resolved = resolveTickerAlias(value);
   if (resolved.ok) return resolved.ticker;
   const ticker = value?.trim().toUpperCase();
   return ticker || undefined;
-}
-
-export function dashboardClientCacheKey(ticker: string): string {
-  return `stock-dashboard:v${DASHBOARD_CLIENT_CACHE_VERSION}:${dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase()}`;
-}
-
-export function dashboardClientCacheJson({
-  ticker,
-  score,
-  quote,
-  savedAtMs = Date.now(),
-}: {
-  ticker: string;
-  score?: StockScoreResponse;
-  quote?: StockQuoteResponse;
-  savedAtMs?: number;
-}): string | undefined {
-  const normalizedTicker = dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase();
-  const scorePayload = score && dashboardPayloadBelongsToTicker(score, normalizedTicker) ? score : undefined;
-  const quotePayload = quote && dashboardPayloadBelongsToTicker(quote, normalizedTicker) ? quote : undefined;
-  if (!scorePayload && !quotePayload) return undefined;
-
-  return JSON.stringify({
-    version: DASHBOARD_CLIENT_CACHE_VERSION,
-    ticker: normalizedTicker,
-    saved_at_ms: savedAtMs,
-    score: scorePayload,
-    quote: quotePayload,
-  });
-}
-
-export function dashboardClientCacheFromJson(
-  raw: string | undefined | null,
-  ticker: string,
-  nowMs = Date.now(),
-  maxAgeMs = DASHBOARD_CLIENT_CACHE_MAX_AGE_MS
-): DashboardClientCacheSnapshot | undefined {
-  if (!raw) return undefined;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-
-  const record = recordFromUnknown(parsed);
-  const normalizedTicker = dashboardTickerFromSearchParam(ticker) || ticker.trim().toUpperCase();
-  const cacheTicker = stringFromUnknown(record?.ticker);
-  const savedAtMs = numberFromUnknown(record?.saved_at_ms);
-  if (record?.version !== DASHBOARD_CLIENT_CACHE_VERSION || cacheTicker !== normalizedTicker || savedAtMs === undefined) return undefined;
-  const ageMs = nowMs - savedAtMs;
-  if (ageMs < 0 || ageMs > maxAgeMs) return undefined;
-
-  const score = recordFromUnknown(record?.score);
-  const quote = recordFromUnknown(record?.quote);
-  const snapshot: DashboardClientCacheSnapshot = {};
-  if (score && dashboardPayloadBelongsToTicker(score, normalizedTicker)) {
-    snapshot.score = clientCachedPayload(score as StockScoreResponse, savedAtMs);
-  }
-  if (quote && dashboardPayloadBelongsToTicker(quote, normalizedTicker)) {
-    snapshot.quote = clientCachedPayload(quote as StockQuoteResponse, savedAtMs);
-  }
-  return snapshot.score || snapshot.quote ? snapshot : undefined;
 }
 
 export function dashboardInputValue(ticker: string | undefined): string {
@@ -601,30 +530,6 @@ export function stringFromUnknown(value: unknown): string | undefined {
 
 function recordFromUnknown(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-}
-
-function dashboardPayloadBelongsToTicker(payload: Record<string, unknown>, ticker: string): boolean {
-  const requestedTicker = stringFromUnknown(payload.requested_ticker);
-  if (requestedTicker && dashboardTickerFromSearchParam(requestedTicker) === ticker) return true;
-
-  const market = stringFromUnknown(payload.market);
-  const symbol = stringFromUnknown(payload.symbol);
-  if (!market || !symbol) return false;
-  return `${market}:${cleanTickerSymbol(symbol)}` === ticker;
-}
-
-function clientCachedPayload<T extends StockScoreResponse | StockQuoteResponse>(payload: T, savedAtMs: number): T {
-  const serverCache = recordFromUnknown(payload.server_cache);
-  return {
-    ...payload,
-    server_cache: compactRecord({
-      ...serverCache,
-      state: "stale",
-      source: "client_cache",
-      refresh_started: true,
-      client_cached_at: new Date(savedAtMs).toISOString(),
-    }) as Record<string, JsonValue>,
-  };
 }
 
 export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: string): SnapshotPendingState | undefined {
