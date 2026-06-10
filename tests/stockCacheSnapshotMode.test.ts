@@ -416,6 +416,38 @@ test("compare score cache does not wait for slow Supabase score writes", async (
   assert.equal(writeFinished, true);
 });
 
+test("compare score cache returns an identity fast path when quote data is unavailable", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-compare-identity", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      return Response.json({ rt_cd: "1", msg1: "quote not found" });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      return Response.json({ rt_cd: "0", output2: [] });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("US:APPF", "compare");
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.requested_ticker, "US:APPF");
+  assert.equal(result.payload.display_name, "앱폴리오");
+  assert.equal(result.payload.data_quality, "identity_fast_path");
+  assert.equal((result.payload.fetch as Record<string, unknown>).provider_mode, "compare_identity_fast_path");
+  assert.equal((result.payload.chart_series as unknown[]).length, 0);
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.cache.state, "miss");
+});
+
 test("quote cache reports background-only refresh in Vercel snapshot mode", async () => {
   useSnapshotOnlyRuntime();
 

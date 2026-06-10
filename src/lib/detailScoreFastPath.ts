@@ -52,8 +52,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
       const quote = await fetchKisQuote(ticker);
       return buildQuoteOnlyDetailScorePayload(quote, view);
     } catch {
-      // If the quote endpoint is temporarily unavailable, the daily chart path is
-      // still a useful fallback for compare cards.
+      return buildCompareIdentityScorePayload(ticker, view);
     }
   }
 
@@ -322,6 +321,45 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
       source: "market_data",
       provider_mode: "detail_quote_fast_path",
       daily_timeout_ms: detailDailyFastPathTimeoutMs(),
+    },
+  };
+}
+
+async function buildCompareIdentityScorePayload(ticker: string, view: ScoreView): Promise<StockPayload> {
+  const parts = ticker.split(":");
+  const market = parts[0] === "KR" ? "KR" : "US";
+  const symbol = (parts[1] || ticker).replace(/^(US|KR):/i, "");
+  const identity = await fastPathIdentity(`${market}:${symbol}`, symbol, symbol);
+  const displayName = identity.displayName || symbol;
+  const payload = await buildQuoteOnlyDetailScorePayload(
+    {
+      requested_ticker: `${market}:${symbol}`,
+      market,
+      symbol,
+      name: displayName,
+      currency: market === "KR" ? "KRW" : "USD",
+      exchange: market === "KR" ? "KRX/NXT" : "US",
+      fetch: {
+        source: "symbol_master",
+        provider_mode: "compare_identity_fast_path",
+      },
+    },
+    view
+  );
+
+  return {
+    ...payload,
+    data_quality: "identity_fast_path",
+    summary: `${displayName}의 현재가가 아직 들어오지 않아 종목 정보로 먼저 만든 빠른 비교 카드입니다. 현재가와 차트 보강 점수는 백그라운드에서 갱신됩니다.`,
+    financials: {
+      ...(isRecord(payload.financials) ? payload.financials : {}),
+      identity_only_fast_path: true,
+      message: "현재가, 차트, 정식 재무 데이터는 백그라운드 점수 스냅샷에서 보강됩니다.",
+    },
+    fetch: {
+      ...(isRecord(payload.fetch) ? payload.fetch : {}),
+      provider_mode: "compare_identity_fast_path",
+      quote_unavailable: true,
     },
   };
 }
