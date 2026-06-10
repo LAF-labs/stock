@@ -8,7 +8,7 @@ import StockHeader from "@/components/StockHeader";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import {
   dashboardInputValue,
-  dashboardSearchInputValue,
+  dashboardSearchSyncDecision,
   dashboardTickerFromSearchParam,
   dailyChangeText,
   dailyToneClass,
@@ -108,23 +108,20 @@ export default function StockDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!tickerParam) {
-      previousTickerParamRef.current = tickerParam;
-      setIsSearchEditing(false);
-      setTickerInput("");
-      return;
-    }
-    const tickerChanged = previousTickerParamRef.current !== tickerParam;
-    if (tickerChanged) {
-      previousTickerParamRef.current = tickerParam;
-      setIsSearchEditing(false);
-      setTickerInput(dashboardInputValue(tickerParam));
-      return;
-    }
-    if (isSearchEditing) return;
     const stockData = data || partialData;
-    if (!stockData && !quoteData) return;
-    setTickerInput(dashboardSearchInputValue(stockData, quoteData, tickerParam));
+    const decision = dashboardSearchSyncDecision({
+      tickerParam,
+      previousTickerParam: previousTickerParamRef.current,
+      isSearchEditing,
+      data: stockData,
+      quote: quoteData,
+    });
+
+    previousTickerParamRef.current = decision.previousTickerParam;
+    if (decision.action === "none") return;
+
+    setIsSearchEditing(decision.isSearchEditing);
+    setTickerInput(decision.value);
   }, [data, isSearchEditing, partialData, quoteData, tickerParam]);
 
   function handleTickerInputChange(value: string) {

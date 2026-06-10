@@ -6,6 +6,7 @@ import {
   chartPointPriceLabel,
   dashboardInputValue,
   dashboardSearchInputValue,
+  dashboardSearchSyncDecision,
   dashboardTickerFromSearchParam,
   dailyChangeText,
   dailyToneClass,
@@ -199,6 +200,36 @@ test("dashboard search input prefers stock names from partial data", () => {
   assert.ok(partial);
   assert.equal(dashboardSearchInputValue(partial, undefined, "KR:004020"), "현대제철");
   assert.equal(dashboardSearchInputValue(partialStockDataFromTicker("KR:004020"), undefined, "KR:004020"), "004020");
+});
+
+test("dashboard search sync leaves landing input alone while the user is editing", () => {
+  assert.deepEqual(
+    dashboardSearchSyncDecision({
+      tickerParam: undefined,
+      previousTickerParam: undefined,
+      isSearchEditing: true,
+    }),
+    {
+      action: "none",
+      previousTickerParam: undefined,
+    },
+  );
+});
+
+test("dashboard search sync clears once when navigating from detail back to landing", () => {
+  assert.deepEqual(
+    dashboardSearchSyncDecision({
+      tickerParam: undefined,
+      previousTickerParam: "KR:004020",
+      isSearchEditing: true,
+    }),
+    {
+      action: "replace",
+      value: "",
+      isSearchEditing: false,
+      previousTickerParam: undefined,
+    },
+  );
 });
 
 test("dashboard search input keeps Korean stock names from ready score or quote payloads", () => {

@@ -244,6 +244,47 @@ export function dashboardSearchInputValue(
   return dashboardInputValue(fallbackTicker);
 }
 
+export type DashboardSearchSyncDecision =
+  | { action: "none"; previousTickerParam: string | undefined }
+  | { action: "replace"; value: string; isSearchEditing: false; previousTickerParam: string | undefined };
+
+export function dashboardSearchSyncDecision(input: {
+  tickerParam: string | undefined;
+  previousTickerParam: string | undefined;
+  isSearchEditing: boolean;
+  data?: StockScoreResponse;
+  quote?: StockQuoteResponse;
+}): DashboardSearchSyncDecision {
+  const tickerChanged = input.previousTickerParam !== input.tickerParam;
+
+  if (!input.tickerParam) {
+    if (!tickerChanged) {
+      return { action: "none", previousTickerParam: input.previousTickerParam };
+    }
+    return { action: "replace", value: "", isSearchEditing: false, previousTickerParam: input.tickerParam };
+  }
+
+  if (tickerChanged) {
+    return {
+      action: "replace",
+      value: dashboardInputValue(input.tickerParam),
+      isSearchEditing: false,
+      previousTickerParam: input.tickerParam,
+    };
+  }
+
+  if (input.isSearchEditing || (!input.data && !input.quote)) {
+    return { action: "none", previousTickerParam: input.previousTickerParam };
+  }
+
+  return {
+    action: "replace",
+    value: dashboardSearchInputValue(input.data, input.quote, input.tickerParam),
+    isSearchEditing: false,
+    previousTickerParam: input.previousTickerParam,
+  };
+}
+
 export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = false): boolean {
   return status === "loading" || (status === "pending" && !hasUsefulPartialData);
 }
