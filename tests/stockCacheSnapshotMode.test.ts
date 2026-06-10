@@ -21,6 +21,7 @@ const ENV_KEYS = [
   "STOCK_API_APP_SECRET",
   "STOCK_API_BASE",
   "STOCK_TECHNICAL_REQUEST_FAST_PATH",
+  "STOCK_DETAIL_REQUEST_FAST_PATH",
   "STOCK_QUOTE_CACHE_STALE_SECONDS",
   "STOCK_SCORE_CACHE_STALE_SECONDS",
   "SUPABASE_READ_TIMEOUT_MS",
@@ -162,6 +163,62 @@ test("technical score cache builds a request fast path from KIS daily rows in Ve
   assert.equal(result.payload.requested_ticker, "US:FASTTECH");
   assert.equal((result.payload.technical_analysis as Record<string, unknown>).type, "technical_analysis");
   assert.equal((result.payload.chart_series as unknown[]).length, 80);
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.cache.state, "miss");
+});
+
+test("detail score cache builds a request fast path from KIS daily rows in Vercel snapshot mode", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  const rows = Array.from({ length: 120 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 0, 2 + index)).toISOString().slice(0, 10).replace(/-/g, "");
+    const close = 10 + index * 0.04;
+    return {
+      xymd: date,
+      open: String(close - 0.08),
+      high: String(close + 0.2),
+      low: String(close - 0.2),
+      clos: String(close),
+      tvol: String(120_000 + index * 50),
+    };
+  });
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-detail", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      return Response.json({ rt_cd: "0", output2: rows });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("US:BEEM", "detail");
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.requested_ticker, "US:BEEM");
+  assert.equal(result.payload.score_model_version, "score-v5-dual-quality-opportunity-2026-06-05");
+  assert.equal(typeof result.payload.score, "number");
+  assert.equal(typeof result.payload.quality_score, "number");
+  assert.equal(typeof result.payload.opportunity_score, "number");
+  assert.equal(result.payload.korean_name, "빔 글로벌");
+  assert.equal(result.payload.display_name, "빔 글로벌");
+  assert.equal(result.payload.name, "빔 글로벌");
+  assert.equal((result.payload.chart_series as unknown[]).length, 120);
+  assert.equal((result.payload.technical_analysis as Record<string, unknown>).type, "technical_analysis");
+  assert.deepEqual(
+    (result.payload.components as Array<Record<string, unknown>>).map((item) => item.key),
+    ["profitability", "growth", "health", "momentum", "valuation"]
+  );
+  assert.deepEqual(
+    (result.payload.opportunity_components as Array<Record<string, unknown>>).map((item) => item.key),
+    ["opportunity_momentum", "opportunity_growth", "opportunity_analyst", "opportunity_liquidity", "opportunity_risk"]
+  );
+  assert.equal((result.payload.fetch as Record<string, unknown>).detail_fast_path, true);
   assert.equal(result.cache.source, "market-data");
   assert.equal(result.cache.state, "miss");
 });

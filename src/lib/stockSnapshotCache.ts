@@ -252,6 +252,13 @@ async function scoreRefreshPayload(ticker: string, view: ScoreView): Promise<Sto
     }
   }
 
+  if (!pythonCollectorEnabled()) {
+    const { buildDetailScoreFastPathPayload, detailRequestFastPathEnabled } = await import("@/lib/detailScoreFastPath");
+    if (detailRequestFastPathEnabled()) {
+      return buildDetailScoreFastPathPayload(ticker, view);
+    }
+  }
+
   const { runScoreCollector } = await import("@/lib/pythonStockCollector");
   return runScoreCollector(ticker, view);
 }
@@ -380,6 +387,27 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
           }
         } catch (error) {
           console.warn("technical_request_fast_path_unavailable", { ticker, error: publicRefreshErrorCode(error) });
+        }
+      }
+      if (view !== "technical") {
+        try {
+          const { detailRequestFastPathEnabled } = await import("@/lib/detailScoreFastPath");
+          if (detailRequestFastPathEnabled()) {
+            const refreshed = await refreshSnapshot(ticker, view);
+            scheduleQueuedRefresh(
+              ticker,
+              view,
+              options.forceRefresh
+                ? STOCK_REFRESH_PRIORITIES.FORCE_REFRESH
+                : view === "compare"
+                  ? STOCK_REFRESH_PRIORITIES.USER_COMPARE_SCORE_MISS
+                  : STOCK_REFRESH_PRIORITIES.USER_DETAIL_SCORE_MISS,
+              options.forceRefresh ? "refresh_background_only" : "snapshot_miss"
+            );
+            return decorate(refreshed, "miss", "market-data");
+          }
+        } catch (error) {
+          console.warn("detail_request_fast_path_unavailable", { ticker, view, error: publicRefreshErrorCode(error) });
         }
       }
       throw new StockDataUnavailableError({
