@@ -478,6 +478,7 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 **Removal checklist:**
 
 - [x] `rg -n "usePendingRetry|pendingRetryDelayMs|technicalPendingRetryDelayMs" src tests` has no production hits.
+- [x] `rg -n "pendingRetryTargetForDashboard|shouldPreservePendingViewDuringRetry|DashboardPendingRetryTarget" src tests` returns no hits.
 - [x] `rg -n "reloadVersion|setReloadVersion" src/components` returns no hits.
 - [x] `rg -n "fetch\\(`/api/(score|quote|symbols)|fetch\\(\"/api/judgment\"" src/components` returns no hits.
 - [x] `rg -n "readDashboardClientCache|rememberDashboardClientCache|dashboardClientCache|client_cache|stock-dashboard:v" src tests` returns no hits.

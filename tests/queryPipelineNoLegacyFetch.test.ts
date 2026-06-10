@@ -23,6 +23,8 @@ const legacyDashboardStatePattern = new RegExp(
     ["read", "Dashboard", "Client", "Cache"].join(""),
     ["remember", "Dashboard", "Client", "Cache"].join(""),
     ["use", "Pending", "Retry"].join(""),
+    ["pending", "Retry", "Target", "For", "Dashboard"].join(""),
+    ["should", "Preserve", "Pending", "View", "During", "Retry"].join(""),
   ].join("|"),
 );
 const legacyPageStatePattern = new RegExp(

@@ -22,13 +22,11 @@ import {
   partialStockDataFromQuote,
   partialStockDataFromTicker,
   partialStockDataFromPayload,
-  pendingRetryTargetForDashboard,
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
   stockHeaderFreshnessTimeChip,
   shouldShowStockSkeleton,
-  shouldPreservePendingViewDuringRetry,
   isPartialStockSnapshotPayload,
   shouldUseCompactMetricGrid,
   snapshotPendingFromPayload,
@@ -263,54 +261,6 @@ test("dashboard uses full skeleton only when no useful partial data is present",
   assert.equal(shouldShowStockSkeleton("pending", true), false);
   assert.equal(shouldShowStockSkeleton("success"), false);
   assert.equal(shouldShowStockSkeleton("error"), false);
-});
-
-test("dashboard coalesces score and quote pending into one retry target", () => {
-  const scorePending = {
-    message: "점수 준비 중",
-    ticker: "US:CRWV",
-    queued: true,
-    retryAfterSeconds: 300,
-  };
-  const quotePending = {
-    message: "현재가 준비 중",
-    ticker: "US:CRWV",
-    queued: true,
-    retryAfterSeconds: 60,
-  };
-
-  assert.deepEqual(pendingRetryTargetForDashboard("US:CRWV", scorePending, quotePending), {
-    pending: scorePending,
-    retryKey: "stock:US:CRWV",
-  });
-  assert.deepEqual(pendingRetryTargetForDashboard("US:CRWV", undefined, quotePending), {
-    pending: quotePending,
-    retryKey: "stock:US:CRWV",
-  });
-  assert.equal(pendingRetryTargetForDashboard(undefined, scorePending, quotePending), undefined);
-});
-
-test("dashboard does not auto-retry client-only optimistic pending fallbacks", () => {
-  assert.equal(
-    pendingRetryTargetForDashboard(
-      "US:ZVRA",
-      {
-        message: "종목은 먼저 특정했고, 가격과 점수 데이터는 계속 확인하고 있어요.",
-        ticker: "US:ZVRA",
-        queued: false,
-      },
-      undefined,
-    ),
-    undefined,
-  );
-});
-
-test("dashboard keeps pending UI stable during automatic retry refreshes", () => {
-  assert.equal(shouldPreservePendingViewDuringRetry("pending", true), true);
-  assert.equal(shouldPreservePendingViewDuringRetry("partial", true), true);
-  assert.equal(shouldPreservePendingViewDuringRetry("loading", true), false);
-  assert.equal(shouldPreservePendingViewDuringRetry("success", true), false);
-  assert.equal(shouldPreservePendingViewDuringRetry("pending", false), false);
 });
 
 test("scoreDataWithQuote overlays fresh quote fields without losing score fields", () => {

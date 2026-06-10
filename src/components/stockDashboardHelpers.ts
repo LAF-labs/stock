@@ -240,24 +240,6 @@ export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = f
   return status === "loading" || (status === "pending" && !hasUsefulPartialData);
 }
 
-export type DashboardPendingRetryTarget = Pick<SnapshotPendingState, "message" | "retryAfterSeconds"> &
-  Partial<Pick<SnapshotPendingState, "ticker" | "queued">>;
-
-export function pendingRetryTargetForDashboard(
-  ticker: string | undefined,
-  scorePending: DashboardPendingRetryTarget | undefined,
-  quotePending: DashboardPendingRetryTarget | undefined
-): { pending: DashboardPendingRetryTarget; retryKey: string } | undefined {
-  if (!ticker) return undefined;
-  const pending = scorePending || quotePending;
-  if (pending?.queued === false && pending.retryAfterSeconds === undefined) return undefined;
-  return pending ? { pending, retryKey: `stock:${ticker}` } : undefined;
-}
-
-export function shouldPreservePendingViewDuringRetry(status: string, isRetryForSameTicker: boolean): boolean {
-  return isRetryForSameTicker && (status === "pending" || status === "partial");
-}
-
 export function isPartialStockSnapshotPayload(payload: unknown): payload is PartialStockSnapshotPayload {
   return recordFromUnknown(payload)?.type === "partial_stock_snapshot";
 }
