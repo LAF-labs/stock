@@ -2,13 +2,14 @@ import { queryOptions } from "@tanstack/react-query";
 import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "@/components/QueryProvider";
 import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
-import { fetchCompareScores, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
+import { fetchCompareScores, fetchStockDisplay, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
 import type {
   ApiPartial,
   ApiPending,
   CompareQueryResult,
+  DisplayQueryResult,
   JudgmentQueryResult,
   QuoteQueryResult,
   QuoteRefreshMutationResult,
@@ -25,6 +26,7 @@ export const STOCK_QUERY_PENDING_BACKOFF_SECONDS = [1, 2, 3, 5, 8, 13, 21, 34, 5
 export const STOCK_SYMBOL_SEARCH_STALE_TIME_MS = 24 * 60 * 60 * 1000;
 
 export const stockQueryStaleTimesMs = {
+  display: 15 * 1000,
   quote: stockCachePolicyFreshSeconds("quote") * 1000,
   score: stockCachePolicyFreshSeconds("score") * 1000,
   technical: stockCachePolicyFreshSeconds("technical") * 1000,
@@ -41,6 +43,18 @@ export function scoreQueryOptions(ticker: string, view: StockScoreView = "detail
     refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as ScoreQueryResult | undefined),
     refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as ScoreQueryResult | undefined, query.state.dataUpdateCount, view),
     meta: { feature: "stock-score", view, maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
+  });
+}
+
+export function displayQueryOptions(ticker: string, view: StockScoreView = "detail") {
+  return queryOptions({
+    queryKey: stockQueryKeys.display(ticker, view),
+    queryFn: ({ signal }) => fetchStockDisplay({ ticker, view, signal }),
+    staleTime: stockQueryStaleTimesMs.display,
+    gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
+    refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as DisplayQueryResult | undefined),
+    refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as DisplayQueryResult | undefined, query.state.dataUpdateCount, view),
+    meta: { feature: "stock-display", view, maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
   });
 }
 
@@ -125,20 +139,23 @@ export function stockPendingRetryDelayMs(attempt = 0): number {
 }
 
 export function stockQueryRefetchIntervalMs(
-  result: ScoreQueryResult | TechnicalScoreQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
   attempt = 0,
   view: StockScoreView = "detail",
 ): number | false {
   if (!stockQueryShouldPoll(result)) return false;
   if (attempt >= STOCK_QUERY_MAX_PENDING_POLLS) return false;
+  const displayPollMs = displayRefetchIntervalMs(result);
+  if (displayPollMs !== undefined) return displayPollMs;
   void view;
   return stockPendingRetryDelayMs(attempt);
 }
 
 export function stockQueryShouldPoll(
-  result: ScoreQueryResult | TechnicalScoreQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean {
   if (!result) return false;
+  if (isDisplayQueryResult(result)) return result.data.refresh.active || result.data.completion.recoveringParts.length > 0;
   if ("results" in result) {
     return result.results.some(({ result: itemResult }) => {
       if (itemResult.state === "pending" || itemResult.state === "partial") return true;
@@ -154,13 +171,25 @@ export function stockQueryShouldPoll(
 }
 
 export function stockQueryRefetchOnMount(
-  result: ScoreQueryResult | TechnicalScoreQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean | "always" {
   if (!result) return true;
   if (stockQueryShouldPoll(result)) return "always";
   if (result.state === "ready") return true;
   if (result.state === "unsupported") return false;
   return "always";
+}
+
+function isDisplayQueryResult(result: unknown): result is DisplayQueryResult {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return false;
+  const data = (result as { data?: unknown }).data;
+  return Boolean(data && typeof data === "object" && !Array.isArray(data) && (data as { ok?: unknown }).ok === true && "completion" in data && "refresh" in data);
+}
+
+function displayRefetchIntervalMs(result: unknown): number | undefined {
+  if (!isDisplayQueryResult(result)) return undefined;
+  const nextPollMs = result.data.refresh.nextPollMs;
+  return typeof nextPollMs === "number" && Number.isFinite(nextPollMs) && nextPollMs > 0 ? nextPollMs : 1_500;
 }
 
 export function quoteDataFromQueryResult(result: QuoteQueryResult | undefined): StockQuoteResponse | undefined {

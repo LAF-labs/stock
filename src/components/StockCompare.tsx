@@ -26,6 +26,7 @@ import {
 } from "@/components/stockCompareHelpers";
 import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import { useStockCompareQueries, type CompareLoadState } from "@/components/useStockCompareQueries";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
@@ -42,14 +43,18 @@ function subjectParticle(value: string): string {
   return (code - 0xac00) % 28 === 0 ? "가" : "이";
 }
 
-export default function StockCompare() {
+type StockCompareProps = {
+  initialDisplayPayloads?: StockDisplayPayload[];
+};
+
+export default function StockCompare({ initialDisplayPayloads = [] }: StockCompareProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tickers = useMemo(() => parseTickers(searchParams.get("tickers") || searchParams.get("ticker")), [searchParams]);
   const baseTicker = tickers[0];
   const baseTickerLabel = baseTicker ? displayTickerRef(baseTicker) : "";
   const [input, setInput] = useState("");
-  const { items, partialStates, waitingStates, pendingStates, errorStates, retryCompare } = useStockCompareQueries(tickers);
+  const { items, partialStates, waitingStates, pendingStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
   const baseItem = useMemo(() => (baseTicker ? items.find((item) => item.ticker === baseTickerLabel) : undefined), [baseTicker, items, baseTickerLabel]);
   const hasCompareChart = useMemo(() => items.some((item) => normalizedPoints(item).length >= 2), [items]);
@@ -138,7 +143,7 @@ export default function StockCompare() {
         <section className="compare-errors compare-pending" role="status" aria-live="polite">
           {pendingStates.map((state) => (
             <p key={state.ticker}>
-              <strong>{state.ticker}</strong> {state.message}
+              <strong>{state.ticker}</strong> 선택한 종목을 같은 기준으로 비교합니다.
             </p>
           ))}
           <button type="button" onClick={retryCompare}>다시 확인</button>
@@ -165,9 +170,9 @@ function ComparePendingOverview({ count }: { count: number }) {
     <section className="compare-section compare-brief">
       <div className="section-title">
         <span>종목 정보</span>
-        <h2>확인된 종목부터 보여드려요</h2>
+        <h2>선택한 종목 정보</h2>
       </div>
-      <p>{count}개 종목을 확인했어요. 가격과 점수가 들어온 종목은 바로 비교 카드에 반영됩니다.</p>
+      <p>{count}개 종목을 같은 기준으로 정리합니다. 가격과 점수가 있는 항목은 바로 비교 카드에 반영됩니다.</p>
     </section>
   );
 }
@@ -177,7 +182,7 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
     <section className="compare-section">
       <div className="section-title">
         <span>종목 정보</span>
-        <h2>가격 확인 전 종목</h2>
+        <h2>종목 정보</h2>
       </div>
       <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
         {states.map((state) => {
@@ -189,7 +194,7 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
                   <strong className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</strong>
                   {identity.secondary ? <small>{identity.secondary}</small> : null}
                 </div>
-                <em className="price-neutral">확인 중</em>
+                <em className="price-neutral">{formatPrimaryPrice(state.data) || "종목 확인"}</em>
               </div>
               <p>{identity.secondary || state.ticker}</p>
               <div className="compare-score-line">
@@ -209,8 +214,8 @@ function CompareWaitingCards({ states }: { states: Array<Extract<CompareLoadStat
   return (
     <section className="compare-section">
       <div className="section-title">
-        <span>대기 중</span>
-        <h2>선택한 종목을 확인하고 있어요</h2>
+        <span>선택 종목</span>
+        <h2>종목 정보</h2>
       </div>
       <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
         {states.map((state) => (
@@ -221,12 +226,12 @@ function CompareWaitingCards({ states }: { states: Array<Extract<CompareLoadStat
                 <strong className="ticker-primary">{displayTickerRef(state.ticker)}</strong>
                 <small>{state.ticker}</small>
               </div>
-              <em className="price-neutral">대기 중</em>
+              <em className="price-neutral">-</em>
             </div>
-            <p>{state.status === "pending" ? state.message : "가격과 점수 데이터를 확인하고 있어요. 준비된 항목부터 화면에 채워집니다."}</p>
+            <p>{state.ticker}</p>
             <div className="compare-score-line">
               <span>점수</span>
-              <strong>준비 중</strong>
+              <strong>-</strong>
             </div>
             <i className="compare-card-scorebar pending" aria-hidden="true" />
           </article>
@@ -251,7 +256,7 @@ function CompareBrief({ items }: { items: CompareItem[] }) {
   return (
     <section className="compare-section compare-brief">
       <span>먼저 볼 차이</span>
-      <h2>{items.length === 1 ? "비교할 종목을 기다리고 있어요" : "종목별 차이가 나는 부분이에요"}</h2>
+      <h2>{items.length === 1 ? "비교 종목을 추가하면 차이를 보여드려요" : "종목별 차이가 나는 부분이에요"}</h2>
       <p>
         {items.length === 1
           ? `${compareItemTitle(base)}의 점수는 ${base.score.toFixed(1)}점이에요. 비교 종목을 붙이면 가격 흐름, 수익성, 재무 안정성이 같은 기준으로 정리돼요.`
@@ -301,7 +306,7 @@ function CompareCards({ items, baseTicker, showEmptyCard }: { items: CompareItem
             <p>{compareItemSummary(item)}</p>
             <div className="compare-score-line">
               <strong>{item.score.toFixed(1)}점</strong>
-              <span>{item.provisional ? item.provisionalLabel || "보강 중" : `품질 ${scoreWord(item.score)}`}</span>
+              <span>{item.provisional ? item.provisionalLabel || "현재 점수" : `품질 ${scoreWord(item.score)}`}</span>
             </div>
             <i className="compare-card-scorebar" aria-hidden="true">
               <em style={{ width: `${item.score}%` }} />

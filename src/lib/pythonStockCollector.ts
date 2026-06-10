@@ -1,7 +1,7 @@
 import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRateLimit";
 import { numericEnv } from "@/lib/supabaseRest";
 import { appendBoundedOutput, subprocessErrorMessage, type BoundedOutput } from "@/lib/subprocessGuards";
-import type { ScoreView, StockPayload } from "@/lib/stockSnapshotCache";
+import type { ScoreView, StockPayload } from "@/lib/stockScoreContract";
 
 const SCRIPT_PATH = "scripts/fetch_stock_score.py";
 const PYTHON_RUNNER_PATH = "scripts/run_python.sh";
@@ -36,7 +36,7 @@ async function runPythonCollector(
 
   return new Promise((resolve, reject) => {
     const [command, ...commandArgs] = scoreCollectorCommand(process.env);
-    const child = spawn(command, [...commandArgs, ...args], {
+    const child = spawn(/* turbopackIgnore: true */ command, [...commandArgs, ...args], {
       env: {
         ...process.env,
         PYTHONUTF8: "1",

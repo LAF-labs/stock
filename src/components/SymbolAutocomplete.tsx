@@ -21,6 +21,9 @@ type SymbolAutocompleteProps = {
   variant?: "default" | "floating";
   isCollapsed?: boolean;
   onExpandRequest?: () => void;
+  formAction?: string;
+  formMethod?: "get" | "post";
+  inputName?: string;
 };
 
 function displayInputValue(item: SymbolSearchItem): string {
@@ -40,15 +43,6 @@ function SearchIcon() {
   );
 }
 
-function ClearIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
-      <path d="M6 6l12 12" />
-      <path d="M18 6 6 18" />
-    </svg>
-  );
-}
-
 export default function SymbolAutocomplete({
   id,
   value,
@@ -62,6 +56,9 @@ export default function SymbolAutocomplete({
   variant = "default",
   isCollapsed = false,
   onExpandRequest,
+  formAction,
+  formMethod = "get",
+  inputName,
 }: SymbolAutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -106,7 +103,7 @@ export default function SymbolAutocomplete({
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
   const isFloating = variant === "floating";
   const formClassName = [className, isFloating ? "symbol-autocomplete-floating" : "", isFloating && isCollapsed ? "is-collapsed" : ""].filter(Boolean).join(" ");
-  const actionLabel = isCollapsed ? "검색창 펼치기" : query ? "검색어 지우기" : "종목 검색";
+  const actionLabel = isCollapsed ? "검색창 펼치기" : query ? "종목 조회" : "종목 검색";
   const searchStatus = symbolSearch.isLoading
     ? "종목을 검색하고 있어요."
     : symbolSearch.error
@@ -124,15 +121,27 @@ export default function SymbolAutocomplete({
     onSelect(item);
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (activeItem) {
+  function selectDirectItem(item: SymbolSearchItem) {
+    onValueChange(displayInputValue(item));
+    inputRef.current?.blur();
+    setIsOpen(false);
+    onSelect(item);
+  }
+
+  function submitCurrentInput(rawValue = inputRef.current?.value || query) {
+    const latestQuery = rawValue.trim();
+    if (!latestQuery) return;
+    if (activeItem && symbolSearch.resultQuery === latestQuery) {
       selectItem(activeItem);
       return;
     }
-    if (directItem) {
-      onSelect(directItem);
-    }
+    const latestDirectItem = directInputSymbolItem(latestQuery);
+    if (latestDirectItem) selectDirectItem(latestDirectItem);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    submitCurrentInput();
   }
 
   function focusInput() {
@@ -145,15 +154,7 @@ export default function SymbolAutocomplete({
     if (isCollapsed) {
       onExpandRequest?.();
       focusInput();
-      return;
     }
-    if (query) {
-      onValueChange("");
-      setIsOpen(false);
-      focusInput();
-      return;
-    }
-    focusInput();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -178,24 +179,21 @@ export default function SymbolAutocomplete({
       setActiveIndex(Math.max(0, visibleItems.length - 1));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      if (activeItem) {
-        selectItem(activeItem);
-      } else if (directItem) {
-        onSelect(directItem);
-      }
+      submitCurrentInput(event.currentTarget.value);
     } else if (event.key === "Escape") {
       setIsOpen(false);
     }
   }
 
   return (
-    <form onSubmit={submit} className={formClassName}>
+    <form onSubmit={submit} className={formClassName} action={formAction} method={formMethod}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
       <div className="symbol-search-box" ref={wrapperRef}>
         <input
           id={id}
+          name={inputName}
           ref={inputRef}
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
@@ -215,13 +213,13 @@ export default function SymbolAutocomplete({
         />
         {isFloating ? (
           <button
-            type="button"
-            className={`symbol-search-action ${!isCollapsed && query ? "clear" : "search"}`}
+            type={isCollapsed ? "button" : "submit"}
+            className="symbol-search-action search"
             disabled={disabled}
             aria-label={actionLabel}
-            onClick={onFloatingAction}
+            onClick={isCollapsed ? onFloatingAction : undefined}
           >
-            {!isCollapsed && query ? <ClearIcon /> : <SearchIcon />}
+            <SearchIcon />
           </button>
         ) : (
           <button type="submit" disabled={!canSubmit}>

@@ -12,7 +12,7 @@ import {
 
 test("stock query provider keeps persisted cache and gc windows aligned", () => {
   assert.equal(STOCK_QUERY_CACHE_MAX_AGE_MS, 3 * 24 * 60 * 60 * 1000);
-  assert.equal(STOCK_QUERY_PERSIST_KEY, "stock-query-cache-v4");
+  assert.equal(STOCK_QUERY_PERSIST_KEY, "stock-query-cache-v5");
   assert.equal(STOCK_QUERY_PERSIST_THROTTLE_MS, 1_000);
 
   const queryClient = createStockQueryClient();
@@ -39,6 +39,21 @@ test("stock query retry keeps transient server and network failures retryable", 
 
 test("stock query persistence stores only compact ready query results", () => {
   assert.equal(shouldPersistStockQuery(query(["stock", "quote", "KR:004020"], "success", { state: "ready" })), true);
+  assert.equal(
+    shouldPersistStockQuery(
+      query(["stock", "display", "detail", "KR:004020"], "success", {
+        state: "ready",
+        data: {
+          ok: true,
+          ticker: "KR:004020",
+          identity: { value: { ticker: "KR:004020", market: "KR", symbol: "004020", name: "현대제철" } },
+          completion: { presentParts: ["identity"], recoveringParts: ["price", "chart", "score"] },
+          refresh: { active: true, recoveringParts: ["price", "chart", "score"] },
+        },
+      }),
+    ),
+    true,
+  );
   assert.equal(shouldPersistStockQuery(query(["stock", "score", "detail", "KR:004020"], "success", { state: "ready" })), true);
   assert.equal(shouldPersistStockQuery(query(["stock", "symbols", "all", "004020"], "success", { state: "ready" })), true);
   assert.equal(shouldPersistStockQuery(query(["stock", "judgment", "KR:004020", "v1", "hash"], "success", { state: "ready" })), true);

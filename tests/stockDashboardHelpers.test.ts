@@ -59,7 +59,7 @@ test("dashboard preserves explicit ticker params instead of normalizing to the o
   assert.equal(dashboardInputValue("US:NVDA"), "NVDA");
 });
 
-test("dashboard pending payload maps queue state into user-facing retry guidance", () => {
+test("dashboard pending payload maps queue state into display-first guidance", () => {
   const pending = snapshotPendingFromPayload(
     {
       error: "snapshot_pending",
@@ -71,7 +71,7 @@ test("dashboard pending payload maps queue state into user-facing retry guidance
   );
 
   assert.deepEqual(pending, {
-    message: "가격과 점수를 확인하고 있어요. 확인되는 항목부터 화면에 바로 반영합니다.",
+    message: "가격과 점수가 확보되는 즉시 화면에 반영합니다.",
     ticker: "US:NVDA",
     queued: true,
     retryAfterSeconds: 42,
@@ -92,7 +92,7 @@ test("dashboard pending payload explains stale refresh work as an update", () =>
   );
 
   assert.deepEqual(pending, {
-    message: "기존 데이터를 보여주는 동안 최신 가격과 점수를 확인하고 있어요.",
+    message: "표시 중인 데이터에 최신 가격과 점수를 조용히 반영합니다.",
     ticker: "US:NVDA",
     queued: true,
     retryAfterSeconds: 60,
@@ -133,7 +133,7 @@ test("dashboard recognizes partial stock snapshots and keeps pending retry metad
 
   assert.equal(isPartialStockSnapshotPayload(payload), true);
   assert.deepEqual(snapshotPendingFromPayload(payload, "US:KO"), {
-    message: "가격과 점수를 확인하고 있어요. 확인되는 항목부터 화면에 바로 반영합니다.",
+    message: "가격과 점수가 확보되는 즉시 화면에 반영합니다.",
     ticker: "US:POET",
     queued: true,
     retryAfterSeconds: 30,
@@ -382,8 +382,8 @@ test("scoreFreshnessSummary separates score snapshot freshness from quote freshn
 
   assert.deepEqual(scoreFreshnessSummary(staleScore), {
     label: "점수 기준",
-    value: "업데이트 확인 중",
-    detail: "새 점수 준비 중",
+    value: "업데이트 반영",
+    detail: "업데이트 확인",
     tone: "stale",
   });
 });
@@ -401,8 +401,8 @@ test("scoreFreshnessSummary hides implementation cache labels", () => {
 
   assert.deepEqual(scoreFreshnessSummary(cachedScore), {
     label: "점수 기준",
-    value: "업데이트 확인 중",
-    detail: "새 점수 준비 중",
+    value: "업데이트 반영",
+    detail: "업데이트 확인",
     tone: "stale",
   });
 });
@@ -420,7 +420,7 @@ test("scoreFreshnessSummary accepts Rust cache millisecond timestamps", () => {
   assert.deepEqual(scoreFreshnessSummary(freshScore), {
     label: "점수 기준",
     value: "최신 데이터",
-    detail: "점수 준비 완료",
+    detail: "점수 반영 완료",
     tone: "fresh",
   });
 });
@@ -469,7 +469,7 @@ test("stockHeaderFreshnessTimeChip hides implementation cache labels and local t
     },
   } satisfies StockScoreResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "업데이트 확인 중");
+  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "업데이트 반영");
 });
 
 test("stockHeaderFreshnessTimeChip hides implementation cache labels and local time when a fresher quote is present", () => {
@@ -496,7 +496,7 @@ test("header signal labels translate internal enums into Korean product copy", (
   assert.equal(signalLabel("price_risk_watch"), "리스크 확인");
   assert.equal(signalLabel("price_neutral"), "중립");
   assert.equal(signalLabel("HOLD"), "관망");
-  assert.equal(signalLabel("unknown_internal_key"), "확인 중");
+  assert.equal(signalLabel("unknown_internal_key"), "분류 전");
   assert.equal(riskLevelLabel("medium"), "보통");
   assert.equal(riskLevelLabel("HIGH"), "높음");
 });

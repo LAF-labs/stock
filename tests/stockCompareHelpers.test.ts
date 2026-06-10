@@ -131,7 +131,7 @@ test("compare bestBy evaluates each item once", () => {
 
 test("compare pending message never exposes queue retry seconds", () => {
   const message = pendingMessage({ retry_after_seconds: 300 } as any);
-  assert.match(message, /확인되는 종목부터/);
+  assert.equal(message, "선택한 종목을 같은 기준으로 비교합니다.");
   assert.doesNotMatch(message, /300초|\d+초 안에/);
   assert.doesNotMatch(pendingMessage(undefined), /초 안에/);
 });

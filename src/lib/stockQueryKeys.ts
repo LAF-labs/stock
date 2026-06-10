@@ -1,5 +1,6 @@
 export const stockQueryKeys = {
   all: ["stock"] as const,
+  display: (ticker: string, view: "detail" | "compare" | "technical") => ["stock", "display", view, ticker] as const,
   score: (ticker: string, view: "detail" | "compare" | "technical") => ["stock", "score", view, ticker] as const,
   quote: (ticker: string) => ["stock", "quote", ticker] as const,
   compare: (tickers: readonly string[]) => ["stock", "compare", tickers.join(",")] as const,

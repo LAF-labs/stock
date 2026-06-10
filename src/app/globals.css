@@ -228,11 +228,6 @@ a:focus-visible {
   stroke-width: 2.2;
 }
 
-.stock-search-form.symbol-autocomplete-floating .symbol-search-action.clear {
-  background: rgba(15, 23, 42, 0.06);
-  color: #64748b;
-}
-
 .stock-search-form.symbol-autocomplete-floating.is-collapsed {
   width: 56px;
 }

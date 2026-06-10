@@ -10,9 +10,9 @@ import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/st
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
+import { statusFromPayload, type StockPayload } from "@/lib/stockScoreContract";
 import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
-import { parseTickerRef } from "@/lib/tickerRef";
-import { normalizeTickerRef, statusFromPayload, type StockPayload } from "@/lib/stockSnapshotCache";
+import { normalizeTickerRef, parseTickerRef } from "@/lib/tickerRef";
 
 export type QuoteCacheState = "fresh" | "stale" | "miss";
 export type QuoteCacheSource = "memory" | "supabase" | "market-data";

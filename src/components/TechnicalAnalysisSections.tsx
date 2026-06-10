@@ -56,7 +56,7 @@ export function TechnicalStatus({
 }
 
 export function TechnicalAnalysisSkeleton({
-  title = "기술적 분석 준비 중",
+  title = "가격 흐름",
   body,
   actionLabel,
   onAction,
@@ -72,17 +72,17 @@ export function TechnicalAnalysisSkeleton({
         <div className="technical-hero-heading">
           <span>기술적 분석</span>
           <h1>{title}</h1>
-          <p>{body || "차트 데이터를 확인하고 있어요."}</p>
+          <p>{body || "가격 흐름을 화면에 반영합니다."}</p>
         </div>
         <div className="technical-hero-price">
           <span>상태</span>
-          <strong>준비 중</strong>
-          <small>가격 데이터가 먼저 확인되면 이 화면에 바로 채워집니다.</small>
+          <strong>-</strong>
+          <small>가격 데이터를 이 화면에 반영합니다.</small>
         </div>
         <div className="technical-summary">
-          <span>진행 상태</span>
-          <strong>요청을 확인하고 있어요.</strong>
-          <p>{body || "가격과 차트 데이터를 불러오는 중이에요."}</p>
+          <span>가격 흐름</span>
+          <strong>화면 반영</strong>
+          <p>{body || "가격과 차트 데이터를 화면에 반영합니다."}</p>
           {actionLabel && onAction ? (
             <button type="button" className="technical-pending-action" onClick={onAction}>
               {actionLabel}
@@ -93,9 +93,9 @@ export function TechnicalAnalysisSkeleton({
       <section className="technical-chart-panel technical-rule-pending">
         <div className="section-title">
           <span>가격 캔들</span>
-          <h2>데이터 확인 중</h2>
+          <h2>가격 기록</h2>
         </div>
-        <p>응답 가능한 데이터부터 순서대로 표시합니다.</p>
+        <p>확인된 가격 기록을 차트에 반영합니다.</p>
       </section>
     </div>
   );

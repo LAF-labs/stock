@@ -1,6 +1,7 @@
 import type { ClientApiPayload } from "@/lib/clientApi";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 
 export type StockScoreView = "detail" | "compare" | "technical";
 
@@ -57,6 +58,7 @@ export type ApiError = {
 };
 
 export type ScoreQueryResult = ApiReady<StockScoreResponse> | ApiPartial<StockScoreResponse> | ApiPending | ApiUnsupported;
+export type DisplayQueryResult = ApiReady<StockDisplayPayload>;
 export type TechnicalScoreQueryResult = ScoreQueryResult;
 export type QuoteQueryResult = ApiReady<StockQuoteResponse> | ApiPartial<StockQuoteResponse> | ApiPending;
 export type QuoteRefreshMutationResult = ApiReady<StockQuoteResponse> | ApiPending | ApiCooldown<StockQuoteResponse>;

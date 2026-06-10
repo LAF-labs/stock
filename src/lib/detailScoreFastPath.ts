@@ -4,7 +4,7 @@ import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { findExactSymbol } from "@/lib/symbolSearch";
 import { envValue } from "@/lib/supabaseRest";
-import type { ScoreView, StockPayload } from "@/lib/stockSnapshotCache";
+import type { ScoreView, StockPayload } from "@/lib/stockScoreContract";
 import type { Grade, LabeledValue, ScoreComponent } from "@/lib/types";
 
 type FastPathIdentity = {

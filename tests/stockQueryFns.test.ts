@@ -7,6 +7,7 @@ import {
   classifyComparePayload,
   classifyScorePayload,
   fetchCompareScores,
+  fetchStockDisplay,
   fetchStockQuote,
   fetchStockScore,
   fetchSymbols,
@@ -181,6 +182,24 @@ test("stock query functions build the expected API requests", async () => {
   calls.length = 0;
   assert.equal((await fetchStockScore({ ticker: "KR:004020", view: "technical" })).state, "ready");
   assert.equal(calls[0], "/api/score?ticker=KR%3A004020&partial=1&view=technical");
+});
+
+test("display query function calls the display endpoint and treats ok payloads as ready", async () => {
+  const calls = mockJsonFetch({
+    ok: true,
+    ticker: "KR:005930",
+    requestedTicker: "KR:005930",
+    view: "detail",
+    identity: { value: { ticker: "KR:005930", market: "KR", symbol: "005930", name: "삼성전자" } },
+    completion: { presentParts: ["identity"], recoveringParts: ["price", "chart", "score"] },
+    refresh: { active: true, recoveringParts: ["price", "chart", "score"], nextPollMs: 1500 },
+  });
+
+  const result = await fetchStockDisplay({ ticker: "KR:005930", view: "detail" });
+
+  assert.equal(result.state, "ready");
+  assert.equal(result.data.ticker, "KR:005930");
+  assert.equal(calls[0], "/api/stock/display?ticker=KR%3A005930&view=detail");
 });
 
 test("quote fetch and refresh model ready pending and cooldown states", async () => {

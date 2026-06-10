@@ -22,7 +22,7 @@ test("compare query promotes priced fast-path partials into provisional compare 
       components: [{ key: "momentum", label: "모멘텀", score: 72 }],
       price_metrics: { latest_change: 0.018 },
     } as unknown as StockScoreResponse,
-    message: "데이터를 준비하고 있어요.",
+    message: "선택한 종목을 같은 기준으로 비교합니다.",
   } satisfies Extract<CompareLoadState, { status: "partial" }>;
   const identityOnlyPartial = {
     status: "partial",
@@ -36,7 +36,7 @@ test("compare query promotes priced fast-path partials into provisional compare 
       data_quality: "identity_fast_path",
       fetch: { identity_only_fast_path: true, pending_enrichment: true },
     } as unknown as StockScoreResponse,
-    message: "데이터를 준비하고 있어요.",
+    message: "선택한 종목을 같은 기준으로 비교합니다.",
   } satisfies Extract<CompareLoadState, { status: "partial" }>;
 
   assert.equal(shouldPromotePartialCompareData(pricedPartial.data), true);

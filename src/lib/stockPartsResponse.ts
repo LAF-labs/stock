@@ -1,7 +1,7 @@
 import { getStockChart, type StockChartResult } from "@/lib/stockChartCache";
 import { getStockQuote, type StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { StockPendingPayload } from "@/lib/stockPendingResponse";
-import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
+import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockScoreContract";
 import { numericEnv } from "@/lib/supabaseRest";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 

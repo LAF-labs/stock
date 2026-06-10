@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
   comparePartialData,
   displayTickerRef,
@@ -10,8 +11,9 @@ import {
   type CompareItem,
 } from "@/components/stockCompareHelpers";
 import { partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
-import { compareQueryOptions } from "@/lib/stockQueryOptions";
-import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult } from "@/lib/stockQueryTypes";
+import { compareQueryOptions, displayQueryOptions } from "@/lib/stockQueryOptions";
+import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult, DisplayQueryResult } from "@/lib/stockQueryTypes";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockScoreResponse } from "@/lib/types";
 
 export type CompareLoadState =
@@ -31,12 +33,32 @@ export type StockCompareQueryView = {
   retryCompare: () => void;
 };
 
-export function useStockCompareQueries(tickers: readonly string[]): StockCompareQueryView {
+export function useStockCompareQueries(tickers: readonly string[], initialDisplayPayloads: readonly StockDisplayPayload[] = []): StockCompareQueryView {
   const compareQuery = useQuery({
     ...compareQueryOptions(tickers),
     placeholderData: (previousData) => previousData,
   });
-  const states = useMemo(() => compareStatesFromQuery(tickers, compareQuery.data, compareQuery.error, compareQuery.isLoading), [compareQuery.data, compareQuery.error, compareQuery.isLoading, tickers]);
+  const displayQueries = useQueries({
+    queries: tickers.map((ticker) => ({
+      ...displayQueryOptions(ticker, "compare"),
+      placeholderData: (previousData: DisplayQueryResult | undefined) => previousData,
+    })),
+  });
+  const displayFallbacks = useMemo(() => {
+    const byTicker = new Map<string, StockScoreResponse>();
+    initialDisplayPayloads.forEach((payload) => {
+      if (tickers.includes(payload.ticker)) byTicker.set(payload.ticker, stockScoreDataFromDisplayPayload(payload));
+    });
+    tickers.forEach((ticker, index) => {
+      const data = displayQueries[index]?.data;
+      if (data?.state === "ready") byTicker.set(ticker, stockScoreDataFromDisplayPayload(data.data));
+    });
+    return byTicker;
+  }, [displayQueries, initialDisplayPayloads, tickers]);
+  const states = useMemo(
+    () => compareStatesFromQuery(tickers, compareQuery.data, compareQuery.error, compareQuery.isLoading, displayFallbacks),
+    [compareQuery.data, compareQuery.error, compareQuery.isLoading, displayFallbacks, tickers],
+  );
   const items = useMemo(() => compareItemsFromStates(states), [states]);
   const partialStates = useMemo(
     () => states.filter((state): state is Extract<CompareLoadState, { status: "partial" }> => state.status === "partial" && !shouldPromotePartialCompareData(state.data)),
@@ -53,7 +75,8 @@ export function useStockCompareQueries(tickers: readonly string[]): StockCompare
   const errorStates = useMemo(() => states.filter((state): state is Extract<CompareLoadState, { status: "error" }> => state.status === "error"), [states]);
   const retryCompare = useCallback(() => {
     void compareQuery.refetch();
-  }, [compareQuery]);
+    displayQueries.forEach((query) => void query.refetch());
+  }, [compareQuery, displayQueries]);
 
   return {
     states,
@@ -95,23 +118,33 @@ function hasFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function compareStatesFromQuery(tickers: readonly string[], result: CompareQueryResult | undefined, error: unknown, isLoading: boolean): CompareLoadState[] {
+function compareStatesFromQuery(
+  tickers: readonly string[],
+  result: CompareQueryResult | undefined,
+  error: unknown,
+  isLoading: boolean,
+  displayFallbacks: ReadonlyMap<string, StockScoreResponse> = new Map(),
+): CompareLoadState[] {
   if (!tickers.length) return [];
   if (result) {
     const byTicker = new Map(result.results.map((item) => [item.ticker, item]));
-    return tickers.map((ticker) => stateFromCompareItem(ticker, byTicker.get(ticker)));
+    return tickers.map((ticker) => stateFromCompareItem(ticker, byTicker.get(ticker), displayFallbacks.get(ticker)));
   }
   if (error) {
+    const fallbackStates = statesFromDisplayFallbacks(tickers, displayFallbacks);
+    if (fallbackStates.length) return fallbackStates;
     const message = error instanceof Error ? error.message : "데이터를 불러오지 못했어요.";
     return tickers.map((ticker) => ({ status: "error", ticker, error: message }));
   }
+  const fallbackStates = statesFromDisplayFallbacks(tickers, displayFallbacks);
+  if (fallbackStates.length) return fallbackStates;
   if (isLoading) return tickers.map((ticker) => optimisticComparePendingState(ticker));
   return tickers.map((ticker) => optimisticComparePendingState(ticker));
 }
 
-function stateFromCompareItem(ticker: string, item: CompareScoreItemResult | undefined): CompareLoadState {
+function stateFromCompareItem(ticker: string, item: CompareScoreItemResult | undefined, displayFallback: StockScoreResponse | undefined): CompareLoadState {
   const result = item?.result;
-  if (!result) return optimisticComparePendingState(ticker);
+  if (!result) return displayFallback ? displayCompareState(ticker, displayFallback) : optimisticComparePendingState(ticker);
 
   if (result.state === "ready") {
     return { status: "success", ticker, data: result.data };
@@ -122,14 +155,31 @@ function stateFromCompareItem(ticker: string, item: CompareScoreItemResult | und
   }
 
   if (result.state === "pending") {
-    return pendingStateFromResult(ticker, result);
+    return displayFallback ? displayCompareState(ticker, displayFallback) : pendingStateFromResult(ticker, result);
   }
 
   if (result.state === "unsupported") {
     return { status: "error", ticker, error: "비교할 수 없는 상품이에요." };
   }
 
-  return errorStateFromResult(ticker, result);
+  return displayFallback ? displayCompareState(ticker, displayFallback) : errorStateFromResult(ticker, result);
+}
+
+function statesFromDisplayFallbacks(tickers: readonly string[], displayFallbacks: ReadonlyMap<string, StockScoreResponse>): CompareLoadState[] {
+  const states = tickers.flatMap((ticker) => {
+    const data = displayFallbacks.get(ticker);
+    return data ? [displayCompareState(ticker, data)] : [];
+  });
+  return states.length === tickers.length ? states : [];
+}
+
+function displayCompareState(ticker: string, data: StockScoreResponse): Extract<CompareLoadState, { status: "partial" }> {
+  return {
+    status: "partial",
+    ticker,
+    data,
+    message: `${displayTickerRef(ticker)} 종목 정보를 확인했어요.`,
+  };
 }
 
 function partialStateFromResult(ticker: string, result: ApiPartial<StockScoreResponse>): Extract<CompareLoadState, { status: "partial" }> {
@@ -166,6 +216,6 @@ function optimisticComparePendingState(ticker: string): Extract<CompareLoadState
     status: "partial",
     ticker,
     data,
-    message: `${displayTickerRef(ticker)} 종목은 먼저 특정했고, 비교 점수와 가격 데이터는 계속 확인하고 있어요.`,
+    message: `${displayTickerRef(ticker)} 종목 정보를 확인했어요.`,
   };
 }

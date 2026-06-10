@@ -1,13 +1,15 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
 import StockHeader from "@/components/StockHeader";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
+import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
   dashboardInputValue,
+  dashboardSearchInputValue,
   dashboardSearchSyncDecision,
   dashboardTickerFromSearchParam,
   dailyChangeText,
@@ -29,6 +31,7 @@ import { useStockDashboardQueries } from "@/components/useStockDashboardQueries"
 import { clampScore } from "@/lib/format";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 const DETAIL_SECTIONS = [
@@ -52,12 +55,22 @@ function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse
 }
 
 
-export default function StockDashboard() {
+type StockDashboardProps = {
+  initialDisplayPayload?: StockDisplayPayload;
+};
+
+export default function StockDashboard({ initialDisplayPayload }: StockDashboardProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tickerParam = dashboardTickerFromSearchParam(searchParams.get("ticker"));
+  const initialDisplayData = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === tickerParam ? stockScoreDataFromDisplayPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, tickerParam]
+  );
 
-  const [tickerInput, setTickerInput] = useState(dashboardInputValue(tickerParam));
+  const [tickerInput, setTickerInput] = useState(() => (
+    tickerParam ? dashboardSearchInputValue(initialDisplayData, undefined, tickerParam) : ""
+  ));
   const [isSearchEditing, setIsSearchEditing] = useState(false);
   const {
     state,
@@ -70,6 +83,8 @@ export default function StockDashboard() {
     retryLoad,
     refreshPrice,
   } = useStockDashboardQueries(tickerParam);
+  const displayData = data || initialDisplayData;
+  const displayPartialData = partialData || (!data ? initialDisplayData : undefined);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -113,7 +128,7 @@ export default function StockDashboard() {
   }, []);
 
   useEffect(() => {
-    const stockData = data || partialData;
+    const stockData = data || partialData || initialDisplayData;
     const decision = dashboardSearchSyncDecision({
       tickerParam,
       previousTickerParam: previousTickerParamRef.current,
@@ -127,7 +142,7 @@ export default function StockDashboard() {
 
     setIsSearchEditing(decision.isSearchEditing);
     setTickerInput(decision.value);
-  }, [data, isSearchEditing, partialData, quoteData, tickerParam]);
+  }, [data, initialDisplayData, isSearchEditing, partialData, quoteData, tickerParam]);
 
   function handleTickerInputChange(value: string) {
     setIsSearchEditing(true);
@@ -140,12 +155,12 @@ export default function StockDashboard() {
   }
 
   const visibleDetailSections = DETAIL_SECTIONS;
-  const compareHref = data && tickerParam ? compareHrefForStock(data, quoteData, tickerParam) : "";
-  const pageIdentity = data ? stockHeaderIdentity(data, quoteData) : undefined;
+  const compareHref = displayData && tickerParam ? compareHrefForStock(displayData, quoteData, tickerParam) : "";
+  const pageIdentity = displayData ? stockHeaderIdentity(displayData, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
 
   useEffect(() => {
-    if (!data || !visibleDetailSections.length) return;
+    if (!displayData || !visibleDetailSections.length) return;
 
     const sectionIds = visibleDetailSections.map((section) => section.id);
     let frame = 0;
@@ -179,7 +194,7 @@ export default function StockDashboard() {
       window.removeEventListener("scroll", updateActiveSection);
       window.removeEventListener("resize", updateActiveSection);
     };
-  }, [data, visibleDetailSections]);
+  }, [displayData, visibleDetailSections]);
 
   function scrollToDetailSection(id: DetailSectionId) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -200,22 +215,24 @@ export default function StockDashboard() {
           label="국내·미국 주식 검색"
           className="stock-search-form"
           variant="floating"
+          formAction="/"
+          inputName="ticker"
           isCollapsed={isSearchCollapsed}
           onExpandRequest={() => setSearchCollapsed(false)}
         />
       </section>
 
-      {tickerParam && shouldShowStockSkeleton(state.status, Boolean(partialData)) && (
+      {tickerParam && !displayData && shouldShowStockSkeleton(state.status, Boolean(displayPartialData)) && (
         <StockSkeleton ticker={tickerParam} pendingMessage={state.status === "pending" ? state.pending.message : undefined} onRetry={retryLoad} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
 
-      {partialData && !data ? (
-        <PartialStockFeed data={partialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
+      {displayPartialData && !displayData ? (
+        <PartialStockFeed data={displayPartialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
       ) : null}
 
-      {data && (
+      {displayData && (
         <>
           <DetailIndex
             sections={visibleDetailSections}
@@ -226,7 +243,7 @@ export default function StockDashboard() {
           <div className="stock-feed">
             <DetailSection id="detail-summary">
               <StockHeader
-                data={data}
+                data={displayData}
                 quote={quoteData}
                 quoteState={quoteState}
                 priceRefreshState={priceRefreshState}
@@ -236,28 +253,28 @@ export default function StockDashboard() {
               />
             </DetailSection>
             <DetailSection id="detail-chart">
-              <ChartStory points={data.chart_series} patterns={data.chart_patterns} technicalAnalysisHref={technicalAnalysisHrefForPayload(data)} />
+              <ChartStory points={displayData.chart_series} patterns={displayData.chart_patterns} technicalAnalysisHref={technicalAnalysisHrefForPayload(displayData)} />
             </DetailSection>
             <DetailSection id="detail-factors">
-              <FactorStory components={data.components} stock={data} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
-              {data.opportunity_components?.length ? (
-                <FactorStory components={data.opportunity_components} stock={data} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" />
+              <FactorStory components={displayData.components} stock={displayData} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
+              {displayData.opportunity_components?.length ? (
+                <FactorStory components={displayData.opportunity_components} stock={displayData} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" />
               ) : null}
             </DetailSection>
             <DetailSection id="detail-key-metrics">
-              <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={data.key_metrics} stock={data} defaultOpen />
+              <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={displayData.key_metrics} stock={displayData} defaultOpen />
             </DetailSection>
             <DetailSection id="detail-news">
-              <NewsFeed news={data.news} />
+              <NewsFeed news={displayData.news} />
             </DetailSection>
             <DetailSection id="detail-profile">
-              <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={data.stock_profile} stock={data} desktopOpen />
+              <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={displayData.stock_profile} stock={displayData} desktopOpen />
             </DetailSection>
             <DetailSection id="detail-valuation">
-              <SimpleList title="가격 부담" description="좋은 회사라도 너무 비싸면 부담이 될 수 있어요." items={data.valuation_rows} stock={data} desktopOpen />
+              <SimpleList title="가격 부담" description="좋은 회사라도 너무 비싸면 부담이 될 수 있어요." items={displayData.valuation_rows} stock={displayData} desktopOpen />
             </DetailSection>
             <DetailSection id="detail-financials">
-              <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} stock={data} desktopOpen />
+              <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={displayData.financials} stock={displayData} desktopOpen />
             </DetailSection>
           </div>
         </>
@@ -641,38 +658,39 @@ function StatusCard({
 
 function StockSkeleton({ ticker, pendingMessage, onRetry }: { ticker?: string; pendingMessage?: string; onRetry?: () => void }) {
   const tickerLabel = ticker ? dashboardInputValue(ticker) : undefined;
+  void pendingMessage;
   return (
     <div className="stock-feed loading-status-feed" role="status" aria-live="polite">
       <section className="stock-title-card partial-stock-title-card">
         <div className="stock-hero-main">
           <div className="stock-name-row">
             <div>
-              <span>종목 데이터</span>
-              <h2>{tickerLabel || "확인 중"}</h2>
-              <p>{pendingMessage || "가격과 점수 데이터를 확인하고 있어요."}</p>
+              <span>종목 정보</span>
+              <h2>{tickerLabel || "종목"}</h2>
+              <p>확인된 항목부터 화면에 반영합니다.</p>
             </div>
           </div>
-          <span className="score-time-chip">준비 중</span>
+          <span className="score-time-chip">실시간 반영</span>
         </div>
         <div className="price-strip">
           <div className="price-block">
             <strong>-</strong>
-            <span>가격 확인 중</span>
+            <span>현재가</span>
           </div>
-          <em className="daily-pill price-neutral">대기 중</em>
+          <em className="daily-pill price-neutral">-</em>
         </div>
         <div className="quick-read">
           <article>
             <span>강점</span>
-            <strong className="partial-pending-value">준비 중</strong>
+            <strong className="partial-pending-value">-</strong>
           </article>
           <article>
             <span>먼저 볼 것</span>
-            <strong className="partial-pending-value">준비 중</strong>
+            <strong className="partial-pending-value">-</strong>
           </article>
           <article>
             <span>시가총액</span>
-            <strong className="partial-pending-value">준비 중</strong>
+            <strong className="partial-pending-value">-</strong>
           </article>
           <article className="score-panel">
             <span>품질 점수</span>
@@ -680,10 +698,10 @@ function StockSkeleton({ ticker, pendingMessage, onRetry }: { ticker?: string; p
           </article>
         </div>
         <div className="hero-verdict neutral partial-verdict">
-          <span>진행 상태</span>
-          <strong>요청을 확인하고 있어요.</strong>
-          <p>{pendingMessage || "가격 데이터가 먼저 준비되면 이 화면에 바로 채워집니다."}</p>
-          {pendingMessage && onRetry ? (
+          <span>화면 갱신</span>
+          <strong>{tickerLabel || "종목"} 정보를 표시합니다.</strong>
+          <p>가격, 차트, 점수는 확인되는 즉시 이 화면에 반영됩니다.</p>
+          {onRetry ? (
             <button type="button" className="partial-retry-button" onClick={onRetry}>
               다시 확인
             </button>
@@ -693,23 +711,23 @@ function StockSkeleton({ ticker, pendingMessage, onRetry }: { ticker?: string; p
       <section className="chart-story partial-pending-section">
         <div className="section-title">
           <span>가격 흐름</span>
-          <h2>데이터 확인 중</h2>
+          <h2>가격 흐름</h2>
         </div>
-        <p>응답 가능한 데이터부터 순서대로 표시합니다.</p>
+        <p>확인된 가격 기록을 이 영역에 반영합니다.</p>
       </section>
       <section className="factor-card partial-pending-section">
         <div className="section-title">
           <span>점수 이유</span>
-          <h2>근거 준비 중</h2>
+          <h2>점수 근거</h2>
         </div>
         <div className="factor-list partial-factor-list">
           {[0, 1, 2].map((item) => (
             <article key={item}>
               <div className="factor-heading">
                 <strong>{["품질", "기회", "리스크"][item]}</strong>
-                <span>준비 중</span>
+                <span>-</span>
               </div>
-              <p>점수 계산이 끝나면 근거를 표시합니다.</p>
+              <p>확인된 근거를 이 영역에 반영합니다.</p>
             </article>
           ))}
         </div>

@@ -1,5 +1,5 @@
 import type { StockDataKind, StockDataUnavailableReason } from "@/lib/stockDataRuntime";
-import type { ScoreView } from "@/lib/stockSnapshotCache";
+import type { ScoreView } from "@/lib/stockScoreContract";
 
 export const STOCK_REFRESH_PRIORITIES = {
   FORCE_REFRESH: 1,

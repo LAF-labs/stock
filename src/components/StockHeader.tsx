@@ -67,16 +67,9 @@ export default function StockHeader({
     priceRefreshState.status === "refreshing"
       ? "현재가 새로고침 중"
       : priceRefreshState.status === "cooldown"
-        ? priceRefreshState.message || "새로고침 대기 중"
+        ? priceRefreshState.message || "새로고침 제한"
         : "최신 현재가로 새로고침";
-  const quoteStatusMessage =
-    quoteState.status === "loading"
-      ? "현재가를 확인하는 중이에요."
-      : quoteState.status === "pending"
-        ? quoteState.pending.message
-        : quoteState.status === "error"
-          ? `현재가 업데이트 실패: ${quoteState.error}`
-          : undefined;
+  const quoteStatusMessage = quoteState.status === "error" ? `현재가 업데이트 실패: ${quoteState.error}` : undefined;
   const marketCap = stockMarketCapDisplay(data);
   const signal = signalLabel(data.sia_snapshot?.raw_signal);
   const risk = riskLevelLabel(data.sia_snapshot?.risk_level);
@@ -182,7 +175,7 @@ export default function StockHeader({
         <span>오늘의 판단</span>
         <strong>
           {stockJudgment?.headline ||
-            (judgmentState.status === "loading" ? "숫자를 읽고 있어요" : judgmentState.status === "error" ? "판단을 불러오지 못했어요" : "판단을 준비하고 있어요")}
+            (judgmentState.status === "loading" ? "숫자를 읽고 있어요" : judgmentState.status === "error" ? "판단을 불러오지 못했어요" : "가격과 점수를 함께 보고 있어요")}
         </strong>
         <p>
           {stockJudgment?.body ||

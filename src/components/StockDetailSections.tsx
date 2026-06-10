@@ -59,7 +59,7 @@ export function ChartStory({
   }
 
   if (usable.length < 2) {
-    return <EmptyCard title="가격 흐름" body="표시할 차트 데이터가 없어요." />;
+    return null;
   }
   const chartPoints = usable;
 
@@ -140,7 +140,7 @@ function ChartLoadingPlaceholder() {
   return (
     <div className="chart-plot">
       <div className="trading-chart" aria-hidden="true" />
-      <p className="chart-fallback" role="status" aria-live="polite">차트를 준비하고 있어요.</p>
+      <p className="chart-fallback" role="status" aria-live="polite">가격 흐름 요약을 먼저 보여드려요.</p>
     </div>
   );
 }
@@ -156,7 +156,7 @@ export function FactorStory({
   eyebrow?: string;
   title?: string;
 }) {
-  if (!components?.length) return <EmptyCard title={eyebrow} body="표시할 점수 데이터가 없어요." />;
+  if (!components?.length) return null;
   return (
     <section className="factor-card">
       <div className="section-title">
@@ -216,7 +216,7 @@ export function SimpleList({
   desktopOpen?: boolean;
 }) {
   const visibleItems = visibleLabeledItems(items);
-  if (!visibleItems.length) return <EmptyCard title={title} body="표시할 데이터가 없어요." />;
+  if (!visibleItems.length) return null;
   return (
     <AccordionCard title={title} description={description} defaultOpen={defaultOpen} desktopOpen={desktopOpen}>
       <dl>
@@ -249,7 +249,7 @@ export function RecordCard({
   stock?: StockScoreResponse;
   desktopOpen?: boolean;
 }) {
-  if (!record || !visibleRecordEntries(record).length) return <EmptyCard title={title} body="표시할 데이터가 없어요." />;
+  if (!record || !visibleRecordEntries(record).length) return null;
   return (
     <AccordionCard title={title} description={description} desktopOpen={desktopOpen}>
       <RecordRows record={record} stock={stock} />

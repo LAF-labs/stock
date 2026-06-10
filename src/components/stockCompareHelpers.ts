@@ -320,7 +320,7 @@ export function comparePartialData(result: BatchScoreResult | undefined, fallbac
 
 export function pendingMessage(result: BatchScoreResult | undefined): string {
   void result;
-  return "가격과 점수를 확인하고 있어요. 확인되는 종목부터 비교 화면에 바로 반영합니다.";
+  return "선택한 종목을 같은 기준으로 비교합니다.";
 }
 
 export function normalizedPoints(item: CompareItem) {

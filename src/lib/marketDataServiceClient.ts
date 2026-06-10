@@ -3,7 +3,7 @@ import { isCurrentScoreModelPayload } from "@/lib/scoreModel";
 import { KIS_DOMESTIC_EXCHANGE_LABEL } from "@/lib/quoteContract";
 import { parseTickerRef, type ParsedTickerRef } from "@/lib/tickerRef";
 import type { StockQuoteResult } from "@/lib/stockQuoteCache";
-import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockSnapshotCache";
+import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockScoreContract";
 
 type MarketDataServiceResponse = {
   ok?: unknown;

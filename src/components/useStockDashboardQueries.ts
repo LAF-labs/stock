@@ -17,6 +17,7 @@ import {
 import { refreshQuote as refreshQuoteRequest } from "@/lib/stockQueryFns";
 import {
   judgmentQueryOptions,
+  displayQueryOptions,
   quoteDataFromQueryResult,
   quoteQueryDataFromRefreshResult,
   quoteQueryDataFromScore,
@@ -26,6 +27,7 @@ import {
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "@/lib/stockQueryTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
+import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 
 export type DashboardLoadState =
   | { status: "idle" | "loading"; data?: undefined; error?: undefined }
@@ -57,12 +59,18 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     enabled,
     placeholderData: enabled ? scorePlaceholder(tickerKey) : undefined,
   });
+  const displayQuery = useQuery({
+    ...displayQueryOptions(tickerKey, "detail"),
+    enabled,
+    placeholderData: (previous) => previous,
+  });
   const quoteQuery = useQuery({
     ...quoteQueryOptions(tickerKey),
     enabled,
   });
 
   const quoteData = quoteDataFromQueryResult(quoteQuery.data);
+  const displayData = displayQuery.data?.state === "ready" ? stockScoreDataFromDisplayPayload(displayQuery.data.data) : undefined;
   const rawScoreData = scoreQuery.data?.state === "ready" ? scoreQuery.data.data : undefined;
   const judgmentPayload = useMemo(() => (rawScoreData ? stockJudgmentRequestPayload(rawScoreData) : undefined), [rawScoreData]);
   const judgmentInputHash = useMemo(() => (judgmentPayload ? stablePayloadHash(judgmentPayload) : ""), [judgmentPayload]);
@@ -107,6 +115,7 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     scoreError: scoreQuery.error,
     isScoreLoading: scoreQuery.isLoading,
     quoteData,
+    displayData,
   });
   const quoteState = quoteStateFromQuery(ticker, quoteQuery.data, quoteQuery.error, quoteQuery.isLoading);
   const judgmentState = judgmentStateFromQuery(rawScoreData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(rawScoreData));
@@ -127,10 +136,11 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
 
   const retryLoad = useCallback(() => {
     if (!ticker) return;
+    void displayQuery.refetch();
     void scoreQuery.refetch();
     void quoteQuery.refetch();
     if (rawScoreData) void judgmentQuery.refetch();
-  }, [judgmentQuery, quoteQuery, rawScoreData, scoreQuery, ticker]);
+  }, [displayQuery, judgmentQuery, quoteQuery, rawScoreData, scoreQuery, ticker]);
 
   const refreshPrice = useCallback(() => {
     if (!ticker) return;
@@ -159,12 +169,14 @@ function dashboardStateFromQuery({
   scoreError,
   isScoreLoading,
   quoteData,
+  displayData,
 }: {
   ticker: string | undefined;
   scoreResult: ScoreQueryResult | undefined;
   scoreError: unknown;
   isScoreLoading: boolean;
   quoteData: StockQuoteResponse | undefined;
+  displayData: StockScoreResponse | undefined;
 }): DashboardLoadState {
   if (!ticker) return { status: "idle" };
 
@@ -179,6 +191,13 @@ function dashboardStateFromQuery({
   }
 
   if (scoreResult?.state === "pending") {
+    if (displayData) {
+      return {
+        status: "partial",
+        data: displayData,
+        pending: quoteFirstPending(ticker),
+      };
+    }
     const pending = pendingFromApiPending(scoreResult, ticker);
     const quotePartial = quoteData ? partialStockDataFromQuote(quoteData, ticker) : undefined;
     if (quotePartial) {
@@ -192,6 +211,13 @@ function dashboardStateFromQuery({
   }
 
   if (scoreError) {
+    if (displayData) {
+      return {
+        status: "partial",
+        data: displayData,
+        pending: quoteFirstPending(ticker),
+      };
+    }
     const quotePartial = quoteData ? partialStockDataFromQuote(quoteData, ticker) : undefined;
     if (quotePartial) {
       return {
@@ -204,6 +230,13 @@ function dashboardStateFromQuery({
   }
 
   if (isScoreLoading) {
+    if (displayData) {
+      return {
+        status: "partial",
+        data: displayData,
+        pending: quoteFirstPending(ticker),
+      };
+    }
     const quotePartial = quoteData ? partialStockDataFromQuote(quoteData, ticker) : undefined;
     return {
       status: "partial",
@@ -214,7 +247,7 @@ function dashboardStateFromQuery({
 
   return {
     status: "partial",
-    data: partialStockDataFromTicker(ticker),
+    data: displayData || partialStockDataFromTicker(ticker),
     pending: pendingFromTicker(ticker),
   };
 }
@@ -226,7 +259,7 @@ function quoteStateFromQuery(ticker: string | undefined, result: QuoteQueryResul
     return {
       status: "pending",
       pending: {
-        message: pendingFromApiPending(result.pending, ticker)?.message || "현재가를 다시 확인하고 있어요.",
+        message: pendingFromApiPending(result.pending, ticker)?.message || "현재가를 화면에 반영합니다.",
       },
     };
   }
@@ -249,7 +282,7 @@ function priceRefreshStateFromMutation(
   cooldownTick: number
 ): PriceRefreshState {
   void cooldownTick;
-  if (isPending) return { status: "refreshing", message: "최신 현재가 확인 중" };
+  if (isPending) return { status: "refreshing", message: "현재가 업데이트 반영" };
   if (error) return { status: "error", message: errorMessage(error, "quote_refresh_failed") };
   if (!result) return { status: "idle" };
 
@@ -289,7 +322,7 @@ function scorePlaceholder(ticker: string): ScoreQueryResult {
       status: 202,
       payload: { error: "snapshot_pending", ticker },
       error: "snapshot_pending",
-      message: "종목은 먼저 특정했고, 가격과 점수 데이터는 계속 확인하고 있어요.",
+      message: "종목 정보와 가격 데이터를 화면에 반영했어요.",
       ticker,
       queued: false,
     },
@@ -308,7 +341,7 @@ function pendingFromApiPending(pending: ApiPending | undefined, fallbackTicker: 
 
 function pendingFromTicker(ticker: string, message?: string, retryAfterSeconds?: number): SnapshotPendingState {
   return {
-    message: message || "종목은 먼저 특정했고, 가격과 점수 데이터는 계속 확인하고 있어요.",
+    message: message || "종목 정보와 가격 데이터를 화면에 반영했어요.",
     ticker,
     queued: false,
     retryAfterSeconds,
@@ -317,7 +350,7 @@ function pendingFromTicker(ticker: string, message?: string, retryAfterSeconds?:
 
 function quoteFirstPending(ticker: string): SnapshotPendingState {
   return {
-    message: "가격 데이터는 먼저 확인했고, 점수와 재무 지표를 이어서 준비하고 있어요.",
+    message: "가격 데이터와 점수, 재무 지표를 계속 맞춰보고 있어요.",
     ticker,
     queued: false,
   };

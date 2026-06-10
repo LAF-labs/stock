@@ -153,7 +153,7 @@ export default function TechnicalOverlayChart({
               className={className || undefined}
               aria-pressed={visibleOverlays[control.id] && available}
               disabled={!available}
-              title={available ? `${control.label} 표시 전환` : `${control.label} 데이터 준비 중`}
+              title={`${control.label} 표시 전환`}
               onClick={() => toggleOverlay(control.id)}
             >
               <i className={control.className} />

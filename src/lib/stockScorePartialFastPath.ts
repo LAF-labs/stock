@@ -1,7 +1,7 @@
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { enqueueStockPendingPayload, type StockPendingInput } from "@/lib/stockPendingResponse";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
-import type { StockScoreResult } from "@/lib/stockSnapshotCache";
+import type { StockScoreResult } from "@/lib/stockScoreContract";
 import { numericEnv } from "@/lib/supabaseRest";
 
 export type SettledStockScoreResult =

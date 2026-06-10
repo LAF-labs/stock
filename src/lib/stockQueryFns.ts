@@ -9,6 +9,7 @@ import type {
   ApiUnsupported,
   CompareQueryResult,
   CompareScoreItemResult,
+  DisplayQueryResult,
   JudgmentQueryResult,
   QuoteQueryResult,
   QuoteRefreshMutationResult,
@@ -19,6 +20,7 @@ import type {
 } from "@/lib/stockQueryTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
+import type { StockDisplayPayload, StockDisplayView } from "@/lib/stockDisplayTypes";
 
 type ApiJsonInit = RequestInit & { signal?: AbortSignal };
 
@@ -51,6 +53,21 @@ export async function fetchStockScore({
   return classifyScorePayload(payload, response.status);
 }
 
+export async function fetchStockDisplay({
+  ticker,
+  view = "detail",
+  signal,
+}: {
+  ticker: string;
+  view?: StockDisplayView;
+  signal?: AbortSignal;
+}): Promise<DisplayQueryResult> {
+  const query = new URLSearchParams({ ticker, view });
+  const { payload, response } = await apiJson(`/api/stock/display?${query.toString()}`, noStoreInit(signal));
+  if (!response.ok || payload.ok === false) throwStockQueryError(payload, response.status, "display_failed");
+  return readyResult(payload as StockDisplayPayload, payload, response.status);
+}
+
 export async function fetchTechnicalScore(ticker: string, signal?: AbortSignal): Promise<TechnicalScoreQueryResult> {
   return fetchStockScore({ ticker, view: "technical", signal });
 }
@@ -72,7 +89,7 @@ export async function refreshQuote(ticker: string, signal?: AbortSignal): Promis
     status: result.status,
     payload: result.payload,
     error: "snapshot_pending",
-    message: "현재가를 준비하고 있어요.",
+    message: "현재가를 화면에 반영합니다.",
     queued: false,
   };
 }
@@ -229,7 +246,7 @@ function enrichmentPendingPayload(payload: ClientApiPayload): ClientApiPayload {
     ticker,
     requested_ticker: ticker,
     reason: "pending_enrichment",
-    message: "가격 데이터는 먼저 확인했고, 차트와 점수 데이터를 이어서 준비하고 있어요.",
+    message: "가격 데이터는 먼저 반영했고, 차트와 점수는 확보되는 즉시 조용히 반영합니다.",
     retry_after_seconds: 5,
     refresh_request: { queued: true },
   };
@@ -245,7 +262,7 @@ function pendingResult(payload: ClientApiPayload | undefined, status: number): A
     status,
     payload,
     error,
-    message: stringFromUnknown(payload.message) || stringFromUnknown(payload.reason) || "데이터를 준비하고 있어요.",
+    message: stringFromUnknown(payload.message) || stringFromUnknown(payload.reason) || "확보된 데이터를 화면에 반영합니다.",
     ticker: stringFromUnknown(payload.ticker) || stringFromUnknown(payload.requested_ticker),
     queued: refreshRequest?.queued === true,
     retryAfterSeconds: numberFromUnknown(payload.retry_after_seconds),

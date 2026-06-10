@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTechnicalAnalysisPayload, safeInternalRedirectPath } from "@/components/technicalAnalysisHelpers";
+import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
   partialStockDataFromPayload,
   partialStockDataFromQuote,
@@ -11,9 +12,10 @@ import {
   snapshotPendingFromPayload,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
-import { quoteDataFromQueryResult, quoteQueryDataFromScore, quoteQueryOptions, technicalScoreQueryOptions } from "@/lib/stockQueryOptions";
+import { displayQueryOptions, quoteDataFromQueryResult, quoteQueryDataFromScore, quoteQueryOptions, technicalScoreQueryOptions } from "@/lib/stockQueryOptions";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, TechnicalScoreQueryResult } from "@/lib/stockQueryTypes";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export type TechnicalLoadState =
@@ -29,14 +31,23 @@ export type TechnicalAnalysisQueryView = {
   retryTechnical: () => void;
 };
 
-export function useTechnicalAnalysisQueries(ticker: string, detailHref: string): TechnicalAnalysisQueryView {
+export function useTechnicalAnalysisQueries(ticker: string, detailHref: string, initialDisplayPayload?: StockDisplayPayload): TechnicalAnalysisQueryView {
   const queryClient = useQueryClient();
   const scoreQuery = useQuery({
     ...technicalScoreQueryOptions(ticker),
     placeholderData: technicalPlaceholder(ticker),
   });
+  const displayQuery = useQuery({
+    ...displayQueryOptions(ticker, "technical"),
+    placeholderData: (previous) => previous,
+  });
   const quoteQuery = useQuery(quoteQueryOptions(ticker));
   const quote = quoteDataFromQueryResult(quoteQuery.data);
+  const initialDisplayData = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? stockScoreDataFromDisplayPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker]
+  );
+  const displayData = displayQuery.data?.state === "ready" ? stockScoreDataFromDisplayPayload(displayQuery.data.data) : initialDisplayData;
 
   useEffect(() => {
     const result = scoreQuery.data;
@@ -51,12 +62,13 @@ export function useTechnicalAnalysisQueries(ticker: string, detailHref: string):
   }, [queryClient, scoreQuery.data, ticker]);
 
   const retryTechnical = useCallback(() => {
+    void displayQuery.refetch();
     void scoreQuery.refetch();
     void quoteQuery.refetch();
-  }, [quoteQuery, scoreQuery]);
+  }, [displayQuery, quoteQuery, scoreQuery]);
 
   return {
-    state: technicalStateFromQuery(ticker, scoreQuery.data, scoreQuery.error, scoreQuery.isLoading, quote),
+    state: technicalStateFromQuery(ticker, scoreQuery.data, scoreQuery.error, scoreQuery.isLoading, quote, displayData),
     quote,
     retryTechnical,
   };
@@ -68,9 +80,17 @@ function technicalStateFromQuery(
   error: unknown,
   isLoading: boolean,
   quote: StockQuoteResponse | undefined,
+  displayData: StockScoreResponse | undefined,
 ): TechnicalLoadState {
+  if (displayData && isTechnicalAnalysisPayload(displayData.technical_analysis) && result?.state !== "ready") {
+    return { status: "success", ticker, data: scoreDataWithQuote(displayData, quote) };
+  }
+
   if (result?.state === "ready") {
     if (!isTechnicalAnalysisPayload(result.data.technical_analysis)) {
+      if (displayData) {
+        return { status: "partial", ticker, data: scoreDataWithQuote(displayData, quote), pending: quoteFirstPending(ticker) };
+      }
       return { status: "error", ticker, error: "기술적 분석 데이터를 찾지 못했어요." };
     }
     return { status: "success", ticker, data: scoreDataWithQuote(result.data, quote) };
@@ -78,11 +98,19 @@ function technicalStateFromQuery(
 
   if (result?.state === "partial") {
     const pending = snapshotPendingFromPayload(result.payload, ticker) || pendingFromApiPending(result.pending, ticker) || pendingFromTicker(ticker);
-    const partial = partialStockDataFromPayload(result.payload, ticker) || result.data || partialStockDataFromTicker(ticker);
+    const partial = displayData || partialStockDataFromPayload(result.payload, ticker) || result.data || partialStockDataFromTicker(ticker);
     return { status: "partial", ticker, data: scoreDataWithQuote(partial, quote), pending };
   }
 
   if (result?.state === "pending") {
+    if (displayData) {
+      return {
+        status: "partial",
+        ticker,
+        data: scoreDataWithQuote(displayData, quote),
+        pending: quoteFirstPending(ticker),
+      };
+    }
     const pending = pendingFromApiPending(result, ticker);
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     if (quotePartial) {
@@ -101,6 +129,14 @@ function technicalStateFromQuery(
   }
 
   if (error) {
+    if (displayData) {
+      return {
+        status: "partial",
+        ticker,
+        data: scoreDataWithQuote(displayData, quote),
+        pending: quoteFirstPending(ticker),
+      };
+    }
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     if (quotePartial) {
       return {
@@ -114,6 +150,14 @@ function technicalStateFromQuery(
   }
 
   if (isLoading) {
+    if (displayData) {
+      return {
+        status: "partial",
+        ticker,
+        data: scoreDataWithQuote(displayData, quote),
+        pending: quoteFirstPending(ticker),
+      };
+    }
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     return {
       status: "partial",
@@ -126,7 +170,7 @@ function technicalStateFromQuery(
   return {
     status: "partial",
     ticker,
-    data: partialStockDataFromTicker(ticker),
+    data: displayData || partialStockDataFromTicker(ticker),
     pending: pendingFromTicker(ticker),
   };
 }
@@ -146,7 +190,7 @@ function technicalPlaceholder(ticker: string): TechnicalScoreQueryResult {
       status: 202,
       payload: { error: "snapshot_pending", ticker },
       error: "snapshot_pending",
-      message: "종목은 먼저 특정했고, 가격 캔들과 보조지표는 계속 확인하고 있어요.",
+      message: "종목 정보와 가격 캔들을 화면에 반영했어요.",
       ticker,
       queued: false,
     },
@@ -165,7 +209,7 @@ function pendingFromApiPending(pending: ApiPending | undefined, fallbackTicker: 
 
 function pendingFromTicker(ticker: string, message?: string, retryAfterSeconds?: number): SnapshotPendingState {
   return {
-    message: message || "종목은 먼저 특정했고, 가격 캔들과 보조지표는 계속 확인하고 있어요.",
+    message: message || "종목 정보와 가격 캔들을 화면에 반영했어요.",
     ticker,
     queued: false,
     retryAfterSeconds,
@@ -174,7 +218,7 @@ function pendingFromTicker(ticker: string, message?: string, retryAfterSeconds?:
 
 function quoteFirstPending(ticker: string): SnapshotPendingState {
   return {
-    message: "가격 데이터는 먼저 확인했고, 차트 분석을 이어서 준비하고 있어요.",
+    message: "가격 데이터와 차트 흐름을 계속 맞춰보고 있어요.",
     ticker,
     queued: false,
   };

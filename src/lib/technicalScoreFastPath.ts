@@ -2,7 +2,7 @@ import { fetchKisDailyChart } from "@/lib/kisQuoteClient";
 import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { envValue } from "@/lib/supabaseRest";
-import type { StockPayload } from "@/lib/stockSnapshotCache";
+import type { StockPayload } from "@/lib/stockScoreContract";
 
 export function technicalRequestFastPathEnabled(env: Record<string, string | undefined> = process.env): boolean {
   const raw = env.STOCK_TECHNICAL_REQUEST_FAST_PATH?.trim().toLowerCase();

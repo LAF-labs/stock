@@ -1,7 +1,7 @@
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { defaultStockRefreshPriority } from "@/lib/stockRefreshPriorities";
+import type { ScoreView } from "@/lib/stockScoreContract";
 import { fetchWithTimeout, layeredNumericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
-import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind, StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { parseTickerRef } from "@/lib/tickerRef";
 

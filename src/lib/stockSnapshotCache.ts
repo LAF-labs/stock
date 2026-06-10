@@ -1,6 +1,5 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, scoreOpenTtlSeconds } from "@/lib/marketCalendar";
 import { getMarketDataServiceScore } from "@/lib/marketDataServiceClient";
-import { isCurrentScoreModelPayload, scoreModelVersionFromPayload, SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { pythonCollectorEnabled, StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
@@ -9,37 +8,25 @@ import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
 import { stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { stockScorePayloadNeedsEnrichment, stockScorePayloadIsDurable } from "@/lib/stockQueryCompleteness";
+import {
+  cleanScoreView,
+  isCurrentScorePayload,
+  isCurrentScoreSnapshot,
+  statusFromPayload,
+  stockScoreCacheKey,
+  type CacheSource,
+  type CacheState,
+  type ScoreView,
+  type StockPayload,
+  type StockScoreResult,
+  type StoredScoreSnapshot,
+} from "@/lib/stockScoreContract";
 import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseReadConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import { normalizeTickerRef as normalizeTickerRefValue } from "@/lib/tickerRef";
 
 export { normalizeTickerRef } from "@/lib/tickerRef";
-
-export type ScoreView = "detail" | "compare" | "technical";
-export type StockPayload = Record<string, unknown>;
-export type CacheState = "fresh" | "stale" | "miss";
-export type CacheSource = "memory" | "supabase" | "collector" | "market-data";
-
-export type StockScoreResult = {
-  payload: StockPayload;
-  cache: {
-    state: CacheState;
-    source: CacheSource;
-    ticker: string;
-    view: ScoreView;
-    fetchedAt?: string;
-    expiresAt?: string;
-    refreshStarted?: boolean;
-    refreshError?: string;
-  };
-};
-
-type StoredSnapshot = {
-  ticker: string;
-  view: ScoreView;
-  payload: StockPayload;
-  fetchedAt: string;
-  expiresAt: string;
-};
+export { isCurrentScorePayload, statusFromPayload };
+export type { CacheSource, CacheState, ScoreView, StockPayload, StockScoreResult };
 
 type SupabaseSnapshotRow = {
   ticker: string;
@@ -50,14 +37,13 @@ type SupabaseSnapshotRow = {
 };
 
 declare global {
-  var __stockScoreMemoryCache: Map<string, StoredSnapshot> | undefined;
-  var __stockScoreInflight: Map<string, Promise<StoredSnapshot>> | undefined;
+  var __stockScoreInflight: Map<string, Promise<StoredScoreSnapshot>> | undefined;
 }
 
 const SUPABASE_TABLE = "stock_score_snapshots";
 
-const memoryCache = (globalThis.__stockScoreMemoryCache ??= new Map<string, StoredSnapshot>());
-const inflightRefreshes = (globalThis.__stockScoreInflight ??= new Map<string, Promise<StoredSnapshot>>());
+const memoryCache = (globalThis.__stockScoreMemoryCache ??= new Map<string, StoredScoreSnapshot>());
+const inflightRefreshes = (globalThis.__stockScoreInflight ??= new Map<string, Promise<StoredScoreSnapshot>>());
 
 function freshTtlSeconds(view: ScoreView): number {
   return scoreOpenTtlSeconds(view);
@@ -69,8 +55,7 @@ function staleTtlSeconds(view: ScoreView): number {
 }
 
 export function cleanView(value: string | null): ScoreView {
-  if (value === "technical") return "technical";
-  return value === "compare" ? "compare" : "detail";
+  return cleanScoreView(value);
 }
 
 export function parseTickerList(value: string | null, maxTickers = 5): string[] {
@@ -85,46 +70,23 @@ export function parseTickerList(value: string | null, maxTickers = 5): string[] 
   return unique.slice(0, maxTickers);
 }
 
-export function statusFromPayload(payload: StockPayload): number {
-  return typeof payload.status === "number" ? payload.status : payload.ok === false ? 400 : 200;
-}
-
-function cacheKey(ticker: string, view: ScoreView): string {
-  return `${view}:${ticker}`;
-}
-
 async function expiresAtFrom(nowMs: number, ticker: string, view: ScoreView): Promise<string> {
   const { expiresAt } = await cacheExpiresAtForMarket(marketFromTicker(ticker), "score", nowMs, view);
   return expiresAt;
 }
 
-function isFresh(snapshot: StoredSnapshot, nowMs: number): boolean {
+function cacheKey(ticker: string, view: ScoreView): string {
+  return stockScoreCacheKey(ticker, view);
+}
+
+function isFresh(snapshot: StoredScoreSnapshot, nowMs: number): boolean {
   return isCurrentScoreSnapshot(snapshot) && Date.parse(snapshot.expiresAt) > nowMs;
 }
 
-function isServeableStale(snapshot: StoredSnapshot, nowMs: number): boolean {
+function isServeableStale(snapshot: StoredScoreSnapshot, nowMs: number): boolean {
   if (!isCurrentScoreSnapshot(snapshot)) return false;
   const fetchedAt = Date.parse(snapshot.fetchedAt);
   return Number.isFinite(fetchedAt) && fetchedAt + staleTtlSeconds(snapshot.view) * 1000 > nowMs;
-}
-
-function isCurrentScoreSnapshot(snapshot: StoredSnapshot): boolean {
-  if (snapshot.view === "technical") return isCurrentTechnicalScoreSnapshotPayload(snapshot.payload);
-  return isCurrentScorePayload(snapshot.payload) && stockScorePayloadIsDurable(snapshot.payload);
-}
-
-export function isCurrentScorePayload(payload: StockPayload): boolean {
-  return isCurrentScoreModelPayload(payload);
-}
-
-function isCurrentTechnicalScoreSnapshotPayload(payload: StockPayload): boolean {
-  if (payload.ok === false) return false;
-  if (scoreModelVersionFromPayload(payload) !== SCORE_MODEL_VERSION) return false;
-  const technical = payload.technical_analysis;
-  return Boolean(technical)
-    && typeof technical === "object"
-    && !Array.isArray(technical)
-    && (technical as Record<string, unknown>).type === "technical_analysis";
 }
 
 function approximateJsonBytes(value: unknown): number {
@@ -139,11 +101,11 @@ function maxMemoryPayloadBytes(): number {
   return Math.max(0, numericEnv("STOCK_SCORE_MEMORY_CACHE_MAX_PAYLOAD_BYTES", 500_000));
 }
 
-function shouldRememberSnapshot(snapshot: StoredSnapshot): boolean {
+function shouldRememberSnapshot(snapshot: StoredScoreSnapshot): boolean {
   return approximateJsonBytes(snapshot.payload) <= maxMemoryPayloadBytes();
 }
 
-function rememberMemorySnapshot(key: string, snapshot: StoredSnapshot, nowMs: number) {
+function rememberMemorySnapshot(key: string, snapshot: StoredScoreSnapshot, nowMs: number) {
   if (!shouldRememberSnapshot(snapshot)) {
     memoryCache.delete(key);
     return;
@@ -152,7 +114,7 @@ function rememberMemorySnapshot(key: string, snapshot: StoredSnapshot, nowMs: nu
   pruneMemoryCache(nowMs);
 }
 
-async function readSupabaseSnapshot(ticker: string, view: ScoreView): Promise<StoredSnapshot | undefined> {
+async function readSupabaseSnapshot(ticker: string, view: ScoreView): Promise<StoredScoreSnapshot | undefined> {
   const config = supabaseReadConfig();
   if (!config) return undefined;
 
@@ -175,7 +137,7 @@ async function readSupabaseSnapshot(ticker: string, view: ScoreView): Promise<St
   }
 }
 
-async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
+async function writeSupabaseSnapshot(snapshot: StoredScoreSnapshot): Promise<void> {
   const config = supabaseAdminConfig();
   if (!config) return;
 
@@ -207,7 +169,7 @@ async function writeSupabaseSnapshot(snapshot: StoredSnapshot): Promise<void> {
   }
 }
 
-async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredSnapshot> {
+async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredScoreSnapshot> {
   const key = cacheKey(ticker, view);
   const existing = inflightRefreshes.get(key);
   if (existing) return existing;
@@ -216,7 +178,7 @@ async function refreshSnapshot(ticker: string, view: ScoreView): Promise<StoredS
     const payload = await scoreRefreshPayload(ticker, view);
     const nowMs = Date.now();
     const fetchedAt = new Date(nowMs).toISOString();
-    const snapshot: StoredSnapshot = {
+    const snapshot: StoredScoreSnapshot = {
       ticker,
       view,
       payload,
@@ -283,7 +245,7 @@ function pruneMemoryCache(nowMs: number) {
   }
 }
 
-function decorate(snapshot: StoredSnapshot, state: CacheState, source: CacheSource, extra?: Partial<StockScoreResult["cache"]>): StockScoreResult {
+function decorate(snapshot: StoredScoreSnapshot, state: CacheState, source: CacheSource, extra?: Partial<StockScoreResult["cache"]>): StockScoreResult {
   const serverCache = {
     state,
     source,
@@ -336,9 +298,9 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
   const ticker = normalizeTickerRefValue(tickerRef);
   const key = cacheKey(ticker, view);
   const nowMs = Date.now();
-  let freshCandidate: StoredSnapshot | undefined;
+  let freshCandidate: StoredScoreSnapshot | undefined;
   let freshSource: CacheSource = "memory";
-  let staleCandidate: StoredSnapshot | undefined;
+  let staleCandidate: StoredScoreSnapshot | undefined;
   let staleSource: CacheSource = "memory";
 
   const memorySnapshot = memoryCache.get(key);

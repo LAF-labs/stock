@@ -16,10 +16,10 @@ test("readClientApiPayload rejects empty and malformed payloads with user-facing
 });
 
 test("readClientApiPayload parses object payloads and extracts safe messages", async () => {
-  const payload = await readClientApiPayload(Response.json({ ok: false, error: "snapshot_pending", message: "준비 중" }));
+  const payload = await readClientApiPayload(Response.json({ ok: false, error: "snapshot_pending", message: "화면 반영" }));
 
-  assert.deepEqual(payload, { ok: false, error: "snapshot_pending", message: "준비 중" });
-  assert.equal(apiPayloadMessage(payload, "fallback"), "준비 중");
+  assert.deepEqual(payload, { ok: false, error: "snapshot_pending", message: "화면 반영" });
+  assert.equal(apiPayloadMessage(payload, "fallback"), "화면 반영");
   assert.equal(apiPayloadMessage({ error: "rate_limited" }, "fallback"), "rate_limited");
   assert.equal(apiPayloadMessage({}, "fallback"), "fallback");
 });

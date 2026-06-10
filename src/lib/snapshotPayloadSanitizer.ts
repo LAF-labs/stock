@@ -1,4 +1,4 @@
-import type { StockPayload } from "@/lib/stockSnapshotCache";
+import type { StockPayload } from "@/lib/stockScoreContract";
 
 const SECRET_KEY_RE = /(^|[_-])(access[_-]?token|refresh[_-]?token|api[_-]?key|app[_-]?key|app[_-]?secret|authorization|client[_-]?secret|private[_-]?key|password|secret)([_-]|$)/i;
 const DEBUG_KEY_RE = /^(?:__debug|debug|headers|provider_body|provider_response|raw_response|request_headers|response_headers)$/i;

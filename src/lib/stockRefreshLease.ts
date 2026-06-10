@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { safeErrorMessage } from "@/lib/errorSafety";
+import type { ScoreView } from "@/lib/stockScoreContract";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, envValue } from "@/lib/supabaseRest";
-import type { ScoreView } from "@/lib/stockSnapshotCache";
 import type { StockDataKind } from "@/lib/stockDataRuntime";
 import { parseTickerRef } from "@/lib/tickerRef";
 

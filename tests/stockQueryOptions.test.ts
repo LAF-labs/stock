@@ -5,6 +5,7 @@ import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "../src/components/QueryProvider";
 import {
   STOCK_QUERY_MAX_PENDING_POLLS,
   compareQueryOptions,
+  displayQueryOptions,
   judgmentQueryOptions,
   quoteQueryOptions,
   quoteQueryDataFromRefreshResult,
@@ -19,15 +20,17 @@ import {
   symbolSearchQueryOptions,
   technicalScoreQueryOptions,
 } from "../src/lib/stockQueryOptions";
-import type { CompareQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
+import type { CompareQueryResult, DisplayQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
 import type { StockScoreResponse } from "../src/lib/types";
 
 test("stock query option factories use canonical keys and cache windows", () => {
   const score = scoreQueryOptions("KR:004020", "detail");
+  const display = displayQueryOptions("KR:004020", "detail");
   const technical = technicalScoreQueryOptions("KR:004020");
   const quote = quoteQueryOptions("KR:004020");
   const compare = compareQueryOptions(["KR:004020", "US:KO"]);
 
+  assert.deepEqual(display.queryKey, ["stock", "display", "detail", "KR:004020"]);
   assert.deepEqual(score.queryKey, ["stock", "score", "detail", "KR:004020"]);
   assert.deepEqual(technical.queryKey, ["stock", "score", "technical", "KR:004020"]);
   assert.deepEqual(quote.queryKey, ["stock", "quote", "KR:004020"]);
@@ -36,6 +39,36 @@ test("stock query option factories use canonical keys and cache windows", () => 
   assert.equal(quote.staleTime, stockQueryStaleTimesMs.quote);
   assert.equal(score.staleTime, stockQueryStaleTimesMs.score);
   assert.equal(technical.staleTime, stockQueryStaleTimesMs.technical);
+});
+
+test("display query polls from refresh metadata instead of pending state names", () => {
+  const display: DisplayQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: {},
+    data: {
+      ok: true,
+      ticker: "KR:005930",
+      requestedTicker: "KR:005930",
+      view: "detail",
+      generatedAt: "2026-06-10T00:00:00.000Z",
+      snapshotVersion: "display-v1",
+      hotnessTier: "active",
+      identity: { value: { ticker: "KR:005930", market: "KR", symbol: "005930", name: "삼성전자" }, freshness: "fresh", source: "symbol-master" },
+      completion: {
+        requiredParts: ["identity", "price", "chart", "score"],
+        presentParts: ["identity"],
+        missingParts: ["price", "chart", "score"],
+        recoveringParts: ["price", "chart", "score"],
+        unavailableParts: [],
+      },
+      refresh: { active: true, staleParts: [], recoveringParts: ["price", "chart", "score"], nextPollMs: 1500 },
+      capabilities: { canCompare: true, canTechnical: true },
+    },
+  };
+
+  assert.equal(stockQueryShouldPoll(display), true);
+  assert.equal(stockQueryRefetchIntervalMs(display, 0), 1500);
 });
 
 test("compare query option keeps order and disables empty batches", () => {

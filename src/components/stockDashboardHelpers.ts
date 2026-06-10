@@ -576,13 +576,13 @@ export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: str
   const retryAfterSeconds = numberFromUnknown(record?.retry_after_seconds);
   const ticker = stringFromUnknown(record?.ticker) || fallbackTicker;
   const reason = stringFromUnknown(record?.reason);
-  let message = "확인 가능한 종목 정보를 화면에 반영하고 있어요.";
+  let message = "종목 정보를 화면에 반영합니다.";
   if (queued && reason === "stale_refresh") {
-    message = "기존 데이터를 보여주는 동안 최신 가격과 점수를 확인하고 있어요.";
+    message = "표시 중인 데이터에 최신 가격과 점수를 조용히 반영합니다.";
   } else if (queued) {
-    message = "가격과 점수를 확인하고 있어요. 확인되는 항목부터 화면에 바로 반영합니다.";
+    message = "가격과 점수가 확보되는 즉시 화면에 반영합니다.";
   } else {
-    message = "확인 가능한 항목부터 화면에 바로 반영합니다.";
+    message = "확보된 항목부터 화면에 바로 반영합니다.";
   }
 
   return {
@@ -660,7 +660,7 @@ export function signalLabel(value: unknown): string {
   if (key.includes("risk") || key.includes("bear") || key.includes("negative")) return "리스크 확인";
   if (key.includes("hold")) return "관망";
   if (key.includes("neutral")) return "중립";
-  return "확인 중";
+  return "분류 전";
 }
 
 export function riskLevelLabel(value: unknown): string {
@@ -671,7 +671,7 @@ export function riskLevelLabel(value: unknown): string {
   if (key.includes("high")) return "높음";
   if (key.includes("low")) return "낮음";
   if (key.includes("medium") || key.includes("moderate")) return "보통";
-  return "확인 중";
+  return "분류 전";
 }
 
 export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessSummary {
@@ -692,7 +692,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   if (state === "stale") {
     return {
       label: "점수 기준",
-      value: "업데이트 확인 중",
+      value: "업데이트 반영",
       detail,
       tone: "stale",
     };
@@ -701,7 +701,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   if (state === "miss") {
     return {
       label: "점수 기준",
-      value: "데이터 준비 중",
+      value: "점수 반영 전",
       detail,
       tone: "pending",
     };
@@ -709,7 +709,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
 
   return {
     label: "점수 기준",
-    value: "상태 확인 중",
+    value: "상태 반영 전",
     detail,
     tone: "unknown",
   };
@@ -734,19 +734,19 @@ export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: St
 }
 
 function scoreFreshnessDetail(state: string | undefined, refreshStarted: boolean): string {
-  if (refreshStarted) return "새 점수 준비 중";
-  if (state === "fresh") return "점수 준비 완료";
-  if (state === "stale") return "최신 점수 확인 중";
-  if (state === "miss") return "데이터 준비 중";
-  return "데이터 상태 확인 중";
+  if (refreshStarted) return "업데이트 확인";
+  if (state === "fresh") return "점수 반영 완료";
+  if (state === "stale") return "최신 점수 반영";
+  if (state === "miss") return "점수 미반영";
+  return "데이터 상태 반영 전";
 }
 
 function freshnessChipLabel(cache: Record<string, unknown> | undefined): string | undefined {
   const state = stringFromUnknown(cache?.state);
-  if (cache?.refresh_started === true) return "최신 데이터 준비 중";
+  if (cache?.refresh_started === true) return undefined;
   if (state === "fresh") return "최신 데이터";
-  if (state === "stale") return "업데이트 확인 중";
-  if (state === "miss") return "데이터 준비 중";
+  if (state === "stale") return "업데이트 반영";
+  if (state === "miss") return undefined;
   return cacheTimestamp(cache, "fetched_at") ? "데이터 확인 완료" : undefined;
 }
 

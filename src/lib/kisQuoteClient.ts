@@ -12,7 +12,7 @@ import {
 } from "@/lib/kisTokenCache";
 import { envValue, fetchWithTimeout } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
-import type { StockPayload } from "@/lib/stockSnapshotCache";
+import type { StockPayload } from "@/lib/stockScoreContract";
 import { KIS_DOMESTIC_EXCHANGE_LABEL, KIS_DOMESTIC_MARKET_DIV_CODE, KIS_US_MARKETS } from "@/lib/quoteContract";
 
 type KisConfig = {

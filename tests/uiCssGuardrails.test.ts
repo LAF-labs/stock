@@ -59,7 +59,9 @@ test("compare and technical routes do not invent a default stock selection", () 
   assert.doesNotMatch(compareSource, /tickers\[0\]\s*\|\|\s*"US:KO"/);
   assert.doesNotMatch(compareSource, /encodeURIComponent\(baseTicker\)[\s\S]*"US:KO"/);
   assert.doesNotMatch(compareRouteSource, /parseTickers\([\s\S]*\|\|\s*"KO"/);
-  assert.match(compareRouteSource, /hasTickers \?[\s\S]*비교할 종목을 검색해서 추가해주세요/);
+  assert.match(compareRouteSource, /buildInitialComparePayloads/);
+  assert.match(compareRouteSource, /view: "compare"/);
+  assert.match(compareSource, /비교할 종목을 검색해서 추가해주세요/);
   assert.doesNotMatch(technicalRouteSource, /firstParam\(params\?\.ticker\)\s*\|\|\s*"US:KO"/);
   assert.match(technicalRouteSource, /if \(!rawTicker\) \{\s*redirect\("\/"\);/);
 });
@@ -95,10 +97,12 @@ test("home search is a floating pill that collapses to an icon-only circle", () 
   assert.match(dashboardSource, /onExpandRequest/);
   assert.match(dashboardSource, /scrollY/);
   assert.match(autocompleteSource, /function SearchIcon/);
-  assert.match(autocompleteSource, /function ClearIcon/);
-  assert.match(autocompleteSource, /className=\{`symbol-search-action/);
-  assert.match(autocompleteSource, /onValueChange\(""\)/);
+  assert.match(autocompleteSource, /type=\{isCollapsed \? "button" : "submit"\}/);
+  assert.match(autocompleteSource, /formAction/);
+  assert.match(autocompleteSource, /inputName/);
   assert.match(autocompleteSource, /variant === "floating"/);
+  assert.match(dashboardSource, /formAction="\/"/);
+  assert.match(dashboardSource, /inputName="ticker"/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?border-radius:\s*999px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed\s*\{[\s\S]*?width:\s*56px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed input\s*\{[\s\S]*?opacity:\s*0;/);

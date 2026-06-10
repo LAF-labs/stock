@@ -1,7 +1,7 @@
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import TechnicalAnalysisPage from "@/components/TechnicalAnalysisPage";
-import { displayTickerInput } from "@/components/stockDashboardHelpers";
+import { planStockDisplayCompletion, scheduleStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
+import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import { detailPathForTicker, technicalEligibilityForTicker } from "@/lib/technicalAnalysisEligibility";
 
 type TechnicalRouteSearchParams = Record<string, string | string[] | undefined>;
@@ -22,37 +22,24 @@ export default async function TechnicalPage({ searchParams }: TechnicalRouteProp
     redirect(detailPathForTicker(eligibility.ticker));
   }
 
-  return (
-    <Suspense fallback={<TechnicalRouteFallback ticker={eligibility.ticker} />}>
-      <TechnicalAnalysisPage ticker={eligibility.ticker} />
-    </Suspense>
-  );
+  const initialDisplayPayload = await buildInitialTechnicalPayload(eligibility.ticker);
+
+  return <TechnicalAnalysisPage ticker={eligibility.ticker} initialDisplayPayload={initialDisplayPayload} />;
 }
 
-function TechnicalRouteFallback({ ticker }: { ticker: string }) {
-  const label = displayTickerInput(ticker);
-  return (
-    <main className="stock-app stock-detail-app technical-analysis-app">
-      <header className="technical-topbar">
-        <a href={detailPathForTicker(ticker)}>상세로 돌아가기</a>
-        <span>{label}</span>
-      </header>
-      <div className="technical-feed loading-status-feed" role="status" aria-live="polite">
-        <section className="technical-hero neutral technical-pending-hero">
-          <div className="technical-hero-heading">
-            <span>기술적 분석</span>
-            <h1>{label}</h1>
-            <p>{ticker.startsWith("KR:") ? "KR" : "US"} · {label}</p>
-          </div>
-          <div className="technical-summary">
-            <span>분석 준비 중</span>
-            <strong>종목부터 먼저 보여드려요.</strong>
-            <p>종목은 먼저 특정했고, 가격 캔들과 보조지표는 계속 확인하고 있어요.</p>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
+async function buildInitialTechnicalPayload(ticker: string) {
+  try {
+    const payload = await buildStockDisplayPayload({ ticker, view: "technical" });
+    scheduleStockDisplayCompletion(planStockDisplayCompletion({
+      ticker: payload.ticker,
+      view: "technical",
+      presentParts: payload.completion.presentParts,
+      unavailableParts: payload.completion.unavailableParts,
+    }));
+    return payload;
+  } catch {
+    return undefined;
+  }
 }
 
 function firstParam(value: string | string[] | undefined): string | undefined {

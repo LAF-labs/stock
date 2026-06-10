@@ -9,7 +9,7 @@ import { useState, type ReactNode } from "react";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 
 export const STOCK_QUERY_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
-export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v4";
+export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v5";
 export const STOCK_QUERY_PERSIST_THROTTLE_MS = 1_000;
 
 type RetryableStockError = {
@@ -69,10 +69,21 @@ export function shouldPersistStockQuery(query: PersistableStockQuery): boolean {
   if (result?.state !== "ready") return false;
 
   const feature = query.queryKey[1];
+  if (feature === "display") return displayPayloadIsPersistable(query.state.data);
   if (feature === "quote" || feature === "symbols" || feature === "judgment") return true;
   if (feature !== "score" || query.queryKey[2] !== "detail") return false;
   const scoreResult = query.state.data && typeof query.state.data === "object" ? query.state.data as { data?: unknown; payload?: unknown } : undefined;
   return !stockScorePayloadNeedsEnrichment(scoreResult?.data) && !stockScorePayloadNeedsEnrichment(scoreResult?.payload);
+}
+
+function displayPayloadIsPersistable(data: unknown): boolean {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const result = data as { state?: unknown; data?: unknown };
+  if (result.state !== "ready") return false;
+  const payload = result.data;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const record = payload as { ok?: unknown; identity?: unknown };
+  return record.ok === true && Boolean(record.identity);
 }
 
 function createStockQueryPersister() {
