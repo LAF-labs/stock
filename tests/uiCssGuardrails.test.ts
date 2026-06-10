@@ -7,6 +7,7 @@ const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
 const autocompleteSource = readFileSync(join(process.cwd(), "src/components/SymbolAutocomplete.tsx"), "utf8");
+const symbolSearchHookSource = readFileSync(join(process.cwd(), "src/components/useSymbolSearchQuery.ts"), "utf8");
 const stockDetailSectionsSource = readFileSync(join(process.cwd(), "src/components/StockDetailSections.tsx"), "utf8");
 const loadingSkeletonSource = readFileSync(join(process.cwd(), "src/components/StockLoadingSkeletons.tsx"), "utf8");
 const compareRouteSource = readFileSync(join(process.cwd(), "src/app/compare/page.tsx"), "utf8");
@@ -108,6 +109,14 @@ test("home search is a floating pill that collapses to an icon-only circle", () 
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed\s*\{[\s\S]*?width:\s*56px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed input\s*\{[\s\S]*?opacity:\s*0;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed \.symbol-search-action\s*\{[\s\S]*?border-radius:\s*50%;/);
+});
+
+test("symbol autocomplete shows local suggestions before debounced server search", () => {
+  assert.match(symbolSearchHookSource, /getClientSymbolSearchIndex/);
+  assert.match(symbolSearchHookSource, /searchSymbolIndex/);
+  assert.match(symbolSearchHookSource, /localItems/);
+  assert.match(symbolSearchHookSource, /mergeSymbolItems/);
+  assert.doesNotMatch(symbolSearchHookSource, /const visibleItems = canFetchCurrentQuery && resultQuery === query \? items : \[\];/);
 });
 
 test("detail search keeps user draft edits separate from server identity sync", () => {

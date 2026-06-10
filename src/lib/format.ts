@@ -13,6 +13,7 @@ const EN_US_COMPACT_DECIMAL_FORMATTER = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 1,
 });
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 export function formatValue(value: JsonValue | undefined): string {
   if (value === null || value === undefined) return "-";
@@ -76,13 +77,17 @@ function trimCompactAmount(value: number): string {
 
 export function formatDateTimeFromEpoch(epoch: number | undefined): string {
   if (!epoch) return "-";
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(epoch * 1000));
+  const date = new Date(epoch * 1000 + KST_OFFSET_MS);
+  const year = date.getUTCFullYear();
+  const month = padTwoDigits(date.getUTCMonth() + 1);
+  const day = padTwoDigits(date.getUTCDate());
+  const hour = padTwoDigits(date.getUTCHours());
+  const minute = padTwoDigits(date.getUTCMinutes());
+  return `${year}. ${month}. ${day}. ${hour}:${minute}`;
+}
+
+function padTwoDigits(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 export function recordEntries(record: Record<string, JsonValue> | undefined) {

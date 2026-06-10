@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { buildSymbolSearchIndex, searchSymbolIndex } from "../src/lib/symbolLocalSearch";
 import { findExactSymbol, searchLocalSymbolsForTests, searchSymbols } from "../src/lib/symbolSearch";
 
 const originalFetch = globalThis.fetch;
@@ -23,6 +24,54 @@ function restore() {
 }
 
 test.afterEach(restore);
+
+test("local symbol index returns instant multi-field suggestions without remote search", () => {
+  const index = buildSymbolSearchIndex([
+    {
+      market: "KR",
+      ticker: "005930",
+      exchange: "KOSPI",
+      exchangeName: "코스피",
+      koreanName: "삼성전자",
+      englishName: "Samsung Electronics",
+      instrumentType: "STOCK",
+    },
+    {
+      market: "KR",
+      ticker: "003720",
+      exchange: "KOSPI",
+      exchangeName: "코스피",
+      koreanName: "삼영",
+      englishName: "Samyoung",
+      instrumentType: "STOCK",
+    },
+    {
+      market: "US",
+      ticker: "NVDA",
+      exchange: "NASDAQ",
+      exchangeName: "Nasdaq",
+      koreanName: "엔비디아",
+      englishName: "NVIDIA Corporation",
+      instrumentType: "STOCK",
+    },
+    {
+      market: "US",
+      ticker: "KO",
+      exchange: "NYSE",
+      exchangeName: "NYSE",
+      koreanName: "코카콜라",
+      englishName: "Coca-Cola Company",
+      instrumentType: "STOCK",
+    },
+  ]);
+
+  assert.equal(searchSymbolIndex(index, { query: "삼", limit: 5 })[0]?.key, "KR:005930");
+  assert.deepEqual(searchSymbolIndex(index, { query: "삼성", limit: 5 }).map((item) => item.key), ["KR:005930"]);
+  assert.deepEqual(searchSymbolIndex(index, { query: "samsung", limit: 5 }).map((item) => item.key), ["KR:005930"]);
+  assert.deepEqual(searchSymbolIndex(index, { query: "엔비", limit: 5 }).map((item) => item.key), ["US:NVDA"]);
+  assert.deepEqual(searchSymbolIndex(index, { query: "coca cola", limit: 5 }).map((item) => item.key), ["US:KO"]);
+  assert.deepEqual(searchSymbolIndex(index, { query: "삼전", limit: 5 }).map((item) => item.key), ["KR:005930"]);
+});
 
 test("symbol search uses Supabase RPC when available", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
