@@ -747,5 +747,5 @@ function detailRequestFastPathTimeoutMs(): number {
 
 function detailDailyFastPathTimeoutMs(): number {
   const parsed = Number(envValue("STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS"));
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1_800;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 650;
 }

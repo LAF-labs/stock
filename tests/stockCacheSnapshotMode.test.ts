@@ -229,7 +229,6 @@ test("detail score cache falls back to a quote-only fast path when daily rows ar
   process.env.STOCK_API_APP_KEY = "app-key";
   process.env.STOCK_API_APP_SECRET = "app-secret";
   process.env.STOCK_API_BASE = "https://kis.example";
-  process.env.STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS = "15";
 
   globalThis.fetch = async (url) => {
     const text = String(url);
@@ -237,7 +236,7 @@ test("detail score cache falls back to a quote-only fast path when daily rows ar
       return Response.json({ access_token: "token-detail-quote", expires_in: 3600 });
     }
     if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 800));
       return Response.json({
         rt_cd: "0",
         output2: [{ xymd: "20260605", open: "10", high: "11", low: "9", clos: "10.5", tvol: "1000" }],
