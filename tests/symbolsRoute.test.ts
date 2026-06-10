@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 
-import { GET } from "../src/app/api/symbols/route";
+import { GET, clearSymbolRouteCacheForTests } from "../src/app/api/symbols/route";
 
 const ENV_KEYS = [
   "SUPABASE_URL",
@@ -27,13 +27,17 @@ function restoreEnv() {
 function requestFor(query: string, identity: string): NextRequest {
   return new NextRequest(`http://localhost/api/symbols?q=${encodeURIComponent(query)}&limit=1`, {
     headers: {
+      cookie: `stock_refresh_user=${identity}`,
       "user-agent": identity,
       "x-forwarded-for": "203.0.113.10",
     },
   });
 }
 
-test.afterEach(restoreEnv);
+test.afterEach(() => {
+  restoreEnv();
+  clearSymbolRouteCacheForTests();
+});
 
 test("symbols API rate limits repeated search requests", async () => {
   delete process.env.SUPABASE_URL;
@@ -51,4 +55,19 @@ test("symbols API rate limits repeated search requests", async () => {
   assert.match(first.headers.get("vercel-cdn-cache-control") || "", /s-maxage=86400/);
   assert.equal(second.status, 429);
   assert.equal(payload.error, "rate_limited");
+});
+
+test("symbols API serves warm identical searches before rate limiting", async () => {
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.STOCK_SYMBOL_SEARCH_RATE_LIMIT = "1";
+  process.env.STOCK_SYMBOL_SEARCH_RATE_LIMIT_WINDOW_SECONDS = "60";
+
+  const first = await GET(requestFor("ko", "symbols-route-cache-test"));
+  const second = await GET(requestFor("ko", "symbols-route-cache-test"));
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get("x-stock-symbol-route-cache"), "hit");
 });

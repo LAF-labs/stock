@@ -33,6 +33,8 @@ export type CompareItem = {
   identity: StockHeaderIdentity;
   data: StockScoreResponse;
   score: number;
+  provisional?: boolean;
+  provisionalLabel?: string;
   opportunityScore?: number;
   daily?: number;
   return1m?: number;
@@ -163,7 +165,7 @@ export function strongestAndWeakest(data: StockScoreResponse) {
   };
 }
 
-export function toCompareItem(data: StockScoreResponse, requestedTicker: string): CompareItem {
+export function toCompareItem(data: StockScoreResponse, requestedTicker: string, options: { provisional?: boolean; provisionalLabel?: string } = {}): CompareItem {
   const ticker = displayTickerRef(requestedTicker) || data.symbol || data.requested_ticker || "UNKNOWN";
   const { strongest, weakest } = strongestAndWeakest(data);
   const marketCap = stockMarketCapDisplay(data);
@@ -172,6 +174,8 @@ export function toCompareItem(data: StockScoreResponse, requestedTicker: string)
     identity: stockHeaderIdentity(data),
     data,
     score: clampScore(data.quality_score ?? data.score),
+    provisional: options.provisional,
+    provisionalLabel: options.provisionalLabel,
     opportunityScore: typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined,
     daily: numberFromRecord(data.price_metrics, "latest_change"),
     return1m: numberFromRecord(data.price_metrics, "return_1m"),
@@ -316,7 +320,7 @@ export function comparePartialData(result: BatchScoreResult | undefined, fallbac
 
 export function pendingMessage(result: BatchScoreResult | undefined): string {
   void result;
-  return "데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 비교 점수를 바로 표시합니다.";
+  return "가격과 점수를 확인하고 있어요. 확인되는 종목부터 비교 화면에 바로 반영합니다.";
 }
 
 export function normalizedPoints(item: CompareItem) {

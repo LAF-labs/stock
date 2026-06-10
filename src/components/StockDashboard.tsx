@@ -16,12 +16,17 @@ import {
   formatSecondaryPrice,
   scoreDataWithQuote,
   shouldShowStockSkeleton,
+  stockMarketCapDisplay,
+  strongestAndWeakest,
   stringFromUnknown,
   stockHeaderIdentity,
   symbolRef,
+  usableChartPoints,
+  visibleRecordEntries,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
 import { useStockDashboardQueries } from "@/components/useStockDashboardQueries";
+import { clampScore } from "@/lib/format";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
@@ -264,7 +269,6 @@ export default function StockDashboard() {
 function PartialStockFeed({
   data,
   quote,
-  pending,
   onRetry,
 }: {
   data: StockScoreResponse;
@@ -272,16 +276,49 @@ function PartialStockFeed({
   pending: SnapshotPendingState | undefined;
   onRetry: () => void;
 }) {
+  const hasChart = usableChartPoints(data.chart_series).length >= 2;
+  const hasFactors = Boolean(data.components?.length || data.opportunity_components?.length);
+  const hasMetrics = Boolean(data.key_metrics?.length);
+  const hasProfile = Boolean(data.stock_profile?.length);
+  const hasValuation = Boolean(data.valuation_rows?.length);
+  const hasFinancials = Boolean(data.financials && visibleRecordEntries(data.financials).length);
+
   return (
     <div className="stock-feed partial-stock-feed" role="status" aria-live="polite">
       <DetailSection id="detail-summary">
-        <PartialStockSummary data={data} quote={quote} pending={pending} onRetry={onRetry} />
+        <PartialStockSummary data={data} quote={quote} onRetry={onRetry} />
       </DetailSection>
-      <DetailSection id="detail-chart">
-        <ChartStory points={data.chart_series} patterns={undefined} />
-      </DetailSection>
-      <PendingDetailSection title="품질 점수 이유" eyebrow="점수 이유" />
-      <PendingDetailSection title="핵심 숫자" eyebrow="핵심 숫자" compact />
+      {hasChart ? (
+        <DetailSection id="detail-chart">
+          <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
+        </DetailSection>
+      ) : null}
+      {hasFactors ? (
+        <DetailSection id="detail-factors">
+          {data.components?.length ? <FactorStory components={data.components} stock={data} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" /> : null}
+          {data.opportunity_components?.length ? <FactorStory components={data.opportunity_components} stock={data} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" /> : null}
+        </DetailSection>
+      ) : null}
+      {hasMetrics ? (
+        <DetailSection id="detail-key-metrics">
+          <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={data.key_metrics} stock={data} defaultOpen />
+        </DetailSection>
+      ) : null}
+      {hasProfile ? (
+        <DetailSection id="detail-profile">
+          <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={data.stock_profile} stock={data} desktopOpen />
+        </DetailSection>
+      ) : null}
+      {hasValuation ? (
+        <DetailSection id="detail-valuation">
+          <SimpleList title="가격 부담" description="좋은 회사라도 너무 비싸면 부담이 될 수 있어요." items={data.valuation_rows} stock={data} desktopOpen />
+        </DetailSection>
+      ) : null}
+      {hasFinancials ? (
+        <DetailSection id="detail-financials">
+          <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} stock={data} desktopOpen />
+        </DetailSection>
+      ) : null}
     </div>
   );
 }
@@ -289,12 +326,10 @@ function PartialStockFeed({
 function PartialStockSummary({
   data,
   quote,
-  pending,
   onRetry,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
-  pending: SnapshotPendingState | undefined;
   onRetry: () => void;
 }) {
   const displayData = scoreDataWithQuote(data, quote);
@@ -302,6 +337,11 @@ function PartialStockSummary({
   const daily = dailyChangeText(displayData, quote);
   const latestBarDate = quote?.latest_bar_date || displayData.latest_bar_date || "최근 가격";
   const hasPrice = typeof displayData.latest_price === "number" && Number.isFinite(displayData.latest_price);
+  const rawScore = displayData.quality_score ?? displayData.score;
+  const qualityScore = typeof rawScore === "number" && Number.isFinite(rawScore) ? clampScore(rawScore) : undefined;
+  const { strongest, weakest } = strongestAndWeakest(displayData);
+  const marketCap = stockMarketCapDisplay(displayData);
+  const summary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "가격과 빠른 점수를 먼저 반영했어요.");
 
   return (
     <section className="stock-title-card partial-stock-title-card">
@@ -313,7 +353,7 @@ function PartialStockSummary({
             {identity.secondary ? <p>{identity.secondary}</p> : null}
           </div>
         </div>
-        <span className="score-time-chip">점수 준비 중</span>
+        <span className="score-time-chip">{qualityScore === undefined ? (hasPrice ? "현재가 확인" : "종목 확인") : "빠른 점수"}</span>
       </div>
       <div className="price-strip">
         <div className="price-block">
@@ -325,55 +365,32 @@ function PartialStockSummary({
       <div className="quick-read">
         <article className="quick-metric-card">
           <span>강점</span>
-          <strong className="partial-pending-value">준비 중</strong>
+          <strong>{strongest?.label || (hasPrice ? "가격 확인" : identity.primary)}</strong>
         </article>
         <article className="quick-metric-card">
           <span>먼저 볼 것</span>
-          <strong className="partial-pending-value">준비 중</strong>
+          <strong>{weakest?.label || daily}</strong>
         </article>
         <article className="quick-metric-card">
           <span>시가총액</span>
-          <strong className="partial-pending-value">준비 중</strong>
+          <strong>{marketCap.primary}</strong>
+          {marketCap.secondary ? <small>{marketCap.secondary}</small> : null}
         </article>
-        <article className="score-panel">
-          <span>품질 점수</span>
-          <strong className="partial-pending-score">--</strong>
-        </article>
+        {qualityScore !== undefined ? (
+          <article className="score-panel">
+            <span>품질 점수</span>
+            <strong className="partial-pending-score">{qualityScore.toFixed(1)}</strong>
+          </article>
+        ) : null}
       </div>
       <div className="hero-verdict neutral partial-verdict">
         <span>오늘의 판단</span>
-        <strong>{hasPrice ? "가격 데이터부터 먼저 보여드려요." : "종목부터 먼저 보여드려요."}</strong>
-        <p>{pending?.message || "점수와 재무 지표를 준비하는 중이에요. 준비가 끝나면 이 영역이 자동으로 채워집니다."}</p>
+        <strong>{qualityScore === undefined ? (hasPrice ? "현재 가격 기준으로 먼저 볼 수 있어요." : "종목 정보를 먼저 확인했어요.") : `${qualityScore.toFixed(1)}점 기준으로 먼저 볼 수 있어요.`}</strong>
+        <p>{summary}</p>
         <button type="button" className="partial-retry-button" onClick={onRetry}>
-          다시 확인
+          새로고침
         </button>
       </div>
-    </section>
-  );
-}
-
-function PendingDetailSection({ title, eyebrow, compact = false }: { title: string; eyebrow: string; compact?: boolean }) {
-  return (
-    <section className={compact ? "accordion-card partial-pending-section" : "factor-card partial-pending-section"}>
-      <div className="section-title">
-        <span>{eyebrow}</span>
-        <h2>{title}</h2>
-      </div>
-      {compact ? (
-        <p>재무 지표를 이어서 준비하고 있어요.</p>
-      ) : (
-        <div className="factor-list partial-factor-list">
-          {["품질", "기회", "리스크"].map((label) => (
-            <article key={label}>
-              <div className="factor-heading">
-                <strong>{label}</strong>
-                <span>준비 중</span>
-              </div>
-              <p>점수 계산이 끝나면 근거를 표시합니다.</p>
-            </article>
-          ))}
-        </div>
-      )}
     </section>
   );
 }

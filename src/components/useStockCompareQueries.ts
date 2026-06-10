@@ -9,7 +9,7 @@ import {
   toCompareItem,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { partialStockDataFromTicker } from "@/components/stockDashboardHelpers";
+import { partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
 import { compareQueryOptions } from "@/lib/stockQueryOptions";
 import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult } from "@/lib/stockQueryTypes";
 import type { StockScoreResponse } from "@/lib/types";
@@ -37,11 +37,11 @@ export function useStockCompareQueries(tickers: readonly string[]): StockCompare
     placeholderData: (previousData) => previousData,
   });
   const states = useMemo(() => compareStatesFromQuery(tickers, compareQuery.data, compareQuery.error, compareQuery.isLoading), [compareQuery.data, compareQuery.error, compareQuery.isLoading, tickers]);
-  const items = useMemo(
-    () => states.filter((state): state is Extract<CompareLoadState, { status: "success" }> => state.status === "success").map((state) => toCompareItem(state.data, state.ticker)),
+  const items = useMemo(() => compareItemsFromStates(states), [states]);
+  const partialStates = useMemo(
+    () => states.filter((state): state is Extract<CompareLoadState, { status: "partial" }> => state.status === "partial" && !shouldPromotePartialCompareData(state.data)),
     [states],
   );
-  const partialStates = useMemo(() => states.filter((state): state is Extract<CompareLoadState, { status: "partial" }> => state.status === "partial"), [states]);
   const waitingStates = useMemo(
     () => states.filter((state): state is Extract<CompareLoadState, { status: "loading" | "pending" }> => state.status === "loading" || state.status === "pending"),
     [states],
@@ -64,6 +64,35 @@ export function useStockCompareQueries(tickers: readonly string[]): StockCompare
     errorStates,
     retryCompare,
   };
+}
+
+export function compareItemsFromStates(states: readonly CompareLoadState[]): CompareItem[] {
+  return states.flatMap((state) => {
+    if (state.status === "success") return [toCompareItem(state.data, state.ticker)];
+    if (state.status === "partial" && shouldPromotePartialCompareData(state.data)) {
+      return [toCompareItem(state.data, state.ticker, { provisional: true, provisionalLabel: "빠른 점수" })];
+    }
+    return [];
+  });
+}
+
+export function shouldPromotePartialCompareData(data: StockScoreResponse): boolean {
+  if (isIdentityOnlyFastPath(data)) return false;
+  return hasFiniteNumber(data.quality_score ?? data.score) && hasPriceSignal(data);
+}
+
+function hasPriceSignal(data: StockScoreResponse): boolean {
+  if (hasFiniteNumber(data.latest_price)) return true;
+  return usableChartPoints(data.chart_series).length >= 2;
+}
+
+function isIdentityOnlyFastPath(data: StockScoreResponse): boolean {
+  const quality = typeof data.data_quality === "string" ? data.data_quality.toLowerCase() : "";
+  return quality === "identity_fast_path" || data.fetch?.identity_only_fast_path === true || data.financials?.identity_only_fast_path === true;
+}
+
+function hasFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function compareStatesFromQuery(tickers: readonly string[], result: CompareQueryResult | undefined, error: unknown, isLoading: boolean): CompareLoadState[] {

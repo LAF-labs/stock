@@ -21,6 +21,12 @@ export function scenarioRequests(baseUrl, options = {}) {
 
 export function classifyStockLatencyPayload(payload) {
   if (!payload || typeof payload !== "object") return { state: "error", ready_parts: [], pending_parts: [] };
+  const hasExplicitState =
+    payload.ok === true ||
+    payload.ok === false ||
+    typeof payload.type === "string" ||
+    (payload.parts && typeof payload.parts === "object" && !Array.isArray(payload.parts));
+  if (!hasExplicitState) return { state: "error", ready_parts: [], pending_parts: [] };
   if (payload.ok === false && (payload.error === "snapshot_pending" || payload.error === "snapshot_unavailable")) {
     return { state: "pending", ready_parts: [], pending_parts: ["snapshot"] };
   }

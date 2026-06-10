@@ -29,6 +29,7 @@ test("stock latency load test classifies ready partial and pending payloads", ()
   assert.equal(classifyStockLatencyPayload({ ok: true, type: "partial_stock_snapshot", parts: { score: { state: "pending" }, quote: { state: "fresh" } } }).state, "partial");
   assert.equal(classifyStockLatencyPayload({ ok: false, error: "snapshot_pending" }).state, "pending");
   assert.equal(classifyStockLatencyPayload({ ok: false, error: "collector_unreachable" }).state, "error");
+  assert.equal(classifyStockLatencyPayload({}).state, "error");
 });
 
 test("stock latency load test flags request-path provider execution markers", () => {

@@ -71,7 +71,7 @@ test("dashboard pending payload maps queue state into user-facing retry guidance
   );
 
   assert.deepEqual(pending, {
-    message: "처음 조회하는 종목이라 데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 점수와 현재가를 바로 표시합니다.",
+    message: "가격과 점수를 확인하고 있어요. 확인되는 항목부터 화면에 바로 반영합니다.",
     ticker: "US:NVDA",
     queued: true,
     retryAfterSeconds: 42,
@@ -92,7 +92,7 @@ test("dashboard pending payload explains stale refresh work as an update", () =>
   );
 
   assert.deepEqual(pending, {
-    message: "기존 데이터를 보여주는 동안 최신 데이터를 다시 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 최신 점수와 현재가를 바로 표시합니다.",
+    message: "기존 데이터를 보여주는 동안 최신 가격과 점수를 확인하고 있어요.",
     ticker: "US:NVDA",
     queued: true,
     retryAfterSeconds: 60,
@@ -133,7 +133,7 @@ test("dashboard recognizes partial stock snapshots and keeps pending retry metad
 
   assert.equal(isPartialStockSnapshotPayload(payload), true);
   assert.deepEqual(snapshotPendingFromPayload(payload, "US:KO"), {
-    message: "처음 조회하는 종목이라 데이터를 준비하고 있어요. 화면은 자동으로 다시 확인하고, 준비가 끝나면 점수와 현재가를 바로 표시합니다.",
+    message: "가격과 점수를 확인하고 있어요. 확인되는 항목부터 화면에 바로 반영합니다.",
     ticker: "US:POET",
     queued: true,
     retryAfterSeconds: 30,

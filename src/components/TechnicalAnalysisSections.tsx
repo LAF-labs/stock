@@ -16,7 +16,6 @@ import {
   formatPrimaryPrice,
   formatSecondaryPrice,
   usableChartPoints,
-  type SnapshotPendingState,
   type StockHeaderIdentity,
 } from "@/components/stockDashboardHelpers";
 import type { StockScoreResponse } from "@/lib/types";
@@ -140,16 +139,12 @@ export function TechnicalAnalysisFeed({
 
 export function TechnicalAnalysisPendingFeed({
   data,
-  pending,
   identity,
   displayTicker,
-  onRetry,
 }: {
   data: StockScoreResponse;
-  pending: SnapshotPendingState;
   identity: StockHeaderIdentity | undefined;
   displayTicker: string;
-  onRetry: () => void;
 }) {
   const chartPointCount = usableChartPoints(data.chart_series).length;
   const hasPriceOrChart = chartPointCount > 1 || (typeof data.latest_price === "number" && Number.isFinite(data.latest_price));
@@ -172,33 +167,13 @@ export function TechnicalAnalysisPendingFeed({
           <small>{[formatSecondaryPrice(data), data.latest_bar_date].filter(Boolean).join(" · ")}</small>
         </div>
         <div className="technical-summary">
-          <span>분석 준비 중</span>
-          <strong>{hasPriceOrChart ? "가격 캔들부터 먼저 보여드려요." : "종목부터 먼저 보여드려요."}</strong>
-          <p>{pending.message}</p>
-          <button type="button" className="technical-pending-action" onClick={onRetry}>
-            다시 확인
-          </button>
+          <span>{hasPriceOrChart ? "가격 흐름" : "종목 정보"}</span>
+          <strong>{hasPriceOrChart ? "현재 확인된 가격 흐름입니다." : "종목 정보를 확인했어요."}</strong>
+          <p>{chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
         </div>
       </section>
       {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
-      <TechnicalOverlayChart points={data.chart_series} />
-      <section className="technical-rule-section technical-rule-pending" role="status" aria-live="polite">
-        <div className="section-title">
-          <span>룰 기반 해석</span>
-          <h2>보조지표 준비 중</h2>
-        </div>
-        <div className="technical-signal-grid">
-          {["추세", "모멘텀", "리스크"].map((label) => (
-            <article key={label} className="technical-signal-card neutral technical-pending-card">
-              <div>
-                <span>{label}</span>
-                <strong>준비 중</strong>
-              </div>
-              <p>가격 기록을 확인한 뒤 신호를 채웁니다.</p>
-            </article>
-          ))}
-        </div>
-      </section>
+      {chartPointCount >= 2 ? <TechnicalOverlayChart points={data.chart_series} /> : null}
     </div>
   );
 }
