@@ -28,6 +28,14 @@ type KisUsDiscoveryCacheEntry = {
   search: KisPayload;
   expiresAtMs: number;
 };
+type DomesticChartRow = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | undefined;
+};
 export type KisDailyChartBar = {
   date: string;
   open: number;
@@ -286,24 +294,35 @@ async function fetchDomesticDailyChart(symbol: string): Promise<KisDailyChartPay
   const now = new Date();
   const end = dateInSeoul(now).replace(/-/g, "");
   const start = dateOffset(now, -540, "Asia/Seoul").replace(/-/g, "");
-  const rows = outputList(
-    await kisGet(
-      "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
-      "FHKST03010100",
-      {
-        FID_COND_MRKT_DIV_CODE: KIS_DOMESTIC_MARKET_DIV_CODE,
-        FID_INPUT_ISCD: symbol,
-        FID_INPUT_DATE_1: start,
-        FID_INPUT_DATE_2: end,
-        FID_PERIOD_DIV_CODE: "D",
-        FID_ORG_ADJ_PRC: "0",
-      },
-      { timeoutMs: technicalKisTimeoutMs() }
-    ),
-    "output2"
-  );
+  let rows: KisPayload[] = [];
+  let marketDivCode = KIS_DOMESTIC_MARKET_DIV_CODE;
+  const errors: string[] = [];
+  for (const candidate of domesticDailyMarketDivCodes()) {
+    try {
+      const payload = await kisGet(
+        "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+        "FHKST03010100",
+        {
+          FID_COND_MRKT_DIV_CODE: candidate,
+          FID_INPUT_ISCD: symbol,
+          FID_INPUT_DATE_1: start,
+          FID_INPUT_DATE_2: end,
+          FID_PERIOD_DIV_CODE: "D",
+          FID_ORG_ADJ_PRC: "0",
+        },
+        { timeoutMs: technicalKisTimeoutMs() }
+      );
+      const candidateRows = outputList(payload, "output2");
+      if (!candidateRows.length) continue;
+      rows = candidateRows;
+      marketDivCode = candidate;
+      break;
+    } catch (error) {
+      errors.push(`${candidate}: ${safeErrorMessage(error)}`);
+    }
+  }
   const chartSeries = domesticChartSeries(rows);
-  if (!chartSeries.length) throw new KisQuoteError(`${symbol} daily chart was not found.`);
+  if (!chartSeries.length) throw new KisQuoteError(errors.slice(-3).join("; ") || `${symbol} daily chart was not found.`);
   const latest = chartSeries.at(-1);
   return {
     requestedTicker: `KR:${symbol}`,
@@ -320,7 +339,7 @@ async function fetchDomesticDailyChart(symbol: string): Promise<KisDailyChartPay
       source: "market_data",
       provider_mode: "technical_request_fast_path",
       daily_price_endpoint: "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
-      market_div_code: KIS_DOMESTIC_MARKET_DIV_CODE,
+      market_div_code: marketDivCode,
       history_rows: chartSeries.length,
       fetched_at: now.toISOString(),
       cache: "no-store",
@@ -625,8 +644,8 @@ function usChartSeries(rows: KisPayload[]): KisDailyChartBar[] {
 }
 
 function domesticChartSeries(rows: KisPayload[]): KisDailyChartBar[] {
-  return rows
-    .map((row, index, all) => {
+  const parsed = rows
+    .map((row) => {
       const date = kisDate(row.stck_bsop_date);
       const close = asFloat(row.stck_clpr);
       if (!date || close === undefined) return undefined;
@@ -634,10 +653,12 @@ function domesticChartSeries(rows: KisPayload[]): KisDailyChartBar[] {
       const high = asFloat(row.stck_hgpr) ?? Math.max(open, close);
       const low = asFloat(row.stck_lwpr) ?? Math.min(open, close);
       const volume = asInt(row.acml_vol);
-      const previousClose = index > 0 ? asFloat(all[index - 1]?.stck_clpr) : undefined;
-      return chartBar({ date, open, high, low, close, volume, previousClose, currency: "KRW" });
+      return { date, open, high, low, close, volume };
     })
-    .filter((row): row is KisDailyChartBar => Boolean(row));
+    .filter((row): row is DomesticChartRow => Boolean(row))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  return parsed.map((row, index, all) => chartBar({ ...row, previousClose: index > 0 ? all[index - 1]?.close : undefined, currency: "KRW" }));
 }
 
 function chartBar(input: {
@@ -694,6 +715,10 @@ function priceMetricsFromChart(rows: KisDailyChartBar[]): Record<string, unknown
     ma50: average(closes.slice(-50)),
     ma200: average(closes.slice(-200)),
   };
+}
+
+function domesticDailyMarketDivCodes(): string[] {
+  return [...new Set([KIS_DOMESTIC_MARKET_DIV_CODE, "J", "NX"].filter(Boolean))];
 }
 
 function average(values: number[]): number | undefined {

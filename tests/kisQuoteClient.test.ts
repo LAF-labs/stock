@@ -229,6 +229,59 @@ test("fetchKisDailyChart uses one US daily page by default", async () => {
   assert.equal(payload.fetch.history_rows, 1);
 });
 
+test("fetchKisDailyChart falls back to domestic stock market div and sorts rows oldest first", async () => {
+  setupEnv();
+
+  const marketCodes: string[] = [];
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-domestic-daily", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice")) {
+      const parsed = new URL(text);
+      const marketCode = parsed.searchParams.get("FID_COND_MRKT_DIV_CODE") || "";
+      marketCodes.push(marketCode);
+      if (marketCode === "UN") {
+        return Response.json({ rt_cd: "0", output2: [] });
+      }
+      if (marketCode === "J") {
+        return Response.json({
+          rt_cd: "0",
+          output2: [
+            {
+              stck_bsop_date: "20260610",
+              stck_oprc: "3000",
+              stck_hgpr: "3050",
+              stck_lwpr: "2990",
+              stck_clpr: "3035",
+              acml_vol: "1000",
+            },
+            {
+              stck_bsop_date: "20260609",
+              stck_oprc: "2950",
+              stck_hgpr: "3010",
+              stck_lwpr: "2920",
+              stck_clpr: "2990",
+              acml_vol: "900",
+            },
+          ],
+        });
+      }
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const payload = await fetchKisDailyChart("KR:104200");
+
+  assert.deepEqual(marketCodes, ["UN", "J"]);
+  assert.equal(payload.chartSeries.length, 2);
+  assert.equal(payload.chartSeries[0].date, "2026-06-09");
+  assert.equal(payload.latestDate, "2026-06-10");
+  assert.equal(payload.latestPrice, 3035);
+  assert.equal(payload.fetch.market_div_code, "J");
+});
+
 test("fetchKisQuote reuses a valid Supabase KIS token cache entry", async () => {
   setupEnv();
   process.env.SUPABASE_URL = "https://example.supabase.co";

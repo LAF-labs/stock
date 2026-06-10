@@ -10,6 +10,7 @@ import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPartialResponseCacheHeaders } from "@/lib/stockPendingResponse";
 import { pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
+import { STOCK_SCORE_BATCH_MAX_TICKERS, stockScoreBatchConcurrency } from "@/lib/stockScoreBatchConfig";
 import { getStockScore, responseCacheHeaders, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
@@ -18,8 +19,7 @@ import { resolveTickerAlias } from "@/lib/tickerRef";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const MAX_TICKERS = 5;
-const BATCH_CONCURRENCY = 2;
+const MAX_TICKERS = STOCK_SCORE_BATCH_MAX_TICKERS;
 
 type ParsedBatchTicker =
   | { ok: true; ticker: string }
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   try {
     const validResultItems = await mapWithConcurrency(
       validTickers,
-      BATCH_CONCURRENCY,
+      stockScoreBatchConcurrency(),
       async ({ ticker }): Promise<{ payload: StockPayload; cache?: StockScoreResult["cache"] }> => {
         try {
           const settledScorePromise = settleStockScore(getStockScore(ticker, "compare"));
