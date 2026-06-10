@@ -1,5 +1,5 @@
 import { formatCurrencyAmount, formatPercent, formatValue } from "@/lib/format";
-import { fetchKisDailyChart, type KisDailyChartBar } from "@/lib/kisQuoteClient";
+import { fetchKisDailyChart, fetchKisQuote, type KisDailyChartBar } from "@/lib/kisQuoteClient";
 import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { findExactSymbol } from "@/lib/symbolSearch";
@@ -47,7 +47,13 @@ export function detailRequestFastPathEnabled(env: Record<string, string | undefi
 }
 
 export async function buildDetailScoreFastPathPayload(ticker: string, view: ScoreView = "detail"): Promise<StockPayload> {
-  const daily = await fetchKisDailyChart(ticker);
+  const dailyPromise = fetchKisDailyChart(ticker);
+  const daily = await withTimeout(dailyPromise, detailDailyFastPathTimeoutMs()).catch(() => undefined);
+  if (!daily) {
+    const quote = await fetchKisQuote(ticker);
+    return buildQuoteOnlyDetailScorePayload(quote, view);
+  }
+
   const identity = await fastPathIdentity(daily.requestedTicker, daily.name, daily.symbol);
   const displayName = identity.displayName || daily.name || daily.symbol;
   const signals = priceSignalsFromBars(daily.chartSeries);
@@ -179,6 +185,137 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
   };
 }
 
+async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: ScoreView): Promise<StockPayload> {
+  const ticker = stringValue(quote.requested_ticker) || `${stringValue(quote.market) || "US"}:${stringValue(quote.symbol) || ""}`;
+  const symbol = stringValue(quote.symbol) || ticker.replace(/^(US|KR):/i, "");
+  const market = stringValue(quote.market) === "KR" ? "KR" : "US";
+  const currency = stringValue(quote.currency) || (market === "KR" ? "KRW" : "USD");
+  const providerName = stringValue(quote.name) || symbol;
+  const identity = await fastPathIdentity(ticker, providerName, symbol);
+  const displayName = identity.displayName || providerName || symbol;
+  const signals = priceSignalsFromQuote(quote);
+  const components = scoreComponents(signals, currency);
+  const opportunityComponents = opportunityScoreComponents(signals);
+  const qualityScore = weightedScore(components, {
+    profitability: 0.18,
+    growth: 0.2,
+    health: 0.18,
+    momentum: 0.28,
+    valuation: 0.16,
+  });
+  const opportunityScore = weightedScore(opportunityComponents, {
+    opportunity_momentum: 0.35,
+    opportunity_growth: 0.18,
+    opportunity_analyst: 0.12,
+    opportunity_liquidity: 0.17,
+    opportunity_risk: 0.18,
+  });
+  const score = roundScore(qualityScore * 0.56 + opportunityScore * 0.44);
+  const confidence = 0.24;
+  const technicalAnalysis = buildTechnicalAnalysis([]);
+  technicalAnalysis.ticker = `${market}:${symbol}`;
+  technicalAnalysis.market = market;
+  technicalAnalysis.symbol = symbol;
+
+  return {
+    ok: true,
+    app: "Stock Score Reader",
+    requested_ticker: ticker,
+    market,
+    symbol,
+    name: displayName,
+    display_name: displayName,
+    korean_name: identity.koreanName,
+    english_name: identity.englishName,
+    instrument_type: identity.instrumentType,
+    exchange: stringValue(quote.exchange),
+    ...(stringValue(quote.exchange_code) ? { exchange_code: stringValue(quote.exchange_code) } : {}),
+    currency,
+    usd_krw_rate: numberValue(quote.usd_krw_rate),
+    usd_krw_label: stringValue(quote.usd_krw_label),
+    score_model_version: SCORE_MODEL_VERSION,
+    score,
+    quality_score: qualityScore,
+    quality_grade: gradeForScore(qualityScore),
+    opportunity_score: opportunityScore,
+    opportunity_grade: gradeForScore(opportunityScore),
+    opportunity_confidence: confidence,
+    grade: gradeForScore(score),
+    summary: `${displayName}의 현재가로 먼저 계산한 빠른 점수입니다. 차트와 재무제표 보강 점수는 백그라운드에서 갱신됩니다.`,
+    benchmark: market === "KR" ? "KRX" : "US",
+    benchmark_label: market === "KR" ? "국내 상장 종목" : "미국 상장 종목",
+    latest_price: signals.latestPrice,
+    latest_price_label: stringValue(quote.latest_price_label) || formatCurrencyAmount(signals.latestPrice, currency),
+    latest_bar_date: stringValue(quote.latest_bar_date),
+    evaluation_label: "현재가 기반 빠른 점수",
+    evaluation_ts: Math.floor(Date.now() / 1000),
+    data_quality: "quote_fast_path",
+    components,
+    opportunity_components: opportunityComponents,
+    key_metrics: keyMetrics(signals, currency),
+    stock_profile: stockProfileRows({ market, symbol, exchange: stringValue(quote.exchange) || "", currency }, identity),
+    valuation_rows: valuationRows(signals, currency),
+    chart_patterns: [],
+    chart_series: [],
+    technical_analysis: technicalAnalysis,
+    history: [],
+    top_scores: [],
+    news: [],
+    price_metrics: {
+      ...(isRecord(quote.price_metrics) ? quote.price_metrics : {}),
+      price: signals.latestPrice,
+      previous_close: signals.previousClose,
+      latest_change: signals.latestChange,
+      volume: numberValue(quote.volume),
+    },
+    financials: {
+      source: "pending_enrichment",
+      quote_only_fast_path: true,
+      message: "차트와 정식 재무 데이터는 백그라운드 점수 스냅샷에서 보강됩니다.",
+    },
+    sia_snapshot: {
+      symbol,
+      price: signals.latestPrice,
+      raw_signal: rawSignalFor(signals.momentumScore, signals.riskScore),
+      risk_level: riskLevelFor(signals.riskScore),
+      confidence,
+      quality_score: ratioFromScore(qualityScore),
+      opportunity_score: ratioFromScore(opportunityScore),
+      opportunity_confidence: confidence,
+      spot_score: ratioFromScore(score),
+      chart_score: ratioFromScore(NEUTRAL_SCORE),
+      trend_score: ratioFromScore(NEUTRAL_SCORE),
+      momentum_score: ratioFromScore(signals.momentumScore),
+      inverse_score: ratioFromScore(signals.riskScore),
+      momentum_label: momentumLabel(signals.momentumScore),
+      signal_source: "quote_fast_path",
+      score_model_version: SCORE_MODEL_VERSION,
+      bar_ts: stringValue(quote.latest_bar_date),
+      indicators: {
+        latest_change: signals.latestChange,
+        volume: numberValue(quote.volume),
+      },
+      reasons: {
+        momentum: ratioFromScore(signals.momentumScore),
+        liquidity: ratioFromScore(signals.liquidityScore),
+        risk_control: ratioFromScore(signals.riskScore),
+      },
+    },
+    fetch: {
+      ...(isRecord(quote.fetch) ? quote.fetch : {}),
+      view,
+      score_model_version: SCORE_MODEL_VERSION,
+      detail_fast_path: true,
+      quote_only_fast_path: true,
+      request_fast_path: true,
+      pending_enrichment: true,
+      source: "market_data",
+      provider_mode: "detail_quote_fast_path",
+      daily_timeout_ms: detailDailyFastPathTimeoutMs(),
+    },
+  };
+}
+
 async function fastPathIdentity(ticker: string, providerName: string, symbol: string): Promise<FastPathIdentity> {
   const item = await findExactSymbol(ticker).catch(() => undefined);
   const displayName = item?.displayName || item?.koreanName || item?.englishName || providerName || symbol;
@@ -266,6 +403,31 @@ function priceSignalsFromBars(rows: KisDailyChartBar[]): PriceSignals {
     riskScore: roundScore(riskScore),
     liquidityScore,
     valuationProxyScore,
+  };
+}
+
+function priceSignalsFromQuote(quote: StockPayload): PriceSignals {
+  const latestPrice = numberValue(quote.latest_price);
+  const previousClose = numberValue(quote.previous_close);
+  const latestChange = numberValue(quote.latest_change) ?? (latestPrice && previousClose ? roundRatio(latestPrice / previousClose - 1) : undefined);
+  const volume = numberValue(quote.volume);
+  const changeScore = scoreFromRange(latestChange, -0.08, 0.08) ?? NEUTRAL_SCORE;
+  const liquidityScore = liquidityScoreFromVolume(volume);
+  const riskScore = roundScore(NEUTRAL_SCORE * 0.78 + (latestChange !== undefined && latestChange < -0.06 ? 32 : NEUTRAL_SCORE) * 0.22);
+  const momentumScore = roundScore(changeScore * 0.45 + liquidityScore * 0.15 + NEUTRAL_SCORE * 0.4);
+
+  return {
+    latestPrice,
+    previousClose,
+    latestChange,
+    avgVolume20: volume,
+    avgVolume60: volume,
+    momentumScore,
+    growthProxyScore: roundScore(NEUTRAL_SCORE * 0.72 + changeScore * 0.28),
+    trendScore: NEUTRAL_SCORE,
+    riskScore,
+    liquidityScore,
+    valuationProxyScore: NEUTRAL_SCORE,
   };
 }
 
@@ -480,6 +642,44 @@ function average(values: Array<number | undefined>): number | undefined {
   return Math.round((usable.reduce((sum, value) => sum + value, 0) / usable.length) * 1_000_000) / 1_000_000;
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("detail_daily_fast_path_timeout")), timeoutMs);
+        unrefTimer(timeout);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function unrefTimer(timeout: ReturnType<typeof setTimeout>) {
+  if (typeof timeout === "object" && timeout && "unref" in timeout && typeof timeout.unref === "function") {
+    timeout.unref();
+  }
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const text = String(value).trim();
+  return text || undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function periodLabel(rows: KisDailyChartBar[]): string | undefined {
   const first = rows[0]?.date;
   const last = rows.at(-1)?.date;
@@ -543,4 +743,9 @@ function hasHangul(value: string): boolean {
 function detailRequestFastPathTimeoutMs(): number {
   const parsed = Number(envValue("STOCK_TECHNICAL_KIS_TIMEOUT_MS"));
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 2_500;
+}
+
+function detailDailyFastPathTimeoutMs(): number {
+  const parsed = Number(envValue("STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS"));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1_800;
 }

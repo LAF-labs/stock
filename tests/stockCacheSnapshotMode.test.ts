@@ -22,6 +22,7 @@ const ENV_KEYS = [
   "STOCK_API_BASE",
   "STOCK_TECHNICAL_REQUEST_FAST_PATH",
   "STOCK_DETAIL_REQUEST_FAST_PATH",
+  "STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS",
   "STOCK_QUOTE_CACHE_STALE_SECONDS",
   "STOCK_SCORE_CACHE_STALE_SECONDS",
   "SUPABASE_READ_TIMEOUT_MS",
@@ -219,6 +220,63 @@ test("detail score cache builds a request fast path from KIS daily rows in Verce
     ["opportunity_momentum", "opportunity_growth", "opportunity_analyst", "opportunity_liquidity", "opportunity_risk"]
   );
   assert.equal((result.payload.fetch as Record<string, unknown>).detail_fast_path, true);
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.cache.state, "miss");
+});
+
+test("detail score cache falls back to a quote-only fast path when daily rows are slow", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+  process.env.STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS = "15";
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-detail-quote", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return Response.json({
+        rt_cd: "0",
+        output2: [{ xymd: "20260605", open: "10", high: "11", low: "9", clos: "10.5", tvol: "1000" }],
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "24.50",
+          base: "24.00",
+          rate: "2.08",
+          tvol: "12345",
+          curr: "USD",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Quote Fast Inc",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("US:QUOTEFAST", "detail");
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.requested_ticker, "US:QUOTEFAST");
+  assert.equal(result.payload.latest_price, 24.5);
+  assert.equal(result.payload.name, "Quote Fast Inc");
+  assert.equal((result.payload.fetch as Record<string, unknown>).quote_only_fast_path, true);
+  assert.equal((result.payload.chart_series as unknown[]).length, 0);
+  assert.equal(typeof result.payload.score, "number");
   assert.equal(result.cache.source, "market-data");
   assert.equal(result.cache.state, "miss");
 });
