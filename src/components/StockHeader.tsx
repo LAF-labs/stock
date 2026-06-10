@@ -54,8 +54,9 @@ export default function StockHeader({
   compareHref?: string;
 }) {
   const displayData = scoreDataWithQuote(data, quote);
-  const qualityScore = clampScore(data.quality_score ?? data.score);
-  const opportunityScore = typeof data.opportunity_score === "number" ? clampScore(data.opportunity_score) : undefined;
+  const rawQualityScore = displayData.quality_score ?? displayData.score;
+  const qualityScore = typeof rawQualityScore === "number" && Number.isFinite(rawQualityScore) ? clampScore(rawQualityScore) : undefined;
+  const opportunityScore = typeof displayData.opportunity_score === "number" ? clampScore(displayData.opportunity_score) : undefined;
   const symbol = quote?.symbol || data.symbol || data.requested_ticker || "KO";
   const identity = stockHeaderIdentity(data, quote);
   const primaryPrice = formatPrimaryPrice(displayData);
@@ -70,14 +71,14 @@ export default function StockHeader({
         ? priceRefreshState.message || "새로고침 제한"
         : "최신 현재가로 새로고침";
   const quoteStatusMessage = quoteState.status === "error" ? `현재가 업데이트 실패: ${quoteState.error}` : undefined;
-  const marketCap = stockMarketCapDisplay(data);
-  const signal = signalLabel(data.sia_snapshot?.raw_signal);
-  const risk = riskLevelLabel(data.sia_snapshot?.risk_level);
-  const { strongest, weakest } = strongestAndWeakest(data);
-  const opportunity = opportunityExtremes(data.opportunity_components);
+  const marketCap = stockMarketCapDisplay(displayData);
+  const signal = signalLabel(displayData.sia_snapshot?.raw_signal);
+  const risk = riskLevelLabel(displayData.sia_snapshot?.risk_level);
+  const { strongest, weakest } = strongestAndWeakest(displayData);
+  const opportunity = opportunityExtremes(displayData.opportunity_components);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
   const headerTime = stockHeaderFreshnessTimeChip(data, quote);
-  const qualityScoreStyle = { "--score-angle": `${qualityScore * 3.6}deg` } as CSSProperties;
+  const qualityScoreStyle = { "--score-angle": `${(qualityScore ?? 0) * 3.6}deg` } as CSSProperties;
   const opportunityScoreStyle = { "--score-angle": `${(opportunityScore ?? 0) * 3.6}deg` } as CSSProperties;
 
   return (
@@ -131,59 +132,63 @@ export default function StockHeader({
           <strong>{marketCap.primary}</strong>
           {marketCap.secondary ? <small>{marketCap.secondary}</small> : null}
         </article>
-        <article className="score-panel quality-score-panel">
-          <span>품질 점수</span>
-          <div className="quality-score-visual">
-            <div className="score-donut" style={qualityScoreStyle} role="img" aria-label={`품질 점수 ${qualityScore.toFixed(1)}점`}>
-              <span className="quality-donut-value">
-                <strong>{qualityScore.toFixed(1)}</strong>
-              </span>
-            </div>
-            <div className="score-chip-row" aria-label="품질 점수 보조 신호">
-              <span>매수신호 {signal}</span>
-              <span>변동성 {risk}</span>
-            </div>
-          </div>
-        </article>
-        <article className="score-panel opportunity-panel">
-          <span>기회 점수</span>
-          <div className="quality-score-visual">
-            <div className="score-donut opportunity-donut" style={opportunityScoreStyle} role="img" aria-label={`기회 점수 ${opportunityScore === undefined ? "없음" : `${opportunityScore.toFixed(1)}점`}`}>
-              <span className="quality-donut-value">
-                <strong>{opportunityScore === undefined ? "-" : opportunityScore.toFixed(1)}</strong>
-              </span>
-            </div>
-            <div className="opportunity-movers" aria-label="기회 점수 최고 및 최저 항목">
-              {opportunity.best ? (
-                <span className="opportunity-chip best">
-                  <b aria-hidden="true">↗</b>
-                  {opportunity.best.label}
+        {qualityScore !== undefined ? (
+          <article className="score-panel quality-score-panel">
+            <span>품질 점수</span>
+            <div className="quality-score-visual">
+              <div className="score-donut" style={qualityScoreStyle} role="img" aria-label={`품질 점수 ${qualityScore.toFixed(1)}점`}>
+                <span className="quality-donut-value">
+                  <strong>{qualityScore.toFixed(1)}</strong>
                 </span>
-              ) : null}
-              {opportunity.worst ? (
-                <span className="opportunity-chip worst">
-                  <b aria-hidden="true">↘</b>
-                  {opportunity.worst.label}
-                </span>
-              ) : null}
+              </div>
+              <div className="score-chip-row" aria-label="품질 점수 보조 신호">
+                <span>매수신호 {signal}</span>
+                <span>변동성 {risk}</span>
+              </div>
             </div>
-          </div>
-        </article>
+          </article>
+        ) : null}
+        {opportunityScore !== undefined ? (
+          <article className="score-panel opportunity-panel">
+            <span>기회 점수</span>
+            <div className="quality-score-visual">
+              <div className="score-donut opportunity-donut" style={opportunityScoreStyle} role="img" aria-label={`기회 점수 ${opportunityScore.toFixed(1)}점`}>
+                <span className="quality-donut-value">
+                  <strong>{opportunityScore.toFixed(1)}</strong>
+                </span>
+              </div>
+              <div className="opportunity-movers" aria-label="기회 점수 최고 및 최저 항목">
+                {opportunity.best ? (
+                  <span className="opportunity-chip best">
+                    <b aria-hidden="true">↗</b>
+                    {opportunity.best.label}
+                  </span>
+                ) : null}
+                {opportunity.worst ? (
+                  <span className="opportunity-chip worst">
+                    <b aria-hidden="true">↘</b>
+                    {opportunity.worst.label}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </article>
+        ) : null}
       </div>
 
       <div className={`hero-verdict ${stockJudgment?.tone || "neutral"}`}>
         <span>오늘의 판단</span>
         <strong>
           {stockJudgment?.headline ||
-            (judgmentState.status === "loading" ? "숫자를 읽고 있어요" : judgmentState.status === "error" ? "판단을 불러오지 못했어요" : "가격과 점수를 함께 보고 있어요")}
+            (judgmentState.status === "error" ? "판단을 불러오지 못했어요" : qualityScore === undefined ? "현재 가격 기준 요약" : "가격과 점수를 함께 본 요약")}
         </strong>
         <p>
           {stockJudgment?.body ||
             (judgmentState.status === "error"
               ? "잠시 후 다시 검색해보세요."
-              : judgmentState.status === "loading"
-                ? "가격, 점수, 재무 지표를 묶어서 해석하고 있어요."
-                : "가격, 점수, 재무 지표를 묶어서 해석하는 중이에요.")}
+              : qualityScore === undefined
+                ? "현재가, 시가총액, 가격 흐름처럼 확보된 항목을 먼저 보여드립니다."
+                : "가격, 점수, 재무 지표를 묶어서 보여드립니다.")}
         </p>
         {stockJudgment?.watch ? <p className="verdict-watch">{stockJudgment.watch}</p> : null}
         {compareHref ? (

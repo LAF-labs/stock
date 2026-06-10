@@ -265,6 +265,9 @@ test("dashboard can render a useful partial view from quote before score is read
     latest_price: 76.33,
     latest_price_label: "$76.33",
     latest_bar_date: "2026-06-09",
+    usd_krw_rate: 1_520,
+    market_cap: 16_600_000_000,
+    market_cap_label: "$16.60B",
   };
 
   const partial = partialStockDataFromQuote(quote, "US:CAVA");
@@ -272,6 +275,8 @@ test("dashboard can render a useful partial view from quote before score is read
   assert.equal(partial?.requested_ticker, "US:CAVA");
   assert.equal(partial?.symbol, "CAVA");
   assert.equal(partial?.latest_price, 76.33);
+  assert.equal(partial?.market_cap, 16_600_000_000);
+  assert.equal(stockMarketCapDisplay(partial || {}).primary, "25조 2320억원");
   assert.equal(partial?.server_cache?.source, "quote_partial");
   assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
 });

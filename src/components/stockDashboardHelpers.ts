@@ -341,6 +341,8 @@ export function partialStockDataFromQuote(quote: StockQuoteResponse, fallbackTic
     latest_bar_date: stringFromUnknown(quote.latest_bar_date),
     usd_krw_rate: numberFromUnknown(quote.usd_krw_rate),
     usd_krw_label: stringFromUnknown(quote.usd_krw_label),
+    market_cap: numberFromUnknown(quote.market_cap),
+    market_cap_label: stringFromUnknown(quote.market_cap_label),
     price_metrics: quote.price_metrics,
     server_cache: {
       state: "pending",
@@ -421,19 +423,30 @@ export function stockJudgmentRequestPayload(data: StockScoreResponse): Record<st
 }
 
 export function stockMarketCapDisplay(data: StockScoreResponse): MarketCapDisplay {
-  const rawValue = data.key_metrics?.find((item) => item.label === "시가총액")?.value;
+  const rawValue =
+    data.key_metrics?.find((item) => item.label === "시가총액")?.value
+    ?? data.market_cap
+    ?? numberFromJsonRecord(data.price_metrics, "market_cap")
+    ?? data.market_cap_label;
   const parsed = marketCapNumber(rawValue);
+  const fallbackValue = jsonDisplayValue(rawValue);
 
   if (data.market === "KR" || data.currency === "KRW") {
-    return { primary: parsed === undefined ? formatValue(rawValue) : formatKoreanWonLarge(parsed) };
+    return { primary: parsed === undefined ? formatValue(fallbackValue) : formatKoreanWonLarge(parsed) };
   }
 
   const usdValue = parsed;
   const krwValue = typeof usdValue === "number" && typeof data.usd_krw_rate === "number" ? usdValue * data.usd_krw_rate : undefined;
   return {
-    primary: krwValue === undefined ? formatValue(rawValue) : formatKoreanWonLarge(krwValue),
+    primary: krwValue === undefined ? formatValue(fallbackValue) : formatKoreanWonLarge(krwValue),
     secondary: usdValue === undefined ? undefined : `(${formatCompactUsd(usdValue)})`,
   };
+}
+
+function jsonDisplayValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.filter((item): item is JsonValue => item === null || ["string", "number", "boolean"].includes(typeof item));
+  return undefined;
 }
 
 export function formatMetricDisplayValue(item: LabeledValue, data?: StockScoreResponse): string {
@@ -624,6 +637,10 @@ export function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteRe
     latest_bar_date: stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date,
     usd_krw_rate: numberFromUnknown(quote?.usd_krw_rate) ?? data.usd_krw_rate,
   };
+  const marketCap = numberFromUnknown(quote?.market_cap) ?? numberFromUnknown(data.market_cap);
+  const marketCapLabel = stringFromUnknown(quote?.market_cap_label) || stringFromUnknown(data.market_cap_label);
+  if (marketCap !== undefined) nextData.market_cap = marketCap;
+  if (marketCapLabel) nextData.market_cap_label = marketCapLabel;
   const latestPriceLabel = stringFromUnknown(quote?.latest_price_label) || data.latest_price_label;
   const usdKrwLabel = stringFromUnknown(quote?.usd_krw_label) || data.usd_krw_label;
   if (latestPriceLabel) nextData.latest_price_label = latestPriceLabel;

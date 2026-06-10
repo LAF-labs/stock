@@ -599,6 +599,11 @@ a:focus-visible {
   background: #f8fafc;
 }
 
+.compare-pending-row {
+  display: grid;
+  gap: 10px;
+}
+
 .verdict-mini-skeleton {
   display: grid;
   gap: 9px;

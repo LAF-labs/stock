@@ -30,6 +30,7 @@ export type StockCompletionInput = {
   ticker: string;
   view: StockDisplayView;
   presentParts?: StockDisplayPartName[];
+  requiredParts?: StockDisplayPartName[];
   unavailableParts?: StockDisplayUnavailablePart[];
   providerTimedOutParts?: StockDisplayPartName[];
 };
@@ -53,13 +54,13 @@ export function requiredDisplayParts(view: StockDisplayView): StockDisplayPartNa
 
 export function planStockDisplayCompletion(input: StockCompletionInput): StockCompletionPlan {
   const ticker = normalizeTickerRef(input.ticker);
-  const requiredParts = requiredDisplayParts(input.view);
+  const requiredParts = uniqueParts(input.requiredParts || requiredDisplayParts(input.view));
   const presentParts = uniqueParts(input.presentParts || []);
   const unavailableParts = uniqueUnavailable(input.unavailableParts || []);
   const unavailableSet = new Set(unavailableParts.map((item) => item.part));
   const missingParts = requiredParts.filter((part) => !presentParts.includes(part) && !unavailableSet.has(part));
   const recoveringParts = [...missingParts];
-  const actions = missingParts.flatMap((part) => actionForPart(ticker, input.view, part));
+  const actions = uniqueActions(missingParts.flatMap((part) => actionForPart(ticker, input.view, part)));
 
   return {
     ticker,
@@ -148,6 +149,16 @@ function actionForPart(ticker: string, view: StockDisplayView, part: StockDispla
       scoreView: "technical",
     }];
   }
+  if (part === "fundamentals" || part === "industryBenchmark") {
+    return [{
+      kind: "refresh_score",
+      ticker,
+      part,
+      priority: view === "compare" ? STOCK_REFRESH_PRIORITIES.USER_COMPARE_SCORE_MISS : STOCK_REFRESH_PRIORITIES.USER_DETAIL_SCORE_MISS,
+      queueKind: "score",
+      scoreView: view === "compare" ? "compare" : "detail",
+    }];
+  }
   return [];
 }
 
@@ -165,6 +176,16 @@ function uniqueUnavailable(parts: StockDisplayUnavailablePart[]): StockDisplayUn
   return parts.filter((item) => {
     if (seen.has(item.part)) return false;
     seen.add(item.part);
+    return true;
+  });
+}
+
+function uniqueActions(actions: CompletionAction[]): CompletionAction[] {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    const key = `${action.queueKind}:${action.scoreView || ""}:${action.ticker}:${action.kind}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }

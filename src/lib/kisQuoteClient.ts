@@ -234,6 +234,7 @@ async function fetchUsQuoteForMarket(symbol: string, market: KisUsMarket, cached
   const previousClose = asFloat(detail.base);
   const latestChange = kisPercent(detail.rate) ?? changeFrom(latestPrice, previousClose);
   const volume = asInt(detail.tvol);
+  const marketCap = asFloat(detail.tomv) ?? asFloat(detail.mcap);
   const name = stringValue(search.prdt_eng_name) || stringValue(search.ovrs_item_name) || stringValue(search.prdt_name) || symbol;
   const exchange = stringValue(search.ovrs_excg_name) || market.label;
   const latestDate = kisDate(detail.xymd) || now.toISOString().slice(0, 10);
@@ -258,11 +259,14 @@ async function fetchUsQuoteForMarket(symbol: string, market: KisUsMarket, cached
     latest_change_label: pct(latestChange),
     volume,
     volume_label: numLabel(volume),
+    market_cap: marketCap,
+    market_cap_label: labeledMoney(marketCap, currency),
     price_metrics: {
       price: latestPrice,
       previous_close: previousClose,
       latest_change: latestChange,
       volume,
+      market_cap: marketCap,
     },
     fetch: {
       source: "market_data",

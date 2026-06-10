@@ -15,8 +15,11 @@ export function stockScorePayloadNeedsEnrichment(payload: unknown): boolean {
     dataQuality === "identity_fast_path";
   if (quoteOnly || identityOnly) return true;
 
-  const pendingEnrichment = flagFromRecord(fetch, "pending_enrichment") || flagFromRecord(financials, "pending_enrichment");
-  return pendingEnrichment && !hasUsableChartSeries(record.chart_series);
+  const pendingEnrichment =
+    flagFromRecord(fetch, "pending_enrichment") ||
+    flagFromRecord(financials, "pending_enrichment") ||
+    stringFromUnknown(financials?.source)?.toLowerCase() === "pending_enrichment";
+  return pendingEnrichment;
 }
 
 export function stockScorePayloadIsDurable(payload: unknown): boolean {

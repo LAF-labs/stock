@@ -143,6 +143,31 @@ test("ready-looking quote-only fast path keeps polling until full detail data la
   assert.equal(stockQueryRefetchIntervalMs(fastPath, 0), 1_000);
 });
 
+test("ready-looking enriched chart fast path still polls when financial enrichment is pending", () => {
+  const fastPath: ScoreQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: {
+      ok: true,
+      requested_ticker: "US:GMAB",
+      chart_series: [{ date: "2026-06-09", close: 25.1 }, { date: "2026-06-10", close: 24.97 }],
+      fetch: { pending_enrichment: true, detail_fast_path: true },
+      financials: { source: "pending_enrichment", detail_fast_path: true },
+    },
+    data: {
+      requested_ticker: "US:GMAB",
+      symbol: "GMAB",
+      chart_series: [{ date: "2026-06-09", close: 25.1 }, { date: "2026-06-10", close: 24.97 }],
+      fetch: { pending_enrichment: true, detail_fast_path: true },
+      financials: { source: "pending_enrichment", detail_fast_path: true },
+    } as StockScoreResponse,
+  };
+
+  assert.equal(stockQueryShouldPoll(fastPath), true);
+  assert.equal(stockQueryRefetchOnMount(fastPath), "always");
+  assert.equal(stockQueryRefetchIntervalMs(fastPath, 0), 1_000);
+});
+
 test("persisted stock data refetches on mount without freezing placeholder views", () => {
   const identityOnlyPartial: ScoreQueryResult = {
     state: "partial",

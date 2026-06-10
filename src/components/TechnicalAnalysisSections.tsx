@@ -11,6 +11,7 @@ import {
   technicalWarnings,
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
 import {
   formatPrimaryPrice,
@@ -66,36 +67,37 @@ export function TechnicalAnalysisSkeleton({
   actionLabel?: string;
   onAction?: () => void;
 }) {
+  void title;
+  void body;
+  void actionLabel;
+  void onAction;
   return (
-    <div className="technical-feed loading-status-feed" role="status" aria-live="polite">
+    <div className="technical-feed loading-status-feed skeleton-feed" role="status" aria-live="polite">
+      <span className="sr-only">기술적 분석 화면을 구성하고 있습니다.</span>
       <section className="technical-hero neutral technical-pending-hero">
         <div className="technical-hero-heading">
-          <span>기술적 분석</span>
-          <h1>{title}</h1>
-          <p>{body || "가격 흐름을 화면에 반영합니다."}</p>
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="ticker" />
+          <SkeletonBlock className="company" />
         </div>
         <div className="technical-hero-price">
-          <span>상태</span>
-          <strong>-</strong>
-          <small>가격 데이터를 이 화면에 반영합니다.</small>
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="price" />
+          <SkeletonBlock className="krw" />
         </div>
         <div className="technical-summary">
-          <span>가격 흐름</span>
-          <strong>화면 반영</strong>
-          <p>{body || "가격과 차트 데이터를 화면에 반영합니다."}</p>
-          {actionLabel && onAction ? (
-            <button type="button" className="technical-pending-action" onClick={onAction}>
-              {actionLabel}
-            </button>
-          ) : null}
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="headline" />
+          <SkeletonBlock className="wide" />
+          <SkeletonBlock className="medium" />
         </div>
       </section>
       <section className="technical-chart-panel technical-rule-pending">
         <div className="section-title">
-          <span>가격 캔들</span>
-          <h2>가격 기록</h2>
+          <SkeletonBlock className="label" />
+          <SkeletonBlock className="section-heading" />
         </div>
-        <p>확인된 가격 기록을 차트에 반영합니다.</p>
+        <SkeletonBlock className="chart-area" />
       </section>
     </div>
   );

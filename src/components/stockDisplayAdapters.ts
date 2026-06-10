@@ -28,6 +28,8 @@ export function stockScoreDataFromDisplayPayload(payload: StockDisplayPayload): 
     latest_bar_date: stringValue(price.latest_bar_date) || stringValue(chart.latest_bar_date) || stringValue(score.latest_bar_date),
     usd_krw_rate: numberValue(price.usd_krw_rate) ?? numberValue(score.usd_krw_rate),
     usd_krw_label: stringValue(price.usd_krw_label) || stringValue(score.usd_krw_label),
+    market_cap: numberValue(price.market_cap) ?? numberValue(score.market_cap),
+    market_cap_label: stringValue(price.market_cap_label) || stringValue(score.market_cap_label),
     chart_series: chartSeries as ChartSeriesPoint[] | undefined,
     chart_patterns: arrayValue(score.chart_patterns) as StockScoreResponse["chart_patterns"],
     components: arrayValue(score.components) as StockScoreResponse["components"],

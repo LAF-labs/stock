@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   MAX_COMPARE,
   bestBy,
@@ -141,12 +142,14 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 
       {pendingStates.length && !items.length ? (
         <section className="compare-errors compare-pending" role="status" aria-live="polite">
+          <span className="sr-only">비교 화면을 구성하고 있습니다.</span>
           {pendingStates.map((state) => (
-            <p key={state.ticker}>
-              <strong>{state.ticker}</strong> 선택한 종목을 같은 기준으로 비교합니다.
-            </p>
+            <div className="compare-pending-row" key={state.ticker}>
+              <SkeletonBlock className="label" />
+              <SkeletonBlock className="wide" />
+            </div>
           ))}
-          <button type="button" onClick={retryCompare}>다시 확인</button>
+          <button type="button" onClick={retryCompare} className="sr-only">다시 확인</button>
         </section>
       ) : null}
 
@@ -166,13 +169,16 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 }
 
 function ComparePendingOverview({ count }: { count: number }) {
+  void count;
   return (
     <section className="compare-section compare-brief">
+      <span className="sr-only">비교 화면을 구성하고 있습니다.</span>
       <div className="section-title">
-        <span>종목 정보</span>
-        <h2>선택한 종목 정보</h2>
+        <SkeletonBlock className="label" />
+        <SkeletonBlock className="section-heading" />
       </div>
-      <p>{count}개 종목을 같은 기준으로 정리합니다. 가격과 점수가 있는 항목은 바로 비교 카드에 반영됩니다.</p>
+      <SkeletonBlock className="wide" />
+      <SkeletonBlock className="medium" />
     </section>
   );
 }
@@ -213,25 +219,26 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
 function CompareWaitingCards({ states }: { states: Array<Extract<CompareLoadState, { status: "loading" | "pending" }>> }) {
   return (
     <section className="compare-section">
+      <span className="sr-only">선택한 종목 카드가 구성되고 있습니다.</span>
       <div className="section-title">
-        <span>선택 종목</span>
-        <h2>종목 정보</h2>
+        <SkeletonBlock className="label" />
+        <SkeletonBlock className="section-heading" />
       </div>
       <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
         {states.map((state) => (
           <article className="compare-stock-card compare-waiting-card" key={state.ticker}>
             <div className="compare-card-top">
               <div>
-                <span>선택한 종목</span>
-                <strong className="ticker-primary">{displayTickerRef(state.ticker)}</strong>
-                <small>{state.ticker}</small>
+                <SkeletonBlock className="label" />
+                <SkeletonBlock className="company" />
+                <SkeletonBlock className="medium" />
               </div>
-              <em className="price-neutral">-</em>
+              <SkeletonBlock className="pill" />
             </div>
-            <p>{state.ticker}</p>
+            <SkeletonBlock className="wide" />
             <div className="compare-score-line">
-              <span>점수</span>
-              <strong>-</strong>
+              <SkeletonBlock className="small" />
+              <SkeletonBlock className="score" />
             </div>
             <i className="compare-card-scorebar pending" aria-hidden="true" />
           </article>

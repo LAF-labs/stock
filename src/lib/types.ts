@@ -171,6 +171,8 @@ export type StockQuoteResponse = {
   latest_change_label?: string;
   volume?: number;
   volume_label?: string;
+  market_cap?: number;
+  market_cap_label?: string;
   price_metrics?: Record<string, JsonValue>;
   server_cache?: Record<string, JsonValue>;
   market_session?: Record<string, JsonValue>;

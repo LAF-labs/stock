@@ -6,7 +6,7 @@ import type { StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 
 test("display payload adapter promotes identity, price, chart, and score without pending copy", () => {
   const adapted = stockScoreDataFromDisplayPayload(displayPayload({
-    price: { latest_price: 187400, latest_price_label: "187,400원", currency: "KRW" },
+    price: { latest_price: 187400, latest_price_label: "187,400원", currency: "KRW", market_cap: 3_100_000_000_000 },
     chart: { chart_series: [{ date: "2026-06-09", close: 180000 }, { date: "2026-06-10", close: 187400 }] },
     score: { score: 72, quality_score: 72, components: [{ key: "momentum", label: "가격 흐름", score: 72 }] },
   }));
@@ -14,6 +14,7 @@ test("display payload adapter promotes identity, price, chart, and score without
   assert.equal(adapted.requested_ticker, "KR:005930");
   assert.equal(adapted.name, "삼성전자");
   assert.equal(adapted.latest_price, 187400);
+  assert.equal(adapted.market_cap, 3_100_000_000_000);
   assert.equal(adapted.chart_series?.length, 2);
   assert.equal(adapted.quality_score, 72);
   assert.equal(JSON.stringify(adapted).includes("snapshot_pending"), false);

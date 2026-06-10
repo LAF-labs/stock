@@ -1,4 +1,5 @@
 import { planStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
+import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import { numericEnv } from "@/lib/supabaseRest";
 import { normalizeTickerRef, parseTickerRef } from "@/lib/tickerRef";
@@ -47,9 +48,11 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   const chart = fulfilledValue(chartResult) ?? chartFromScore(score);
   const technical = technicalFromScore(score);
   const presentParts = presentDisplayParts({ price, chart, score, technical }, input.view);
+  const requiredParts = displayRequiredParts(input.view, score);
   const completion = planStockDisplayCompletion({
     ticker,
     view: input.view,
+    requiredParts,
     presentParts,
   });
 
@@ -68,7 +71,7 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
     ...(chart ? { chart: part(chart, "market-data") } : {}),
     ...(score ? { score: part(score, "derived") } : {}),
     ...(technical ? { technical: part(technical, "derived") } : {}),
-    completion,
+    completion: publicCompletion(completion),
     refresh: {
       active: refreshActive,
       staleParts: [],
@@ -80,6 +83,16 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
       canTechnical: true,
       technicalHref: `/technical?ticker=${encodeURIComponent(ticker)}`,
     },
+  };
+}
+
+function publicCompletion(completion: ReturnType<typeof planStockDisplayCompletion>): StockDisplayPayload["completion"] {
+  return {
+    requiredParts: completion.requiredParts,
+    presentParts: completion.presentParts,
+    missingParts: completion.missingParts,
+    recoveringParts: completion.recoveringParts,
+    unavailableParts: completion.unavailableParts,
   };
 }
 
@@ -99,8 +112,47 @@ function presentDisplayParts(
     if (values.technical) parts.push("technical");
   } else if (values.score) {
     parts.push("score");
+    if (hasFundamentals(values.score)) parts.push("fundamentals");
+    if (hasIndustryBenchmark(values.score)) parts.push("industryBenchmark");
   }
   return parts;
+}
+
+function displayRequiredParts(view: StockDisplayView, score: StockScoreView | undefined): StockDisplayPartName[] {
+  const required: StockDisplayPartName[] = view === "technical"
+    ? ["identity", "price", "chart", "technical"]
+    : ["identity", "price", "chart", "score"];
+  if (view !== "technical" && score && stockScorePayloadNeedsEnrichment(score)) {
+    required.push("fundamentals", "industryBenchmark");
+  }
+  return required;
+}
+
+function hasFundamentals(score: StockScoreView | undefined): boolean {
+  if (!score) return false;
+  if (hasMetricLabel(score.key_metrics, "시가총액")) return true;
+  if (hasMetricLabel(score.valuation_rows, "Forward PER")) return true;
+  if (numberValue(score.market_cap) !== undefined) return true;
+  return false;
+}
+
+function hasIndustryBenchmark(score: StockScoreView | undefined): boolean {
+  if (!score) return false;
+  if (hasMetricLabel(score.valuation_rows, "업종 기준 PER")) return true;
+  if (hasMetricLabel(score.valuation_rows, "업종 기준 PBR")) return true;
+  return Array.isArray(score.industry_benchmarks) && score.industry_benchmarks.length > 0;
+}
+
+function hasMetricLabel(value: unknown, label: string): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    return (item as Record<string, unknown>).label === label;
+  });
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function hasUsableChart(chart: StockChartView | undefined): chart is StockChartView {
