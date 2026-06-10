@@ -505,15 +505,17 @@ npm run ops:report
 
 **Acceptance criteria:**
 
-- [ ] All unit tests pass.
-- [ ] Build succeeds.
-- [ ] Legacy pipeline guard tests pass.
-- [ ] Detail page, technical page, compare page, and symbol search render with TanStack Query state.
-- [ ] Re-visiting a ticker uses persisted query cache immediately, then background refreshes according to stale policy.
-- [ ] Manual quote refresh updates the shared quote query and does not force unrelated queries to reset.
-- [ ] Pending cold-start UI never gets stuck without scheduled refetch while queue work is available.
-- [ ] Browser labels do not expose cache implementation details.
-- [ ] `npm run ops:report` freshness risks are recorded separately from client pipeline migration risks.
+- [x] All unit tests pass.
+- [x] Build succeeds.
+- [x] Legacy pipeline guard tests pass.
+- [x] Detail page, technical page, compare page, and symbol search render with TanStack Query state.
+- [x] Re-visiting a ticker uses persisted query cache immediately, then background refreshes according to stale policy.
+- [x] Manual quote refresh updates the shared quote query and does not force unrelated queries to reset.
+- [x] Pending cold-start UI never gets stuck without scheduled refetch while queue work is available.
+- [x] Browser labels do not expose cache implementation details.
+- [x] `npm run ops:report` freshness risks are recorded separately from client pipeline migration risks.
+
+**Verification results:** `npm test`, `npm run typecheck`, and `npm run build` pass. The production latency run on `https://stock-khaki.vercel.app` with 3 iterations, 1 warmup, and a 5000 ms p95 budget returned p95 28.5 ms with no provider guard violations. `npm run ops:report` returned `ok: true` with no freshness-risk warnings.
 
 ## Feature Verification Matrix
 
