@@ -33,6 +33,7 @@ export function scoreQueryOptions(ticker: string, view: StockScoreView = "detail
     queryFn: ({ signal }) => fetchStockScore({ ticker, view, signal }),
     staleTime: view === "technical" ? stockQueryStaleTimesMs.technical : stockQueryStaleTimesMs.score,
     gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
+    refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as ScoreQueryResult | undefined),
     refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as ScoreQueryResult | undefined, query.state.dataUpdateCount, view),
     meta: { feature: "stock-score", view, maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
   });
@@ -44,6 +45,7 @@ export function technicalScoreQueryOptions(ticker: string) {
     queryFn: ({ signal }) => fetchTechnicalScore(ticker, signal),
     staleTime: stockQueryStaleTimesMs.technical,
     gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
+    refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as TechnicalScoreQueryResult | undefined),
     refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as TechnicalScoreQueryResult | undefined, query.state.dataUpdateCount, "technical"),
     meta: { feature: "stock-score", view: "technical", maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
   });
@@ -55,6 +57,7 @@ export function quoteQueryOptions(ticker: string) {
     queryFn: ({ signal }) => fetchStockQuote(ticker, signal),
     staleTime: stockQueryStaleTimesMs.quote,
     gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
+    refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as QuoteQueryResult | undefined),
     refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as QuoteQueryResult | undefined, query.state.dataUpdateCount, "detail"),
     meta: { feature: "stock-quote", maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
   });
@@ -67,6 +70,7 @@ export function compareQueryOptions(tickers: readonly string[]) {
     staleTime: stockQueryStaleTimesMs.score,
     gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
     enabled: tickers.length > 0,
+    refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as CompareQueryResult | undefined),
     refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as CompareQueryResult | undefined, query.state.dataUpdateCount, "compare"),
     meta: { feature: "stock-compare", view: "compare", maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
   });
@@ -141,6 +145,14 @@ export function stockQueryShouldPoll(
   if (result.state === "partial") return isPollablePending(result.pending);
   if (result.state === "unsupported" || result.state === "ready") return false;
   return false;
+}
+
+export function stockQueryRefetchOnMount(
+  result: ScoreQueryResult | TechnicalScoreQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+): boolean | "always" {
+  if (!result) return true;
+  if (result.state === "ready" || result.state === "unsupported") return false;
+  return "always";
 }
 
 function isPollablePending(pending: ApiPending | undefined): boolean {

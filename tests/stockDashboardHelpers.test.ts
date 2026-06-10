@@ -448,12 +448,12 @@ test("scoreFreshnessSummary separates score snapshot freshness from quote freshn
   assert.deepEqual(scoreFreshnessSummary(staleScore), {
     label: "점수 기준",
     value: "오래된 스냅샷",
-    detail: "Supabase · 2026-06-05 09:00 KST 기준 · 새 점수 준비 중",
+    detail: "새 점수 준비 중",
     tone: "stale",
   });
 });
 
-test("scoreFreshnessSummary labels browser cached snapshots", () => {
+test("scoreFreshnessSummary hides browser cached implementation labels", () => {
   const cachedScore = {
     requested_ticker: "KR:004020",
     server_cache: {
@@ -467,7 +467,7 @@ test("scoreFreshnessSummary labels browser cached snapshots", () => {
   assert.deepEqual(scoreFreshnessSummary(cachedScore), {
     label: "점수 기준",
     value: "오래된 스냅샷",
-    detail: "브라우저 캐시 · 새 점수 준비 중",
+    detail: "새 점수 준비 중",
     tone: "stale",
   });
 });
@@ -485,43 +485,47 @@ test("scoreFreshnessSummary accepts Rust cache millisecond timestamps", () => {
   assert.deepEqual(scoreFreshnessSummary(freshScore), {
     label: "점수 기준",
     value: "최신 스냅샷",
-    detail: "Rust market-data · 2026-06-05 09:00 KST 기준",
+    detail: "스냅샷 준비 완료",
     tone: "fresh",
   });
 });
 
-test("scoreFreshnessTimeChip keeps only the KST time for compact header display", () => {
+test("scoreFreshnessTimeChip uses product-state copy instead of local minute chips", () => {
   const score = {
     server_cache: {
+      state: "fresh",
       fetched_at: "2026-06-06T09:08:00.000Z",
     },
   } satisfies StockScoreResponse;
 
-  assert.equal(scoreFreshnessTimeChip(score), "18:08 기준");
+  assert.equal(scoreFreshnessTimeChip(score), "최신 스냅샷");
 });
 
-test("stockHeaderFreshnessTimeChip uses the newest score or quote update time", () => {
+test("stockHeaderFreshnessTimeChip uses product-state copy instead of local time chips", () => {
   const score = {
     server_cache: {
+      state: "fresh",
       fetched_at: "2026-06-06T09:08:00.000Z",
     },
   } satisfies StockScoreResponse;
   const olderQuote = {
     server_cache: {
+      state: "stale",
       fetched_at: "2026-06-06T08:59:00.000Z",
     },
   } satisfies StockQuoteResponse;
   const refreshedQuote = {
     server_cache: {
+      state: "fresh",
       fetched_at: "2026-06-06T09:12:00.000Z",
     },
   } satisfies StockQuoteResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, olderQuote), "18:08 기준");
-  assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "18:12 기준");
+  assert.equal(stockHeaderFreshnessTimeChip(score, olderQuote), "최신 스냅샷");
+  assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "최신 스냅샷");
 });
 
-test("stockHeaderFreshnessTimeChip hides browser cache labels in the compact header", () => {
+test("stockHeaderFreshnessTimeChip hides browser cache labels and local time in the compact header", () => {
   const score = {
     server_cache: {
       state: "stale",
@@ -530,10 +534,10 @@ test("stockHeaderFreshnessTimeChip hides browser cache labels in the compact hea
     },
   } satisfies StockScoreResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "18:08 기준");
+  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "스냅샷 확인 중");
 });
 
-test("stockHeaderFreshnessTimeChip hides browser cache labels when a fresher quote is present", () => {
+test("stockHeaderFreshnessTimeChip hides browser cache labels and local time when a fresher quote is present", () => {
   const score = {
     server_cache: {
       state: "stale",
@@ -549,7 +553,7 @@ test("stockHeaderFreshnessTimeChip hides browser cache labels when a fresher quo
     },
   } satisfies StockQuoteResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "18:12 기준");
+  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "최신 스냅샷");
 });
 
 test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-first", () => {

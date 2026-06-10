@@ -4,10 +4,8 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
-import StockHeader, { type JudgmentState, type QuoteRefreshState, type QuoteState } from "@/components/StockHeader";
+import StockHeader from "@/components/StockHeader";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import { apiPayloadMessage, readClientApiPayload } from "@/components/clientApi";
-import { readDashboardClientCache, rememberDashboardClientCache } from "@/components/stockDashboardClientCache";
 import {
   dashboardInputValue,
   dashboardSearchInputValue,
@@ -16,25 +14,17 @@ import {
   dailyToneClass,
   formatPrimaryPrice,
   formatSecondaryPrice,
-  pendingRetryTargetForDashboard,
-  partialStockDataFromQuote,
-  partialStockDataFromTicker,
-  partialStockDataFromPayload,
-  refreshCooldownMessage,
   scoreDataWithQuote,
-  shouldPreservePendingViewDuringRetry,
   shouldShowStockSkeleton,
-  snapshotPendingFromPayload,
   stringFromUnknown,
   stockHeaderIdentity,
-  stockJudgmentRequestPayload,
   symbolRef,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
-import { usePendingRetry } from "@/components/usePendingRetry";
+import { useStockDashboardQueries } from "@/components/useStockDashboardQueries";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
+import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 const DETAIL_SECTIONS = [
   { id: "detail-summary", label: "요약" },
@@ -47,16 +37,7 @@ const DETAIL_SECTIONS = [
   { id: "detail-financials", label: "재무 요약" },
 ] as const;
 
-const FIRST_USEFUL_DATA_DEADLINE_MS = 4_500;
-
 type DetailSectionId = (typeof DETAIL_SECTIONS)[number]["id"];
-
-type LoadState =
-  | { status: "idle" | "loading"; data?: undefined; error?: undefined }
-  | { status: "success"; data: StockScoreResponse; error?: undefined }
-  | { status: "partial"; data: StockScoreResponse; error?: undefined; pending: SnapshotPendingState }
-  | { status: "pending"; data?: undefined; error?: undefined; pending: SnapshotPendingState }
-  | { status: "error"; data?: undefined; error: string };
 
 function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse | undefined, fallbackTicker: string): string {
   const rawSymbol = stringFromUnknown(quote?.symbol) || stringFromUnknown(data.symbol) || stringFromUnknown(data.requested_ticker) || fallbackTicker;
@@ -65,46 +46,6 @@ function compareHrefForStock(data: StockScoreResponse, quote: StockQuoteResponse
   return `/compare?tickers=${encodeURIComponent(`${market === "KR" ? "KR" : "US"}:${symbol}`)}`;
 }
 
-function pendingBelongsToTicker(pending: unknown, ticker: string | undefined): boolean {
-  const pendingTicker =
-    pending && typeof pending === "object" && !Array.isArray(pending) && typeof (pending as { ticker?: unknown }).ticker === "string"
-      ? (pending as { ticker: string }).ticker
-      : undefined;
-  return Boolean(ticker && (!pendingTicker || pendingTicker === ticker));
-}
-
-function quoteBelongsToTicker(quote: StockQuoteResponse, ticker: string): boolean {
-  const requested = stringFromUnknown(quote.requested_ticker);
-  if (requested === ticker) return true;
-  const symbol = stringFromUnknown(quote.symbol);
-  const market = stringFromUnknown(quote.market) || (ticker.startsWith("KR:") ? "KR" : ticker.startsWith("US:") ? "US" : undefined);
-  return Boolean(symbol && market && `${market}:${symbol}` === ticker);
-}
-
-function scoreBelongsToTicker(score: StockScoreResponse, ticker: string): boolean {
-  const requested = dashboardTickerFromSearchParam(stringFromUnknown(score.requested_ticker) || "");
-  if (requested === ticker) return true;
-  const symbol = stringFromUnknown(score.symbol);
-  const market = stringFromUnknown(score.market) || (ticker.startsWith("KR:") ? "KR" : ticker.startsWith("US:") ? "US" : undefined);
-  return Boolean(symbol && market && `${market}:${symbol}` === ticker);
-}
-
-function optimisticScorePendingFromQuote(ticker: string): SnapshotPendingState {
-  return {
-    message: "가격 데이터는 먼저 확인했고, 점수와 재무 지표를 이어서 준비하고 있어요.",
-    ticker,
-    queued: false,
-  };
-}
-
-function deadlinePendingFromTicker(ticker: string, message?: string, retryAfterSeconds?: number): SnapshotPendingState {
-  return {
-    message: message || "종목은 먼저 특정했고, 가격과 점수 데이터는 계속 확인하고 있어요.",
-    ticker,
-    queued: false,
-    retryAfterSeconds,
-  };
-}
 
 export default function StockDashboard() {
   const router = useRouter();
@@ -112,26 +53,19 @@ export default function StockDashboard() {
   const tickerParam = dashboardTickerFromSearchParam(searchParams.get("ticker"));
 
   const [tickerInput, setTickerInput] = useState(dashboardInputValue(tickerParam));
-  const [state, setState] = useState<LoadState>(() =>
-    tickerParam
-      ? {
-          status: "partial",
-          data: partialStockDataFromTicker(tickerParam),
-          pending: deadlinePendingFromTicker(tickerParam),
-        }
-      : { status: "idle" }
-  );
-  const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
-  const [quoteRefreshState, setQuoteRefreshState] = useState<QuoteRefreshState>({ status: "idle" });
-  const [judgmentState, setJudgmentState] = useState<JudgmentState>({ status: "idle" });
+  const {
+    state,
+    quoteState,
+    quoteRefreshState,
+    judgmentState,
+    quoteData,
+    data,
+    partialData,
+    retryLoad,
+    refreshQuote,
+  } = useStockDashboardQueries(tickerParam);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
-  const [reloadVersion, setReloadVersion] = useState(0);
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
-  const [scoreBackgroundPending, setScoreBackgroundPending] = useState<SnapshotPendingState | undefined>(undefined);
-  const currentTickerRef = useRef(tickerParam);
-  const latestScoreRef = useRef<StockScoreResponse | undefined>(undefined);
-  const latestQuoteRef = useRef<StockQuoteResponse | undefined>(undefined);
-  const quoteRefreshControllerRef = useRef<AbortController | null>(null);
   const lastScrollYRef = useRef(0);
   const isSearchCollapsedRef = useRef(false);
 
@@ -140,104 +74,6 @@ export default function StockDashboard() {
     isSearchCollapsedRef.current = nextCollapsed;
     setIsSearchCollapsed(nextCollapsed);
   }
-
-  useEffect(() => {
-    currentTickerRef.current = tickerParam;
-    quoteRefreshControllerRef.current?.abort();
-    setTickerInput(dashboardInputValue(tickerParam));
-    if (!tickerParam) {
-      latestScoreRef.current = undefined;
-      latestQuoteRef.current = undefined;
-      setScoreBackgroundPending(undefined);
-      setState({ status: "idle" });
-      return;
-    }
-    const controller = new AbortController();
-    const query = new URLSearchParams({ ticker: tickerParam, partial: "1" });
-    const cached = readDashboardClientCache(tickerParam);
-    latestScoreRef.current = cached?.score;
-    latestQuoteRef.current = cached?.quote;
-    setScoreBackgroundPending(undefined);
-
-    setState((current) => {
-      if (cached?.score) return { status: "success", data: cached.score };
-      if (current.status === "success" && scoreBelongsToTicker(current.data, tickerParam)) return current;
-      const pending = current.status === "pending" || current.status === "partial" ? current.pending : undefined;
-      if ((current.status === "pending" || current.status === "partial") && pendingBelongsToTicker(pending, tickerParam)) return current;
-      if (shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(pending, tickerParam))) return current;
-      return {
-        status: "partial",
-        data: partialStockDataFromTicker(tickerParam),
-        pending: deadlinePendingFromTicker(tickerParam),
-      };
-    });
-    fetch(`/api/score?${query.toString()}`, {
-      signal: controller.signal,
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const payload = await readClientApiPayload(response);
-        const pending = snapshotPendingFromPayload(payload, tickerParam);
-        const partialData = pending ? partialStockDataFromPayload(payload, tickerParam) : undefined;
-        if (pending && partialData) {
-          setScoreBackgroundPending(pending);
-          setState((current) => (current.status === "success" && scoreBelongsToTicker(current.data, tickerParam) ? current : { status: "partial", data: partialData, pending }));
-          return undefined;
-        }
-        if (pending) {
-          setScoreBackgroundPending(pending);
-          setState((current) => {
-            if (current.status === "success" && scoreBelongsToTicker(current.data, tickerParam)) return current;
-            return current.status === "partial" ? current : { status: "pending", pending };
-          });
-          return undefined;
-        }
-        if (!response.ok) {
-          throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
-        }
-        return payload as StockScoreResponse;
-      })
-      .then((data) => {
-        if (!data) return;
-        latestScoreRef.current = data;
-        setScoreBackgroundPending(undefined);
-        setState({ status: "success", data });
-        rememberDashboardClientCache(tickerParam, data, latestQuoteRef.current);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState((current) => {
-          if (current.status === "success" || current.status === "partial") return current;
-          return {
-            status: "error",
-            error: error instanceof Error ? error.message : "데이터를 불러오지 못했어요.",
-          };
-        });
-      });
-
-    return () => controller.abort();
-  }, [tickerParam, reloadVersion]);
-
-  useEffect(() => {
-    if (!tickerParam) return;
-
-    const timer = window.setTimeout(() => {
-      setState((current) => {
-        if (current.status === "success" || current.status === "partial" || current.status === "error") return current;
-        const pending =
-          current.status === "pending"
-            ? deadlinePendingFromTicker(tickerParam, current.pending.message, current.pending.retryAfterSeconds)
-            : deadlinePendingFromTicker(tickerParam);
-        return {
-          status: "partial",
-          data: partialStockDataFromTicker(tickerParam),
-          pending,
-        };
-      });
-    }, FIRST_USEFUL_DATA_DEADLINE_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [tickerParam, reloadVersion]);
 
   useEffect(() => {
     let ticking = false;
@@ -270,172 +106,20 @@ export default function StockDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!tickerParam) return;
-    const stockData = state.status === "success" || state.status === "partial" ? state.data : undefined;
-    const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
+    if (!tickerParam) {
+      setTickerInput("");
+      return;
+    }
+    const stockData = data || partialData;
     if (!stockData && !quoteData) return;
     setTickerInput(dashboardSearchInputValue(stockData, quoteData, tickerParam));
-  }, [state, quoteState, tickerParam]);
-
-  useEffect(() => {
-    if (!tickerParam) {
-      setQuoteState({ status: "idle" });
-      setQuoteRefreshState({ status: "idle" });
-      latestQuoteRef.current = undefined;
-      return;
-    }
-    const controller = new AbortController();
-    const query = new URLSearchParams({ ticker: tickerParam });
-    const cached = readDashboardClientCache(tickerParam);
-    if (cached?.quote) latestQuoteRef.current = cached.quote;
-
-    setQuoteState((current) => {
-      if (current.status === "success" && quoteBelongsToTicker(current.data, tickerParam)) return current;
-      if (cached?.quote) return { status: "success", data: cached.quote };
-      return shouldPreservePendingViewDuringRetry(current.status, reloadVersion > 0 && pendingBelongsToTicker(current.status === "pending" ? current.pending : undefined, tickerParam))
-        ? current
-        : { status: "loading" };
-    });
-    setQuoteRefreshState((current) => (reloadVersion > 0 && current.status === "pending" ? current : { status: "idle" }));
-    fetch(`/api/quote?${query.toString()}`, {
-      signal: controller.signal,
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const payload = await readClientApiPayload(response);
-        const pending = snapshotPendingFromPayload(payload, tickerParam);
-        if (pending) {
-          setQuoteState((current) => (current.status === "success" && quoteBelongsToTicker(current.data, tickerParam) ? current : { status: "pending", pending }));
-          setQuoteRefreshState({ status: "pending", message: pending.message });
-          return undefined;
-        }
-        if (!response.ok) {
-          throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
-        }
-        return payload as StockQuoteResponse;
-      })
-      .then((data) => {
-        if (!data) return;
-        latestQuoteRef.current = data;
-        setQuoteState({ status: "success", data });
-        rememberDashboardClientCache(tickerParam, latestScoreRef.current, data);
-        const nextAllowedAt = stringFromUnknown(data.refresh_cooldown?.next_allowed_at);
-        const message = refreshCooldownMessage(nextAllowedAt);
-        if (message) {
-          setQuoteRefreshState({ status: "cooldown", nextAllowedAt, message });
-        } else {
-          setQuoteRefreshState({ status: "idle" });
-        }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setQuoteState((current) =>
-          current.status === "success" && quoteBelongsToTicker(current.data, tickerParam)
-            ? current
-            : {
-                status: "error",
-                error: error instanceof Error ? error.message : "quote_fetch_failed",
-              }
-        );
-      });
-
-    return () => controller.abort();
-  }, [tickerParam, reloadVersion]);
-
-  useEffect(() => {
-    if (!tickerParam || quoteState.status !== "success") return;
-    if (!quoteBelongsToTicker(quoteState.data, tickerParam)) return;
-    const partial = partialStockDataFromQuote(quoteState.data, tickerParam);
-    if (!partial) return;
-    setState((current) => {
-      if (current.status !== "loading") return current;
-      return {
-        status: "partial",
-        data: partial,
-        pending: optimisticScorePendingFromQuote(tickerParam),
-      };
-    });
-  }, [quoteState, tickerParam]);
-
-  useEffect(() => {
-    const nextAllowedAt = quoteRefreshState.nextAllowedAt;
-    if (!nextAllowedAt) return;
-
-    const remainingMs = Date.parse(nextAllowedAt) - Date.now();
-    if (remainingMs <= 0) {
-      setQuoteRefreshState({ status: "idle" });
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setQuoteRefreshState((current) => (current.nextAllowedAt === nextAllowedAt ? { status: "idle" } : current));
-    }, Math.min(remainingMs, 2_147_483_647));
-
-    return () => window.clearTimeout(timer);
-  }, [quoteRefreshState.nextAllowedAt]);
-
-  useEffect(() => () => quoteRefreshControllerRef.current?.abort(), []);
-
-  useEffect(() => {
-    if (state.status !== "success") {
-      setJudgmentState({ status: "idle" });
-      return;
-    }
-
-    const controller = new AbortController();
-    setJudgmentState({ status: "loading" });
-
-    fetch("/api/judgment", {
-      method: "POST",
-      signal: controller.signal,
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(stockJudgmentRequestPayload(state.data)),
-    })
-      .then(async (response) => {
-        const payload = await readClientApiPayload(response);
-        if (!response.ok || !payload?.ok) {
-          throw new Error(apiPayloadMessage(payload, "판단을 불러오지 못했어요."));
-        }
-        return payload.judgment as StockJudgment;
-      })
-      .then((judgment) => setJudgmentState({ status: "success", judgment }))
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setJudgmentState({
-          status: "error",
-          error: error instanceof Error ? error.message : "판단을 불러오지 못했어요.",
-        });
-      });
-
-    return () => controller.abort();
-  }, [state]);
+  }, [data, partialData, quoteData, tickerParam]);
 
   function selectSymbol(item: SymbolSearchItem) {
     router.push(`/?ticker=${encodeURIComponent(symbolRef(item))}`);
   }
 
-  function retryLoad() {
-    setReloadVersion((version) => version + 1);
-  }
-
-  const scorePending = tickerParam
-    ? state.status === "pending" || state.status === "partial"
-      ? state.pending
-      : scoreBackgroundPending && pendingBelongsToTicker(scoreBackgroundPending, tickerParam)
-        ? scoreBackgroundPending
-        : undefined
-    : undefined;
-  const quotePending = tickerParam && quoteState.status === "pending" ? quoteState.pending : undefined;
-  const pendingRetryTarget = pendingRetryTargetForDashboard(tickerParam, scorePending, quotePending);
-  usePendingRetry({ pending: pendingRetryTarget?.pending, retryKey: pendingRetryTarget?.retryKey || "stock:none", onRetry: retryLoad });
-
   const visibleDetailSections = DETAIL_SECTIONS;
-  const quoteData = quoteState.status === "success" ? quoteState.data : undefined;
-  const data = tickerParam && state.status === "success" ? state.data : undefined;
-  const partialData = tickerParam && state.status === "partial" ? scoreDataWithQuote(state.data, quoteData) : undefined;
   const compareHref = data && tickerParam ? compareHrefForStock(data, quoteData, tickerParam) : "";
   const pageIdentity = data ? stockHeaderIdentity(data, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
@@ -479,65 +163,6 @@ export default function StockDashboard() {
 
   function scrollToDetailSection(id: DetailSectionId) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function refreshQuote() {
-    if (!tickerParam) return;
-    if (quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending") return;
-
-    const requestedTicker = tickerParam;
-    const controller = new AbortController();
-    quoteRefreshControllerRef.current?.abort();
-    quoteRefreshControllerRef.current = controller;
-
-    const query = new URLSearchParams({ ticker: requestedTicker, refresh: "1" });
-    setQuoteRefreshState({ status: "refreshing", message: "최신 현재가 확인 중" });
-
-    fetch(`/api/quote?${query.toString()}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await readClientApiPayload(response);
-        if (controller.signal.aborted || currentTickerRef.current !== requestedTicker) return undefined;
-        const pending = snapshotPendingFromPayload(payload, requestedTicker);
-        if (pending) {
-          setQuoteState({ status: "pending", pending });
-          setQuoteRefreshState({ status: "pending", message: pending.message });
-          return undefined;
-        }
-        if (response.status === 429) {
-          const refreshCooldown = payload.refresh_cooldown && typeof payload.refresh_cooldown === "object" && !Array.isArray(payload.refresh_cooldown) ? payload.refresh_cooldown as Record<string, unknown> : undefined;
-          const nextAllowedAt = stringFromUnknown(refreshCooldown?.next_allowed_at);
-          const message = refreshCooldownMessage(nextAllowedAt);
-          if (!message) {
-            setQuoteRefreshState({ status: "error", message: "잠시 후 다시 시도해주세요." });
-            return undefined;
-          }
-          setQuoteRefreshState({
-            status: "cooldown",
-            nextAllowedAt,
-            message,
-          });
-          return undefined;
-        }
-        if (!response.ok) {
-          throw new Error(apiPayloadMessage(payload, `HTTP ${response.status}`));
-        }
-        return payload as StockQuoteResponse;
-      })
-      .then((data) => {
-        if (!data) return;
-        if (controller.signal.aborted || currentTickerRef.current !== requestedTicker) return;
-        setQuoteState({ status: "success", data });
-        const nextAllowedAt = stringFromUnknown(data.refresh_cooldown?.next_allowed_at);
-        const message = refreshCooldownMessage(nextAllowedAt);
-        setQuoteRefreshState(message ? { status: "cooldown", nextAllowedAt, message } : { status: "success", message: "현재가가 업데이트됐어요." });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setQuoteRefreshState({
-          status: "error",
-          message: error instanceof Error ? error.message : "quote_refresh_failed",
-        });
-      });
   }
 
   const searchSectionClassName = ["stock-search", isSearchCollapsed ? "search-collapsed" : ""].filter(Boolean).join(" ");

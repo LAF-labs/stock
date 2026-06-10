@@ -11,6 +11,7 @@ import {
   shouldEnableSymbolSearch,
   stockPendingRetryDelayMs,
   stockQueryRefetchIntervalMs,
+  stockQueryRefetchOnMount,
   stockQueryShouldPoll,
   stockQueryStaleTimesMs,
   symbolSearchQueryOptions,
@@ -81,6 +82,27 @@ test("pending polling follows the shared backoff and stops on non-pollable state
   assert.equal(stockQueryRefetchIntervalMs(queuedPending, STOCK_QUERY_MAX_PENDING_POLLS), false);
   assert.equal(stockQueryShouldPoll(clientOnlyPending), false);
   assert.equal(stockQueryRefetchIntervalMs({ state: "ready", status: 200, payload: {}, data: {} }, 0), false);
+});
+
+test("non-ready persisted stock data refetches on mount instead of freezing placeholder views", () => {
+  const identityOnlyPartial: ScoreQueryResult = {
+    state: "partial",
+    status: 200,
+    payload: { type: "partial_stock_snapshot", requested_ticker: "KR:004020" },
+    data: { requested_ticker: "KR:004020", symbol: "004020" },
+    pending: {
+      state: "pending",
+      status: 202,
+      payload: { error: "snapshot_pending", ticker: "KR:004020" },
+      error: "snapshot_pending",
+      message: "pending",
+      queued: false,
+    },
+  };
+
+  assert.equal(stockQueryRefetchOnMount(identityOnlyPartial), "always");
+  assert.equal(stockQueryRefetchOnMount({ state: "pending", status: 202, payload: { error: "snapshot_pending" }, error: "snapshot_pending", message: "pending", queued: false }), "always");
+  assert.equal(stockQueryRefetchOnMount({ state: "ready", status: 200, payload: {}, data: { requested_ticker: "KR:004020" } }), false);
 });
 
 test("partial and compare polling only continue when nested pending work is queued", () => {

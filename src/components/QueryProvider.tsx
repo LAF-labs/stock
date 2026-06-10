@@ -8,7 +8,7 @@ import { del, get, set } from "idb-keyval";
 import { useState, type ReactNode } from "react";
 
 export const STOCK_QUERY_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
-export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v1";
+export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v2";
 export const STOCK_QUERY_PERSIST_THROTTLE_MS = 1_000;
 
 type RetryableStockError = {

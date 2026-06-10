@@ -117,15 +117,6 @@ const LABEL_REPLACEMENTS: Record<string, string> = {
 const SOURCE_NOTE_RE = /^(?:yfinance|yahoo finance(?:\s*기준)?|data source|source)$/i;
 
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
-const KST_MINUTE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Seoul",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
 const KST_TIME_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Seoul",
   hour: "2-digit",
@@ -707,18 +698,14 @@ export function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteRe
 export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessSummary {
   const cache = recordFromUnknown(data.server_cache);
   const state = stringFromUnknown(cache?.state);
-  const source = scoreFreshnessSourceLabel(stringFromUnknown(cache?.source));
-  const fetchedAt = cacheTimestamp(cache, "fetched_at");
   const refreshStarted = cache?.refresh_started === true;
-  const details = [source, fetchedAt ? `${formatKstMinute(fetchedAt)} 기준` : undefined, refreshStarted ? "새 점수 준비 중" : undefined].filter(
-    (item): item is string => !!item
-  );
+  const detail = scoreFreshnessDetail(state, refreshStarted);
 
   if (state === "fresh") {
     return {
       label: "점수 기준",
       value: "최신 스냅샷",
-      detail: details.join(" · ") || "스냅샷 기준 확인 중",
+      detail,
       tone: "fresh",
     };
   }
@@ -727,7 +714,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
     return {
       label: "점수 기준",
       value: "오래된 스냅샷",
-      detail: details.join(" · ") || "새 점수 준비 중",
+      detail,
       tone: "stale",
     };
   }
@@ -736,7 +723,7 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
     return {
       label: "점수 기준",
       value: "생성 대기",
-      detail: details.join(" · ") || "스냅샷 생성 대기",
+      detail,
       tone: "pending",
     };
   }
@@ -744,16 +731,14 @@ export function scoreFreshnessSummary(data: StockScoreResponse): ScoreFreshnessS
   return {
     label: "점수 기준",
     value: "기준 확인 중",
-    detail: details.join(" · ") || "스냅샷 기준 확인 중",
+    detail,
     tone: "unknown",
   };
 }
 
 export function scoreFreshnessTimeChip(data: StockScoreResponse): string | undefined {
   const cache = recordFromUnknown(data.server_cache);
-  const fetchedAt = cacheTimestamp(cache, "fetched_at");
-  const time = fetchedAt ? formatKstTime(fetchedAt) : undefined;
-  return time ? `${time} 기준` : undefined;
+  return freshnessChipLabel(cache);
 }
 
 export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string | undefined {
@@ -765,18 +750,25 @@ export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: St
   if (quoteFetchedAt && (!scoreFetchedAt || Date.parse(quoteFetchedAt) > Date.parse(scoreFetchedAt))) {
     fetchedAt = quoteFetchedAt;
   }
-  const time = fetchedAt ? formatKstTime(fetchedAt) : undefined;
-  return time ? `${time} 기준` : undefined;
+  const newestCache = fetchedAt && quoteFetchedAt === fetchedAt ? quoteCache : scoreCache;
+  return freshnessChipLabel(newestCache) || (fetchedAt ? "스냅샷 확인 완료" : undefined);
 }
 
-function scoreFreshnessSourceLabel(source: string | undefined): string {
-  if (source === "supabase") return "Supabase";
-  if (source === "market-data") return "Rust market-data";
-  if (source === "client_cache") return "브라우저 캐시";
-  if (source === "cache") return "Rust cache";
-  if (source === "queue") return "Refresh queue";
-  if (source === "provider") return "Provider";
-  return "Score snapshot";
+function scoreFreshnessDetail(state: string | undefined, refreshStarted: boolean): string {
+  if (refreshStarted) return "새 점수 준비 중";
+  if (state === "fresh") return "스냅샷 준비 완료";
+  if (state === "stale") return "최신 점수 확인 중";
+  if (state === "miss") return "스냅샷 생성 대기";
+  return "스냅샷 상태 확인 중";
+}
+
+function freshnessChipLabel(cache: Record<string, unknown> | undefined): string | undefined {
+  const state = stringFromUnknown(cache?.state);
+  if (cache?.refresh_started === true) return "최신 데이터 준비 중";
+  if (state === "fresh") return "최신 스냅샷";
+  if (state === "stale") return "스냅샷 확인 중";
+  if (state === "miss") return "스냅샷 생성 대기";
+  return cacheTimestamp(cache, "fetched_at") ? "스냅샷 확인 완료" : undefined;
 }
 
 function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -785,20 +777,6 @@ function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string)
   const millis = numberFromUnknown(cache?.[`${key}_ms`]);
   if (millis === undefined) return undefined;
   return new Date(millis).toISOString();
-}
-
-function formatKstMinute(value: string): string | undefined {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return undefined;
-  const parts = KST_MINUTE_FORMATTER.formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
-  const year = part("year");
-  const month = part("month");
-  const day = part("day");
-  const hour = part("hour");
-  const minute = part("minute");
-  if (!year || !month || !day || !hour || !minute) return undefined;
-  return `${year}-${month}-${day} ${hour}:${minute} KST`;
 }
 
 function formatKstTime(value: string): string | undefined {

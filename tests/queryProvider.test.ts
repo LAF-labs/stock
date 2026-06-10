@@ -11,7 +11,7 @@ import {
 
 test("stock query provider keeps persisted cache and gc windows aligned", () => {
   assert.equal(STOCK_QUERY_CACHE_MAX_AGE_MS, 3 * 24 * 60 * 60 * 1000);
-  assert.equal(STOCK_QUERY_PERSIST_KEY, "stock-query-cache-v1");
+  assert.equal(STOCK_QUERY_PERSIST_KEY, "stock-query-cache-v2");
   assert.equal(STOCK_QUERY_PERSIST_THROTTLE_MS, 1_000);
 
   const queryClient = createStockQueryClient();

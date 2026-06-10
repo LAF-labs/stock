@@ -298,21 +298,21 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Replace the score `useEffect` with `useQuery(scoreQueryOptions(ticker, "detail"))`.
-- [ ] Replace the quote `useEffect` with `useQuery(quoteQueryOptions(ticker))`.
-- [ ] Replace `latestScoreRef/latestQuoteRef` stitching with a pure selector that combines query data: `scoreDataWithQuote(scoreData, quoteData)`.
-- [ ] Replace `scoreBackgroundPending` with query-derived pending data from score query result.
-- [ ] Replace `FIRST_USEFUL_DATA_DEADLINE_MS` with deterministic placeholder data from ticker identity and `placeholderData`.
-- [ ] Replace `reloadVersion` with `queryClient.invalidateQueries` or `refetch` from the relevant query.
-- [ ] Replace judgment `useEffect` with `useQuery(judgmentQueryOptions(scoreData))`.
-- [ ] Replace manual quote refresh with `useMutation(refreshQuote)` and on success update/invalidate `stockQueryKeys.quote(ticker)` and related score/compare queries.
-- [ ] Preserve search input display rule: once real/partial data has a stock name, search box shows the stock name, not a forced ticker.
-- [ ] Create a dashboard view-model selector that returns `data`, `quote`, `pending`, `error`, `isSkeletonVisible`, `headerRefreshState`, and `judgment` without exposing raw query internals to `StockHeader`.
-- [ ] Keep `StockHeader` and `StockDetailSections` presentational. They can receive derived query state; they must not import query hooks.
-- [ ] Keep `ChartStory` lazy viewport state, chart mode, and `TradingPriceChart` dynamic import as local UI state.
-- [ ] Replace browser-cache and time-chip freshness props with product-state labels before wiring the header.
-- [ ] Verify partial quote-only data can render `PartialStockFeed` without waiting for score query success.
-- [ ] Validation: `npm test -- tests/stockDashboardHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts` and Playwright/browser smoke for `/?ticker=KR:004020`.
+- [x] Replace the score `useEffect` with `useQuery(scoreQueryOptions(ticker, "detail"))`.
+- [x] Replace the quote `useEffect` with `useQuery(quoteQueryOptions(ticker))`.
+- [x] Replace `latestScoreRef/latestQuoteRef` stitching with a pure selector that combines query data: `scoreDataWithQuote(scoreData, quoteData)`.
+- [x] Replace `scoreBackgroundPending` with query-derived pending data from score query result.
+- [x] Replace `FIRST_USEFUL_DATA_DEADLINE_MS` with deterministic placeholder data from ticker identity and `placeholderData`.
+- [x] Replace `reloadVersion` with `queryClient.invalidateQueries` or `refetch` from the relevant query.
+- [x] Replace judgment `useEffect` with `useQuery(judgmentQueryOptions(scoreData))`.
+- [x] Replace manual quote refresh with `useMutation(refreshQuote)` and on success update `stockQueryKeys.quote(ticker)`; related score/compare invalidation remains in Phase 9 to avoid extra detail-path refetches.
+- [x] Preserve search input display rule: once real/partial data has a stock name, search box shows the stock name, not a forced ticker.
+- [x] Create a dashboard view-model selector that returns `data`, `quote`, `pending`, `error`, `isSkeletonVisible`, `headerRefreshState`, and `judgment` without exposing raw query internals to `StockHeader`.
+- [x] Keep `StockHeader` and `StockDetailSections` presentational. They can receive derived query state; they must not import query hooks.
+- [x] Keep `ChartStory` lazy viewport state, chart mode, and `TradingPriceChart` dynamic import as local UI state.
+- [x] Replace browser-cache and time-chip freshness props with product-state labels before wiring the header.
+- [x] Verify partial quote-only data can render `PartialStockFeed` without waiting for score query success.
+- [x] Validation: `npm test -- tests/stockDashboardHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts` and Playwright/browser smoke for `/?ticker=KR:004020`.
 
 ## Phase 5: Migrate Technical Analysis Page
 

@@ -27,16 +27,24 @@ test("presentational stock components do not own stock API fetches or query hook
   }
 });
 
-test("phase 0 records the legacy client pipeline owners before migration", () => {
+test("detail dashboard uses the TanStack query pipeline instead of legacy fetch state", () => {
   const dashboard = componentSource("StockDashboard.tsx");
+
+  assert.doesNotMatch(dashboard, /fetch\s*\(\s*`\/api\/score\?/, "detail dashboard must not fetch score directly");
+  assert.doesNotMatch(dashboard, /fetch\s*\(\s*`\/api\/quote\?/, "detail dashboard must not fetch quote directly");
+  assert.doesNotMatch(dashboard, /fetch\s*\(\s*["']\/api\/judgment["']/, "detail dashboard must not post judgment directly");
+  assert.doesNotMatch(
+    dashboard,
+    /latestScoreRef|latestQuoteRef|reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|readDashboardClientCache|rememberDashboardClientCache|usePendingRetry/,
+    "detail dashboard must not keep legacy cache/retry/ref state",
+  );
+  assert.match(dashboard, /useStockDashboardQueries/, "detail dashboard should delegate server state to the query adapter");
+});
+
+test("remaining phase 4 legacy client pipeline owners are recorded before migration", () => {
   const compare = componentSource("StockCompare.tsx");
   const technical = componentSource("TechnicalAnalysisPage.tsx");
   const autocomplete = componentSource("SymbolAutocomplete.tsx");
-
-  assert.match(dashboard, /fetch\s*\(\s*`\/api\/score\?/);
-  assert.match(dashboard, /fetch\s*\(\s*`\/api\/quote\?/);
-  assert.match(dashboard, /fetch\s*\(\s*["']\/api\/judgment["']/);
-  assert.match(dashboard, /latestScoreRef|latestQuoteRef|reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS/);
 
   assert.match(compare, /fetch\s*\(\s*`\/api\/score\/batch\?/);
   assert.match(compare, /reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|usePendingRetry/);
