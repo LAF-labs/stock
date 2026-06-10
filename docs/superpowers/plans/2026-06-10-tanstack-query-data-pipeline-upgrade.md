@@ -426,16 +426,16 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Quote refresh mutation writes successful quote payload into `stockQueryKeys.quote(ticker)`.
-- [ ] Quote refresh pending result updates quote query data to pending without destroying last ready data.
-- [ ] Quote refresh cooldown is mutation state plus payload metadata, not a separate long-lived local state machine.
-- [ ] Score/technical/compare pending polling invalidates or refetches only the affected query key.
-- [ ] When dashboard gets fresh quote, compare and technical pages reuse it through the same query key.
-- [ ] When a score query returns ready data, seed related quote query data only through a typed helper and only when ticker identity matches.
-- [ ] When quote refresh returns cooldown, preserve previous quote query data and expose cooldown only through mutation/view model state.
-- [ ] When compare query gets partial data for a ticker, do not overwrite a ready score query for the same ticker with partial score data.
-- [ ] When technical query gets ready data with `chart_series`, do not invalidate detail score unless the server marks score freshness as changed.
-- [ ] Validation: focused tests plus manual navigation between detail, technical, compare for the same ticker without duplicate quote calls when cache is fresh.
+- [x] Quote refresh mutation writes successful quote payload into `stockQueryKeys.quote(ticker)`.
+- [x] Quote refresh pending result updates quote query data to pending without destroying last ready data.
+- [x] Quote refresh cooldown is mutation state plus payload metadata, not a separate long-lived local state machine.
+- [x] Score/technical/compare pending polling invalidates or refetches only the affected query key.
+- [x] When dashboard gets fresh quote, compare and technical pages reuse it through the same query key.
+- [x] When a score query returns ready data, seed related quote query data only through a typed helper and only when ticker identity matches.
+- [x] When quote refresh returns cooldown, preserve previous quote query data and expose cooldown only through mutation/view model state.
+- [x] When compare query gets partial data for a ticker, do not overwrite a ready score query for the same ticker with partial score data.
+- [x] When technical query gets ready data with `chart_series`, do not invalidate detail score unless the server marks score freshness as changed.
+- [x] Validation: focused tests plus manual navigation between detail, technical, compare for the same ticker without duplicate quote calls when cache is fresh.
 
 ## Phase 10: SSR Prefetch And Hydration Decision
 

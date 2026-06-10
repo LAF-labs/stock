@@ -3,17 +3,21 @@ import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "@/components/QueryProvider";
 import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
 import { fetchCompareScores, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
+import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
 import type {
   ApiPartial,
   ApiPending,
   CompareQueryResult,
   JudgmentQueryResult,
   QuoteQueryResult,
+  QuoteRefreshMutationResult,
   ScoreQueryResult,
   StockScoreView,
   SymbolSearchQueryResult,
   TechnicalScoreQueryResult,
 } from "@/lib/stockQueryTypes";
+import type { ClientApiPayload } from "@/lib/clientApi";
+import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export const STOCK_QUERY_MAX_PENDING_POLLS = 24;
 export const STOCK_QUERY_PENDING_BACKOFF_SECONDS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 60] as const;
@@ -155,6 +159,122 @@ export function stockQueryRefetchOnMount(
   return "always";
 }
 
+export function quoteDataFromQueryResult(result: QuoteQueryResult | undefined): StockQuoteResponse | undefined {
+  if (result?.state === "ready" || result?.state === "partial") return result.data;
+  return undefined;
+}
+
+export function quoteQueryDataFromRefreshResult(
+  result: QuoteRefreshMutationResult,
+  previous: QuoteQueryResult | undefined,
+): QuoteQueryResult | undefined {
+  if (result.state === "ready") return result;
+  if (result.state === "cooldown") return previous;
+  return quoteQueryDataWithPending(result, previous);
+}
+
+export function quoteQueryDataFromScore(
+  score: StockScoreResponse,
+  ticker: string,
+  previous?: QuoteQueryResult,
+): QuoteQueryResult | undefined {
+  const seeded = quoteQueryResultFromScore(score, ticker);
+  if (!seeded) return previous;
+  if (!previous) return seeded;
+  if (previous.state === "ready" || previous.state === "partial") return previous;
+  return quoteQueryDataWithPending(previous, seeded);
+}
+
+export function quoteQueryResultFromScore(score: StockScoreResponse, ticker: string): QuoteQueryResult | undefined {
+  const requestedTicker = normalizedTicker(score.requested_ticker) || normalizedTicker(ticker);
+  if (!requestedTicker || requestedTicker !== normalizedTicker(ticker) || !scoreMatchesTicker(score, requestedTicker)) return undefined;
+  if (!scoreHasQuoteFields(score)) return undefined;
+
+  const quote: StockQuoteResponse = {
+    type: "quote",
+    requested_ticker: requestedTicker,
+    market: score.market || marketFromTicker(requestedTicker),
+    symbol: stringFromUnknown(score.symbol) || symbolFromTicker(requestedTicker),
+    name: stringFromUnknown(score.name) || stringFromUnknown(score.display_name) || stringFromUnknown(score.korean_name) || stringFromUnknown(score.english_name),
+    exchange: stringFromUnknown(score.exchange),
+    currency: stringFromUnknown(score.currency),
+    usd_krw_rate: numberFromUnknown(score.usd_krw_rate),
+    usd_krw_label: stringFromUnknown(score.usd_krw_label),
+    latest_price: numberFromUnknown(score.latest_price),
+    latest_price_label: stringFromUnknown(score.latest_price_label),
+    latest_bar_date: stringFromUnknown(score.latest_bar_date),
+    price_metrics: score.price_metrics,
+    server_cache: score.server_cache,
+  };
+
+  const payload = compactQuotePayload(quote);
+  return {
+    state: "ready",
+    status: 200,
+    payload,
+    data: payload,
+  };
+}
+
 function isPollablePending(pending: ApiPending | undefined): boolean {
   return Boolean(pending && (pending.queued || pending.retryAfterSeconds !== undefined));
+}
+
+function quoteQueryDataWithPending(pending: ApiPending, previous: QuoteQueryResult | undefined): QuoteQueryResult {
+  if (previous?.state === "ready" || previous?.state === "partial") {
+    return {
+      state: "partial",
+      status: pending.status,
+      payload: pending.payload,
+      data: previous.data,
+      pending,
+    };
+  }
+  return pending;
+}
+
+function scoreMatchesTicker(score: StockScoreResponse, ticker: string): boolean {
+  const requestedTicker = normalizedTicker(score.requested_ticker);
+  if (requestedTicker) return requestedTicker === ticker;
+  const market = score.market;
+  const symbol = stringFromUnknown(score.symbol);
+  return Boolean(market && symbol && `${market}:${cleanTickerSymbol(symbol)}` === ticker);
+}
+
+function scoreHasQuoteFields(score: StockScoreResponse): boolean {
+  return (
+    numberFromUnknown(score.latest_price) !== undefined ||
+    stringFromUnknown(score.latest_price_label) !== undefined ||
+    stringFromUnknown(score.latest_bar_date) !== undefined ||
+    score.price_metrics !== undefined
+  );
+}
+
+function normalizedTicker(value: unknown): string | undefined {
+  const raw = stringFromUnknown(value);
+  if (!raw) return undefined;
+  const resolved = resolveTickerAlias(raw);
+  return resolved.ok ? resolved.ticker : raw.trim().toUpperCase();
+}
+
+function marketFromTicker(ticker: string): StockQuoteResponse["market"] | undefined {
+  if (ticker.startsWith("KR:")) return "KR";
+  if (ticker.startsWith("US:")) return "US";
+  return undefined;
+}
+
+function symbolFromTicker(ticker: string): string {
+  return cleanTickerSymbol(ticker.split(":")[1] || ticker);
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function compactQuotePayload(quote: StockQuoteResponse): StockQuoteResponse & ClientApiPayload {
+  return Object.fromEntries(Object.entries(quote).filter(([, value]) => value !== undefined)) as StockQuoteResponse & ClientApiPayload;
 }

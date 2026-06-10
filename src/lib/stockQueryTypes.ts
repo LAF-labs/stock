@@ -58,7 +58,7 @@ export type ApiError = {
 
 export type ScoreQueryResult = ApiReady<StockScoreResponse> | ApiPartial<StockScoreResponse> | ApiPending | ApiUnsupported;
 export type TechnicalScoreQueryResult = ScoreQueryResult;
-export type QuoteQueryResult = ApiReady<StockQuoteResponse> | ApiPending;
+export type QuoteQueryResult = ApiReady<StockQuoteResponse> | ApiPartial<StockQuoteResponse> | ApiPending;
 export type QuoteRefreshMutationResult = ApiReady<StockQuoteResponse> | ApiPending | ApiCooldown<StockQuoteResponse>;
 
 export type CompareScoreItemResult =

@@ -15,7 +15,14 @@ import {
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
 import { refreshQuote as refreshQuoteRequest } from "@/lib/stockQueryFns";
-import { judgmentQueryOptions, quoteQueryOptions, scoreQueryOptions } from "@/lib/stockQueryOptions";
+import {
+  judgmentQueryOptions,
+  quoteDataFromQueryResult,
+  quoteQueryDataFromRefreshResult,
+  quoteQueryDataFromScore,
+  quoteQueryOptions,
+  scoreQueryOptions,
+} from "@/lib/stockQueryOptions";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "@/lib/stockQueryTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
@@ -55,7 +62,7 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     enabled,
   });
 
-  const quoteData = quoteQuery.data?.state === "ready" ? quoteQuery.data.data : undefined;
+  const quoteData = quoteDataFromQueryResult(quoteQuery.data);
   const rawScoreData = scoreQuery.data?.state === "ready" ? scoreQuery.data.data : undefined;
   const judgmentPayload = useMemo(() => (rawScoreData ? stockJudgmentRequestPayload(rawScoreData) : undefined), [rawScoreData]);
   const judgmentInputHash = useMemo(() => (judgmentPayload ? stablePayloadHash(judgmentPayload) : ""), [judgmentPayload]);
@@ -72,25 +79,7 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
   const quoteRefreshMutation = useMutation({
     mutationFn: (requestedTicker: string) => refreshQuoteRequest(requestedTicker),
     onSuccess: (result, requestedTicker) => {
-      if (result.state === "ready") {
-        queryClient.setQueryData(stockQueryKeys.quote(requestedTicker), result);
-        return;
-      }
-
-      if (result.state === "cooldown" && result.data) {
-        const quoteResult: QuoteQueryResult = {
-          state: "ready",
-          status: result.status,
-          payload: result.payload,
-          data: result.data,
-        };
-        queryClient.setQueryData(stockQueryKeys.quote(requestedTicker), quoteResult);
-        return;
-      }
-
-      if (result.state === "pending") {
-        queryClient.setQueryData(stockQueryKeys.quote(requestedTicker), result);
-      }
+      queryClient.setQueryData(stockQueryKeys.quote(requestedTicker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromRefreshResult(result, previous));
     },
   });
 
@@ -124,7 +113,17 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
   const data = ticker && state.status === "success" ? state.data : undefined;
   const partialData = ticker && state.status === "partial" ? scoreDataWithQuote(state.data, quoteData) : undefined;
   const scorePending = ticker && (state.status === "pending" || state.status === "partial") ? state.pending : undefined;
-  const quotePending = ticker && quoteQuery.data?.state === "pending" ? pendingFromApiPending(quoteQuery.data, ticker) : undefined;
+  const quotePending =
+    ticker && quoteQuery.data?.state === "pending"
+      ? pendingFromApiPending(quoteQuery.data, ticker)
+      : ticker && quoteQuery.data?.state === "partial"
+        ? pendingFromApiPending(quoteQuery.data.pending, ticker)
+        : undefined;
+
+  useEffect(() => {
+    if (!ticker || !rawScoreData) return;
+    queryClient.setQueryData(stockQueryKeys.quote(ticker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromScore(rawScoreData, ticker, previous));
+  }, [queryClient, rawScoreData, ticker]);
 
   const retryLoad = useCallback(() => {
     if (!ticker) return;
@@ -223,6 +222,14 @@ function dashboardStateFromQuery({
 function quoteStateFromQuery(ticker: string | undefined, result: QuoteQueryResult | undefined, error: unknown, isLoading: boolean): QuoteState {
   if (!ticker) return { status: "idle" };
   if (result?.state === "ready") return { status: "success", data: result.data };
+  if (result?.state === "partial") {
+    return {
+      status: "pending",
+      pending: {
+        message: pendingFromApiPending(result.pending, ticker)?.message || "현재가를 다시 확인하고 있어요.",
+      },
+    };
+  }
   if (result?.state === "pending") {
     return {
       status: "pending",

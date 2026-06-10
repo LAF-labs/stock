@@ -64,7 +64,16 @@ export async function refreshQuote(ticker: string, signal?: AbortSignal): Promis
   const query = new URLSearchParams({ ticker, refresh: "1" });
   const { payload, response } = await apiJson(`/api/quote?${query.toString()}`, noStoreInit(signal));
   if (isRefreshCooldownPayload(payload)) return cooldownResult(payload, response.status);
-  return classifyQuotePayload(payload, response.status);
+  const result = classifyQuotePayload(payload, response.status);
+  if (result.state !== "partial") return result;
+  return result.pending || {
+    state: "pending",
+    status: result.status,
+    payload: result.payload,
+    error: "snapshot_pending",
+    message: "현재가를 준비하고 있어요.",
+    queued: false,
+  };
 }
 
 export async function fetchCompareScores(tickers: readonly string[], signal?: AbortSignal): Promise<CompareQueryResult> {

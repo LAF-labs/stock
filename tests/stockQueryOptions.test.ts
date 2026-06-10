@@ -7,6 +7,8 @@ import {
   compareQueryOptions,
   judgmentQueryOptions,
   quoteQueryOptions,
+  quoteQueryDataFromRefreshResult,
+  quoteQueryDataFromScore,
   scoreQueryOptions,
   shouldEnableSymbolSearch,
   stockPendingRetryDelayMs,
@@ -17,7 +19,7 @@ import {
   symbolSearchQueryOptions,
   technicalScoreQueryOptions,
 } from "../src/lib/stockQueryOptions";
-import type { CompareQueryResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
+import type { CompareQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
 
 test("stock query option factories use canonical keys and cache windows", () => {
   const score = scoreQueryOptions("KR:004020", "detail");
@@ -103,6 +105,74 @@ test("non-ready persisted stock data refetches on mount instead of freezing plac
   assert.equal(stockQueryRefetchOnMount(identityOnlyPartial), "always");
   assert.equal(stockQueryRefetchOnMount({ state: "pending", status: 202, payload: { error: "snapshot_pending" }, error: "snapshot_pending", message: "pending", queued: false }), "always");
   assert.equal(stockQueryRefetchOnMount({ state: "ready", status: 200, payload: {}, data: { requested_ticker: "KR:004020" } }), false);
+});
+
+test("quote refresh pending keeps the previous ready quote visible in query data", () => {
+  const previous: QuoteQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: { requested_ticker: "KR:004020", latest_price: 28_550 },
+    data: { type: "quote", requested_ticker: "KR:004020", market: "KR", symbol: "004020", name: "현대제철", latest_price: 28_550 },
+  };
+  const pending: QuoteRefreshMutationResult = {
+    state: "pending",
+    status: 202,
+    payload: { error: "snapshot_pending", ticker: "KR:004020", refresh_request: { queued: true } },
+    error: "snapshot_pending",
+    message: "pending",
+    ticker: "KR:004020",
+    queued: true,
+  };
+
+  const next = quoteQueryDataFromRefreshResult(pending, previous);
+
+  assert.equal(next?.state, "partial");
+  assert.equal(next?.data.latest_price, 28_550);
+  assert.equal(next?.pending?.queued, true);
+});
+
+test("quote refresh cooldown does not replace shared quote query data", () => {
+  const previous: QuoteQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: { requested_ticker: "US:KO", latest_price: 61 },
+    data: { type: "quote", requested_ticker: "US:KO", market: "US", symbol: "KO", name: "Coca-Cola", latest_price: 61 },
+  };
+  const cooldown: QuoteRefreshMutationResult = {
+    state: "cooldown",
+    status: 429,
+    payload: { refresh_cooldown: { next_allowed_at: "2026-06-10T07:00:00.000Z" } },
+    data: { type: "quote", requested_ticker: "US:KO", market: "US", symbol: "KO", latest_price: 62 },
+    message: "cooldown",
+    nextAllowedAt: "2026-06-10T07:00:00.000Z",
+  };
+
+  assert.equal(quoteQueryDataFromRefreshResult(cooldown, previous), previous);
+});
+
+test("ready score data seeds quote query data only for the matching ticker", () => {
+  const seeded = quoteQueryDataFromScore(
+    {
+      requested_ticker: "KR:004020",
+      market: "KR",
+      symbol: "004020",
+      name: "현대제철",
+      currency: "KRW",
+      latest_price: 28_550,
+      latest_price_label: "28,550원",
+      latest_bar_date: "2026-06-10",
+      server_cache: { state: "fresh" },
+    },
+    "KR:004020",
+  );
+
+  assert.equal(seeded?.state, "ready");
+  assert.equal(seeded?.data.name, "현대제철");
+  assert.equal(seeded?.data.latest_price, 28_550);
+  assert.equal(
+    quoteQueryDataFromScore({ requested_ticker: "KR:004020", market: "KR", symbol: "004020", latest_price: 28_550 }, "US:KO"),
+    undefined,
+  );
 });
 
 test("partial and compare polling only continue when nested pending work is queued", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTechnicalAnalysisPayload, safeInternalRedirectPath } from "@/components/technicalAnalysisHelpers";
 import {
   partialStockDataFromPayload,
@@ -11,8 +11,9 @@ import {
   snapshotPendingFromPayload,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
-import { quoteQueryOptions, technicalScoreQueryOptions } from "@/lib/stockQueryOptions";
-import type { ApiPending, TechnicalScoreQueryResult } from "@/lib/stockQueryTypes";
+import { quoteDataFromQueryResult, quoteQueryDataFromScore, quoteQueryOptions, technicalScoreQueryOptions } from "@/lib/stockQueryOptions";
+import { stockQueryKeys } from "@/lib/stockQueryKeys";
+import type { ApiPending, QuoteQueryResult, TechnicalScoreQueryResult } from "@/lib/stockQueryTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export type TechnicalLoadState =
@@ -29,18 +30,25 @@ export type TechnicalAnalysisQueryView = {
 };
 
 export function useTechnicalAnalysisQueries(ticker: string, detailHref: string): TechnicalAnalysisQueryView {
+  const queryClient = useQueryClient();
   const scoreQuery = useQuery({
     ...technicalScoreQueryOptions(ticker),
     placeholderData: technicalPlaceholder(ticker),
   });
   const quoteQuery = useQuery(quoteQueryOptions(ticker));
-  const quote = quoteQuery.data?.state === "ready" ? quoteQuery.data.data : undefined;
+  const quote = quoteDataFromQueryResult(quoteQuery.data);
 
   useEffect(() => {
     const result = scoreQuery.data;
     if (result?.state !== "unsupported") return;
     window.location.assign(safeInternalRedirectPath(result.redirectTo, detailHref));
   }, [detailHref, scoreQuery.data]);
+
+  useEffect(() => {
+    const result = scoreQuery.data;
+    if (result?.state !== "ready") return;
+    queryClient.setQueryData(stockQueryKeys.quote(ticker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromScore(result.data, ticker, previous));
+  }, [queryClient, scoreQuery.data, ticker]);
 
   const retryTechnical = useCallback(() => {
     void scoreQuery.refetch();
