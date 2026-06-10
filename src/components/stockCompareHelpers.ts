@@ -78,10 +78,6 @@ export function parseTickers(raw: string | null): string[] {
   return unique.slice(0, MAX_COMPARE);
 }
 
-export function shouldPreserveCompareViewDuringRetry(status: string, isRetryForSameTickers: boolean): boolean {
-  return isRetryForSameTickers && (status === "success" || status === "partial" || status === "pending");
-}
-
 export function removeCompareTicker(tickers: string[], ticker: string): string[] {
   return tickers.filter((item, index) => index === 0 || item !== ticker);
 }

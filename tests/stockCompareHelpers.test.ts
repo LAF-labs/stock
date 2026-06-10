@@ -15,7 +15,6 @@ import {
   pendingMessage,
   removeCompareTicker,
   semanticMetricRows,
-  shouldPreserveCompareViewDuringRetry,
   toCompareItem,
 } from "../src/components/stockCompareHelpers";
 import type { StockScoreResponse } from "../src/lib/types";
@@ -175,15 +174,6 @@ test("compare helpers treat identity-only partial snapshots as progress", () => 
   assert.equal(isPartialCompareResult(result), true);
   assert.equal(comparePartialData(result, "US:ZVRA")?.symbol, "ZVRA");
   assert.equal(comparePartialData(result, "US:ZVRA")?.name, "지브러 테라퓨틱스");
-});
-
-test("compare keeps visible progress during automatic pending retries", () => {
-  assert.equal(shouldPreserveCompareViewDuringRetry("success", true), true);
-  assert.equal(shouldPreserveCompareViewDuringRetry("partial", true), true);
-  assert.equal(shouldPreserveCompareViewDuringRetry("pending", true), true);
-  assert.equal(shouldPreserveCompareViewDuringRetry("loading", true), false);
-  assert.equal(shouldPreserveCompareViewDuringRetry("error", true), false);
-  assert.equal(shouldPreserveCompareViewDuringRetry("success", false), false);
 });
 
 test("compare price tone keeps missing and flat moves neutral", () => {

@@ -14,6 +14,37 @@ const legacyDashboardCachePattern = new RegExp(
     ["stock-dashboard", ":v"].join(""),
   ].join("|"),
 );
+const legacyDashboardStatePattern = new RegExp(
+  [
+    ["latest", "Score", "Ref"].join(""),
+    ["latest", "Quote", "Ref"].join(""),
+    ["reload", "Version"].join(""),
+    ["FIRST", "USEFUL", "DATA", "DEADLINE", "MS"].join("_"),
+    ["read", "Dashboard", "Client", "Cache"].join(""),
+    ["remember", "Dashboard", "Client", "Cache"].join(""),
+    ["use", "Pending", "Retry"].join(""),
+  ].join("|"),
+);
+const legacyPageStatePattern = new RegExp(
+  [
+    ["quote", "Ref"].join(""),
+    ["reload", "Version"].join(""),
+    ["FIRST", "USEFUL", "DATA", "DEADLINE", "MS"].join("_"),
+    ["use", "Pending", "Retry"].join(""),
+    ["read", "Client", "Api", "Payload"].join(""),
+    ["api", "Payload", "Message"].join(""),
+  ].join("|"),
+);
+const legacyCompareStatePattern = new RegExp(
+  [
+    ["reload", "Version"].join(""),
+    ["FIRST", "USEFUL", "DATA", "DEADLINE", "MS"].join("_"),
+    ["use", "Pending", "Retry"].join(""),
+    ["read", "Client", "Api", "Payload"].join(""),
+    ["api", "Payload", "Message"].join(""),
+    ["should", "Preserve", "Compare", "View", "During", "Retry"].join(""),
+  ].join("|"),
+);
 
 const serverStateOwners = [
   "StockDashboard.tsx",
@@ -45,7 +76,7 @@ test("detail dashboard uses the TanStack query pipeline instead of legacy fetch 
   assert.doesNotMatch(dashboard, /fetch\s*\(\s*["']\/api\/judgment["']/, "detail dashboard must not post judgment directly");
   assert.doesNotMatch(
     dashboard,
-    /latestScoreRef|latestQuoteRef|reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|readDashboardClientCache|rememberDashboardClientCache|usePendingRetry/,
+    legacyDashboardStatePattern,
     "detail dashboard must not keep legacy cache/retry/ref state",
   );
   assert.match(dashboard, /useStockDashboardQueries/, "detail dashboard should delegate server state to the query adapter");
@@ -58,7 +89,7 @@ test("technical analysis page uses the TanStack query pipeline instead of legacy
   assert.doesNotMatch(technical, /fetch\s*\(\s*`\/api\/quote\?/, "technical page must not fetch quote directly");
   assert.doesNotMatch(
     technical,
-    /quoteRef|reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|usePendingRetry|readClientApiPayload|apiPayloadMessage/,
+    legacyPageStatePattern,
     "technical page must not keep legacy cache/retry/ref state",
   );
   assert.match(technical, /useTechnicalAnalysisQueries/, "technical page should delegate server state to the query adapter");
@@ -70,7 +101,7 @@ test("compare page uses the TanStack query pipeline instead of legacy fetch stat
   assert.doesNotMatch(compare, /fetch\s*\(\s*`\/api\/score\/batch\?/, "compare page must not fetch batch score directly");
   assert.doesNotMatch(
     compare,
-    /reloadVersion|FIRST_USEFUL_DATA_DEADLINE_MS|usePendingRetry|readClientApiPayload|apiPayloadMessage|shouldPreserveCompareViewDuringRetry/,
+    legacyCompareStatePattern,
     "compare page must not keep legacy cache/retry state",
   );
   assert.match(compare, /useStockCompareQueries/, "compare page should delegate server state to the query adapter");

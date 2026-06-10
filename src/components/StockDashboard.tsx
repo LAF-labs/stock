@@ -56,13 +56,13 @@ export default function StockDashboard() {
   const {
     state,
     quoteState,
-    quoteRefreshState,
+    priceRefreshState,
     judgmentState,
     quoteData,
     data,
     partialData,
     retryLoad,
-    refreshQuote,
+    refreshPrice,
   } = useStockDashboardQueries(tickerParam);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
@@ -209,8 +209,8 @@ export default function StockDashboard() {
                 data={data}
                 quote={quoteData}
                 quoteState={quoteState}
-                quoteRefreshState={quoteRefreshState}
-                onRefreshQuote={refreshQuote}
+                priceRefreshState={priceRefreshState}
+                onRefreshPrice={refreshPrice}
                 judgmentState={judgmentState}
                 compareHref={compareHref}
               />

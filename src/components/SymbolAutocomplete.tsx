@@ -136,6 +136,7 @@ export default function SymbolAutocomplete({
   }
 
   function focusInput() {
+    // Focus after the collapsed search UI has expanded; this is not a fetch or retry timer.
     window.setTimeout(() => inputRef.current?.focus(), 120);
   }
 

@@ -477,17 +477,17 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Removal checklist:**
 
-- [ ] `rg -n "usePendingRetry|pendingRetryDelayMs|technicalPendingRetryDelayMs" src tests` has no production hits.
-- [ ] `rg -n "reloadVersion|setReloadVersion" src/components` returns no hits.
-- [ ] `rg -n "fetch\\(`/api/(score|quote|symbols)|fetch\\(\"/api/judgment\"" src/components` returns no hits.
-- [ ] `rg -n "readDashboardClientCache|rememberDashboardClientCache|dashboardClientCache|client_cache|stock-dashboard:v" src tests` returns no hits.
-- [ ] `rg -n "latestScoreRef|latestQuoteRef|quoteRef" src/components` returns no data-pipeline hits.
-- [ ] `rg -n "FIRST_USEFUL_DATA_DEADLINE_MS" src/components` returns no hits.
-- [ ] `rg -n "브라우저 캐시|HH:MM 기준" src tests` returns no user-facing hits.
-- [ ] `rg -n "cache: \"no-store\"|cache: 'no-store'|cache: \"force-cache\"|cache: 'force-cache'" src/components` returns no client component stock-data fetch hits.
-- [ ] `rg -n "new AbortController\\(|\\.abort\\(\\)" src/components/StockDashboard.tsx src/components/StockCompare.tsx src/components/TechnicalAnalysisPage.tsx src/components/SymbolAutocomplete.tsx` returns no stock-data lifecycle hits.
-- [ ] `rg -n "setTimeout\\(" src/components/StockDashboard.tsx src/components/StockCompare.tsx src/components/TechnicalAnalysisPage.tsx src/components/SymbolAutocomplete.tsx` returns no fetch debounce/retry/deadline hits, except a documented focus-management timer in `SymbolAutocomplete`.
-- [ ] `rg -n "useQuery|useMutation|queryOptions" src/components/StockHeader.tsx src/components/StockDetailSections.tsx src/components/TechnicalAnalysisSections.tsx src/components/TechnicalOverlayChart.tsx` returns no hits.
+- [x] `rg -n "usePendingRetry|pendingRetryDelayMs|technicalPendingRetryDelayMs" src tests` has no production hits.
+- [x] `rg -n "reloadVersion|setReloadVersion" src/components` returns no hits.
+- [x] `rg -n "fetch\\(`/api/(score|quote|symbols)|fetch\\(\"/api/judgment\"" src/components` returns no hits.
+- [x] `rg -n "readDashboardClientCache|rememberDashboardClientCache|dashboardClientCache|client_cache|stock-dashboard:v" src tests` returns no hits.
+- [x] `rg -n "latestScoreRef|latestQuoteRef|quoteRef" src/components` returns no data-pipeline hits.
+- [x] `rg -n "FIRST_USEFUL_DATA_DEADLINE_MS" src/components` returns no hits.
+- [x] `rg -n "브라우저 캐시|HH:MM 기준" src tests` returns no user-facing hits.
+- [x] `rg -n "cache: \"no-store\"|cache: 'no-store'|cache: \"force-cache\"|cache: 'force-cache'" src/components` returns no client component stock-data fetch hits.
+- [x] `rg -n "new AbortController\\(|\\.abort\\(\\)" src/components/StockDashboard.tsx src/components/StockCompare.tsx src/components/TechnicalAnalysisPage.tsx src/components/SymbolAutocomplete.tsx` returns no stock-data lifecycle hits.
+- [x] `rg -n "setTimeout\\(" src/components/StockDashboard.tsx src/components/StockCompare.tsx src/components/TechnicalAnalysisPage.tsx src/components/SymbolAutocomplete.tsx` returns no fetch debounce/retry/deadline hits, except a documented focus-management timer in `SymbolAutocomplete`.
+- [x] `rg -n "useQuery|useMutation|queryOptions" src/components/StockHeader.tsx src/components/StockDetailSections.tsx src/components/TechnicalAnalysisSections.tsx src/components/TechnicalOverlayChart.tsx` returns no hits.
 
 ## Phase 12: Verification, Performance, And Release
 

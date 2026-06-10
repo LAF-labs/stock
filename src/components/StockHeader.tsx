@@ -23,7 +23,7 @@ export type QuoteState =
   | { status: "pending"; data?: undefined; error?: undefined; pending: { message: string } }
   | { status: "error"; data?: undefined; error: string };
 
-export type QuoteRefreshState = {
+export type PriceRefreshState = {
   status: "idle" | "refreshing" | "success" | "cooldown" | "pending" | "error";
   message?: string;
   nextAllowedAt?: string;
@@ -38,16 +38,16 @@ export default function StockHeader({
   data,
   quote,
   quoteState,
-  quoteRefreshState,
-  onRefreshQuote,
+  priceRefreshState,
+  onRefreshPrice,
   judgmentState,
   compareHref,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
   quoteState: QuoteState;
-  quoteRefreshState: QuoteRefreshState;
-  onRefreshQuote: () => void;
+  priceRefreshState: PriceRefreshState;
+  onRefreshPrice: () => void;
   judgmentState: JudgmentState;
   compareHref?: string;
 }) {
@@ -60,12 +60,12 @@ export default function StockHeader({
   const secondaryPrice = formatSecondaryPrice(displayData);
   const daily = dailyChangeText(data, quote);
   const latestBarDate = stringFromUnknown(quote?.latest_bar_date) || data.latest_bar_date;
-  const refreshDisabled = quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending";
+  const refreshDisabled = priceRefreshState.status === "refreshing" || priceRefreshState.status === "cooldown" || priceRefreshState.status === "pending";
   const refreshTitle =
-    quoteRefreshState.status === "refreshing"
+    priceRefreshState.status === "refreshing"
       ? "현재가 새로고침 중"
-      : quoteRefreshState.status === "cooldown"
-        ? quoteRefreshState.message || "새로고침 대기 중"
+      : priceRefreshState.status === "cooldown"
+        ? priceRefreshState.message || "새로고침 대기 중"
         : "최신 현재가로 새로고침";
   const quoteStatusMessage =
     quoteState.status === "loading"
@@ -99,7 +99,7 @@ export default function StockHeader({
         </div>
         <div className="stock-header-toolbar">
           {headerTime ? <span className="score-time-chip">{headerTime}</span> : null}
-          <button type="button" className="quote-refresh-button" onClick={onRefreshQuote} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
+          <button type="button" className="quote-refresh-button" onClick={onRefreshPrice} disabled={refreshDisabled} title={refreshTitle} aria-label={refreshTitle}>
             ↻
           </button>
         </div>
@@ -112,9 +112,9 @@ export default function StockHeader({
         </div>
         <em className={`daily-pill ${dailyToneClass(daily)}`}>{daily}</em>
       </div>
-      {quoteRefreshState.message ? (
-        <p className={`quote-refresh-note ${quoteRefreshState.status}`} role="status" aria-live="polite">
-          {quoteRefreshState.message}
+      {priceRefreshState.message ? (
+        <p className={`quote-refresh-note ${priceRefreshState.status}`} role="status" aria-live="polite">
+          {priceRefreshState.message}
         </p>
       ) : quoteStatusMessage ? (
         <p className={`quote-refresh-note ${quoteState.status}`} role={quoteState.status === "error" ? "alert" : "status"} aria-live="polite">

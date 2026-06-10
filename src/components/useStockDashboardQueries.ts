@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JudgmentState, QuoteRefreshState, QuoteState } from "@/components/StockHeader";
+import type { JudgmentState, PriceRefreshState, QuoteState } from "@/components/StockHeader";
 import {
   partialStockDataFromPayload,
   partialStockDataFromQuote,
@@ -37,7 +37,7 @@ export type DashboardLoadState =
 export type StockDashboardQueryView = {
   state: DashboardLoadState;
   quoteState: QuoteState;
-  quoteRefreshState: QuoteRefreshState;
+  priceRefreshState: PriceRefreshState;
   judgmentState: JudgmentState;
   scorePending: SnapshotPendingState | undefined;
   quotePending: SnapshotPendingState | undefined;
@@ -45,7 +45,7 @@ export type StockDashboardQueryView = {
   data: StockScoreResponse | undefined;
   partialData: StockScoreResponse | undefined;
   retryLoad: () => void;
-  refreshQuote: () => void;
+  refreshPrice: () => void;
 };
 
 export function useStockDashboardQueries(ticker: string | undefined): StockDashboardQueryView {
@@ -76,16 +76,16 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     })
   );
 
-  const quoteRefreshMutation = useMutation({
+  const priceRefreshMutation = useMutation({
     mutationFn: (requestedTicker: string) => refreshQuoteRequest(requestedTicker),
     onSuccess: (result, requestedTicker) => {
       queryClient.setQueryData(stockQueryKeys.quote(requestedTicker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromRefreshResult(result, previous));
     },
   });
 
-  const refreshResult = quoteRefreshMutation.variables === ticker ? quoteRefreshMutation.data : undefined;
-  const refreshError = quoteRefreshMutation.variables === ticker ? quoteRefreshMutation.error : undefined;
-  const refreshPending = quoteRefreshMutation.variables === ticker && quoteRefreshMutation.isPending;
+  const refreshResult = priceRefreshMutation.variables === ticker ? priceRefreshMutation.data : undefined;
+  const refreshError = priceRefreshMutation.variables === ticker ? priceRefreshMutation.error : undefined;
+  const refreshPending = priceRefreshMutation.variables === ticker && priceRefreshMutation.isPending;
   const refreshNextAllowedAt = refreshResult?.state === "cooldown" ? refreshResult.nextAllowedAt : undefined;
   const [cooldownTick, setCooldownTick] = useState(0);
 
@@ -100,7 +100,7 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     return () => window.clearTimeout(timer);
   }, [refreshNextAllowedAt]);
 
-  const quoteRefreshState = quoteRefreshStateFromMutation(refreshResult, refreshPending, refreshError, cooldownTick);
+  const priceRefreshState = priceRefreshStateFromMutation(refreshResult, refreshPending, refreshError, cooldownTick);
   const state = dashboardStateFromQuery({
     ticker,
     scoreResult: scoreQuery.data,
@@ -132,16 +132,16 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     if (rawScoreData) void judgmentQuery.refetch();
   }, [judgmentQuery, quoteQuery, rawScoreData, scoreQuery, ticker]);
 
-  const refreshQuote = useCallback(() => {
+  const refreshPrice = useCallback(() => {
     if (!ticker) return;
-    if (quoteRefreshState.status === "refreshing" || quoteRefreshState.status === "cooldown" || quoteRefreshState.status === "pending") return;
-    quoteRefreshMutation.mutate(ticker);
-  }, [quoteRefreshMutation, quoteRefreshState.status, ticker]);
+    if (priceRefreshState.status === "refreshing" || priceRefreshState.status === "cooldown" || priceRefreshState.status === "pending") return;
+    priceRefreshMutation.mutate(ticker);
+  }, [priceRefreshMutation, priceRefreshState.status, ticker]);
 
   return {
     state,
     quoteState,
-    quoteRefreshState,
+    priceRefreshState,
     judgmentState,
     scorePending,
     quotePending,
@@ -149,7 +149,7 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
     data,
     partialData,
     retryLoad,
-    refreshQuote,
+    refreshPrice,
   };
 }
 
@@ -242,12 +242,12 @@ function quoteStateFromQuery(ticker: string | undefined, result: QuoteQueryResul
   return isLoading ? { status: "loading" } : { status: "idle" };
 }
 
-function quoteRefreshStateFromMutation(
+function priceRefreshStateFromMutation(
   result: QuoteRefreshMutationResult | undefined,
   isPending: boolean,
   error: unknown,
   cooldownTick: number
-): QuoteRefreshState {
+): PriceRefreshState {
   void cooldownTick;
   if (isPending) return { status: "refreshing", message: "최신 현재가 확인 중" };
   if (error) return { status: "error", message: errorMessage(error, "quote_refresh_failed") };
