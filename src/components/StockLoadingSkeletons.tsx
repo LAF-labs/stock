@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import SkeletonBlock from "@/components/SkeletonBlock";
 
 export function SkeletonSectionTitle() {
@@ -39,7 +38,7 @@ export function CompareWaitingCardsSkeleton({ tickers }: { tickers: readonly str
     <section className="compare-section">
       <span className="sr-only">선택한 종목 카드가 구성되고 있습니다.</span>
       <SkeletonSectionTitle />
-      <div className="compare-card-grid" style={{ "--compare-count": tickers.length } as CSSProperties}>
+      <div className="compare-card-grid">
         {tickers.map((ticker) => (
           <article className="compare-stock-card compare-waiting-card" key={ticker}>
             <div className="compare-card-top">

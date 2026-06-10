@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import {
   MAX_COMPARE,
   bestBy,
-  compareItemSummary,
   compareItemTitle,
   comparePartialData,
   comparePriceTone,
@@ -38,11 +37,12 @@ test("compare helpers normalize and cap ticker lists", () => {
   assert.equal(parseTickers("KO,TSLA,NVDA,AAPL,MSFT,GOOGL").length, MAX_COMPARE);
 });
 
-test("compare helpers never remove the base ticker", () => {
+test("compare helpers remove any selected ticker but keep one ticker", () => {
   const tickers = ["US:KO", "US:PEP", "US:MNST"];
 
-  assert.deepEqual(removeCompareTicker(tickers, "US:KO"), tickers);
+  assert.deepEqual(removeCompareTicker(tickers, "US:KO"), ["US:PEP", "US:MNST"]);
   assert.deepEqual(removeCompareTicker(tickers, "US:PEP"), ["US:KO", "US:MNST"]);
+  assert.deepEqual(removeCompareTicker(["US:KO"], "US:KO"), ["US:KO"]);
 });
 
 test("compare helpers build stable compare item fields", () => {
@@ -97,7 +97,6 @@ test("compare display helpers keep internal tickers but write Korean names", () 
 
   assert.equal(item.ticker, "0194M0");
   assert.equal(compareItemTitle(item), "ACE 삼성전자단일종목레버리지");
-  assert.equal(compareItemSummary(item), "ACE 삼성전자단일종목레버리지는 품질 점수 48.1/100점이에요.");
 });
 
 test("compare helpers choose best values and normalize chart series", () => {

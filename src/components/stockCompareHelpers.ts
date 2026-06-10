@@ -81,7 +81,9 @@ export function parseTickers(raw: string | null): string[] {
 }
 
 export function removeCompareTicker(tickers: string[], ticker: string): string[] {
-  return tickers.filter((item, index) => index === 0 || item !== ticker);
+  if (tickers.length <= 1) return tickers;
+  const next = tickers.filter((item) => item !== ticker);
+  return next.length ? next : tickers;
 }
 
 export function numberFromRecord(record: Record<string, JsonValue> | undefined, key: string): number | undefined {
@@ -224,86 +226,6 @@ export function compareItemTitle(item: CompareItem): string {
 export function compareItemSubtitle(item: CompareItem): string | undefined {
   const subtitle = item.identity.secondary;
   return subtitle && subtitle !== compareItemTitle(item) ? subtitle : undefined;
-}
-
-export function compareItemSummary(item: CompareItem): string {
-  const title = compareItemTitle(item);
-  let summary = item.data.summary || displayName(item.data);
-  if (!summary || !/[가-힣]/.test(title)) return summary;
-
-  summary = replaceTickerPrefix(summary, title, [
-    item.ticker,
-    item.identity.secondary,
-    item.data.symbol,
-    item.data.requested_ticker,
-    item.data.requested_ticker ? displayTickerRef(item.data.requested_ticker) : undefined,
-  ]);
-
-  return fixKoreanTopicParticle(summary, title);
-}
-
-function replaceTickerPrefix(summary: string, title: string, candidates: Array<string | undefined>): string {
-  for (const candidate of uniqueCandidates(candidates)) {
-    if (candidate === title) continue;
-    if (summary.startsWith(`${candidate}은`) || summary.startsWith(`${candidate}는`)) {
-      return `${title}${topicParticle(title)}${summary.slice(candidate.length + 1)}`;
-    }
-    if (summary.startsWith(`${candidate}이`) || summary.startsWith(`${candidate}가`)) {
-      return `${title}${subjectParticle(title)}${summary.slice(candidate.length + 1)}`;
-    }
-    if (summary.startsWith(`${candidate}을`) || summary.startsWith(`${candidate}를`)) {
-      return `${title}${objectParticle(title)}${summary.slice(candidate.length + 1)}`;
-    }
-    if (summary.startsWith(`${candidate} `)) {
-      return `${title} ${summary.slice(candidate.length + 1)}`;
-    }
-  }
-  return summary;
-}
-
-function fixKoreanTopicParticle(summary: string, title: string): string {
-  const correctParticle = topicParticle(title);
-  const wrongParticle = correctParticle === "은" ? "는" : "은";
-  if (summary.startsWith(`${title}${wrongParticle}`)) {
-    return `${title}${correctParticle}${summary.slice(title.length + wrongParticle.length)}`;
-  }
-  return summary;
-}
-
-function uniqueCandidates(candidates: Array<string | undefined>): string[] {
-  const seen = new Set<string>();
-  const values: string[] = [];
-  for (const candidate of candidates) {
-    const value = typeof candidate === "string" ? candidate.trim() : "";
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    values.push(value);
-  }
-  return values;
-}
-
-function subjectParticle(value: string): string {
-  const last = Array.from(value.trim()).pop();
-  if (!last) return "가";
-  const code = last.charCodeAt(0);
-  if (code < 0xac00 || code > 0xd7a3) return "가";
-  return (code - 0xac00) % 28 === 0 ? "가" : "이";
-}
-
-function topicParticle(value: string): string {
-  const last = Array.from(value.trim()).pop();
-  if (!last) return "는";
-  const code = last.charCodeAt(0);
-  if (code < 0xac00 || code > 0xd7a3) return "는";
-  return (code - 0xac00) % 28 === 0 ? "는" : "은";
-}
-
-function objectParticle(value: string): string {
-  const last = Array.from(value.trim()).pop();
-  if (!last) return "를";
-  const code = last.charCodeAt(0);
-  if (code < 0xac00 || code > 0xd7a3) return "를";
-  return (code - 0xac00) % 28 === 0 ? "를" : "을";
 }
 
 export function isSnapshotPending(result: BatchScoreResult | undefined): boolean {

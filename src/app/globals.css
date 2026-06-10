@@ -2357,6 +2357,11 @@ a:focus-visible {
   background: var(--surface);
 }
 
+.compare-hero > div:first-child {
+  display: grid;
+  gap: 14px;
+}
+
 .compare-hero span,
 .compare-section > span {
   display: block;
@@ -2367,7 +2372,7 @@ a:focus-visible {
 
 .compare-hero h1,
 .compare-section h2 {
-  margin: 5px 0 0;
+  margin: 0;
   color: var(--text);
   font-weight: 700;
   letter-spacing: 0;
@@ -2381,7 +2386,7 @@ a:focus-visible {
 .compare-hero p,
 .compare-section > p {
   max-width: 640px;
-  margin: 10px 0 0;
+  margin: 0;
   color: var(--subtext);
   font-size: 16px;
   line-height: 1.65;
@@ -2433,12 +2438,6 @@ a:focus-visible {
   color: #fff;
 }
 
-.compare-picks b {
-  color: inherit;
-  opacity: 0.72;
-  font-size: 12px;
-}
-
 .compare-picks button {
   width: 32px;
   height: 32px;
@@ -2449,6 +2448,16 @@ a:focus-visible {
   color: var(--subtext);
   font-size: 17px;
   line-height: 1;
+}
+
+.compare-picks span.base button {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.compare-picks button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .compare-suggestions {
@@ -2514,14 +2523,6 @@ a:focus-visible {
   line-height: 1.25;
 }
 
-.compare-insight-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.compare-insight-grid article,
 .compare-stock-card,
 .compare-metric-row,
 .component-compare-list article {
@@ -2530,14 +2531,8 @@ a:focus-visible {
   background: #fff;
 }
 
-.compare-insight-grid article {
-  padding: 15px;
-}
-
-.compare-insight-grid span,
 .compare-stock-card dt,
-.compare-metric-row header span,
-.compare-metric-values span {
+.compare-metric-row header span {
   display: block;
   color: var(--muted);
   font-size: 12px;
@@ -2546,34 +2541,27 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.compare-insight-grid strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 21px;
-  font-weight: 700;
-}
-
-.compare-insight-grid p {
-  margin: 4px 0 0;
-  color: var(--subtext);
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .compare-card-grid {
-  --compare-count: 2;
   display: grid;
-  grid-template-columns: repeat(var(--compare-count), minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   margin-top: 22px;
 }
 
 .compare-stock-card {
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, 1.15fr) minmax(142px, 0.62fr) minmax(132px, 0.52fr) minmax(220px, 0.95fr);
+  grid-template-areas:
+    "top score opportunity metrics"
+    "top bar opportunity metrics";
+  align-items: center;
+  gap: 10px 18px;
   padding: 18px;
 }
 
 .compare-card-top {
+  grid-area: top;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2590,7 +2578,7 @@ a:focus-visible {
 .compare-card-top strong {
   display: block;
   margin-top: 4px;
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1.08;
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -2617,23 +2605,12 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.compare-stock-card > p {
-  min-height: 44px;
-  margin: 13px 0 0;
-  color: var(--subtext);
-  font-size: 14px;
-  line-height: 1.5;
-  font-weight: 500;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
 .compare-empty-card {
   display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas: none;
   align-items: center;
-  min-height: 312px;
+  min-height: 190px;
   border-style: dashed;
   background: rgba(232, 243, 255, 0.46);
 }
@@ -2668,15 +2645,16 @@ a:focus-visible {
 }
 
 .compare-score-line {
+  grid-area: score;
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-top: 16px;
+  margin: 0;
 }
 
 .compare-score-line strong {
   color: var(--accent);
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1;
   font-weight: 700;
 }
@@ -2687,9 +2665,10 @@ a:focus-visible {
 }
 
 .compare-card-scorebar {
+  grid-area: bar;
   display: block;
   height: 7px;
-  margin-top: 12px;
+  margin-top: 0;
   overflow: hidden;
   border-radius: 999px;
   background: #e5e8eb;
@@ -2707,11 +2686,12 @@ a:focus-visible {
 }
 
 .compare-opportunity-line {
+  grid-area: opportunity;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 0;
   color: var(--subtext);
   font-size: 14px;
   font-weight: 700;
@@ -2724,16 +2704,19 @@ a:focus-visible {
 }
 
 .compare-stock-card dl {
+  grid-area: metrics;
   display: grid;
-  gap: 12px;
-  margin: 18px 0 0;
+  gap: 7px;
+  margin: 0;
 }
 
 .compare-stock-card dl div {
   display: grid;
-  gap: 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .compare-stock-card dd {
@@ -2743,6 +2726,10 @@ a:focus-visible {
   line-height: 1.45;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.compare-pending-card {
+  display: block;
 }
 
 .compare-chart {
@@ -2831,18 +2818,44 @@ a:focus-visible {
   font-weight: 500;
 }
 
-.compare-metric-list {
+.compare-metric-table {
+  --compare-cols: 2;
   display: grid;
-  gap: 10px;
+  gap: 6px;
   margin-top: 16px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.compare-metric-column-head,
+.compare-metric-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) repeat(var(--compare-cols), minmax(96px, 1fr));
+  gap: 6px;
+  min-width: min(100%, calc(150px + var(--compare-cols) * 96px + (var(--compare-cols) + 1) * 6px));
+}
+
+.compare-metric-column-head {
+  align-items: end;
+  padding-inline: 2px;
+}
+
+.compare-metric-column-head span,
+.compare-metric-column-head strong {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.compare-metric-column-head strong {
+  color: var(--text);
 }
 
 .compare-metric-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.28fr) minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px;
-  background: var(--surface-soft);
+  border: 0;
+  background: transparent;
 }
 
 .compare-metric-row header strong,
@@ -2858,37 +2871,32 @@ a:focus-visible {
   line-height: 1.45;
 }
 
-.compare-metric-values {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(98px, 1fr));
-  gap: 8px;
-}
-
-.compare-metric-values div {
+.compare-metric-row header,
+.compare-metric-cell {
   min-width: 0;
-  padding: 12px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
 }
 
-.compare-metric-values div.best {
+.compare-metric-cell.best {
   background: var(--surface-accent);
 }
 
-.compare-metric-values div.negative strong {
+.compare-metric-cell.negative strong {
   color: var(--down);
 }
 
-.compare-metric-values strong {
+.compare-metric-cell strong {
   display: block;
-  margin-top: 5px;
   color: var(--text);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-.compare-metric-values i {
+.compare-metric-cell i {
   display: block;
   height: 5px;
   margin-top: 9px;
@@ -2897,7 +2905,7 @@ a:focus-visible {
   background: #e5e8eb;
 }
 
-.compare-metric-values i em {
+.compare-metric-cell i em {
   display: block;
   height: 100%;
   min-width: 6px;
@@ -2905,11 +2913,11 @@ a:focus-visible {
   background: #8b95a1;
 }
 
-.compare-metric-values div.best i em {
+.compare-metric-cell.best i em {
   background: var(--accent);
 }
 
-.compare-metric-values small,
+.compare-metric-cell small,
 .component-compare-list small {
   display: inline-flex;
   width: max-content;
@@ -3006,7 +3014,8 @@ a:focus-visible {
   }
 
   .compare-side-index {
-    display: block;
+    display: grid;
+    gap: 10px;
     margin: 12px 16px 0;
   }
 
@@ -3307,7 +3316,8 @@ a:focus-visible {
     grid-row: 1 / span 6;
     top: 116px;
     z-index: 4;
-    display: block;
+    display: grid;
+    gap: 10px;
     width: 100%;
     padding: 14px;
     border: 1px solid var(--line);
@@ -3379,9 +3389,8 @@ a:focus-visible {
     width: min(720px, 100%);
   }
 
-  .compare-insight-grid,
   .compare-card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 }
 
@@ -3497,7 +3506,6 @@ a:focus-visible {
   }
 
   .factor-list ul,
-  .compare-insight-grid,
   .compare-card-grid {
     grid-template-columns: 1fr;
   }
@@ -3538,21 +3546,23 @@ a:focus-visible {
     padding-inline: 16px;
   }
 
-  .compare-stock-card > p {
-    min-height: 0;
-  }
-
   .compare-chart svg {
     min-height: 240px;
   }
 
-  .compare-metric-row,
   .component-compare-list article {
     grid-template-columns: 1fr;
   }
 
-  .compare-metric-values {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .compare-stock-card {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "score"
+      "bar"
+      "opportunity"
+      "metrics";
+    align-items: stretch;
   }
 
   .component-compare-list article > div > span {
@@ -3570,8 +3580,10 @@ a:focus-visible {
     width: 210px;
   }
 
-  .compare-metric-values {
-    grid-template-columns: 1fr;
+  .compare-metric-column-head,
+  .compare-metric-row {
+    grid-template-columns: minmax(132px, 0.9fr) repeat(var(--compare-cols), minmax(88px, 1fr));
+    min-width: calc(132px + var(--compare-cols) * 88px + (var(--compare-cols) + 1) * 6px);
   }
 }
 
@@ -3669,7 +3681,6 @@ body {
 }
 
 .pattern-chips article,
-.compare-insight-grid article,
 .compare-stock-card,
 .compare-metric-row,
 .component-compare-list article {
@@ -3683,19 +3694,6 @@ body {
 
 .compare-app .compare-hero h1 {
   color: #123057;
-}
-
-.compare-insight-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.compare-insight-grid article {
-  padding: 18px;
-}
-
-.compare-insight-grid strong {
-  color: var(--coach-blue);
-  font-size: 24px;
 }
 
 .compare-stock-card {
@@ -3717,7 +3715,7 @@ body {
   background: #fff;
 }
 
-.compare-metric-values div.best,
+.compare-metric-cell.best,
 .component-compare-list article > div > span.best {
   background: var(--surface-accent);
 }
@@ -4361,8 +4359,7 @@ body {
     box-shadow: none;
   }
 
-  .stock-detail-app .factor-list,
-  .compare-insight-grid {
+  .stock-detail-app .factor-list {
     grid-template-columns: 1fr;
   }
 

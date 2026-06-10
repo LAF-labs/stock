@@ -13,7 +13,6 @@ import {
   MAX_COMPARE,
   bestBy,
   compareItemSubtitle,
-  compareItemSummary,
   compareItemTitle,
   comparePriceTone,
   componentScore,
@@ -77,6 +76,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   }
 
   function removeTicker(ticker: string) {
+    if (tickers.length <= 1) return;
     const next = removeCompareTicker(tickers, ticker);
     if (next.length !== tickers.length) pushTickers(router, next);
   }
@@ -84,6 +84,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   return (
     <main className="stock-app compare-app">
       <nav className="compare-side-index" aria-label="비교 화면 이동">
+        <a href="/">홈으로 돌아가기</a>
         <a href={detailHref}>{baseTicker ? "상세 분석으로 돌아가기" : "검색으로 돌아가기"}</a>
       </nav>
 
@@ -109,10 +110,18 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
             const partial = partialStates.find((state) => state.ticker === ticker);
             const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
             const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
+            const removeDisabled = tickers.length <= 1;
             return (
               <span key={ticker} className={index === 0 ? "base" : ""}>
                 {label}
-                {index === 0 ? <b>선택됨</b> : <button type="button" onClick={() => removeTicker(ticker)} aria-label={`${label} 삭제`}>×</button>}
+                <button
+                  type="button"
+                  onClick={() => removeTicker(ticker)}
+                  aria-label={`${label} 삭제`}
+                  disabled={removeDisabled}
+                >
+                  ×
+                </button>
               </span>
             );
           }) : <span>비교할 종목을 추가해주세요</span>}
@@ -154,7 +163,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 
       {items.length || partialStates.length || waitingStates.length ? (
         <div className="compare-feed">
-          {items.length ? <CompareBrief items={items} /> : <ComparePendingOverviewSkeleton />}
+          {!items.length ? <ComparePendingOverviewSkeleton /> : null}
           {items.length ? <CompareCards items={items} baseTicker={baseTickerLabel} showEmptyCard={tickers.length < 2} /> : null}
           {partialStates.length ? <ComparePendingCards states={partialStates} /> : null}
           {waitingStates.length ? <CompareWaitingCardsSkeleton tickers={waitingStates.map((state) => state.ticker)} /> : null}
@@ -174,7 +183,7 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
         <span>종목 정보</span>
         <h2>종목 정보</h2>
       </div>
-      <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
+      <div className="compare-card-grid">
         {states.map((state) => {
           const identity = stockHeaderIdentity(state.data);
           return (
@@ -186,7 +195,6 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
                 </div>
                 <em className="price-neutral">{formatPrimaryPrice(state.data) || "종목 확인"}</em>
               </div>
-              <p>{identity.secondary || state.ticker}</p>
               <div className="compare-score-line">
                 <span>현재가</span>
                 <strong>{formatPrimaryPrice(state.data)}</strong>
@@ -200,58 +208,12 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
   );
 }
 
-function CompareBrief({ items }: { items: CompareItem[] }) {
-  const insights = useMemo(() => ({
-    bestScore: bestBy(items, (item) => item.score),
-    bestOpportunity: bestBy(items, (item) => item.opportunityScore),
-    bestMomentum: bestBy(items, (item) => item.return52w ?? item.return6m ?? item.return3m),
-    bestValue: bestBy(items, (item) => componentScore(item, "valuation")),
-    bestProfit: bestBy(items, (item) => componentScore(item, "profitability")),
-    weakestHealth: bestBy(items, (item) => componentScore(item, "health"), "low"),
-  }), [items]);
-  const { bestScore, bestOpportunity, bestMomentum, bestValue, bestProfit, weakestHealth } = insights;
-  const base = items[0];
-
-  return (
-    <section className="compare-section compare-brief">
-      <span>먼저 볼 차이</span>
-      <h2>{items.length === 1 ? "비교 종목을 추가하면 차이를 보여드려요" : "종목별 차이가 나는 부분이에요"}</h2>
-      <p>
-        {items.length === 1
-          ? `${compareItemTitle(base)}의 점수는 ${base.score.toFixed(1)}점이에요. 비교 종목을 붙이면 가격 흐름, 수익성, 재무 안정성이 같은 기준으로 정리돼요.`
-          : `${bestScore ? compareItemTitle(bestScore) : compareItemTitle(base)}가 전체 점수에서 앞서고, ${bestMomentum ? compareItemTitle(bestMomentum) : compareItemTitle(base)}는 최근 흐름이 가장 강해요. 가격 부담은 ${bestValue ? compareItemTitle(bestValue) : compareItemTitle(base)}, 수익성은 ${bestProfit ? compareItemTitle(bestProfit) : compareItemTitle(base)}를 먼저 보면 좋아요.`}
-      </p>
-      {items.length >= 2 ? (
-        <div className="compare-insight-grid">
-          <Insight label="전체 균형" ticker={bestScore ? compareItemTitle(bestScore) : undefined} value={bestScore ? `${bestScore.score.toFixed(1)}점` : "-"} />
-          <Insight label="기회 점수" ticker={bestOpportunity ? compareItemTitle(bestOpportunity) : undefined} value={bestOpportunity?.opportunityScore === undefined ? "-" : `${bestOpportunity.opportunityScore.toFixed(1)}점`} />
-          <Insight label="최근 흐름" ticker={bestMomentum ? compareItemTitle(bestMomentum) : undefined} value={percentText(bestMomentum?.return52w ?? bestMomentum?.return6m)} />
-          <Insight label="가격 부담" ticker={bestValue ? compareItemTitle(bestValue) : undefined} value={bestValue ? `${ratioText(componentScore(bestValue, "valuation"))}점` : "-"} />
-          <Insight label="수익성" ticker={bestProfit ? compareItemTitle(bestProfit) : undefined} value={bestProfit ? `${ratioText(componentScore(bestProfit, "profitability"))}점` : "-"} />
-          <Insight label="먼저 확인" ticker={weakestHealth ? compareItemTitle(weakestHealth) : undefined} value={weakestHealth ? `${ratioText(componentScore(weakestHealth, "health"))}점` : "-"} />
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function Insight({ label, ticker, value }: { label: string; ticker: string | undefined; value: string }) {
-  return (
-    <article>
-      <span>{label}</span>
-      <strong>{ticker || "-"}</strong>
-      <p>{value}</p>
-    </article>
-  );
-}
-
 function CompareCards({ items, baseTicker, showEmptyCard }: { items: CompareItem[]; baseTicker: string; showEmptyCard: boolean }) {
-  const slotCount = showEmptyCard ? Math.max(2, items.length) : Math.max(1, items.length);
   return (
     <section className="compare-section">
       <span>종목 카드</span>
       <h2>각 종목의 현재 인상이에요</h2>
-      <div className="compare-card-grid" style={{ "--compare-count": slotCount } as CSSProperties}>
+      <div className="compare-card-grid">
         {items.map((item) => (
           <article className="compare-stock-card" key={item.ticker}>
             <div className="compare-card-top">
@@ -262,7 +224,6 @@ function CompareCards({ items, baseTicker, showEmptyCard }: { items: CompareItem
               </div>
               <em className={comparePriceTone(item.daily)}>{percentText(item.daily)}</em>
             </div>
-            <p>{compareItemSummary(item)}</p>
             <div className="compare-score-line">
               <strong>{item.score.toFixed(1)}점</strong>
               <span>{item.provisional ? item.provisionalLabel || "현재 점수" : `품질 ${scoreWord(item.score)}`}</span>
@@ -510,7 +471,13 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                 <strong>{group.title}</strong>
                 <span>{group.description}</span>
               </div>
-              <div className="compare-metric-list">
+              <div className="compare-metric-table" style={{ "--compare-cols": items.length } as CSSProperties}>
+                <div className="compare-metric-column-head">
+                  <span>지표</span>
+                  {items.map((item) => (
+                    <strong key={item.ticker}>{compareItemTitle(item)}</strong>
+                  ))}
+                </div>
                 {rows.map((prepared) => {
                   const { row, best, min, max, values } = prepared;
                   return (
@@ -519,25 +486,22 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                         <strong>{row.label}</strong>
                         <span>{row.description}</span>
                       </header>
-                      <div className="compare-metric-values">
-                        {items.map((item) => {
-                          const value = values.get(item.ticker);
-                          const isBest = best?.ticker === item.ticker;
-                          return (
-                            <div
-                              key={`${row.label}-${item.ticker}`}
-                              className={`${isBest ? "best" : ""} ${typeof value === "number" && value < 0 ? "negative" : ""}`}
-                            >
-                              <span>{compareItemTitle(item)}</span>
-                              <strong>{row.display(value)}</strong>
-                              <i aria-hidden="true">
-                                <em style={{ width: `${metricFill(value, row, min, max)}%` }} />
-                              </i>
-                              {isBest ? <small>{row.best === "low" ? "부담 낮음" : "가장 높음"}</small> : null}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {items.map((item) => {
+                        const value = values.get(item.ticker);
+                        const isBest = best?.ticker === item.ticker;
+                        return (
+                          <div
+                            key={`${row.label}-${item.ticker}`}
+                            className={`compare-metric-cell ${isBest ? "best" : ""} ${typeof value === "number" && value < 0 ? "negative" : ""}`}
+                          >
+                            <strong>{row.display(value)}</strong>
+                            <i aria-hidden="true">
+                              <em style={{ width: `${metricFill(value, row, min, max)}%` }} />
+                            </i>
+                            {isBest ? <small>{row.best === "low" ? "부담 낮음" : "가장 높음"}</small> : null}
+                          </div>
+                        );
+                      })}
                     </article>
                   );
                 })}
@@ -551,11 +515,11 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
 }
 
 const COMPONENT_ROWS = [
-  { key: "profitability", label: "수익성" },
-  { key: "growth", label: "성장성" },
-  { key: "health", label: "재무 안정성" },
-  { key: "momentum", label: "가격 흐름" },
-  { key: "valuation", label: "가격 부담" },
+  { key: "profitability", label: "수익성", description: "매출을 이익으로 바꾸는 힘을 비교합니다." },
+  { key: "growth", label: "성장성", description: "매출과 이익이 커지는 속도를 봅니다." },
+  { key: "health", label: "재무 안정성", description: "빚 부담과 단기 체력을 함께 봅니다." },
+  { key: "momentum", label: "가격 흐름", description: "최근 가격 움직임과 추세의 힘을 봅니다." },
+  { key: "valuation", label: "가격 부담", description: "실적과 자산 대비 현재 가격 부담을 봅니다." },
 ];
 
 function ComponentMatrix({ items }: { items: CompareItem[] }) {
@@ -608,7 +572,7 @@ function ComponentMatrix({ items }: { items: CompareItem[] }) {
           <article key={row.key}>
             <header>
               <strong>{row.label}</strong>
-              <span>높을수록 유리해요</span>
+              <span>{row.description}</span>
             </header>
             <div>
               {items.map((item) => {

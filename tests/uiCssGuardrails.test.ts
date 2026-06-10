@@ -132,3 +132,13 @@ test("waiting states use shared skeletons instead of error containers", () => {
   assert.doesNotMatch(compareSource, /className="compare-errors compare-pending"/);
   assert.doesNotMatch(css, /skeleton-pending-action|technical-pending-action/);
 });
+
+test("compare page keeps selected tickers editable and removes dense duplicate copy", () => {
+  assert.match(compareSource, /홈으로 돌아가기/);
+  assert.match(compareSource, /tickers\.length <= 1/);
+  assert.match(compareSource, /disabled=\{removeDisabled\}/);
+  assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
+  assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|--compare-count/);
+  assert.match(css, /\.compare-card-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
+  assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?repeat\(var\(--compare-cols\), minmax\(96px, 1fr\)\)/);
+});
