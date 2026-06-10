@@ -35,14 +35,19 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   const ticker = normalizeTickerRef(input.ticker);
   const now = input.now ?? new Date();
   const sources = input.sources ?? defaultDisplaySources();
-  const identity = await loadIdentity(ticker, sources);
+  const identityPromise = loadIdentity(ticker, sources);
+  const pricePromise = withLaneDeadline("price", startDisplayLane(() => sources.price?.(ticker)));
+  const chartPromise = withLaneDeadline("chart", startDisplayLane(() => sources.chart?.(ticker)));
+  const scorePromise = withLaneDeadline("score", startDisplayLane(() => sources.score?.(ticker, input.view)));
 
-  const [priceResult, chartResult, scoreResult] = await Promise.allSettled([
-    withLaneDeadline("price", sources.price?.(ticker)),
-    withLaneDeadline("chart", sources.chart?.(ticker)),
-    withLaneDeadline("score", sources.score?.(ticker, input.view)),
+  const [identityResult, priceResult, chartResult, scoreResult] = await Promise.allSettled([
+    identityPromise,
+    pricePromise,
+    chartPromise,
+    scorePromise,
   ]);
 
+  const identity = fulfilledValue(identityResult) ?? fallbackIdentity(ticker);
   const score = fulfilledValue(scoreResult);
   const price = fulfilledValue(priceResult) ?? priceFromScore(score);
   const chart = fulfilledValue(chartResult) ?? chartFromScore(score);
@@ -66,11 +71,11 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
     generatedAt: now.toISOString(),
     snapshotVersion: "display-v1",
     hotnessTier: "active",
-    identity: part(identity, "symbol-master"),
-    ...(price ? { price: part(price, "market-data") } : {}),
-    ...(chart ? { chart: part(chart, "market-data") } : {}),
-    ...(score ? { score: part(score, "derived") } : {}),
-    ...(technical ? { technical: part(technical, "derived") } : {}),
+    identity: part(identity, "symbol-master", now),
+    ...(price ? { price: part(price, "market-data", now) } : {}),
+    ...(chart ? { chart: part(chart, "market-data", now) } : {}),
+    ...(score ? { score: part(score, "derived", now) } : {}),
+    ...(technical ? { technical: part(technical, "derived", now) } : {}),
     completion: publicCompletion(completion),
     refresh: {
       active: refreshActive,
@@ -196,7 +201,7 @@ function chartFromScore(score: StockScoreView | undefined): StockChartView | und
   };
 }
 
-function fulfilledValue<T>(result: PromiseSettledResult<T | undefined>): T | undefined {
+function fulfilledValue<T>(result: PromiseSettledResult<T>): T | undefined {
   return result.status === "fulfilled" ? result.value : undefined;
 }
 
@@ -206,12 +211,12 @@ async function loadIdentity(ticker: string, sources: StockDisplaySources): Promi
   return fallbackIdentity(ticker);
 }
 
-function part<T>(value: T, source: DisplayPart<T>["source"]): DisplayPart<T> {
+function part<T>(value: T, source: DisplayPart<T>["source"], now: Date): DisplayPart<T> {
   return {
     value,
     freshness: "fresh",
     source,
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: now.toISOString(),
   };
 }
 
@@ -273,6 +278,14 @@ async function withLaneDeadline<T>(lane: "price" | "chart" | "score", promise: P
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+function startDisplayLane<T>(source: () => Promise<T | undefined> | undefined): Promise<T | undefined> | undefined {
+  try {
+    return source();
+  } catch {
+    return Promise.resolve(undefined);
   }
 }
 

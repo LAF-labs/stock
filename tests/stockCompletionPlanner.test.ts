@@ -5,6 +5,7 @@ import {
   planStockDisplayCompletion,
   planCompareDisplayCompletion,
   stockCompletionRefreshInput,
+  stockCompletionInputFromPayload,
 } from "../src/lib/stockCompletionPlanner";
 
 test("detail identity-only display still owes price, chart, and score recovery", () => {
@@ -75,5 +76,26 @@ test("completion actions map to refresh queue inputs without user-facing pending
   assert.deepEqual(plan.actions.map(stockCompletionRefreshInput), [
     { kind: "chart", ticker: "US:KO", priority: 15, reason: "snapshot_miss" },
     { kind: "score", ticker: "US:KO", view: "technical", priority: 20, reason: "snapshot_miss" },
+  ]);
+});
+
+test("completion scheduling preserves enriched required parts from display payloads", () => {
+  const payload: Parameters<typeof stockCompletionInputFromPayload>[0] = {
+    ticker: "US:GMAB",
+    view: "detail",
+    completion: {
+      requiredParts: ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"],
+      presentParts: ["identity", "price", "chart", "score"],
+      missingParts: ["fundamentals", "industryBenchmark"],
+      recoveringParts: ["fundamentals", "industryBenchmark"],
+      unavailableParts: [],
+    },
+  };
+
+  const plan = planStockDisplayCompletion(stockCompletionInputFromPayload(payload));
+
+  assert.deepEqual(plan.missingParts, ["fundamentals", "industryBenchmark"]);
+  assert.deepEqual(plan.actions.map(stockCompletionRefreshInput), [
+    { kind: "score", ticker: "US:GMAB", view: "detail", priority: 25, reason: "snapshot_miss" },
   ]);
 });

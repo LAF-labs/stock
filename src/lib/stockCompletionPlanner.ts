@@ -2,7 +2,7 @@ import type { ScoreView } from "@/lib/stockScoreContract";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { enqueueStockRefreshJob, type EnqueueStockRefreshInput } from "@/lib/stockRefreshQueue";
 import { normalizeTickerRef } from "@/lib/tickerRef";
-import type { StockDisplayPartName, StockDisplayUnavailablePart, StockDisplayView } from "@/lib/stockDisplayTypes";
+import type { StockDisplayPartName, StockDisplayPayload, StockDisplayUnavailablePart, StockDisplayView } from "@/lib/stockDisplayTypes";
 
 export type CompletionActionKind = "fetch_quote" | "fetch_chart" | "refresh_score" | "refresh_technical";
 
@@ -102,6 +102,30 @@ export function stockCompletionRefreshInput(action: CompletionAction): EnqueueSt
     priority: action.priority,
     reason: "snapshot_miss",
   };
+}
+
+export function stockCompletionInputFromPayload(
+  payload: Pick<StockDisplayPayload, "ticker" | "view" | "completion">,
+): StockCompletionInput {
+  return {
+    ticker: payload.ticker,
+    view: payload.view,
+    requiredParts: payload.completion.requiredParts,
+    presentParts: payload.completion.presentParts,
+    unavailableParts: payload.completion.unavailableParts,
+  };
+}
+
+export function planStockDisplayPayloadCompletion(
+  payload: Pick<StockDisplayPayload, "ticker" | "view" | "completion">,
+): StockCompletionPlan {
+  return planStockDisplayCompletion(stockCompletionInputFromPayload(payload));
+}
+
+export function scheduleStockDisplayPayloadCompletion(
+  payload: Pick<StockDisplayPayload, "ticker" | "view" | "completion">,
+): void {
+  scheduleStockDisplayCompletion(planStockDisplayPayloadCompletion(payload));
 }
 
 export function scheduleStockDisplayCompletion(plan: StockCompletionPlan): void {

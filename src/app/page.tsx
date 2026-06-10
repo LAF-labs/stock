@@ -1,6 +1,6 @@
 import StockDashboard from "@/components/StockDashboard";
 import { dashboardTickerFromSearchParam } from "@/components/stockDashboardHelpers";
-import { planStockDisplayCompletion, scheduleStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 
 type DashboardRouteSearchParams = Record<string, string | string[] | undefined>;
@@ -20,12 +20,7 @@ export default async function Page({ searchParams }: DashboardRouteProps) {
 async function buildInitialDisplayPayload(ticker: string) {
   try {
     const payload = await buildStockDisplayPayload({ ticker, view: "detail" });
-    scheduleStockDisplayCompletion(planStockDisplayCompletion({
-      ticker: payload.ticker,
-      view: "detail",
-      presentParts: payload.completion.presentParts,
-      unavailableParts: payload.completion.unavailableParts,
-    }));
+    scheduleStockDisplayPayloadCompletion(payload);
     return payload;
   } catch {
     return undefined;

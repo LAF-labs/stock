@@ -88,3 +88,42 @@ test("display model keeps fast-path score visible while recovering fundamentals 
   assert.deepEqual(payload.completion.recoveringParts, ["fundamentals", "industryBenchmark"]);
   assert.equal(payload.refresh.active, true);
 });
+
+test("display model starts price chart and score lanes without waiting for slow identity", async () => {
+  const started: string[] = [];
+  let releaseIdentity: (() => void) | undefined;
+  const identityReady = new Promise<void>((resolve) => {
+    releaseIdentity = resolve;
+  });
+
+  const payloadPromise = buildStockDisplayPayload({
+    ticker: "US:LANES",
+    view: "detail",
+    sources: {
+      identity: async () => {
+        await identityReady;
+        return { ticker: "US:LANES", market: "US", symbol: "LANES", name: "Lane Test" };
+      },
+      price: async () => {
+        started.push("price");
+        return { latest_price: 10 };
+      },
+      chart: async () => {
+        started.push("chart");
+        return { chart_series: [{ date: "2026-06-09", close: 9 }, { date: "2026-06-10", close: 10 }] };
+      },
+      score: async () => {
+        started.push("score");
+        return { score: 51, quality_score: 51 };
+      },
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(started.sort(), ["chart", "price", "score"]);
+
+  releaseIdentity?.();
+  const payload = await payloadPromise;
+  assert.equal(payload.identity.value.name, "Lane Test");
+  assert.equal(payload.price?.value.latest_price, 10);
+});

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import TechnicalAnalysisPage from "@/components/TechnicalAnalysisPage";
-import { planStockDisplayCompletion, scheduleStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import { detailPathForTicker, technicalEligibilityForTicker } from "@/lib/technicalAnalysisEligibility";
 
@@ -30,12 +30,7 @@ export default async function TechnicalPage({ searchParams }: TechnicalRouteProp
 async function buildInitialTechnicalPayload(ticker: string) {
   try {
     const payload = await buildStockDisplayPayload({ ticker, view: "technical" });
-    scheduleStockDisplayCompletion(planStockDisplayCompletion({
-      ticker: payload.ticker,
-      view: "technical",
-      presentParts: payload.completion.presentParts,
-      unavailableParts: payload.completion.unavailableParts,
-    }));
+    scheduleStockDisplayPayloadCompletion(payload);
     return payload;
   } catch {
     return undefined;

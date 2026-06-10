@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
 import StockHeader from "@/components/StockHeader";
+import { StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
@@ -223,7 +224,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
       </section>
 
       {tickerParam && !displayData && shouldShowStockSkeleton(state.status, Boolean(displayPartialData)) && (
-        <StockSkeleton ticker={tickerParam} pendingMessage={state.status === "pending" ? state.pending.message : undefined} onRetry={retryLoad} />
+        <StockDetailLoadingSkeleton tickerLabel={dashboardInputValue(tickerParam)} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
@@ -653,85 +654,5 @@ function StatusCard({
         </button>
       ) : null}
     </section>
-  );
-}
-
-function StockSkeleton({ ticker, pendingMessage, onRetry }: { ticker?: string; pendingMessage?: string; onRetry?: () => void }) {
-  const tickerLabel = ticker ? dashboardInputValue(ticker) : undefined;
-  void pendingMessage;
-  return (
-    <div className="stock-feed loading-status-feed" role="status" aria-live="polite">
-      <section className="stock-title-card partial-stock-title-card">
-        <div className="stock-hero-main">
-          <div className="stock-name-row">
-            <div>
-              <span>종목 정보</span>
-              <h2>{tickerLabel || "종목"}</h2>
-              <p>확인된 항목부터 화면에 반영합니다.</p>
-            </div>
-          </div>
-          <span className="score-time-chip">실시간 반영</span>
-        </div>
-        <div className="price-strip">
-          <div className="price-block">
-            <strong>-</strong>
-            <span>현재가</span>
-          </div>
-          <em className="daily-pill price-neutral">-</em>
-        </div>
-        <div className="quick-read">
-          <article>
-            <span>강점</span>
-            <strong className="partial-pending-value">-</strong>
-          </article>
-          <article>
-            <span>먼저 볼 것</span>
-            <strong className="partial-pending-value">-</strong>
-          </article>
-          <article>
-            <span>시가총액</span>
-            <strong className="partial-pending-value">-</strong>
-          </article>
-          <article className="score-panel">
-            <span>품질 점수</span>
-            <strong className="partial-pending-score">--</strong>
-          </article>
-        </div>
-        <div className="hero-verdict neutral partial-verdict">
-          <span>화면 갱신</span>
-          <strong>{tickerLabel || "종목"} 정보를 표시합니다.</strong>
-          <p>가격, 차트, 점수는 확인되는 즉시 이 화면에 반영됩니다.</p>
-          {onRetry ? (
-            <button type="button" className="partial-retry-button" onClick={onRetry}>
-              다시 확인
-            </button>
-          ) : null}
-        </div>
-      </section>
-      <section className="chart-story partial-pending-section">
-        <div className="section-title">
-          <span>가격 흐름</span>
-          <h2>가격 흐름</h2>
-        </div>
-        <p>확인된 가격 기록을 이 영역에 반영합니다.</p>
-      </section>
-      <section className="factor-card partial-pending-section">
-        <div className="section-title">
-          <span>점수 이유</span>
-          <h2>점수 근거</h2>
-        </div>
-        <div className="factor-list partial-factor-list">
-          {[0, 1, 2].map((item) => (
-            <article key={item}>
-              <div className="factor-heading">
-                <strong>{["품질", "기회", "리스크"][item]}</strong>
-                <span>-</span>
-              </div>
-              <p>확인된 근거를 이 영역에 반영합니다.</p>
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
   );
 }

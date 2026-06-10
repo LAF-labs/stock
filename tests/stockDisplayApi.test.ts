@@ -14,6 +14,7 @@ test("stock display endpoint returns displayable payload instead of pending for 
   assert.equal(payload.identity.value.symbol, "005930");
   assert.deepEqual(payload.completion.recoveringParts, ["price", "chart", "score"]);
   assert.equal(JSON.stringify(payload).includes("snapshot_pending"), false);
+  assert.match(response.headers.get("Cache-Control") || "", /s-maxage=3/);
 });
 
 test("technical display endpoint keeps chart recovery separate from user-facing failure", async () => {

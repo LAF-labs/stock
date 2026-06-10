@@ -11,7 +11,7 @@ import {
   technicalWarnings,
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
-import SkeletonBlock from "@/components/SkeletonBlock";
+import { TechnicalAnalysisLoadingSkeleton } from "@/components/StockLoadingSkeletons";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
 import {
   formatPrimaryPrice,
@@ -71,36 +71,7 @@ export function TechnicalAnalysisSkeleton({
   void body;
   void actionLabel;
   void onAction;
-  return (
-    <div className="technical-feed loading-status-feed skeleton-feed" role="status" aria-live="polite">
-      <span className="sr-only">기술적 분석 화면을 구성하고 있습니다.</span>
-      <section className="technical-hero neutral technical-pending-hero">
-        <div className="technical-hero-heading">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="ticker" />
-          <SkeletonBlock className="company" />
-        </div>
-        <div className="technical-hero-price">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="price" />
-          <SkeletonBlock className="krw" />
-        </div>
-        <div className="technical-summary">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="headline" />
-          <SkeletonBlock className="wide" />
-          <SkeletonBlock className="medium" />
-        </div>
-      </section>
-      <section className="technical-chart-panel technical-rule-pending">
-        <div className="section-title">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="section-heading" />
-        </div>
-        <SkeletonBlock className="chart-area" />
-      </section>
-    </div>
-  );
+  return <TechnicalAnalysisLoadingSkeleton />;
 }
 
 export function TechnicalAnalysisFeed({

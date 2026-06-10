@@ -1,6 +1,6 @@
 import StockCompare from "@/components/StockCompare";
 import { parseTickers } from "@/components/stockCompareHelpers";
-import { planStockDisplayCompletion, scheduleStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 
@@ -22,12 +22,7 @@ async function buildInitialComparePayloads(tickers: string[]): Promise<StockDisp
   const payloads = await Promise.all(tickers.map(async (ticker) => {
     try {
       const payload = await buildStockDisplayPayload({ ticker, view: "compare" });
-      scheduleStockDisplayCompletion(planStockDisplayCompletion({
-        ticker: payload.ticker,
-        view: "compare",
-        presentParts: payload.completion.presentParts,
-        unavailableParts: payload.completion.unavailableParts,
-      }));
+      scheduleStockDisplayPayloadCompletion(payload);
       return payload;
     } catch {
       return undefined;

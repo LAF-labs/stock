@@ -4,7 +4,11 @@ import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import SkeletonBlock from "@/components/SkeletonBlock";
+import {
+  ComparePendingOverviewSkeleton,
+  ComparePendingRowsSkeleton,
+  CompareWaitingCardsSkeleton,
+} from "@/components/StockLoadingSkeletons";
 import {
   MAX_COMPARE,
   bestBy,
@@ -143,43 +147,23 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
       {pendingStates.length && !items.length ? (
         <section className="compare-errors compare-pending" role="status" aria-live="polite">
           <span className="sr-only">비교 화면을 구성하고 있습니다.</span>
-          {pendingStates.map((state) => (
-            <div className="compare-pending-row" key={state.ticker}>
-              <SkeletonBlock className="label" />
-              <SkeletonBlock className="wide" />
-            </div>
-          ))}
+          <ComparePendingRowsSkeleton tickers={pendingStates.map((state) => state.ticker)} />
           <button type="button" onClick={retryCompare} className="sr-only">다시 확인</button>
         </section>
       ) : null}
 
       {items.length || partialStates.length || waitingStates.length ? (
         <div className="compare-feed">
-          {items.length ? <CompareBrief items={items} /> : <ComparePendingOverview count={partialStates.length + waitingStates.length} />}
+          {items.length ? <CompareBrief items={items} /> : <ComparePendingOverviewSkeleton />}
           {items.length ? <CompareCards items={items} baseTicker={baseTickerLabel} showEmptyCard={tickers.length < 2} /> : null}
           {partialStates.length ? <ComparePendingCards states={partialStates} /> : null}
-          {waitingStates.length ? <CompareWaitingCards states={waitingStates} /> : null}
+          {waitingStates.length ? <CompareWaitingCardsSkeleton tickers={waitingStates.map((state) => state.ticker)} /> : null}
           {items.length >= 2 && hasCompareChart ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
         </div>
       ) : null}
     </main>
-  );
-}
-
-function ComparePendingOverview({ count }: { count: number }) {
-  void count;
-  return (
-    <section className="compare-section compare-brief">
-      <span className="sr-only">비교 화면을 구성하고 있습니다.</span>
-      <div className="section-title">
-        <SkeletonBlock className="label" />
-        <SkeletonBlock className="section-heading" />
-      </div>
-      <SkeletonBlock className="wide" />
-      <SkeletonBlock className="medium" />
-    </section>
   );
 }
 
@@ -211,38 +195,6 @@ function ComparePendingCards({ states }: { states: Array<Extract<CompareLoadStat
             </article>
           );
         })}
-      </div>
-    </section>
-  );
-}
-
-function CompareWaitingCards({ states }: { states: Array<Extract<CompareLoadState, { status: "loading" | "pending" }>> }) {
-  return (
-    <section className="compare-section">
-      <span className="sr-only">선택한 종목 카드가 구성되고 있습니다.</span>
-      <div className="section-title">
-        <SkeletonBlock className="label" />
-        <SkeletonBlock className="section-heading" />
-      </div>
-      <div className="compare-card-grid" style={{ "--compare-count": states.length } as CSSProperties}>
-        {states.map((state) => (
-          <article className="compare-stock-card compare-waiting-card" key={state.ticker}>
-            <div className="compare-card-top">
-              <div>
-                <SkeletonBlock className="label" />
-                <SkeletonBlock className="company" />
-                <SkeletonBlock className="medium" />
-              </div>
-              <SkeletonBlock className="pill" />
-            </div>
-            <SkeletonBlock className="wide" />
-            <div className="compare-score-line">
-              <SkeletonBlock className="small" />
-              <SkeletonBlock className="score" />
-            </div>
-            <i className="compare-card-scorebar pending" aria-hidden="true" />
-          </article>
-        ))}
       </div>
     </section>
   );

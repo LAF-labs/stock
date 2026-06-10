@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { planStockDisplayCompletion, scheduleStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import type { StockDisplayView } from "@/lib/stockDisplayTypes";
 import { parseStrictTickerRef, resolveTickerAlias } from "@/lib/tickerRef";
@@ -26,12 +26,7 @@ export async function GET(request: NextRequest) {
     ticker: strict.ticker,
     view,
   });
-  scheduleStockDisplayCompletion(planStockDisplayCompletion({
-    ticker: payload.ticker,
-    view,
-    presentParts: payload.completion.presentParts,
-    unavailableParts: payload.completion.unavailableParts,
-  }));
+  scheduleStockDisplayPayloadCompletion(payload);
 
   return NextResponse.json(payload, {
     status: 200,
@@ -48,7 +43,7 @@ function cleanDisplayView(value: string | null): StockDisplayView {
 function displayResponseHeaders(refreshActive: boolean): HeadersInit {
   if (refreshActive) {
     return {
-      "Cache-Control": "public, s-maxage=10, stale-while-revalidate=60, stale-if-error=300",
+      "Cache-Control": "public, s-maxage=3, stale-while-revalidate=30, stale-if-error=300",
     };
   }
   return {
