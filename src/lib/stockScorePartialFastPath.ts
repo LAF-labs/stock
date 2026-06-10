@@ -10,8 +10,8 @@ export type SettledStockScoreResult =
 
 export type TimedStockScoreResult = SettledStockScoreResult | { status: "timeout" };
 
-const DEFAULT_INTERACTIVE_SCORE_TIMEOUT_MS = 1_200;
-const DEFAULT_INTERACTIVE_TECHNICAL_SCORE_TIMEOUT_MS = 1_200;
+const DEFAULT_INTERACTIVE_SCORE_TIMEOUT_MS = 4_000;
+const DEFAULT_INTERACTIVE_TECHNICAL_SCORE_TIMEOUT_MS = 4_000;
 
 export function settleStockScore(promise: Promise<StockScoreResult>): Promise<SettledStockScoreResult> {
   return promise.then(
