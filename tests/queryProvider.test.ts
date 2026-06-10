@@ -6,12 +6,13 @@ import {
   STOCK_QUERY_PERSIST_KEY,
   STOCK_QUERY_PERSIST_THROTTLE_MS,
   createStockQueryClient,
+  shouldPersistStockQuery,
   stockQueryRetry,
 } from "../src/components/QueryProvider";
 
 test("stock query provider keeps persisted cache and gc windows aligned", () => {
   assert.equal(STOCK_QUERY_CACHE_MAX_AGE_MS, 3 * 24 * 60 * 60 * 1000);
-  assert.equal(STOCK_QUERY_PERSIST_KEY, "stock-query-cache-v2");
+  assert.equal(STOCK_QUERY_PERSIST_KEY, "stock-query-cache-v3");
   assert.equal(STOCK_QUERY_PERSIST_THROTTLE_MS, 1_000);
 
   const queryClient = createStockQueryClient();
@@ -35,3 +36,20 @@ test("stock query retry keeps transient server and network failures retryable", 
   assert.equal(stockQueryRetry(2, { status: 500 }), false);
   assert.equal(stockQueryRetry(0, new TypeError("network failed")), true);
 });
+
+test("stock query persistence stores only compact ready query results", () => {
+  assert.equal(shouldPersistStockQuery(query(["stock", "quote", "KR:004020"], "success", { state: "ready" })), true);
+  assert.equal(shouldPersistStockQuery(query(["stock", "score", "detail", "KR:004020"], "success", { state: "ready" })), true);
+  assert.equal(shouldPersistStockQuery(query(["stock", "symbols", "all", "004020"], "success", { state: "ready" })), true);
+  assert.equal(shouldPersistStockQuery(query(["stock", "judgment", "KR:004020", "v1", "hash"], "success", { state: "ready" })), true);
+
+  assert.equal(shouldPersistStockQuery(query(["stock", "quote", "KR:004020"], "success", { state: "pending" })), false);
+  assert.equal(shouldPersistStockQuery(query(["stock", "score", "detail", "KR:004020"], "success", { state: "partial" })), false);
+  assert.equal(shouldPersistStockQuery(query(["stock", "score", "technical", "KR:004020"], "success", { state: "ready", data: { chart_series: [] } })), false);
+  assert.equal(shouldPersistStockQuery(query(["stock", "compare", "KR:004020,US:KO"], "success", { state: "ready", results: [] })), false);
+  assert.equal(shouldPersistStockQuery(query(["stock", "quote", "KR:004020"], "error", { state: "ready" })), false);
+});
+
+function query(queryKey: readonly unknown[], status: string, data: unknown) {
+  return { queryKey, state: { status, data } };
+}

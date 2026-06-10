@@ -86,7 +86,7 @@ test("pending polling follows the shared backoff and stops on non-pollable state
   assert.equal(stockQueryRefetchIntervalMs({ state: "ready", status: 200, payload: {}, data: {} }, 0), false);
 });
 
-test("non-ready persisted stock data refetches on mount instead of freezing placeholder views", () => {
+test("persisted stock data refetches on mount without freezing placeholder views", () => {
   const identityOnlyPartial: ScoreQueryResult = {
     state: "partial",
     status: 200,
@@ -104,7 +104,8 @@ test("non-ready persisted stock data refetches on mount instead of freezing plac
 
   assert.equal(stockQueryRefetchOnMount(identityOnlyPartial), "always");
   assert.equal(stockQueryRefetchOnMount({ state: "pending", status: 202, payload: { error: "snapshot_pending" }, error: "snapshot_pending", message: "pending", queued: false }), "always");
-  assert.equal(stockQueryRefetchOnMount({ state: "ready", status: 200, payload: {}, data: { requested_ticker: "KR:004020" } }), false);
+  assert.equal(stockQueryRefetchOnMount({ state: "ready", status: 200, payload: {}, data: { requested_ticker: "KR:004020" } }), true);
+  assert.equal(stockQueryRefetchOnMount({ state: "unsupported", status: 200, payload: {}, error: "technical_unsupported_product" }), false);
 });
 
 test("quote refresh pending keeps the previous ready quote visible in query data", () => {

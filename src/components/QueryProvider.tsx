@@ -8,7 +8,7 @@ import { del, get, set } from "idb-keyval";
 import { useState, type ReactNode } from "react";
 
 export const STOCK_QUERY_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
-export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v2";
+export const STOCK_QUERY_PERSIST_KEY = "stock-query-cache-v3";
 export const STOCK_QUERY_PERSIST_THROTTLE_MS = 1_000;
 
 type RetryableStockError = {
@@ -16,6 +16,14 @@ type RetryableStockError = {
   code?: string;
   error?: string;
   state?: string;
+};
+
+type PersistableStockQuery = {
+  queryKey: readonly unknown[];
+  state: {
+    status: string;
+    data?: unknown;
+  };
 };
 
 const NON_RETRYABLE_STOCK_STATES = new Set([
@@ -53,6 +61,17 @@ export function createStockQueryClient(): QueryClient {
   });
 }
 
+export function shouldPersistStockQuery(query: PersistableStockQuery): boolean {
+  if (query.state.status !== "success") return false;
+  if (query.queryKey[0] !== "stock") return false;
+  const result = query.state.data && typeof query.state.data === "object" ? (query.state.data as { state?: unknown }) : undefined;
+  if (result?.state !== "ready") return false;
+
+  const feature = query.queryKey[1];
+  if (feature === "quote" || feature === "symbols" || feature === "judgment") return true;
+  return feature === "score" && query.queryKey[2] === "detail";
+}
+
 function createStockQueryPersister() {
   return createAsyncStoragePersister({
     key: STOCK_QUERY_PERSIST_KEY,
@@ -79,6 +98,9 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
       persistOptions={{
         maxAge: STOCK_QUERY_CACHE_MAX_AGE_MS,
         persister,
+        dehydrateOptions: {
+          shouldDehydrateQuery: shouldPersistStockQuery,
+        },
       }}
     >
       {children}

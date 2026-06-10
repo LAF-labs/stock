@@ -155,7 +155,8 @@ export function stockQueryRefetchOnMount(
   result: ScoreQueryResult | TechnicalScoreQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean | "always" {
   if (!result) return true;
-  if (result.state === "ready" || result.state === "unsupported") return false;
+  if (result.state === "ready") return true;
+  if (result.state === "unsupported") return false;
   return "always";
 }
 
