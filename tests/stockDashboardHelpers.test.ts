@@ -249,6 +249,27 @@ test("dashboard search input prefers stock names from partial data", () => {
   assert.equal(dashboardSearchInputValue(partialStockDataFromTicker("KR:004020"), undefined, "KR:004020"), "004020");
 });
 
+test("dashboard search input keeps Korean stock names from ready score or quote payloads", () => {
+  const readyScore = {
+    requested_ticker: "KR:004020",
+    market: "KR",
+    symbol: "004020",
+    name: "현대제철",
+  } satisfies StockScoreResponse;
+  const quote = {
+    type: "quote",
+    requested_ticker: "KR:004020",
+    market: "KR",
+    symbol: "004020",
+    name: "현대제철",
+    currency: "KRW",
+    latest_price: 28550,
+  } satisfies StockQuoteResponse;
+
+  assert.equal(dashboardSearchInputValue(readyScore, undefined, "KR:004020"), "현대제철");
+  assert.equal(dashboardSearchInputValue(undefined, quote, "KR:004020"), "현대제철");
+});
+
 test("dashboard can render a useful partial view from quote before score is ready", () => {
   const quote: StockQuoteResponse = {
     type: "quote",
