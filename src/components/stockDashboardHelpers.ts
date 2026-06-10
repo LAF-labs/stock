@@ -761,16 +761,12 @@ export function stockHeaderFreshnessTimeChip(data: StockScoreResponse, quote: St
   const quoteCache = recordFromUnknown(quote?.server_cache);
   const scoreFetchedAt = cacheTimestamp(scoreCache, "fetched_at");
   const quoteFetchedAt = cacheTimestamp(quoteCache, "fetched_at");
-  const scoreSource = stringFromUnknown(scoreCache?.source);
   let fetchedAt = scoreFetchedAt;
-  let source = scoreSource;
   if (quoteFetchedAt && (!scoreFetchedAt || Date.parse(quoteFetchedAt) > Date.parse(scoreFetchedAt))) {
     fetchedAt = quoteFetchedAt;
-    source = stringFromUnknown(quoteCache?.source);
   }
   const time = fetchedAt ? formatKstTime(fetchedAt) : undefined;
-  if (!time) return undefined;
-  return scoreSource === "client_cache" || source === "client_cache" ? `브라우저 캐시 · ${time} 기준` : `${time} 기준`;
+  return time ? `${time} 기준` : undefined;
 }
 
 function scoreFreshnessSourceLabel(source: string | undefined): string {

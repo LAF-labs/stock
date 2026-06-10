@@ -500,7 +500,7 @@ test("stockHeaderFreshnessTimeChip uses the newest score or quote update time", 
   assert.equal(stockHeaderFreshnessTimeChip(score, refreshedQuote), "18:12 기준");
 });
 
-test("stockHeaderFreshnessTimeChip labels browser cache in the compact header", () => {
+test("stockHeaderFreshnessTimeChip hides browser cache labels in the compact header", () => {
   const score = {
     server_cache: {
       state: "stale",
@@ -509,10 +509,10 @@ test("stockHeaderFreshnessTimeChip labels browser cache in the compact header", 
     },
   } satisfies StockScoreResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "브라우저 캐시 · 18:08 기준");
+  assert.equal(stockHeaderFreshnessTimeChip(score, undefined), "18:08 기준");
 });
 
-test("stockHeaderFreshnessTimeChip keeps browser cache label when a fresher quote is present", () => {
+test("stockHeaderFreshnessTimeChip hides browser cache labels when a fresher quote is present", () => {
   const score = {
     server_cache: {
       state: "stale",
@@ -528,7 +528,7 @@ test("stockHeaderFreshnessTimeChip keeps browser cache label when a fresher quot
     },
   } satisfies StockQuoteResponse;
 
-  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "브라우저 캐시 · 18:12 기준");
+  assert.equal(stockHeaderFreshnessTimeChip(score, quote), "18:12 기준");
 });
 
 test("stockHeaderIdentity prioritizes Korean names and keeps domestic ETFs name-first", () => {
