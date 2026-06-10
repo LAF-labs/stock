@@ -66,10 +66,12 @@ test("compare page uses the TanStack query pipeline instead of legacy fetch stat
   assert.match(compare, /useStockCompareQueries/, "compare page should delegate server state to the query adapter");
 });
 
-test("remaining phase 6 legacy client pipeline owners are recorded before migration", () => {
+test("symbol autocomplete uses the TanStack query pipeline instead of legacy fetch state", () => {
   const autocomplete = componentSource("SymbolAutocomplete.tsx");
 
-  assert.match(autocomplete, /fetch\s*\(\s*`\/api\/symbols\?/);
+  assert.doesNotMatch(autocomplete, /fetch\s*\(\s*`\/api\/symbols\?/, "symbol autocomplete must not fetch symbols directly");
+  assert.doesNotMatch(autocomplete, /AbortController|itemsQuery|setItems|hasSearched|searchError/, "symbol autocomplete must not keep legacy fetch state");
+  assert.match(autocomplete, /useSymbolSearchQuery/, "symbol autocomplete should delegate server state to the query adapter");
 });
 
 test("no unreviewed stock data owner components are introduced", () => {

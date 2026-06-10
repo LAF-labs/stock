@@ -377,15 +377,15 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Use `useDeferredValue` or a small `useDebouncedValue` for input debounce.
-- [ ] Use `useQuery(symbolSearchQueryOptions(deferredQuery))`.
-- [ ] Preserve direct ticker submit for short/unsafe-to-fetch values.
-- [ ] Preserve stale result protection: active item must belong to the query that produced it.
-- [ ] Remove `items`, `itemsQuery`, `isLoading`, `hasSearched`, and `searchError` as independent fetch state where query state can supply them.
-- [ ] Keep active index, open/closed state, collapsed floating action, focus management, and outside-click close as local UI state.
-- [ ] Ensure cached symbol results reopen only when the input is focused and the result query exactly matches the current query.
-- [ ] Ensure direct input remains available while the symbol query is loading or errored.
-- [ ] Validation: `npm test -- tests/symbolAutocompleteHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts`.
+- [x] Use `useDeferredValue` or a small `useDebouncedValue` for input debounce.
+- [x] Use `useQuery(symbolSearchQueryOptions(deferredQuery))`.
+- [x] Preserve direct ticker submit for short/unsafe-to-fetch values.
+- [x] Preserve stale result protection: active item must belong to the query that produced it.
+- [x] Remove `items`, `itemsQuery`, `isLoading`, `hasSearched`, and `searchError` as independent fetch state where query state can supply them.
+- [x] Keep active index, open/closed state, collapsed floating action, focus management, and outside-click close as local UI state.
+- [x] Ensure cached symbol results reopen only when the input is focused and the result query exactly matches the current query.
+- [x] Ensure direct input remains available while the symbol query is loading or errored.
+- [x] Validation: `npm test -- tests/symbolAutocompleteHelpers.test.ts tests/queryPipelineNoLegacyFetch.test.ts`.
 
 ## Phase 8: Persisted Cache Migration And Manual Cache Removal
 

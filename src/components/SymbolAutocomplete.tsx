@@ -2,15 +2,11 @@
 
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeSymbolItemForQuery, shouldFetchSymbolSearch } from "@/components/symbolAutocompleteHelpers";
+import { activeSymbolItemForQuery } from "@/components/symbolAutocompleteHelpers";
 import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
+import { useSymbolSearchQuery } from "@/components/useSymbolSearchQuery";
 import { symbolDisplayName } from "@/lib/symbolDisplay";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
-
-type SymbolSearchPayload = {
-  ok?: boolean;
-  items?: SymbolSearchItem[];
-};
 
 type SymbolAutocompleteProps = {
   id: string;
@@ -67,78 +63,25 @@ export default function SymbolAutocomplete({
   isCollapsed = false,
   onExpandRequest,
 }: SymbolAutocompleteProps) {
-  const [items, setItems] = useState<SymbolSearchItem[]>([]);
-  const [itemsQuery, setItemsQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [searchError, setSearchError] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const query = value.trim();
+  const symbolSearch = useSymbolSearchQuery(value);
+  const query = symbolSearch.query;
   const directItem = directInputSymbolItem(query);
 
   useEffect(() => {
-    const controller = new AbortController();
     setActiveIndex(0);
-
     if (!query) {
-      setItems([]);
-      setItemsQuery("");
       setIsOpen(false);
-      setIsLoading(false);
-      setHasSearched(false);
-      setSearchError(false);
-      return () => controller.abort();
+      return;
     }
-
-    setItems([]);
-    setItemsQuery("");
-    setIsOpen(false);
-    setHasSearched(false);
-    setSearchError(false);
-    if (!shouldFetchSymbolSearch(query)) {
-      setIsLoading(false);
-      return () => controller.abort();
-    }
-    const timer = window.setTimeout(() => {
-      setIsLoading(true);
-      fetch(`/api/symbols?q=${encodeURIComponent(query)}&limit=8`, {
-        signal: controller.signal,
-        cache: "force-cache",
-      })
-        .then(async (response) => {
-          const payload = (await response.json()) as SymbolSearchPayload;
-          if (!response.ok || !payload.ok) throw new Error("symbol search failed");
-          return payload.items || [];
-        })
-        .then((nextItems) => {
-          if (controller.signal.aborted) return;
-          setItems(nextItems);
-          setItemsQuery(query);
-          setActiveIndex(0);
-          setHasSearched(true);
-          setIsOpen(Boolean(query && nextItems.length && document.activeElement === inputRef.current));
-        })
-        .catch(() => {
-          if (controller.signal.aborted) return;
-          setItems([]);
-          setItemsQuery(query);
-          setIsOpen(false);
-          setHasSearched(true);
-          setSearchError(true);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setIsLoading(false);
-        });
-    }, query ? 120 : 0);
-
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
   }, [query]);
+
+  useEffect(() => {
+    setIsOpen(Boolean(query && symbolSearch.visibleItems.length && document.activeElement === inputRef.current));
+  }, [query, symbolSearch.visibleItems.length]);
 
   useEffect(() => {
     if (isCollapsed) setIsOpen(false);
@@ -157,18 +100,18 @@ export default function SymbolAutocomplete({
 
   const listId = `${id}-list`;
   const statusId = `${id}-status`;
-  const visibleItems = itemsQuery === query ? items : [];
-  const activeItem = useMemo(() => activeSymbolItemForQuery(items, itemsQuery, query, activeIndex), [activeIndex, items, itemsQuery, query]);
+  const visibleItems = symbolSearch.visibleItems;
+  const activeItem = useMemo(() => activeSymbolItemForQuery(symbolSearch.items, symbolSearch.resultQuery, query, activeIndex), [activeIndex, symbolSearch.items, symbolSearch.resultQuery, query]);
   const canSubmit = Boolean(activeItem || directItem) && !disabled;
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
   const isFloating = variant === "floating";
   const formClassName = [className, isFloating ? "symbol-autocomplete-floating" : "", isFloating && isCollapsed ? "is-collapsed" : ""].filter(Boolean).join(" ");
   const actionLabel = isCollapsed ? "검색창 펼치기" : query ? "검색어 지우기" : "종목 검색";
-  const searchStatus = isLoading
+  const searchStatus = symbolSearch.isLoading
     ? "종목을 검색하고 있어요."
-    : searchError
+    : symbolSearch.error
       ? "종목 검색에 실패했어요."
-      : hasSearched
+      : symbolSearch.searched
         ? visibleItems.length
           ? `검색 결과 ${visibleItems.length}개`
           : "검색 결과가 없어요."
@@ -205,8 +148,6 @@ export default function SymbolAutocomplete({
     }
     if (query) {
       onValueChange("");
-      setItems([]);
-      setItemsQuery("");
       setIsOpen(false);
       focusInput();
       return;
@@ -269,7 +210,7 @@ export default function SymbolAutocomplete({
           aria-activedescendant={activeOptionId}
           aria-autocomplete="list"
           aria-describedby={statusId}
-          aria-busy={isLoading}
+          aria-busy={symbolSearch.isLoading}
         />
         {isFloating ? (
           <button
@@ -283,7 +224,7 @@ export default function SymbolAutocomplete({
           </button>
         ) : (
           <button type="submit" disabled={!canSubmit}>
-            {isLoading ? "찾는 중" : buttonLabel}
+            {symbolSearch.isLoading ? "찾는 중" : buttonLabel}
           </button>
         )}
         {isOpen ? (
