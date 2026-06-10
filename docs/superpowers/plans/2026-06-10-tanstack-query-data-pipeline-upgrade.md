@@ -451,13 +451,15 @@ The compare key preserves order because `tickers[0]` is the base ticker in the U
 
 **Tasks:**
 
-- [ ] Start with client-only persisted query migration; do not mix SSR until the client pipeline is stable.
-- [ ] Prefetch identity-light queries only if it improves first paint without duplicating server request work.
-- [ ] Use `dehydrate` and `HydrationBoundary` for score/quote only when server route fetches can reuse CDN/read-model cheaply.
-- [ ] Keep expensive provider work out of route render. Server prefetch must call only app API endpoints or read-model helpers, never Python/yfinance.
-- [ ] Keep route fallbacks simple and deterministic; they should not own polling, timers, or provider work.
-- [ ] Measure whether hydration reduces first useful paint after persisted client query cache is already enabled.
-- [ ] Validation: build, route smoke, and latency load test before and after hydration.
+- [x] Start with client-only persisted query migration; do not mix SSR until the client pipeline is stable.
+- [x] Prefetch identity-light queries only if it improves first paint without duplicating server request work.
+- [x] Use `dehydrate` and `HydrationBoundary` for score/quote only when server route fetches can reuse CDN/read-model cheaply.
+- [x] Keep expensive provider work out of route render. Server prefetch must call only app API endpoints or read-model helpers, never Python/yfinance.
+- [x] Keep route fallbacks simple and deterministic; they should not own polling, timers, or provider work.
+- [x] Measure whether hydration reduces first useful paint after persisted client query cache is already enabled.
+- [x] Validation: build, route smoke, and latency load test before and after hydration.
+
+**Decision:** Do not add `HydrationBoundary` in this phase. The current App Router pages only normalize route input and render deterministic fallbacks, while the client query cache owns polling and persisted reuse. A production baseline on `https://stock-khaki.vercel.app` returned p95 4715.5 ms under the 5000 ms budget with no provider guard violations; adding SSR prefetch now would duplicate client `no-store` work before there is a cheap CDN/read-model-only server loader. Re-evaluate after a dedicated read-model prefetch helper exists.
 
 ## Phase 11: Remove Legacy Pipeline Traces
 
