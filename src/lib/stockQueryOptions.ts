@@ -140,8 +140,7 @@ export function stockQueryShouldPoll(
   if (!result) return false;
   if ("results" in result) {
     return result.results.some(({ result: itemResult }) => {
-      if (itemResult.state === "pending") return isPollablePending(itemResult);
-      if (itemResult.state === "partial") return isPollablePending(itemResult.pending);
+      if (itemResult.state === "pending" || itemResult.state === "partial") return true;
       return false;
     });
   }

@@ -176,7 +176,7 @@ test("ready score data seeds quote query data only for the matching ticker", () 
   );
 });
 
-test("partial and compare polling only continue when nested pending work is queued", () => {
+test("partial polling only continues when nested pending work is queued", () => {
   const partial: ScoreQueryResult = {
     state: "partial",
     status: 200,
@@ -191,14 +191,49 @@ test("partial and compare polling only continue when nested pending work is queu
       queued: true,
     },
   };
-  const compare: CompareQueryResult = {
+  assert.equal(stockQueryShouldPoll(partial), true);
+});
+
+test("compare polling retries any pending member so stale active batches self-heal", () => {
+  const clientOnlyPending: ScoreQueryResult = {
+    state: "pending",
+    status: 202,
+    payload: { error: "snapshot_pending" },
+    error: "snapshot_pending",
+    message: "pending",
+    queued: false,
+    retryAfterSeconds: undefined,
+  };
+  const clientOnlyPartial: ScoreQueryResult = {
+    state: "partial",
+    status: 200,
+    payload: { type: "partial_stock_snapshot" },
+    data: { requested_ticker: "US:APLT" },
+    pending: clientOnlyPending,
+  };
+  const compareWithPending: CompareQueryResult = {
     state: "partial",
     status: 200,
     payload: {},
-    results: [{ ticker: "US:KO", result: partial }],
+    results: [
+      {
+        ticker: "US:APLT",
+        result: clientOnlyPartial,
+      },
+      {
+        ticker: "US:APOG",
+        result: {
+          state: "ready",
+          status: 200,
+          payload: {},
+          data: { requested_ticker: "US:APOG", symbol: "APOG" },
+        },
+      },
+    ],
   };
 
-  assert.equal(stockQueryShouldPoll(partial), true);
-  assert.equal(stockQueryShouldPoll(compare), true);
-  assert.equal(stockQueryRefetchIntervalMs(compare, 1, "compare"), 2_000);
+  assert.equal(stockQueryShouldPoll(clientOnlyPending), false);
+  assert.equal(stockQueryShouldPoll(clientOnlyPartial), false);
+  assert.equal(stockQueryShouldPoll(compareWithPending), true);
+  assert.equal(stockQueryRefetchIntervalMs(compareWithPending, 1, "compare"), 2_000);
 });
