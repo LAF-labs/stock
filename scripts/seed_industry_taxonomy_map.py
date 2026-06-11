@@ -44,7 +44,7 @@ US_INDUSTRY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("의료기기·서비스", ("medical specialities", "medical/dental instruments", "hospital", "managed health care", "health care services")),
     ("은행", ("major banks", "commercial banks", "savings institutions", "banks", "banking")),
     ("보험", ("insurance",)),
-    ("금융서비스", ("investment managers", "finance companies", "investment bankers", "brokerage", "asset management")),
+    ("금융서비스", ("investment managers", "finance companies", "investment bankers", "brokerage", "asset management", "mortgage")),
     ("리츠", ("real estate investment trusts", "reit")),
     ("부동산", ("real estate",)),
     ("석유·가스", ("oil", "gas", "coal", "integrated oil")),

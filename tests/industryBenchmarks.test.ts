@@ -195,6 +195,89 @@ test("industry benchmark lookup falls back to legacy market rows when scoped row
   assert.equal(benchmark?.median, 46.6);
 });
 
+test("industry benchmark lookup falls back to scope aggregate rows when industry and sector rows are absent", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (requestedUrls.length < 3) {
+      return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify([
+        {
+          scope: "OVERSEAS",
+          market: "US",
+          sector: "",
+          industry: "",
+          metric: "per",
+          period: "quarter",
+          median: 21.5,
+          sample_count: 420,
+          source: "score_snapshot",
+        },
+      ]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }) as typeof fetch;
+
+  const benchmark = await getIndustryBenchmark({
+    market: "US",
+    sector: "Tiny Sector",
+    industry: "Thin Industry",
+    metric: "per",
+  });
+
+  assert.equal(requestedUrls.length, 3);
+  assert.match(requestedUrls[0], /industry=eq\.Thin\+Industry/);
+  assert.match(requestedUrls[1], /sector=eq\.Tiny\+Sector/);
+  assert.match(requestedUrls[1], /industry=eq\./);
+  assert.match(requestedUrls[2], /sector=eq\./);
+  assert.match(requestedUrls[2], /industry=eq\./);
+  assert.equal(benchmark?.median, 21.5);
+  assert.equal(benchmark?.sampleCount, 420);
+});
+
+test("industry benchmark lookup keeps missing-result cache short so refreshes become visible", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+  process.env.STOCK_INDUSTRY_BENCHMARK_MISS_CACHE_SECONDS = "0";
+
+  let calls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls += 1;
+    const url = new URL(String(input));
+    if (url.searchParams.get("sector") === "eq.소형" || calls <= 4) {
+      return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify([
+        {
+          scope: "KR",
+          market: "KR",
+          sector: "",
+          industry: "",
+          metric: "per",
+          period: "quarter",
+          median: 14.8,
+          sample_count: 300,
+        },
+      ]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }) as typeof fetch;
+
+  const first = await getIndustryBenchmark({ market: "KR", sector: "소형", metric: "per" });
+  const second = await getIndustryBenchmark({ market: "KR", sector: "소형", metric: "per" });
+
+  assert.equal(first, undefined);
+  assert.equal(second?.median, 14.8);
+  assert.equal(calls, 7);
+});
+
 test("stock benchmark lookup includes forward valuation metrics by default", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
@@ -248,4 +331,18 @@ test("industry benchmark migration uses market calendar expiry instead of fixed 
   assert.match(migration, /close_at \+ grace_window/);
   assert.match(migration, /public\.stock_industry_benchmark_expires_at\(scope, market\)/);
   assert.doesNotMatch(migration, /now\(\) \+ interval '1 day'/);
+});
+
+test("latest industry benchmark migration creates market-wide fallback rows", () => {
+  const migration = readFileSync(
+    join(process.cwd(), "supabase/migrations/20260611124500_prune_expired_industry_benchmark_rows.sql"),
+    "utf8"
+  );
+
+  assert.match(migration, /or expires_at <= now\(\)/);
+  assert.match(migration, /select scope, market, '' as sector, '' as industry, metric, value/);
+  assert.match(migration, /group by scope, market, sector, industry, metric/);
+  assert.match(migration, /coalesce\(fetched_at, updated_at\) >= now\(\) - interval '30 days'/);
+  assert.doesNotMatch(migration, /and expires_at > now\(\)/);
+  assert.match(migration, /public\.stock_industry_benchmark_expires_at\(scope, market\)/);
 });

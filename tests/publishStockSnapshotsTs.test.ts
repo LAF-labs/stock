@@ -190,6 +190,34 @@ test("TypeScript snapshot worker rejects invalid score views before provider fet
   assert.match(String(calls[0].body.p_error), /unsupported score view/);
 });
 
+test("TypeScript snapshot worker retries provider misses instead of creating dead jobs", async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({
+      url: String(input),
+      body: init?.body ? JSON.parse(String(init.body)) : {},
+    });
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+
+  const options = parseOptions(["--drain-queue", "--kind", "score", "--allow-score-python-fallback", "--worker-id", "worker-1"], {});
+  const row = await publishQueueJobWithCollector(
+    { id: "job-aplt", kind: "score", market: "US", symbol: "APLT", view_mode: "compare", attempts: 1 },
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    options,
+    async () => {
+      throw new Error("kis_not_found");
+    }
+  );
+
+  const failCall = calls.find((call) => call.url.endsWith("/rest/v1/rpc/fail_stock_refresh_job"));
+  assert.equal(row.status, "failed");
+  assert.ok(failCall);
+  assert.equal(failCall.body.p_job_id, "job-aplt");
+  assert.equal(failCall.body.p_permanent, false);
+  assert.equal(failCall.body.p_retry_after_seconds, 120);
+});
+
 test("TypeScript snapshot worker dry-runs quote tickers without provider calls", async () => {
   let calls = 0;
   globalThis.fetch = (async () => {
@@ -523,6 +551,9 @@ test("TypeScript snapshot worker completes chart jobs without collector when cha
 test("TypeScript snapshot worker keeps retry and permanent failure contracts", () => {
   assert.equal(retryAfterSeconds({ attempts: 1 }), 120);
   assert.equal(retryAfterSeconds({ attempts: 20 }), 3600);
-  assert.equal(permanentRefreshFailure("kis_not_found"), true);
+  assert.equal(permanentRefreshFailure("kis_not_found"), false);
+  assert.equal(permanentRefreshFailure("KIS HTTP 404"), false);
   assert.equal(permanentRefreshFailure("temporary rate limited"), false);
+  assert.equal(permanentRefreshFailure("invalid_ticker"), true);
+  assert.equal(permanentRefreshFailure("unsupported score view: bogus"), true);
 });

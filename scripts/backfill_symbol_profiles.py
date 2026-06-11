@@ -31,6 +31,38 @@ KIND_MARKET_EXCHANGES = {
     "코스닥": "KOSDAQ",
     "코넥스": "KONEX",
 }
+CURATED_PROFILE_OVERRIDES: dict[tuple[str, str], dict[str, Any]] = {
+    ("US", "ALPS"): {
+        "primary_sector": "Healthcare",
+        "primary_industry": "Biotechnology",
+        "confidence": 0.9,
+        "evidence": "nasdaq_event_biotechnology_platform",
+    },
+    ("US", "FGO"): {
+        "primary_sector": "Financial Services",
+        "primary_industry": "Mortgage Finance",
+        "confidence": 0.88,
+        "evidence": "company_profile_mortgage_loan_brokerage",
+    },
+    ("US", "NWGL"): {
+        "primary_sector": "Basic Materials",
+        "primary_industry": "Paper & Forest Products",
+        "confidence": 0.9,
+        "evidence": "company_profile_forestry_timber_wood_products",
+    },
+    ("US", "SVA"): {
+        "primary_sector": "Healthcare",
+        "primary_industry": "Biotechnology",
+        "confidence": 0.9,
+        "evidence": "company_profile_biopharmaceutical_vaccines",
+    },
+    ("KR", "257990"): {
+        "primary_sector": "소재",
+        "primary_industry": "기타 화학제품 제조업",
+        "confidence": 0.88,
+        "evidence": "konex_cosmetics_oem_odm_manufacturer",
+    },
+}
 
 
 class ProviderTimeoutError(TimeoutError):
@@ -166,7 +198,16 @@ def asset_class(item: dict[str, Any]) -> str:
         or ("/" in symbol and re.search(r"(?:%|PREFERRED|PREF|우선주)", name_upper))
     ):
         return "preferred"
-    if "SPAC" in name_upper or "ACQUISITION" in name_upper or "MERGER" in name_upper or "스팩" in name or "애퀴지션" in name or "머저" in name:
+    if (
+        "SPAC" in name_upper
+        or "ACQUISITION" in name_upper
+        or "MERGER" in name_upper
+        or re.search(r"\bINVT\s+CORP\b", name_upper)
+        or re.search(r"\bINVESTMENT\s+CORP(?:ORATION)?\s+(?:I{1,4}|V|VI{0,3}|IX|X)\b", name_upper)
+        or "스팩" in name
+        or "애퀴지션" in name
+        or "머저" in name
+    ):
         return "spac"
     if (
         re.search(r"\b(?:CLOSED-END FUND|ETF|FUND)\b", name_upper)
@@ -611,10 +652,46 @@ def build_kind_rows(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     return profiles, tags, misses
 
 
+def build_curated_rows(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    profiles: list[dict[str, Any]] = []
+    tags: list[dict[str, Any]] = []
+    misses = 0
+    for item in items:
+        key = (clean_text(item.get("market")).upper(), clean_text(item.get("ticker")).upper())
+        override = CURATED_PROFILE_OVERRIDES.get(key)
+        if not override:
+            misses += 1
+            continue
+        sector = clean_text(override.get("primary_sector"))
+        industry = clean_text(override.get("primary_industry"))
+        confidence = float(override.get("confidence") or 0.8)
+        row = profile_row_from_master(item)
+        row.update(
+            {
+                "primary_sector": sector,
+                "primary_industry": industry,
+                "primary_sector_key": slug(sector),
+                "primary_industry_key": slug(f"{sector}:{industry}" if sector and industry else industry or sector),
+                "classification_status": "verified" if sector and industry else "partial",
+                "source_priority": 10,
+                "source": "curated_profile_override",
+                "metadata": {
+                    **row["metadata"],
+                    "curated_evidence": clean_text(override.get("evidence")),
+                },
+            }
+        )
+        profiles.append(row)
+        tags.extend(tag_rows_for_profile(row, "curated_profile_override", "curated_profile_override", confidence, {"evidence": row["metadata"]["curated_evidence"]}))
+    return profiles, tags, misses
+
+
 def build_source_rows(source: str, items: list[dict[str, Any]], pause_seconds: float, provider_timeout_seconds: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     if source == "master":
         profiles, tags = build_master_rows(items)
         return profiles, tags, 0
+    if source == "curated":
+        return build_curated_rows(items)
     if source == "kind":
         return build_kind_rows(items)
     if source == "yfinance":
@@ -985,7 +1062,7 @@ def compact_exception(exc: Exception) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill stock symbol industry profiles into Supabase.")
-    parser.add_argument("--source", choices=["master", "kind", "nasdaq", "yfinance"], default="master")
+    parser.add_argument("--source", choices=["master", "curated", "kind", "nasdaq", "yfinance"], default="master")
     parser.add_argument("--market", choices=["ALL", "US", "KR"], default="ALL")
     parser.add_argument("--exchange", help="Filter by exchange code, e.g. KOSPI, KOSDAQ, NAS, NYS, AMS.")
     parser.add_argument("--symbols", help="Comma-separated symbols or MARKET:SYMBOL values.")

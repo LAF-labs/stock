@@ -296,11 +296,8 @@ def permanent_refresh_failure(error: str) -> bool:
     normalized = error.strip().lower()
     permanent_markers = (
         "invalid_ticker",
-        "kis_not_found",
-        "not_found",
         "unsupported refresh job kind",
         "unsupported score view",
-        "404",
     )
     return any(marker in normalized for marker in permanent_markers)
 

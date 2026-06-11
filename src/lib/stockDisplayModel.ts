@@ -260,7 +260,11 @@ function defaultDisplaySources(): StockDisplaySources {
       const { readStockScoreSnapshotForDisplay } = await import("@/lib/stockScoreSnapshotReader");
       const scoreView = view === "technical" ? "technical" : view === "compare" ? "compare" : "detail";
       const result = await readStockScoreSnapshotForDisplay(ticker, scoreView);
-      return result?.payload.ok === false ? undefined : result?.payload;
+      if (!result || result.payload.ok === false) return undefined;
+      if (scoreView === "technical") return result.payload;
+      const { enrichStockPayloadWithSymbolProfile } = await import("@/lib/symbolProfiles");
+      const { enrichStockPayloadWithIndustryBenchmarks } = await import("@/lib/stockIndustryBenchmarkEnrichment");
+      return enrichStockPayloadWithIndustryBenchmarks(await enrichStockPayloadWithSymbolProfile(result.payload));
     },
   };
 }

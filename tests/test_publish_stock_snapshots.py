@@ -258,9 +258,55 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         self.assertEqual(args.score_ttl_seconds, 1800)
 
     def test_permanent_refresh_failure_classifies_invalid_symbols(self):
-        self.assertEqual(permanent_refresh_failure("kis_not_found"), True)
+        self.assertEqual(permanent_refresh_failure("kis_not_found"), False)
+        self.assertEqual(permanent_refresh_failure("KIS HTTP 404"), False)
         self.assertEqual(permanent_refresh_failure("invalid_ticker"), True)
+        self.assertEqual(permanent_refresh_failure("unsupported score view: bogus"), True)
         self.assertEqual(permanent_refresh_failure("temporary rate limited"), False)
+
+    def test_publish_queue_job_retries_provider_misses_without_permanent_failure(self):
+        calls = []
+
+        def fake_fetch_score(*_args, **_kwargs):
+            return {"ok": False, "error": "kis_not_found"}
+
+        def fake_complete(*_args, **_kwargs):
+            raise AssertionError("provider miss should not complete the job")
+
+        def fake_fail(_config, worker_id, job_id, error, retry_after_seconds, permanent=False):
+            calls.append(
+                {
+                    "worker_id": worker_id,
+                    "job_id": job_id,
+                    "error": error,
+                    "retry_after_seconds": retry_after_seconds,
+                    "permanent": permanent,
+                }
+            )
+
+        original_fetch_score = publisher.fetch_score
+        original_complete = publisher.complete_refresh_job
+        original_fail = publisher.fail_refresh_job
+        publisher.fetch_score = fake_fetch_score
+        publisher.complete_refresh_job = fake_complete
+        publisher.fail_refresh_job = fake_fail
+        try:
+            row = publisher.publish_queue_job(
+                {"id": "job-aplt", "kind": "score", "market": "US", "symbol": "APLT", "view_mode": "compare", "attempts": 1},
+                SupabasePublishConfig(url="https://example.supabase.co", key="service-role-key", timeout_seconds=7),
+                SimpleNamespace(score_ttl_seconds=1800),
+                "worker-1",
+            )
+        finally:
+            publisher.fetch_score = original_fetch_score
+            publisher.complete_refresh_job = original_complete
+            publisher.fail_refresh_job = original_fail
+
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(calls[0]["job_id"], "job-aplt")
+        self.assertEqual(calls[0]["error"], "kis_not_found")
+        self.assertEqual(calls[0]["retry_after_seconds"], 120)
+        self.assertEqual(calls[0]["permanent"], False)
 
     def test_fail_refresh_job_marks_permanent_failures(self):
         calls = []

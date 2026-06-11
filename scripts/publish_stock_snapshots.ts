@@ -119,9 +119,7 @@ export function retryAfterSeconds(job: RefreshJob): number {
 
 export function permanentRefreshFailure(error: string): boolean {
   const normalized = error.trim().toLowerCase();
-  return ["invalid_ticker", "kis_not_found", "not_found", "unsupported refresh job kind", "unsupported score view", "404"].some((marker) =>
-    normalized.includes(marker)
-  );
+  return ["invalid_ticker", "unsupported refresh job kind", "unsupported score view"].some((marker) => normalized.includes(marker));
 }
 
 export async function claimRefreshJobs(config: SupabaseConfig, options: Options): Promise<RefreshJob[]> {

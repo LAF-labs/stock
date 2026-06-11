@@ -11,6 +11,7 @@ import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPartial
 import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
 import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
+import { enrichStockPayloadWithIndustryBenchmarks } from "@/lib/stockIndustryBenchmarkEnrichment";
 import { enrichStockPayloadWithSymbolDisplay } from "@/lib/symbolSearch";
 import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { technicalEligibilityForTicker, technicalUnsupportedProductPayload } from "@/lib/technicalAnalysisEligibility";
@@ -158,7 +159,8 @@ export async function GET(request: NextRequest) {
 
 async function enrichScorePayloadForView(payload: StockPayload, view: ReturnType<typeof cleanView>): Promise<StockPayload> {
   if (view === "technical") return enrichStockPayloadWithSymbolDisplay(payload);
-  return enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithSymbolProfile(payload));
+  const withProfile = await enrichStockPayloadWithSymbolProfile(payload);
+  return enrichStockPayloadWithSymbolDisplay(await enrichStockPayloadWithIndustryBenchmarks(withProfile));
 }
 
 async function attachChartForTechnicalView(payload: StockPayload, ticker: string, view: ReturnType<typeof cleanView>): Promise<StockPayload> {

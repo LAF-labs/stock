@@ -69,6 +69,33 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("--warm-batch-size", text)
         self.assertIn("--warm-pool-limit", text)
 
+    def test_quote_worker_enqueues_stale_quotes_before_drain(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        quote_block = text.split("\n  quote:", 1)[1].split("\n  score:", 1)[0]
+
+        self.assertIn("STOCK_STALE_QUOTE_REFRESH_LIMIT", quote_block)
+        self.assertIn("Enqueue stale quote refresh jobs", quote_block)
+        self.assertIn("node --import tsx scripts/enqueue_stale_quote_snapshots.ts", quote_block)
+        self.assertIn("--limit \"$STOCK_STALE_QUOTE_REFRESH_LIMIT\"", quote_block)
+        self.assertLess(
+            quote_block.index("Enqueue stale quote refresh jobs"),
+            quote_block.index("Drain quote refresh queue and optionally warm quote snapshots"),
+        )
+
+    def test_score_worker_enqueues_stale_snapshots_before_queue_check(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        score_block = text.split("\n  score:", 1)[1]
+
+        self.assertIn("STOCK_STALE_SCORE_REFRESH_LIMIT", score_block)
+        self.assertIn("Enqueue stale score snapshot refresh jobs", score_block)
+        self.assertIn("node --import tsx scripts/enqueue_stale_score_snapshots.ts", score_block)
+        self.assertIn("--stale-hours \"$STOCK_SCORE_STALE_HOURS\"", score_block)
+        self.assertIn("--limit \"$STOCK_STALE_SCORE_REFRESH_LIMIT\"", score_block)
+        self.assertLess(
+            score_block.index("Enqueue stale score snapshot refresh jobs"),
+            score_block.index("Check due legacy score refresh jobs"),
+        )
+
     def test_industry_benchmark_worker_runs_once_after_us_aftermarket(self):
         text = BENCHMARK_WORKFLOW_PATH.read_text(encoding="utf-8")
 
