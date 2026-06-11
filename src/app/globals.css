@@ -4756,6 +4756,118 @@ body {
   }
 }
 
+/* Typography density refinement */
+.stock-detail-app .stock-name-row h2 {
+  font-size: 42px;
+  font-weight: 600;
+  line-height: 1.02;
+}
+
+.stock-detail-app .price-block strong {
+  font-size: 36px;
+  font-weight: 600;
+}
+
+.stock-detail-app .hero-verdict strong,
+.technical-analysis-app .technical-summary strong {
+  font-weight: 600;
+}
+
+.stock-detail-app .hero-verdict strong {
+  font-size: 20px;
+}
+
+.compare-app .compare-hero h1 {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.16;
+}
+
+.compare-card-top strong {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.compare-score-line strong {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.technical-analysis-app .technical-hero-heading h1 {
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.08;
+}
+
+.technical-analysis-app .technical-hero-price strong {
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.technical-analysis-app .technical-summary strong {
+  font-size: 21px;
+}
+
+.technical-analysis-app .technical-score-meter strong {
+  font-size: 32px;
+  font-weight: 600;
+}
+
+.landing-copy h2 {
+  font-size: 38px;
+  font-weight: 600;
+}
+
+.landing-score-card strong {
+  font-size: 36px;
+  font-weight: 600;
+}
+
+@media (min-width: 900px) {
+  .stock-detail-app .stock-name-row h2 {
+    font-size: 52px;
+  }
+
+  .stock-detail-app .price-block strong {
+    font-size: 42px;
+  }
+}
+
+@media (max-width: 640px) {
+  .stock-detail-app .stock-name-row h2 {
+    font-size: 30px;
+  }
+
+  .stock-detail-app .price-block strong {
+    font-size: 28px;
+  }
+
+  .compare-app .compare-hero h1 {
+    font-size: 26px;
+  }
+
+  .compare-score-line strong {
+    font-size: 22px;
+  }
+
+  .technical-analysis-app .technical-hero-heading h1 {
+    font-size: 32px;
+  }
+
+  .technical-analysis-app .technical-hero-price strong {
+    font-size: 28px;
+  }
+
+  .technical-analysis-app .technical-score-meter strong {
+    font-size: 28px;
+  }
+
+  .landing-copy h2,
+  .landing-score-card strong {
+    font-size: 30px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

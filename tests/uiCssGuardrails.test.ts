@@ -31,6 +31,17 @@ test("font weights stay on supported tiers", () => {
   assert.doesNotMatch(css, /font-weight:\s*(?:550|650|750|760|780|790|820)\b/);
 });
 
+test("first-screen display typography uses a calmer scale", () => {
+  assert.match(css, /\/\* Typography density refinement \*\//);
+  assert.match(css, /\.stock-detail-app \.stock-name-row h2\s*\{[\s\S]*?font-size:\s*42px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(css, /\.stock-detail-app \.price-block strong\s*\{[\s\S]*?font-size:\s*36px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(css, /\.compare-app \.compare-hero h1\s*\{[\s\S]*?font-size:\s*30px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(css, /\.compare-score-line strong\s*\{[\s\S]*?font-size:\s*24px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(css, /\.technical-analysis-app \.technical-hero-heading h1\s*\{[\s\S]*?font-size:\s*36px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-name-row h2\s*\{[\s\S]*?font-size:\s*30px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-app \.compare-hero h1\s*\{[\s\S]*?font-size:\s*26px;/);
+});
+
 test("primary CTA styles use shared tokens instead of black overrides", () => {
   assert.match(css, /--cta-primary-bg:\s*var\(--accent\);/);
   assert.match(css, /\.technical-analysis-link\s*\{[\s\S]*?background:\s*var\(--cta-primary-bg\);/);
