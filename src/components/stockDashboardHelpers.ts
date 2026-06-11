@@ -286,7 +286,19 @@ export function dashboardSearchSyncDecision(input: {
 }
 
 export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = false): boolean {
-  return status === "loading" || (status === "pending" && !hasUsefulPartialData);
+  return status === "loading" || ((status === "pending" || status === "partial") && !hasUsefulPartialData);
+}
+
+export function hasDisplayableStockPartialData(data: StockScoreResponse | undefined): boolean {
+  if (!data) return false;
+  const record = data as Record<string, unknown>;
+  const priceLabel = stringFromUnknown(record.latest_price_label);
+  return (
+    numberFromUnknown(record.latest_price) !== undefined ||
+    Boolean(priceLabel && priceLabel !== "-") ||
+    numberFromUnknown(record.quality_score) !== undefined ||
+    numberFromUnknown(record.score) !== undefined
+  );
 }
 
 export function chooseRicherStockData(

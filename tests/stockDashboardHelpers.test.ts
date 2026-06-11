@@ -20,6 +20,7 @@ import {
   formatPriceWithContext,
   formatRecordValue,
   formatSecondaryPrice,
+  hasDisplayableStockPartialData,
   opportunityExtremes,
   partialStockDataFromQuote,
   partialStockDataFromTicker,
@@ -147,7 +148,7 @@ test("dashboard recognizes partial stock snapshots and keeps pending retry metad
   assert.equal(partial?.chart_series?.length, 2);
 });
 
-test("dashboard treats identity-only partial snapshots as useful pending data", () => {
+test("dashboard keeps identity-only partial snapshots behind the skeleton", () => {
   const payload = {
     ok: true,
     type: "partial_stock_snapshot",
@@ -172,7 +173,8 @@ test("dashboard treats identity-only partial snapshots as useful pending data", 
   assert.equal(partial?.requested_ticker, "US:ZVRA");
   assert.equal(partial?.symbol, "ZVRA");
   assert.equal(partial?.name, "지브러 테라퓨틱스");
-  assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+  assert.equal(hasDisplayableStockPartialData(partial), false);
+  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), true);
 });
 
 test("dashboard search input prefers stock names from partial data", () => {
@@ -279,10 +281,11 @@ test("dashboard can render a useful partial view from quote before score is read
   assert.equal(partial?.market_cap, 16_600_000_000);
   assert.equal(stockMarketCapDisplay(partial || {}).primary, "25조 2320억원");
   assert.equal(partial?.server_cache?.source, "quote_partial");
-  assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+  assert.equal(hasDisplayableStockPartialData(partial), true);
+  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), false);
 });
 
-test("dashboard can render a deadline partial view from ticker identity only", () => {
+test("dashboard keeps deadline identity placeholders behind the skeleton", () => {
   const partial = partialStockDataFromTicker("US:AFRM");
 
   assert.equal(partial.requested_ticker, "US:AFRM");
@@ -291,7 +294,23 @@ test("dashboard can render a deadline partial view from ticker identity only", (
   assert.equal(partial.currency, "USD");
   assert.equal(partial.server_cache?.source, "client_deadline");
   assert.equal(stockHeaderIdentity(partial).primary, "AFRM");
-  assert.equal(shouldShowStockSkeleton("partial", Boolean(partial)), false);
+  assert.equal(hasDisplayableStockPartialData(partial), false);
+  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), true);
+});
+
+test("dashboard does not replace the skeleton with profile-only partial data", () => {
+  const partial = {
+    requested_ticker: "KR:059090",
+    market: "KR",
+    symbol: "059090",
+    name: "미코",
+    exchange: "KOSDAQ",
+    currency: "KRW",
+    stock_profile: [{ label: "시장", value: "국내" }],
+  } satisfies StockScoreResponse;
+
+  assert.equal(hasDisplayableStockPartialData(partial), false);
+  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), true);
 });
 
 test("dashboard uses full skeleton only when no useful partial data is present", () => {

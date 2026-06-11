@@ -18,6 +18,7 @@ import {
   dailyToneClass,
   formatPrimaryPrice,
   formatSecondaryPrice,
+  hasDisplayableStockPartialData,
   scoreDataWithQuote,
   shouldShowStockSkeleton,
   stockMarketCapDisplay,
@@ -92,6 +93,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   } = useStockDashboardQueries(tickerParam, initialDisplayPayload);
   const displayData = data || (initialDisplayComplete ? initialDisplayData : undefined);
   const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
+  const hasDisplayablePartialData = hasDisplayableStockPartialData(displayPartialData);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -229,13 +231,13 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         />
       </section>
 
-      {tickerParam && !displayData && shouldShowStockSkeleton(state.status, Boolean(displayPartialData)) && (
+      {tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData) && (
         <StockDetailLoadingSkeleton tickerLabel={dashboardInputValue(tickerParam)} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
 
-      {displayPartialData && !displayData ? (
+      {displayPartialData && hasDisplayablePartialData && !displayData ? (
         <PartialStockFeed data={displayPartialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
       ) : null}
 
