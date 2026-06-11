@@ -179,6 +179,39 @@ test("wide mobile content scrolls inside its own touch container", () => {
   assert.match(css, /\.compare-metric-row\s*\{[\s\S]*?min-width:\s*calc\(132px \+ var\(--compare-cols\) \* 88px \+ \(var\(--compare-cols\) \+ 1\) \* 6px\);/);
 });
 
+test("mobile compare navigation is a compact horizontal action rail", () => {
+  const mobileCompareNavRule = css.match(/@media \(max-width: 899px\)[\s\S]*?\.compare-side-index\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileCompareNavLinkRule = css.match(/@media \(max-width: 899px\)[\s\S]*?\.compare-side-index a\s*\{([^}]*)\}/)?.[1] || "";
+
+  assert.match(mobileCompareNavRule, /display:\s*flex;/);
+  assert.match(mobileCompareNavRule, /overflow-x:\s*auto;/);
+  assert.match(mobileCompareNavRule, /scroll-snap-type:\s*x proximity;/);
+  assert.match(mobileCompareNavLinkRule, /flex:\s*0 0 auto;/);
+  assert.match(mobileCompareNavLinkRule, /min-height:\s*40px;/);
+  assert.match(mobileCompareNavLinkRule, /scroll-snap-align:\s*start;/);
+});
+
+test("compare search explains the five ticker limit in place", () => {
+  assert.match(compareSource, /const compareLimitReached = tickers\.length >= MAX_COMPARE;/);
+  assert.match(compareSource, /placeholder=\{compareLimitReached \? "최대 5개입니다" : "비교할 종목 검색"\}/);
+  assert.match(compareSource, /buttonLabel=\{compareLimitReached \? "완료" : "추가"\}/);
+  assert.match(compareSource, /disabled=\{compareLimitReached\}/);
+});
+
+test("horizontal affordances use native touch carousel behavior", () => {
+  const tickerChipsRule = css.match(/\.ticker-chips\s*\{([^}]*)\}/)?.[1] || "";
+  const comparePicksRule = css.match(/\.compare-picks,\s*\.compare-suggestions\s*\{([^}]*)\}/)?.[1] || "";
+  const compareMetricTableRule = css.match(/\.compare-metric-table\s*\{([^}]*)\}/)?.[1] || "";
+
+  assert.match(tickerChipsRule, /scroll-snap-type:\s*x proximity;/);
+  assert.match(css, /\.ticker-chips button\s*\{[\s\S]*?scroll-snap-align:\s*start;/);
+  assert.match(comparePicksRule, /-webkit-overflow-scrolling:\s*touch;/);
+  assert.match(comparePicksRule, /scroll-snap-type:\s*x proximity;/);
+  assert.match(css, /\.compare-picks span,[\s\S]*?\.compare-suggestions button\s*\{[\s\S]*?scroll-snap-align:\s*start;/);
+  assert.match(compareMetricTableRule, /scroll-snap-type:\s*x proximity;/);
+  assert.match(css, /@supports \(\(mask-image:\s*linear-gradient\(90deg,\s*#000,\s*#000\)\) or \(-webkit-mask-image:\s*linear-gradient\(90deg,\s*#000,\s*#000\)\)\)/);
+});
+
 test("compare page separates detail origin from neutral compare rows", () => {
   assert.match(dashboardSource, /origin/);
   assert.match(compareSource, /searchParams\.get\("origin"\)/);

@@ -65,13 +65,14 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const [input, setInput] = useState("");
   const { states, items, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
+  const compareLimitReached = tickers.length >= MAX_COMPARE;
   const firstItem = useMemo(() => (firstTicker ? items.find((item) => item.ticker === firstTickerLabel) : undefined), [firstTicker, items, firstTickerLabel]);
   const hasCompareChart = useMemo(() => compareDateAlignedSeries(items).series.some((entry) => entry.points.length >= 2), [items]);
   const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
 
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
-    if (!ticker || tickers.includes(ticker) || tickers.length >= MAX_COMPARE) return;
+    if (!ticker || tickers.includes(ticker) || compareLimitReached) return;
     setInput("");
     pushTickers(router, [...tickers, ticker], originTicker);
   }
@@ -139,10 +140,10 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           value={input}
           onValueChange={setInput}
           onSelect={addSymbol}
-          placeholder="비교할 종목 검색"
-          buttonLabel="추가"
+          placeholder={compareLimitReached ? "최대 5개입니다" : "비교할 종목 검색"}
+          buttonLabel={compareLimitReached ? "완료" : "추가"}
           label="비교할 국내·미국 주식 검색"
-          disabled={tickers.length >= MAX_COMPARE}
+          disabled={compareLimitReached}
           className="compare-add-form"
         />
       </section>
