@@ -157,6 +157,28 @@ test("compare feed grid items can shrink inside mobile viewport", () => {
   assert.match(css, /\.compare-section\s*\{[\s\S]*?min-width:\s*0;/);
 });
 
+test("mobile pages cannot create document-level horizontal scroll", () => {
+  assert.match(css, /html,\s*body\s*\{[\s\S]*?overflow-x:\s*hidden;/);
+  assert.match(css, /\.stock-app\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*hidden;/);
+  assert.match(css, /\.stock-feed\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]*?min-width:\s*0;/);
+  assert.match(css, /\.stock-feed-section\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
+  assert.match(css, /\.stock-title-card,[\s\S]*?\.chart-story,[\s\S]*?\.static-card\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
+});
+
+test("wide mobile content scrolls inside its own touch container", () => {
+  const compareMetricGroupRule = css.match(/\.compare-metric-group\s*\{([^}]*)\}/)?.[1] || "";
+  const compareMetricTableRule = css.match(/\.compare-metric-table\s*\{([^}]*)\}/)?.[1] || "";
+
+  assert.match(css, /\.ticker-chips\s*\{[\s\S]*?overflow-x:\s*auto;[\s\S]*?-webkit-overflow-scrolling:\s*touch;/);
+  assert.match(compareMetricGroupRule, /min-width:\s*0;/);
+  assert.match(compareMetricGroupRule, /max-width:\s*100%;/);
+  assert.match(css, /\.compare-metric-table\s*\{[\s\S]*?overflow-x:\s*auto;[\s\S]*?-webkit-overflow-scrolling:\s*touch;/);
+  assert.match(compareMetricTableRule, /width:\s*100%;/);
+  assert.match(compareMetricTableRule, /min-width:\s*0;/);
+  assert.match(compareMetricTableRule, /max-width:\s*100%;/);
+  assert.match(css, /\.compare-metric-row\s*\{[\s\S]*?min-width:\s*calc\(132px \+ var\(--compare-cols\) \* 88px \+ \(var\(--compare-cols\) \+ 1\) \* 6px\);/);
+});
+
 test("compare page separates detail origin from neutral compare rows", () => {
   assert.match(dashboardSource, /origin/);
   assert.match(compareSource, /searchParams\.get\("origin"\)/);

@@ -31,6 +31,13 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 html {
   background: var(--bg);
 }
@@ -69,8 +76,10 @@ a:focus-visible {
 
 .stock-app {
   width: min(480px, 100%);
+  max-width: 100%;
   min-height: 100vh;
   margin: 0 auto;
+  overflow-x: hidden;
   padding: 0 0 40px;
   background: var(--surface);
   border-inline: 1px solid rgba(15, 23, 42, 0.04);
@@ -395,6 +404,8 @@ a:focus-visible {
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
   margin: 7px -20px 0;
   padding: 0 20px 2px;
   scrollbar-width: none;
@@ -422,11 +433,16 @@ a:focus-visible {
 
 .stock-feed {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 8px;
 }
 
 .stock-feed-section {
+  min-width: 0;
+  max-width: 100%;
   scroll-margin-top: 110px;
 }
 
@@ -577,6 +593,8 @@ a:focus-visible {
 .static-card,
 .empty-card,
 .app-status {
+  min-width: 0;
+  max-width: 100%;
   background: var(--surface);
 }
 
@@ -611,6 +629,8 @@ a:focus-visible {
 }
 
 .stock-hero-main {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -653,6 +673,8 @@ a:focus-visible {
 }
 
 .price-strip {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
@@ -859,6 +881,8 @@ a:focus-visible {
 }
 
 .quick-read {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
@@ -1097,6 +1121,8 @@ a:focus-visible {
 }
 
 .chart-title-row {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2776,6 +2802,8 @@ a:focus-visible {
 }
 
 .compare-metric-group {
+  min-width: 0;
+  max-width: 100%;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2804,10 +2832,15 @@ a:focus-visible {
 
 .compare-metric-table {
   --compare-cols: 2;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: 6px;
   margin-top: 16px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
   padding-bottom: 2px;
 }
 
