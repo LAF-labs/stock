@@ -102,6 +102,7 @@ test("landing hero has four scrollable headline sections and a seamless stock lo
   assert.match(dashboardSource, /className="landing-loop-group"[\s\S]*className="landing-loop-group" aria-hidden="true"/);
   assert.match(css, /--landing-loop-distance:\s*50%;/);
   assert.match(css, /translateX\(calc\(-1 \* var\(--landing-loop-distance\)\)\)/);
+  assert.match(css, /\.landing-loop-window\s*\{[\s\S]*?mask-image:\s*linear-gradient\(90deg, transparent 0, #000 22px, #000 calc\(100% - 22px\), transparent 100%\);/);
 });
 
 test("home search is a floating pill that collapses to an icon-only circle", () => {
@@ -120,6 +121,23 @@ test("home search is a floating pill that collapses to an icon-only circle", () 
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed\s*\{[\s\S]*?width:\s*56px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed input\s*\{[\s\S]*?opacity:\s*0;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed \.symbol-search-action\s*\{[\s\S]*?border-radius:\s*50%;/);
+});
+
+test("home floating search has one clean white surface without a blue wrapper", () => {
+  const stockSearchRule = css.match(/\.stock-search\s*\{([^}]*)\}/)?.[1] || "";
+  const floatingBoxRule = css.match(/\.stock-search-form\.symbol-autocomplete-floating \.symbol-search-box\s*\{([^}]*)\}/)?.[1] || "";
+  const floatingActionRule = css.match(/\.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action\s*\{([^}]*)\}/)?.[1] || "";
+  const suggestionsRule = css.match(/(?:^|\n)\.symbol-suggestions\s*\{([^}]*)\}/)?.[1] || "";
+
+  assert.match(stockSearchRule, /background:\s*transparent;/);
+  assert.doesNotMatch(stockSearchRule, /linear-gradient/);
+  assert.match(floatingBoxRule, /border:\s*1px solid rgba\(15,\s*23,\s*42,\s*0\.06\);/);
+  assert.match(floatingBoxRule, /background:\s*#fff;/);
+  assert.doesNotMatch(floatingBoxRule, /rgba\(49,\s*130,\s*246/);
+  assert.match(floatingActionRule, /background:\s*#f7f8fa;/);
+  assert.doesNotMatch(floatingActionRule, /rgba\(49,\s*130,\s*246/);
+  assert.match(suggestionsRule, /background:\s*#fff;/);
+  assert.doesNotMatch(suggestionsRule, /rgba\(255,\s*255,\s*255,\s*0\./);
 });
 
 test("symbol autocomplete shows local suggestions before debounced server search", () => {
@@ -169,8 +187,8 @@ test("compare feed grid items can shrink inside mobile viewport", () => {
 });
 
 test("mobile pages cannot create document-level horizontal scroll", () => {
-  assert.match(css, /html,\s*body\s*\{[\s\S]*?overflow-x:\s*hidden;/);
-  assert.match(css, /\.stock-app\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*hidden;/);
+  assert.match(css, /html,\s*body\s*\{[\s\S]*?overflow-x:\s*clip;/);
+  assert.match(css, /\.stock-app\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*clip;/);
   assert.match(css, /\.stock-feed\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]*?min-width:\s*0;/);
   assert.match(css, /\.stock-feed-section\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
   assert.match(css, /\.stock-title-card,[\s\S]*?\.chart-story,[\s\S]*?\.static-card\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
@@ -200,6 +218,17 @@ test("mobile compare navigation is a compact horizontal action rail", () => {
   assert.match(mobileCompareNavLinkRule, /flex:\s*0 0 auto;/);
   assert.match(mobileCompareNavLinkRule, /min-height:\s*40px;/);
   assert.match(mobileCompareNavLinkRule, /scroll-snap-align:\s*start;/);
+});
+
+test("mobile route headers keep first content flush and compact", () => {
+  assert.match(css, /\/\* Mobile route header polish \*\//);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?width:\s*100%;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?min-height:\s*52px;[\s\S]*?margin:\s*0;[\s\S]*?border-bottom:\s*1px solid var\(--line\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index a,[\s\S]*?\.technical-topbar a\s*\{[\s\S]*?min-height:\s*32px;[\s\S]*?font-size:\s*12px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-picks\s*\{[\s\S]*?padding-top:\s*10px;[\s\S]*?padding-bottom:\s*12px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.technical-analysis-app \.technical-hero\s*\{[\s\S]*?border-top:\s*0;[\s\S]*?padding-top:\s*28px;/);
 });
 
 test("compare search explains the five ticker limit in place", () => {
