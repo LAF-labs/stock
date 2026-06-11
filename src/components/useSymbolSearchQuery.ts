@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { shouldFetchSymbolSearch } from "@/components/symbolAutocompleteHelpers";
+import { shouldFetchRemoteSymbolSearch, shouldFetchSymbolSearch } from "@/components/symbolAutocompleteHelpers";
 import { getClientSymbolSearchIndex } from "@/lib/clientSymbolSearch";
 import { searchSymbolIndex, type SymbolSearchIndexEntry } from "@/lib/symbolLocalSearch";
 import { symbolSearchQueryOptions } from "@/lib/stockQueryOptions";
@@ -24,13 +24,21 @@ export function useSymbolSearchQuery(value: string): SymbolSearchQueryView {
   const [localIndex, setLocalIndex] = useState<SymbolSearchIndexEntry[] | undefined>();
   const canSearchLocalQuery = query.length >= 1;
   const canFetchCurrentQuery = shouldFetchSymbolSearch(query);
-  const searchQuery = useQuery(symbolSearchQueryOptions(debouncedQuery));
-  const result = searchQuery.data?.state === "ready" ? searchQuery.data.data : undefined;
-  const remoteResultQuery = result?.query?.trim() || debouncedQuery;
   const localItems = useMemo(
     () => (canSearchLocalQuery && localIndex ? searchSymbolIndex(localIndex, { query, limit: 8 }) : []),
     [canSearchLocalQuery, localIndex, query],
   );
+  const shouldFetchRemoteQuery = query === debouncedQuery && shouldFetchRemoteSymbolSearch(query, {
+    localIndexReady: Boolean(localIndex),
+    localItemCount: localItems.length,
+    limit: 8,
+  });
+  const searchQuery = useQuery({
+    ...symbolSearchQueryOptions(debouncedQuery),
+    enabled: shouldFetchRemoteQuery,
+  });
+  const result = searchQuery.data?.state === "ready" ? searchQuery.data.data : undefined;
+  const remoteResultQuery = result?.query?.trim() || debouncedQuery;
   const remoteItems = useMemo(
     () => (canFetchCurrentQuery && remoteResultQuery === query ? result?.items || [] : []),
     [canFetchCurrentQuery, query, remoteResultQuery, result],

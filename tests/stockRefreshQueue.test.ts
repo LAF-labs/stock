@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { enqueueStockRefreshJob, stockRefreshDedupeKey } from "../src/lib/stockRefreshQueue";
+import { clearStockRefreshEnqueueMemoryForTests, enqueueStockRefreshJob, stockRefreshDedupeKey } from "../src/lib/stockRefreshQueue";
 
 const ENV_KEYS = [
   "SUPABASE_URL",
@@ -9,6 +9,7 @@ const ENV_KEYS = [
   "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_RPC_TIMEOUT_MS",
   "STOCK_REFRESH_QUEUE_ENQUEUE_TIMEOUT_MS",
+  "STOCK_REFRESH_ENQUEUE_MEMORY_DEDUPE_SECONDS",
 ] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
@@ -23,6 +24,7 @@ function restore() {
     }
   }
   globalThis.fetch = originalFetch;
+  clearStockRefreshEnqueueMemoryForTests();
 }
 
 test.afterEach(restore);
@@ -112,6 +114,29 @@ test("enqueueStockRefreshJob calls Supabase RPC with normalized score job", asyn
       dedupe_key: "score:US:NVDA:compare:snapshot_miss",
     },
   });
+});
+
+test("enqueueStockRefreshJob suppresses repeated successful enqueue RPCs briefly", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_REFRESH_ENQUEUE_MEMORY_DEDUPE_SECONDS = "30";
+
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ id: "job-1", status: "queued" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const first = await enqueueStockRefreshJob({ kind: "score", ticker: "US:NVDA", view: "detail" });
+  const second = await enqueueStockRefreshJob({ kind: "score", ticker: "US:NVDA", view: "detail" });
+
+  assert.equal(first.queued, true);
+  assert.equal(second.queued, true);
+  assert.equal(second.job?.status, "recently_queued");
+  assert.equal(calls, 1);
 });
 
 test("enqueueStockRefreshJob queues technical score jobs with on-demand priority", async () => {

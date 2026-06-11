@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { activeSymbolItemForQuery, shouldFetchSymbolSearch } from "../src/components/symbolAutocompleteHelpers";
+import { activeSymbolItemForQuery, shouldFetchRemoteSymbolSearch, shouldFetchSymbolSearch } from "../src/components/symbolAutocompleteHelpers";
 import type { SymbolSearchItem } from "../src/lib/symbolTypes";
 
 const koItem: SymbolSearchItem = {
@@ -23,6 +23,13 @@ test("symbol search avoids one-character server lookups", () => {
   assert.equal(shouldFetchSymbolSearch("삼"), false);
   assert.equal(shouldFetchSymbolSearch("ko"), true);
   assert.equal(shouldFetchSymbolSearch("삼성"), true);
+});
+
+test("symbol search skips remote lookups when local suggestions fill the list", () => {
+  assert.equal(shouldFetchRemoteSymbolSearch("삼성", { localIndexReady: false, localItemCount: 0, limit: 8 }), true);
+  assert.equal(shouldFetchRemoteSymbolSearch("삼성", { localIndexReady: true, localItemCount: 4, limit: 8 }), true);
+  assert.equal(shouldFetchRemoteSymbolSearch("삼성", { localIndexReady: true, localItemCount: 8, limit: 8 }), false);
+  assert.equal(shouldFetchRemoteSymbolSearch("삼", { localIndexReady: true, localItemCount: 8, limit: 8 }), false);
 });
 
 test("active autocomplete item is ignored when result query is stale", () => {

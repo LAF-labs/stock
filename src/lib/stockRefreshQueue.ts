@@ -1,7 +1,7 @@
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { defaultStockRefreshPriority } from "@/lib/stockRefreshPriorities";
 import type { ScoreView } from "@/lib/stockScoreContract";
-import { fetchWithTimeout, layeredNumericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
+import { fetchWithTimeout, layeredNumericEnv, numericEnv, supabaseAdminConfig, supabaseHeaders } from "@/lib/supabaseRest";
 import type { StockDataKind, StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { parseTickerRef } from "@/lib/tickerRef";
 
@@ -22,6 +22,12 @@ export type EnqueueStockRefreshResult =
   | { queued: true; job?: EnqueuedStockRefreshJob }
   | { queued: false; reason: "missing_supabase_admin_config" | "enqueue_failed" };
 
+declare global {
+  var __stockRefreshEnqueueMemory: Map<string, number> | undefined;
+}
+
+const enqueueMemory = (globalThis.__stockRefreshEnqueueMemory ??= new Map<string, number>());
+
 export function stockRefreshDedupeKey(input: {
   kind: StockDataKind;
   market: string;
@@ -41,6 +47,16 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
   const parsed = parseTickerRef(input.ticker);
   const view = input.kind === "score" ? input.view || "detail" : undefined;
   const reasonBucket = stockRefreshReasonBucket(input.reason);
+  const dedupeKey = stockRefreshDedupeKey({
+    kind: input.kind,
+    market: parsed.market,
+    symbol: parsed.symbol,
+    view,
+    reason: reasonBucket,
+  });
+  if (recentlyEnqueued(dedupeKey)) {
+    return { queued: true, job: { status: "recently_queued" } };
+  }
   const body = {
     p_kind: input.kind,
     p_market: parsed.market,
@@ -51,13 +67,7 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
       reason: reasonBucket,
       reason_bucket: reasonBucket,
       requested_ticker: parsed.ticker,
-      dedupe_key: stockRefreshDedupeKey({
-        kind: input.kind,
-        market: parsed.market,
-        symbol: parsed.symbol,
-        view,
-        reason: reasonBucket,
-      }),
+      dedupe_key: dedupeKey,
     },
   };
 
@@ -77,6 +87,7 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
     }
 
     const job = await response.json().catch(() => undefined);
+    rememberEnqueue(dedupeKey);
     return {
       queued: true,
       job: job && typeof job === "object" && !Array.isArray(job) ? pickJobFields(job as Record<string, unknown>) : undefined,
@@ -89,6 +100,10 @@ export async function enqueueStockRefreshJob(input: EnqueueStockRefreshInput): P
     });
     return { queued: false, reason: "enqueue_failed" };
   }
+}
+
+export function clearStockRefreshEnqueueMemoryForTests() {
+  enqueueMemory.clear();
 }
 
 function pickJobFields(job: Record<string, unknown>): EnqueuedStockRefreshJob {
@@ -104,4 +119,33 @@ function stockRefreshReasonBucket(reason: StockDataUnavailableReason | undefined
 
 function refreshQueueEnqueueTimeoutMs(): number {
   return layeredNumericEnv("STOCK_REFRESH_QUEUE_ENQUEUE_TIMEOUT_MS", "SUPABASE_RPC_TIMEOUT_MS", 2_500);
+}
+
+function enqueueMemoryDedupeMs(): number {
+  return Math.max(0, numericEnv("STOCK_REFRESH_ENQUEUE_MEMORY_DEDUPE_SECONDS", 30) * 1000);
+}
+
+function recentlyEnqueued(key: string): boolean {
+  const ttlMs = enqueueMemoryDedupeMs();
+  if (ttlMs <= 0) return false;
+  const now = Date.now();
+  const expiresAt = enqueueMemory.get(key);
+  if (expiresAt && expiresAt > now) return true;
+  if (expiresAt) enqueueMemory.delete(key);
+  return false;
+}
+
+function rememberEnqueue(key: string) {
+  const ttlMs = enqueueMemoryDedupeMs();
+  if (ttlMs <= 0) return;
+  const now = Date.now();
+  enqueueMemory.set(key, now + ttlMs);
+  pruneEnqueueMemory(now);
+}
+
+function pruneEnqueueMemory(now: number) {
+  if (enqueueMemory.size < numericEnv("STOCK_REFRESH_ENQUEUE_MEMORY_MAX_ENTRIES", 2_000)) return;
+  for (const [key, expiresAt] of enqueueMemory) {
+    if (expiresAt <= now) enqueueMemory.delete(key);
+  }
 }

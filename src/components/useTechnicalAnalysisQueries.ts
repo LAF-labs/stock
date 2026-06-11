@@ -13,7 +13,16 @@ import {
   snapshotPendingFromPayload,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
-import { displayQueryOptions, quoteDataFromQueryResult, quoteQueryDataFromScore, quoteQueryOptions, technicalScoreQueryOptions } from "@/lib/stockQueryOptions";
+import {
+  displayQueryOptions,
+  displayQueryResultFromPayload,
+  quoteDataFromQueryResult,
+  quoteQueryDataFromDisplayPayload,
+  quoteQueryDataFromScore,
+  quoteQueryOptions,
+  quoteQueryUpdatedAtFromDisplayPayload,
+  technicalScoreQueryOptions,
+} from "@/lib/stockQueryOptions";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, TechnicalScoreQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
@@ -34,15 +43,32 @@ export type TechnicalAnalysisQueryView = {
 
 export function useTechnicalAnalysisQueries(ticker: string, detailHref: string, initialDisplayPayload?: StockDisplayPayload): TechnicalAnalysisQueryView {
   const queryClient = useQueryClient();
+  const initialDisplayResult = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? displayQueryResultFromPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker],
+  );
+  const initialQuoteResult = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? quoteQueryDataFromDisplayPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker],
+  );
+  const initialQuoteUpdatedAt = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? quoteQueryUpdatedAtFromDisplayPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker],
+  );
   const scoreQuery = useQuery({
     ...technicalScoreQueryOptions(ticker),
     placeholderData: technicalPlaceholder(ticker),
   });
   const displayQuery = useQuery({
     ...displayQueryOptions(ticker, "technical"),
+    initialData: initialDisplayResult,
     placeholderData: (previous) => previous,
   });
-  const quoteQuery = useQuery(quoteQueryOptions(ticker));
+  const quoteQuery = useQuery({
+    ...quoteQueryOptions(ticker),
+    initialData: initialQuoteResult,
+    initialDataUpdatedAt: initialQuoteUpdatedAt,
+  });
   const quote = quoteDataFromQueryResult(quoteQuery.data);
   const initialDisplayData = useMemo(
     () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? stockScoreDataFromDisplayPayload(initialDisplayPayload) : undefined,

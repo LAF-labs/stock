@@ -19,6 +19,7 @@ import type {
   TechnicalScoreQueryResult,
 } from "@/lib/stockQueryTypes";
 import type { ClientApiPayload } from "@/lib/clientApi";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export const STOCK_QUERY_MAX_PENDING_POLLS = 24;
@@ -174,10 +175,20 @@ export function stockQueryRefetchOnMount(
   result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean | "always" {
   if (!result) return true;
+  if (isDisplayQueryResult(result)) return true;
   if (stockQueryShouldPoll(result)) return "always";
   if (result.state === "ready") return true;
   if (result.state === "unsupported") return false;
   return "always";
+}
+
+export function displayQueryResultFromPayload(payload: StockDisplayPayload): DisplayQueryResult {
+  return {
+    state: "ready",
+    status: 200,
+    payload: payload as unknown as ClientApiPayload,
+    data: payload,
+  };
 }
 
 function isDisplayQueryResult(result: unknown): result is DisplayQueryResult {
@@ -216,6 +227,58 @@ export function quoteQueryDataFromScore(
   if (!previous) return seeded;
   if (previous.state === "ready" || previous.state === "partial") return previous;
   return quoteQueryDataWithPending(previous, seeded);
+}
+
+export function quoteQueryDataFromDisplayPayload(payload: StockDisplayPayload): QuoteQueryResult | undefined {
+  const price = objectFromUnknown(payload.price?.value);
+  if (!price || !displayPriceHasQuoteFields(price)) return undefined;
+  const identity = payload.identity.value;
+  const market = marketFromDisplay(price.market, identity.market);
+  const quote: StockQuoteResponse = {
+    type: "quote",
+    requested_ticker: stringFromUnknown(price.requested_ticker) || payload.ticker,
+    market,
+    symbol: stringFromUnknown(price.symbol) || identity.symbol,
+    name: stringFromUnknown(price.name) || identity.name,
+    exchange: stringFromUnknown(price.exchange) || identity.exchange,
+    exchange_code: stringFromUnknown(price.exchange_code),
+    currency: stringFromUnknown(price.currency) || (market === "KR" ? "KRW" : market === "US" ? "USD" : undefined),
+    usd_krw_rate: numberFromUnknown(price.usd_krw_rate),
+    usd_krw_label: stringFromUnknown(price.usd_krw_label),
+    latest_price: numberFromUnknown(price.latest_price),
+    latest_price_label: stringFromUnknown(price.latest_price_label),
+    latest_bar_date: stringFromUnknown(price.latest_bar_date),
+    previous_close: numberFromUnknown(price.previous_close),
+    latest_change: numberFromUnknown(price.latest_change),
+    latest_change_label: stringFromUnknown(price.latest_change_label),
+    volume: numberFromUnknown(price.volume),
+    volume_label: stringFromUnknown(price.volume_label),
+    market_cap: numberFromUnknown(price.market_cap),
+    market_cap_label: stringFromUnknown(price.market_cap_label),
+    price_metrics: objectFromUnknown(price.price_metrics) as StockQuoteResponse["price_metrics"],
+    server_cache: (objectFromUnknown(price.server_cache) || {
+      state: payload.refresh.active ? "recovering" : "ready",
+      source: "display",
+      fetched_at: payload.generatedAt,
+      refresh_started: payload.refresh.active,
+    }) as StockQuoteResponse["server_cache"],
+    market_session: objectFromUnknown(price.market_session) as StockQuoteResponse["market_session"],
+  };
+  const compact = compactQuotePayload(quote);
+  return {
+    state: "ready",
+    status: 200,
+    payload: compact,
+    data: compact,
+  };
+}
+
+export function quoteQueryUpdatedAtFromDisplayPayload(payload: StockDisplayPayload): number | undefined {
+  const price = objectFromUnknown(payload.price?.value);
+  const cache = objectFromUnknown(price?.server_cache);
+  const timestamp = stringFromUnknown(cache?.fetched_at) || payload.price?.fetchedAt || payload.generatedAt;
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function quoteQueryResultFromScore(score: StockScoreResponse, ticker: string): QuoteQueryResult | undefined {
@@ -283,6 +346,21 @@ function scoreHasQuoteFields(score: StockScoreResponse): boolean {
   );
 }
 
+function displayPriceHasQuoteFields(price: Record<string, unknown>): boolean {
+  return (
+    numberFromUnknown(price.latest_price) !== undefined ||
+    stringFromUnknown(price.latest_price_label) !== undefined ||
+    stringFromUnknown(price.latest_bar_date) !== undefined ||
+    objectFromUnknown(price.price_metrics) !== undefined
+  );
+}
+
+function marketFromDisplay(value: unknown, fallback: unknown): StockQuoteResponse["market"] | undefined {
+  if (value === "KR" || value === "US") return value;
+  if (fallback === "KR" || fallback === "US") return fallback;
+  return undefined;
+}
+
 function normalizedTicker(value: unknown): string | undefined {
   const raw = stringFromUnknown(value);
   if (!raw) return undefined;
@@ -306,6 +384,10 @@ function stringFromUnknown(value: unknown): string | undefined {
 
 function numberFromUnknown(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function objectFromUnknown(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 function compactQuotePayload(quote: StockQuoteResponse): StockQuoteResponse & ClientApiPayload {

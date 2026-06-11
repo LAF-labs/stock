@@ -19,14 +19,18 @@ import { refreshQuote as refreshQuoteRequest } from "@/lib/stockQueryFns";
 import {
   judgmentQueryOptions,
   displayQueryOptions,
+  displayQueryResultFromPayload,
   quoteDataFromQueryResult,
+  quoteQueryDataFromDisplayPayload,
   quoteQueryDataFromRefreshResult,
   quoteQueryDataFromScore,
   quoteQueryOptions,
+  quoteQueryUpdatedAtFromDisplayPayload,
   scoreQueryOptions,
 } from "@/lib/stockQueryOptions";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "@/lib/stockQueryTypes";
+import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 
@@ -51,10 +55,22 @@ export type StockDashboardQueryView = {
   refreshPrice: () => void;
 };
 
-export function useStockDashboardQueries(ticker: string | undefined): StockDashboardQueryView {
+export function useStockDashboardQueries(ticker: string | undefined, initialDisplayPayload?: StockDisplayPayload): StockDashboardQueryView {
   const queryClient = useQueryClient();
   const enabled = Boolean(ticker);
   const tickerKey = ticker || "__stock-dashboard-disabled__";
+  const initialDisplayResult = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? displayQueryResultFromPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker],
+  );
+  const initialQuoteResult = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? quoteQueryDataFromDisplayPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker],
+  );
+  const initialQuoteUpdatedAt = useMemo(
+    () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? quoteQueryUpdatedAtFromDisplayPayload(initialDisplayPayload) : undefined,
+    [initialDisplayPayload, ticker],
+  );
   const scoreQuery = useQuery({
     ...scoreQueryOptions(tickerKey, "detail"),
     enabled,
@@ -62,11 +78,14 @@ export function useStockDashboardQueries(ticker: string | undefined): StockDashb
   });
   const displayQuery = useQuery({
     ...displayQueryOptions(tickerKey, "detail"),
+    initialData: initialDisplayResult,
     enabled,
     placeholderData: (previous) => previous,
   });
   const quoteQuery = useQuery({
     ...quoteQueryOptions(tickerKey),
+    initialData: initialQuoteResult,
+    initialDataUpdatedAt: initialQuoteUpdatedAt,
     enabled,
   });
 
