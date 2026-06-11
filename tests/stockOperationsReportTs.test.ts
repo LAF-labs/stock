@@ -12,6 +12,7 @@ import {
   summarizeIndustryBenchmarks,
   summarizeQueueRows,
   summarizeQuoteSnapshots,
+  summarizeRefreshTargets,
   summarizeScoreSnapshots,
   type SupabaseReportConfig,
 } from "../scripts/stock_operations_report";
@@ -150,6 +151,23 @@ test("TypeScript operations report summarizes quotes and industry benchmarks", (
   assert.equal(benchmarks.low_sample_rows, 1);
   assert.equal(benchmarks.oldest_as_of_date, "2026-06-04");
   assert.equal(benchmarks.newest_as_of_date, "2026-06-05");
+});
+
+test("TypeScript operations report summarizes refresh target coverage", () => {
+  const summary = summarizeRefreshTargets([
+    { market: "US", tier: "cold_stock", instrument_type: "STOCK", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: 604800 },
+    { market: "KR", tier: "cold_stock", instrument_type: "STOCK", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: 604800 },
+    { market: "US", tier: "etf", instrument_type: "ETF", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: null },
+    { market: "US", tier: "inactive", instrument_type: "RIGHT", enabled: false, quote_interval_seconds: null, score_detail_interval_seconds: null },
+  ]);
+
+  assert.equal(summary.total_targets, 4);
+  assert.equal(summary.enabled_targets, 3);
+  assert.equal(summary.stock_targets, 2);
+  assert.equal(summary.quote_enabled_targets, 3);
+  assert.equal(summary.score_enabled_targets, 2);
+  assert.deepEqual(summary.by_market, { US: 3, KR: 1 });
+  assert.deepEqual(summary.by_tier, { cold_stock: 2, etf: 1, inactive: 1 });
 });
 
 test("TypeScript operations report evaluates thresholds", () => {
@@ -308,6 +326,11 @@ test("TypeScript operations report fetches Supabase report through REST only", a
     if (url.includes("/rest/v1/stock_industry_benchmarks?")) {
       return jsonResponse([{ metric: "forward_per", source: "finviz_industry", sample_count: 8, as_of_date: "2026-06-05", expires_at: "2026-06-07T00:00:00+00:00" }]);
     }
+    if (url.includes("/rest/v1/stock_refresh_targets?")) {
+      return jsonResponse([
+        { market: "US", symbol: "NVDA", tier: "cold_stock", instrument_type: "STOCK", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: 604800 },
+      ]);
+    }
     if (url.includes("/rest/v1/market_calendar?")) {
       return jsonResponse([{ market: "US", trade_date: "2026-06-08", is_open: true }]);
     }
@@ -323,6 +346,7 @@ test("TypeScript operations report fetches Supabase report through REST only", a
     assert.equal(payload.score_calibration.technical_snapshots, 1);
     assert.equal(payload.quote_freshness.total_snapshots, 1);
     assert.equal(payload.industry_benchmarks.total_rows, 1);
+    assert.equal(payload.refresh_targets.total_targets, 1);
     assert.equal(payload.market_calendar.total_rows, 1);
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].url, "https://example.supabase.co/rest/v1/rpc/stock_operations_report");

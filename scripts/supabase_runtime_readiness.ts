@@ -6,6 +6,7 @@ export const RUNTIME_TABLE_CHECKS = [
   "public.stock_quote_snapshots",
   "public.stock_chart_snapshots",
   "public.stock_refresh_jobs",
+  "public.stock_refresh_targets",
   "public.stock_api_rate_limits",
   "public.stock_refresh_leases",
   "public.stock_refresh_cooldowns",
@@ -25,6 +26,7 @@ export const RUNTIME_RPC_CHECKS = [
   "claim_stock_refresh_jobs_by_kind",
   "complete_stock_refresh_job",
   "fail_stock_refresh_job",
+  "plan_stock_refresh_jobs",
   "refresh_stock_industry_benchmarks",
   "acquire_kis_token_issue_lock",
 ] as const;
@@ -34,6 +36,7 @@ export const RUNTIME_RPC_SIGNATURE_CHECKS = [
   ["claim_stock_refresh_jobs_by_kind", "p_worker_id text, p_kind text, p_limit integer, p_lock_seconds integer"],
   ["complete_stock_refresh_job", "p_job_id uuid, p_worker_id text"],
   ["fail_stock_refresh_job", "p_job_id uuid, p_worker_id text, p_error text, p_retry_after_seconds integer, p_permanent boolean"],
+  ["plan_stock_refresh_jobs", "p_kind text, p_limit integer, p_now timestamp with time zone"],
 ] as const;
 
 export const PUBLIC_READ_CHECKS = [

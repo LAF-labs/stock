@@ -31,3 +31,21 @@ test("stock cache workflow prewarms hot technical score snapshots", () => {
   assert.match(workflowSource, /FORCE_TICKERS="\$FORCE_TICKERS,\$STOCK_SCORE_WARM_TICKERS"/);
   assert.match(workflowSource, /--force-if-list "\$FORCE_TICKERS"/);
 });
+
+test("stock cache workflow plans SLA target jobs before stale backstops", () => {
+  const quoteBlock = workflowSource.split("\n  quote:", 2)[1].split("\n  score:", 1)[0];
+  const scoreBlock = workflowSource.split("\n  score:", 2)[1];
+
+  assert.match(quoteBlock, /STOCK_REFRESH_PLANNER_QUOTE_LIMIT/);
+  assert.match(quoteBlock, /Plan quote refresh target jobs/);
+  assert.match(quoteBlock, /node --import tsx scripts\/plan_stock_refresh_jobs\.ts/);
+  assert.match(quoteBlock, /--kind quote/);
+  assert.ok(quoteBlock.indexOf("Plan quote refresh target jobs") < quoteBlock.indexOf("Enqueue stale quote refresh jobs"));
+
+  assert.match(scoreBlock, /STOCK_REFRESH_PLANNER_SCORE_LIMIT/);
+  assert.match(scoreBlock, /STOCK_REFRESH_PLANNER_CHART_LIMIT/);
+  assert.match(scoreBlock, /Plan score refresh target jobs/);
+  assert.match(scoreBlock, /Plan chart refresh target jobs/);
+  assert.ok(scoreBlock.indexOf("Plan score refresh target jobs") < scoreBlock.indexOf("Enqueue stale score snapshot refresh jobs"));
+  assert.ok(scoreBlock.indexOf("Plan chart refresh target jobs") < scoreBlock.indexOf("Check due chart refresh jobs"));
+});

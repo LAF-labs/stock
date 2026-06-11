@@ -286,6 +286,56 @@ export function summarizeIndustryBenchmarks(rows: JsonRecord[], now = new Date()
   };
 }
 
+export function summarizeRefreshTargets(rows: JsonRecord[]) {
+  let enabledTargets = 0;
+  let stockTargets = 0;
+  let quoteEnabledTargets = 0;
+  let scoreEnabledTargets = 0;
+  let technicalEnabledTargets = 0;
+  let chartEnabledTargets = 0;
+  const byMarket: Record<string, number> = {};
+  const byTier: Record<string, number> = {};
+  const byInstrumentType: Record<string, number> = {};
+
+  for (const row of rows) {
+    const market = stringValue(row.market) || "unknown";
+    const tier = stringValue(row.tier) || "unknown";
+    const instrumentType = stringValue(row.instrument_type) || "unknown";
+    byMarket[market] = (byMarket[market] || 0) + 1;
+    byTier[tier] = (byTier[tier] || 0) + 1;
+    byInstrumentType[instrumentType] = (byInstrumentType[instrumentType] || 0) + 1;
+
+    if (row.enabled === true) enabledTargets += 1;
+    if (instrumentType === "STOCK") stockTargets += 1;
+    if (row.enabled === true && intValue(row.quote_interval_seconds) > 0) quoteEnabledTargets += 1;
+    if (
+      row.enabled === true
+      && (
+        intValue(row.score_detail_interval_seconds) > 0
+        || intValue(row.score_compare_interval_seconds) > 0
+        || intValue(row.score_technical_interval_seconds) > 0
+      )
+    ) {
+      scoreEnabledTargets += 1;
+    }
+    if (row.enabled === true && intValue(row.score_technical_interval_seconds) > 0) technicalEnabledTargets += 1;
+    if (row.enabled === true && intValue(row.chart_interval_seconds) > 0) chartEnabledTargets += 1;
+  }
+
+  return {
+    total_targets: rows.length,
+    enabled_targets: enabledTargets,
+    stock_targets: stockTargets,
+    quote_enabled_targets: quoteEnabledTargets,
+    score_enabled_targets: scoreEnabledTargets,
+    technical_enabled_targets: technicalEnabledTargets,
+    chart_enabled_targets: chartEnabledTargets,
+    by_market: byMarket,
+    by_tier: byTier,
+    by_instrument_type: byInstrumentType,
+  };
+}
+
 export function summarizeMarketCalendar(rows: JsonRecord[], expectedDays = 30) {
   const byMarket: Record<string, { rows: number; open_days: number; last_trade_date: string | null }> = {};
   for (const row of rows) {
@@ -328,10 +378,11 @@ export async function fetchSupabaseReport(
 ) {
   const rawOperations = await postSupabaseRpc(config, "stock_operations_report", { p_score_stale_hours: staleAfterHours });
   const refreshQueueRows = isRecord(rawOperations) && Array.isArray(rawOperations.refresh_queue) ? rawOperations.refresh_queue.filter(isRecord) : [];
-  const [scoreRows, quoteRows, benchmarkRows, calendarRows] = await Promise.all([
+  const [scoreRows, quoteRows, benchmarkRows, targetRows, calendarRows] = await Promise.all([
     fetchScoreSnapshotRows(config, sampleLimit),
     fetchQuoteSnapshotRows(config, sampleLimit),
     fetchIndustryBenchmarkRows(config, sampleLimit),
+    fetchRefreshTargetRows(config),
     fetchMarketCalendarRows(config),
   ]);
   const generatedAt = new Date();
@@ -344,6 +395,7 @@ export async function fetchSupabaseReport(
     score_calibration: summarizeScoreSnapshots(scoreRows, expectedModelVersion, generatedAt, staleAfterHours),
     quote_freshness: summarizeQuoteSnapshots(quoteRows, generatedAt),
     industry_benchmarks: summarizeIndustryBenchmarks(benchmarkRows, generatedAt),
+    refresh_targets: summarizeRefreshTargets(targetRows),
     market_calendar: summarizeMarketCalendar(calendarRows),
   };
 }
@@ -499,6 +551,24 @@ export async function fetchIndustryBenchmarkRows(config: SupabaseReportConfig, s
   });
 }
 
+export async function fetchRefreshTargetRows(config: SupabaseReportConfig) {
+  return fetchPagedRows(config, "stock_refresh_targets", {
+    select: [
+      "market",
+      "symbol",
+      "tier",
+      "instrument_type",
+      "enabled",
+      "quote_interval_seconds",
+      "score_detail_interval_seconds",
+      "score_compare_interval_seconds",
+      "score_technical_interval_seconds",
+      "chart_interval_seconds",
+    ].join(","),
+    order: "market.asc,symbol.asc",
+  });
+}
+
 export async function fetchMarketCalendarRows(config: SupabaseReportConfig, days = 30) {
   return fetchRows(config, "market_calendar", {
     trade_date: `gte.${new Date().toISOString().slice(0, 10)}`,
@@ -540,6 +610,34 @@ async function fetchRows(config: SupabaseReportConfig, table: string, params: Re
   const text = await response.text();
   const payload = text ? JSON.parse(text) : [];
   return Array.isArray(payload) ? payload.filter(isRecord) : [];
+}
+
+async function fetchPagedRows(config: SupabaseReportConfig, table: string, params: Record<string, string>, pageSize = 1000, maxRows = 20_000) {
+  const rows: JsonRecord[] = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const query = new URLSearchParams(params);
+    const response = await fetchWithTimeout(
+      `${trimUrl(config.url)}/rest/v1/${table}?${query.toString()}`,
+      {
+        headers: {
+          ...supabaseHeaders(config.key),
+          Range: `${offset}-${offset + pageSize - 1}`,
+        },
+      },
+      config.timeoutMs
+    );
+    if (response.status === 416 && rows.length > 0) break;
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Supabase ${table} query failed: HTTP ${response.status} ${text.slice(0, 500)}`);
+    }
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : [];
+    const pageRows = Array.isArray(payload) ? payload.filter(isRecord) : [];
+    rows.push(...pageRows);
+    if (pageRows.length < pageSize) break;
+  }
+  return rows;
 }
 
 export function supabaseReportConfig(options: OperationsOptions): SupabaseReportConfig {

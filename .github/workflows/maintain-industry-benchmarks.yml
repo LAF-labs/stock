@@ -25,6 +25,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -41,6 +50,10 @@ jobs:
 
       - name: Sync exchange market calendars
         run: python scripts/sync_market_calendar.py --days 550
+
+      - name: Seed stock refresh target SLAs
+        run: |
+          node --import tsx scripts/seed_stock_refresh_targets.ts --json
 
       - name: Refresh snapshot-derived industry benchmarks
         run: python scripts/run_industry_maintenance.py --refresh-benchmarks --benchmark-min-sample-count 8 --no-cli-service-role

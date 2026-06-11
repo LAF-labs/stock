@@ -61,6 +61,7 @@ jobs:
       STOCK_WARM_TICKERS: ${{ vars.STOCK_WARM_TICKERS || vars.STOCK_SNAPSHOT_TICKERS }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '50' }}
+      STOCK_REFRESH_PLANNER_QUOTE_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_QUOTE_LIMIT || '50' }}
       STOCK_STALE_QUOTE_REFRESH_LIMIT: ${{ vars.STOCK_STALE_QUOTE_REFRESH_LIMIT || '50' }}
       STOCK_WARM_BATCH_SIZE: ${{ vars.STOCK_WARM_BATCH_SIZE || '50' }}
       STOCK_WARM_POOL_LIMIT: ${{ vars.STOCK_WARM_POOL_LIMIT || '500' }}
@@ -78,6 +79,13 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Plan quote refresh target jobs
+        run: |
+          node --import tsx scripts/plan_stock_refresh_jobs.ts \
+            --kind quote \
+            --limit "$STOCK_REFRESH_PLANNER_QUOTE_LIMIT" \
+            --json
 
       - name: Enqueue stale quote refresh jobs
         run: |
@@ -128,6 +136,8 @@ jobs:
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '50' }}
       STOCK_CHART_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_CHART_SNAPSHOT_QUEUE_LIMIT || '15' }}
       STOCK_SCORE_STALE_HOURS: ${{ vars.STOCK_SCORE_STALE_HOURS || '24' }}
+      STOCK_REFRESH_PLANNER_SCORE_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_SCORE_LIMIT || '50' }}
+      STOCK_REFRESH_PLANNER_CHART_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_CHART_LIMIT || '15' }}
       STOCK_STALE_SCORE_REFRESH_LIMIT: ${{ vars.STOCK_STALE_SCORE_REFRESH_LIMIT || '50' }}
       STOCK_LEGACY_SCORE_WORKER_ENABLED: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED || '1' }}
 
@@ -144,12 +154,27 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Plan score refresh target jobs
+        if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
+        run: |
+          node --import tsx scripts/plan_stock_refresh_jobs.ts \
+            --kind score \
+            --limit "$STOCK_REFRESH_PLANNER_SCORE_LIMIT" \
+            --json
+
       - name: Enqueue stale score snapshot refresh jobs
         if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
         run: |
           node --import tsx scripts/enqueue_stale_score_snapshots.ts \
             --stale-hours "$STOCK_SCORE_STALE_HOURS" \
             --limit "$STOCK_STALE_SCORE_REFRESH_LIMIT" \
+            --json
+
+      - name: Plan chart refresh target jobs
+        run: |
+          node --import tsx scripts/plan_stock_refresh_jobs.ts \
+            --kind chart \
+            --limit "$STOCK_REFRESH_PLANNER_CHART_LIMIT" \
             --json
 
       - name: Check due legacy score refresh jobs
