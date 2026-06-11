@@ -11,6 +11,7 @@ import requests
 from .formatting import as_float
 from .io_utils import env_value, one_byte_file_lock
 from .kis_discovery_cache import read_kis_discovery_cache, write_kis_discovery_cache
+from .kis_domestic_fundamentals import KIS_DOMESTIC_FINANCE_ENDPOINTS, kis_period_type, normalized_kis_symbol
 from .provider_cache import (
     acquire_supabase_kis_token_issue_lock,
     delete_supabase_kis_access_token,
@@ -412,6 +413,59 @@ def kis_domestic_stock_info(symbol: str) -> dict[str, Any]:
             {"PDNO": symbol, "PRDT_TYPE_CD": "300"},
         )
     )
+
+
+def kis_domestic_finance_rows(
+    symbol: str,
+    endpoint_key: str,
+    *,
+    period: str = "0",
+    market_div_code: str = KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
+) -> list[dict[str, Any]]:
+    endpoint = next((item for item in KIS_DOMESTIC_FINANCE_ENDPOINTS if item["key"] == endpoint_key), None)
+    if endpoint is None:
+        raise KisApiError(f"지원하지 않는 국내 재무 API입니다: {endpoint_key}")
+    return output_list(
+        kis_get(
+            str(endpoint["path"]),
+            str(endpoint["tr_id"]),
+            {
+                "FID_DIV_CLS_CODE": str(period),
+                "FID_COND_MRKT_DIV_CODE": market_div_code,
+                "FID_INPUT_ISCD": normalized_kis_symbol(symbol),
+            },
+        )
+    )
+
+
+def kis_domestic_finance_bundle(
+    symbol: str,
+    *,
+    period: str = "0",
+    market_div_code: str = KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
+) -> dict[str, Any]:
+    clean_symbol = normalized_kis_symbol(symbol)
+    raw: dict[str, list[dict[str, Any]]] = {}
+    errors: dict[str, str] = {}
+    for endpoint in KIS_DOMESTIC_FINANCE_ENDPOINTS:
+        key = str(endpoint["key"])
+        try:
+            rows = kis_domestic_finance_rows(clean_symbol, key, period=period, market_div_code=market_div_code)
+            if rows:
+                raw[key] = rows
+        except Exception as exc:
+            message = str(exc)
+            errors[key] = message
+            if "초당" in message or "거래건수" in message or "토큰" in message or "token" in message.lower():
+                raise
+    return {
+        "symbol": clean_symbol,
+        "period": str(period),
+        "period_type": kis_period_type(str(period)),
+        "market_div_code": market_div_code,
+        "raw": raw,
+        "errors": errors,
+    }
 
 
 def kis_domestic_news(symbol: str) -> list[dict[str, Any]]:

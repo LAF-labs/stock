@@ -14,6 +14,12 @@ import yfinance as yf
 
 from .formatting import as_float, finite_or_none
 from .io_utils import env_value, int_env, one_byte_file_lock
+from .kis_domestic_fundamentals import (
+    KIS_DOMESTIC_FUNDAMENTAL_CACHE_VERSION,
+    KIS_DOMESTIC_FUNDAMENTAL_SOURCE,
+    kis_domestic_fundamental_payload,
+    normalize_kis_domestic_fundamentals,
+)
 from .symbols import clean_ticker
 from .yfinance_provider import safe_info
 from .cache_policy import fresh_seconds as policy_fresh_seconds, stale_seconds as policy_stale_seconds
@@ -294,6 +300,222 @@ def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any
         return response.ok
     except Exception:
         return False
+
+
+def kis_domestic_cache_meta(store: str, state: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "source": KIS_DOMESTIC_FUNDAMENTAL_SOURCE,
+        "store": store,
+        "cache": state,
+        **{key: value for key, value in extra.items() if value is not None},
+    }
+
+
+def kis_domestic_request_fetch_enabled() -> bool:
+    raw = (env_value("STOCK_KIS_DOMESTIC_FUNDAMENTALS_FETCH") or "").strip().lower()
+    if raw:
+        return raw in {"1", "true", "yes", "on", "enabled"}
+
+    app_key = env_value("STOCK_API_APP_KEY") or env_value("KIS_APP_KEY")
+    app_secret = env_value("STOCK_API_APP_SECRET") or env_value("KIS_APP_SECRET")
+    return bool(app_key and app_secret)
+
+
+def kis_domestic_fundamental_cache_payload(
+    symbol: str,
+    raw: dict[str, Any],
+    normalized: dict[str, Any] | None = None,
+    *,
+    period_type: str = "annual",
+    errors: dict[str, str] | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    return kis_domestic_fundamental_payload(
+        symbol,
+        raw,
+        normalized=normalized,
+        period_type=period_type,
+        errors=errors,
+        now=now,
+        fresh_seconds=policy_fresh_seconds("fundamentals_statement"),
+        stale_seconds=policy_stale_seconds("fundamentals_statement"),
+    )
+
+
+def read_supabase_kis_domestic_fundamental_cache(
+    symbol: str,
+    market: str = "KR",
+) -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None, dict[str, Any] | None]:
+    config = supabase_read_config()
+    if not config:
+        return None, None, None, None
+
+    url, key = config
+    clean_symbol = clean_ticker(symbol)
+    try:
+        response = requests.get(
+            f"{url}/rest/v1/{SUPABASE_FUNDAMENTAL_TABLE}",
+            params={
+                "market": f"eq.{clean_ticker(market) or 'KR'}",
+                "symbol": f"eq.{clean_symbol}",
+                "source": f"eq.{KIS_DOMESTIC_FUNDAMENTAL_SOURCE}",
+                "select": "payload,fetched_at,expires_at,stale_expires_at",
+                "limit": "1",
+            },
+            headers=supabase_headers(key),
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        if response.status_code == 404:
+            return None, None, kis_domestic_cache_meta("supabase", "miss", error="table_missing"), None
+        if not response.ok:
+            return None, None, kis_domestic_cache_meta("supabase", "miss", error=f"HTTP {response.status_code}"), None
+        rows = response.json()
+    except Exception as exc:
+        return None, None, kis_domestic_cache_meta("supabase", "miss", error=str(exc)), None
+
+    if not isinstance(rows, list) or not rows:
+        return None, None, kis_domestic_cache_meta("supabase", "miss"), None
+
+    row = rows[0] if isinstance(rows[0], dict) else {}
+    payload = row.get("payload")
+    if not isinstance(payload, dict) or payload.get("version") != KIS_DOMESTIC_FUNDAMENTAL_CACHE_VERSION:
+        return None, None, kis_domestic_cache_meta("supabase", "miss", error="version_mismatch"), None
+
+    state = supabase_cache_state(row, datetime.now(timezone.utc))
+    if state is None:
+        return None, None, kis_domestic_cache_meta("supabase", "expired"), payload
+
+    normalized = payload.get("normalized") if isinstance(payload.get("normalized"), dict) else normalize_kis_domestic_fundamentals(payload)
+    if not isinstance(normalized, dict) or not normalized:
+        return None, None, kis_domestic_cache_meta("supabase", "expired", error="empty_payload"), payload
+
+    return normalized, state, kis_domestic_cache_meta(
+        "supabase",
+        state,
+        fetched_at=row.get("fetched_at"),
+        expires_at=row.get("expires_at"),
+        stale_expires_at=row.get("stale_expires_at"),
+    ), payload
+
+
+def write_supabase_kis_domestic_fundamental_cache(
+    symbol: str,
+    raw: dict[str, Any],
+    normalized: dict[str, Any] | None = None,
+    *,
+    market: str = "KR",
+    period_type: str = "annual",
+    errors: dict[str, str] | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    payload = kis_domestic_fundamental_cache_payload(
+        symbol,
+        raw,
+        normalized,
+        period_type=period_type,
+        errors=errors,
+    )
+    config = supabase_write_config()
+    if not config:
+        return False, payload
+
+    url, key = config
+    row = {
+        "market": clean_ticker(market) or "KR",
+        "symbol": clean_ticker(symbol),
+        "source": KIS_DOMESTIC_FUNDAMENTAL_SOURCE,
+        "payload": payload,
+        "fetched_at": payload["fetched_at_iso"],
+        "expires_at": payload["expires_at_iso"],
+        "stale_expires_at": payload["stale_expires_at_iso"],
+    }
+    try:
+        response = requests.post(
+            f"{url}/rest/v1/{SUPABASE_FUNDAMENTAL_TABLE}",
+            params={"on_conflict": "market,symbol,source"},
+            headers={
+                **supabase_headers(key),
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            json=row,
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        return response.ok, payload
+    except Exception:
+        return False, payload
+
+
+def kis_domestic_fundamentals(
+    symbol: str,
+    market: str = "KR",
+    fetcher: Any | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    market = clean_ticker(market) or "KR"
+    clean_symbol = clean_ticker(symbol)
+    cached_values, cached_state, cached_meta, cached_payload = read_supabase_kis_domestic_fundamental_cache(clean_symbol, market)
+    if cached_values and cached_state == "fresh":
+        return cached_values, cached_meta or kis_domestic_cache_meta("supabase", "fresh"), cached_payload or {}
+
+    stale_values = cached_values if cached_values and cached_state == "stale" else None
+    stale_meta = cached_meta if cached_values and cached_state == "stale" else None
+    stale_payload = cached_payload if cached_values and cached_state == "stale" else None
+
+    if not kis_domestic_request_fetch_enabled():
+        if stale_values:
+            return stale_values, {
+                **(stale_meta or kis_domestic_cache_meta("supabase", "stale")),
+                "provider_fetch": "disabled",
+            }, stale_payload or {}
+        return {}, kis_domestic_cache_meta("provider", "miss", provider_fetch="disabled"), {}
+
+    if fetcher is None:
+        from .kis_client import kis_domestic_finance_bundle
+
+        fetcher = kis_domestic_finance_bundle
+
+    lock_path = Path.cwd() / f".kis_domestic_fundamentals_{clean_symbol}.lock"
+    with one_byte_file_lock(lock_path):
+        cached_values, cached_state, cached_meta, cached_payload = read_supabase_kis_domestic_fundamental_cache(clean_symbol, market)
+        if cached_values and cached_state == "fresh":
+            return cached_values, cached_meta or kis_domestic_cache_meta("supabase", "fresh"), cached_payload or {}
+        if cached_values and cached_state == "stale":
+            stale_values = cached_values
+            stale_meta = cached_meta
+            stale_payload = cached_payload
+
+        try:
+            bundle = fetcher(clean_symbol)
+            raw = bundle.get("raw") if isinstance(bundle, dict) and isinstance(bundle.get("raw"), dict) else {}
+            errors = bundle.get("errors") if isinstance(bundle, dict) and isinstance(bundle.get("errors"), dict) else {}
+            period_type = str(bundle.get("period_type") or "annual") if isinstance(bundle, dict) else "annual"
+            normalized = normalize_kis_domestic_fundamentals(raw)
+            if normalized:
+                supabase_written, payload = write_supabase_kis_domestic_fundamental_cache(
+                    clean_symbol,
+                    raw,
+                    normalized,
+                    market=market,
+                    period_type=period_type,
+                    errors=errors,
+                )
+                return normalized, kis_domestic_cache_meta(
+                    "provider",
+                    "refreshed",
+                    persisted="supabase" if supabase_written else "memory",
+                ), payload
+            if stale_values:
+                return stale_values, {
+                    **(stale_meta or kis_domestic_cache_meta("supabase", "stale")),
+                    "refresh_error": "empty_provider_payload",
+                }, stale_payload or {}
+            payload = kis_domestic_fundamental_cache_payload(clean_symbol, raw, {}, period_type=period_type, errors=errors)
+            return {}, kis_domestic_cache_meta("provider", "miss", error="empty_provider_payload"), payload
+        except Exception as exc:
+            if stale_values:
+                return stale_values, {
+                    **(stale_meta or kis_domestic_cache_meta("supabase", "stale")),
+                    "refresh_error": str(exc),
+                }, stale_payload or {}
+            return {}, kis_domestic_cache_meta("provider", "miss", refresh_error=str(exc)), {}
 
 
 def kis_token_cache_key(config: dict[str, str]) -> str:
