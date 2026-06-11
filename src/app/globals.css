@@ -2494,10 +2494,12 @@ a:focus-visible {
 }
 
 .compare-feed {
+  min-width: 0;
   display: grid;
 }
 
 .compare-section {
+  min-width: 0;
   padding: 30px 20px;
   border-top: 12px solid #f2f4f6;
   background: var(--surface);
