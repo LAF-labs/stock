@@ -5,11 +5,14 @@ import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "../src/components/QueryProvider";
 import {
   STOCK_QUERY_MAX_PENDING_POLLS,
   compareQueryOptions,
+  displayQueryResultFromPayload,
   displayQueryOptions,
   judgmentQueryOptions,
   quoteQueryOptions,
   quoteQueryDataFromRefreshResult,
+  quoteQueryDataFromDisplayPayload,
   quoteQueryDataFromScore,
+  quoteQueryUpdatedAtFromDisplayPayload,
   scoreQueryOptions,
   shouldEnableSymbolSearch,
   stockPendingRetryDelayMs,
@@ -21,6 +24,7 @@ import {
   technicalScoreQueryOptions,
 } from "../src/lib/stockQueryOptions";
 import type { CompareQueryResult, DisplayQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
+import type { StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 import type { StockScoreResponse } from "../src/lib/types";
 
 test("stock query option factories use canonical keys and cache windows", () => {
@@ -69,6 +73,52 @@ test("display query polls from refresh metadata instead of pending state names",
 
   assert.equal(stockQueryShouldPoll(display), true);
   assert.equal(stockQueryRefetchIntervalMs(display, 0), 1500);
+});
+
+test("display query result can be seeded from server-rendered payload", () => {
+  const payload: StockDisplayPayload = {
+    ok: true,
+    ticker: "KR:005930",
+    requestedTicker: "KR:005930",
+    view: "detail",
+    generatedAt: "2026-06-10T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    hotnessTier: "active",
+    identity: {
+      value: { ticker: "KR:005930", market: "KR", symbol: "005930", name: "삼성전자" },
+      freshness: "fresh",
+      source: "symbol-master",
+    },
+    price: {
+      value: { requested_ticker: "KR:005930", market: "KR", symbol: "005930", latest_price: 187_400 },
+      freshness: "fresh",
+      source: "market-data",
+    },
+    completion: {
+      requiredParts: ["identity", "price", "chart", "score"],
+      presentParts: ["identity", "price"],
+      missingParts: ["chart", "score"],
+      recoveringParts: ["chart", "score"],
+      unavailableParts: [],
+    },
+    refresh: {
+      active: true,
+      staleParts: [],
+      recoveringParts: ["chart", "score"],
+      nextPollMs: 1500,
+    },
+    capabilities: { canCompare: true, canTechnical: true },
+  };
+
+  const result = displayQueryResultFromPayload(payload);
+
+  assert.equal(result.state, "ready");
+  assert.equal(result.status, 200);
+  assert.equal(result.data, payload);
+  assert.equal(result.payload, payload);
+  assert.equal(stockQueryShouldPoll(result), true);
+  assert.equal(stockQueryRefetchOnMount(result), true);
+  assert.equal(stockQueryRefetchIntervalMs(result, 0), 1500);
 });
 
 test("compare query option keeps order and disables empty batches", () => {
@@ -256,6 +306,56 @@ test("ready score data seeds quote query data only for the matching ticker", () 
     quoteQueryDataFromScore({ requested_ticker: "KR:004020", market: "KR", symbol: "004020", latest_price: 28_550 }, "US:KO"),
     undefined,
   );
+});
+
+test("display price payload can seed quote query data without an immediate quote round trip", () => {
+  const payload: StockDisplayPayload = {
+    ok: true,
+    ticker: "KR:005930",
+    requestedTicker: "KR:005930",
+    view: "detail",
+    generatedAt: "2026-06-10T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    hotnessTier: "active",
+    identity: {
+      value: { ticker: "KR:005930", market: "KR", symbol: "005930", name: "삼성전자", exchange: "KOSPI" },
+      freshness: "fresh",
+      source: "symbol-master",
+    },
+    price: {
+      value: {
+        requested_ticker: "KR:005930",
+        market: "KR",
+        symbol: "005930",
+        name: "삼성전자",
+        currency: "KRW",
+        latest_price: 187_400,
+        latest_price_label: "187,400원",
+        latest_bar_date: "2026-06-10",
+        server_cache: { fetched_at: "2026-06-09T23:59:00.000Z" },
+      },
+      freshness: "fresh",
+      source: "market-data",
+    },
+    completion: {
+      requiredParts: ["identity", "price", "chart", "score"],
+      presentParts: ["identity", "price"],
+      missingParts: ["chart", "score"],
+      recoveringParts: ["chart", "score"],
+      unavailableParts: [],
+    },
+    refresh: { active: true, staleParts: [], recoveringParts: ["chart", "score"], nextPollMs: 1500 },
+    capabilities: { canCompare: true, canTechnical: true },
+  };
+
+  const seeded = quoteQueryDataFromDisplayPayload(payload);
+
+  assert.equal(seeded?.state, "ready");
+  assert.equal(seeded?.data.name, "삼성전자");
+  assert.equal(seeded?.data.latest_price, 187_400);
+  assert.equal(seeded?.data.exchange, "KOSPI");
+  assert.equal(quoteQueryUpdatedAtFromDisplayPayload(payload), Date.parse("2026-06-09T23:59:00.000Z"));
+  assert.equal(quoteQueryDataFromDisplayPayload({ ...payload, price: undefined }), undefined);
 });
 
 test("partial polling only continues when nested pending work is queued", () => {

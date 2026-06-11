@@ -11,7 +11,7 @@ import {
   type CompareItem,
 } from "@/components/stockCompareHelpers";
 import { chooseRicherStockData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
-import { compareQueryOptions, displayQueryOptions } from "@/lib/stockQueryOptions";
+import { compareQueryOptions, displayQueryOptions, displayQueryResultFromPayload } from "@/lib/stockQueryOptions";
 import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult, DisplayQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockScoreResponse } from "@/lib/types";
@@ -38,9 +38,17 @@ export function useStockCompareQueries(tickers: readonly string[], initialDispla
     ...compareQueryOptions(tickers),
     placeholderData: (previousData) => previousData,
   });
+  const initialDisplayResults = useMemo(() => {
+    const byTicker = new Map<string, DisplayQueryResult>();
+    initialDisplayPayloads.forEach((payload) => {
+      if (tickers.includes(payload.ticker)) byTicker.set(payload.ticker, displayQueryResultFromPayload(payload));
+    });
+    return byTicker;
+  }, [initialDisplayPayloads, tickers]);
   const displayQueries = useQueries({
     queries: tickers.map((ticker) => ({
       ...displayQueryOptions(ticker, "compare"),
+      initialData: initialDisplayResults.get(ticker),
       placeholderData: (previousData: DisplayQueryResult | undefined) => previousData,
     })),
   });

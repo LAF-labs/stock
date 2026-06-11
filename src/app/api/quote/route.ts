@@ -4,10 +4,10 @@ import { jsonError } from "@/lib/apiGuards";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { acquireRefreshCooldown, applyRefreshUserCookie, cooldownPayload, privateNoStoreHeaders } from "@/lib/refreshCooldown";
+import { enrichQuotePayloadForDisplay } from "@/lib/quoteDisplayEnrichment";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { attachQuoteParts } from "@/lib/stockPartsResponse";
-import { enrichStockPayloadWithSymbolProfile } from "@/lib/symbolProfiles";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
 import { resolveTickerAlias } from "@/lib/tickerRef";
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await getStockQuote(ticker, { forceRefresh });
     const resultPayload = attachQuoteParts(result);
-    const payload = quoteNeedsSymbolProfile(resultPayload) ? await enrichStockPayloadWithSymbolProfile(resultPayload) : resultPayload;
+    const payload = await enrichQuotePayloadForDisplay(resultPayload);
 
     const response = NextResponse.json(
       {
@@ -107,16 +107,4 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   }
-}
-
-function quoteNeedsSymbolProfile(payload: Record<string, unknown>): boolean {
-  const name = comparableText(payload.name);
-  const symbol = comparableText(payload.symbol);
-  const requestedTicker = comparableText(payload.requested_ticker);
-  if (!name) return true;
-  return name === symbol || name === requestedTicker;
-}
-
-function comparableText(value: unknown): string {
-  return typeof value === "string" ? value.trim().toUpperCase().replace(/[^A-Z0-9가-힣]/g, "") : "";
 }

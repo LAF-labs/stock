@@ -152,6 +152,11 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?repeat\(var\(--compare-cols\), minmax\(96px, 1fr\)\)/);
 });
 
+test("compare feed grid items can shrink inside mobile viewport", () => {
+  assert.match(css, /\.compare-feed\s*\{[\s\S]*?min-width:\s*0;/);
+  assert.match(css, /\.compare-section\s*\{[\s\S]*?min-width:\s*0;/);
+});
+
 test("compare page separates detail origin from neutral compare rows", () => {
   assert.match(dashboardSource, /origin/);
   assert.match(compareSource, /searchParams\.get\("origin"\)/);

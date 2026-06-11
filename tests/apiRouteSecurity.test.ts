@@ -6,6 +6,8 @@ import { GET as getQuote } from "../src/app/api/quote/route";
 import { GET as getScore } from "../src/app/api/score/route";
 import { GET as getBatchScore } from "../src/app/api/score/batch/route";
 import { POST as postJudgment } from "../src/app/api/judgment/route";
+import { enrichQuotePayloadForDisplay, quoteNeedsSymbolProfile } from "../src/lib/quoteDisplayEnrichment";
+import { clearStockRefreshEnqueueMemoryForTests } from "../src/lib/stockRefreshQueue";
 import { clearSymbolProfileCacheForTests } from "../src/lib/symbolProfiles";
 
 const ENV_KEYS = [
@@ -38,6 +40,7 @@ function restoreEnv() {
   }
   globalThis.fetch = originalFetch;
   clearSymbolProfileCacheForTests();
+  clearStockRefreshEnqueueMemoryForTests();
 }
 
 type StrictRequestInit = Omit<RequestInit, "headers" | "signal"> & {
@@ -103,6 +106,30 @@ test("quote route rejects missing and invalid API ticker input", async () => {
   assert.equal(invalid.status, 400);
   assert.equal((await invalid.json()).error, "invalid_ticker");
   assert.match(missing.headers.get("Cache-Control") || "", /no-store/);
+});
+
+test("quote display enrichment uses local symbol names before Supabase profiles", async () => {
+  restoreEnv();
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const raw = {
+    ok: true,
+    type: "quote",
+    requested_ticker: "KR:005930",
+    market: "KR",
+    symbol: "005930",
+    name: "005930",
+    latest_price: 187_400,
+  };
+
+  assert.equal(quoteNeedsSymbolProfile(raw), true);
+  const enriched = await enrichQuotePayloadForDisplay(raw);
+
+  assert.equal(enriched.display_name, "삼성전자");
+  assert.equal(enriched.korean_name, "삼성전자");
+  assert.equal(quoteNeedsSymbolProfile(enriched), false);
 });
 
 test("score route rejects missing and market-mismatched API ticker input", async () => {

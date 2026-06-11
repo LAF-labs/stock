@@ -267,7 +267,7 @@ function defaultDisplaySources(): StockDisplaySources {
 
 async function withLaneDeadline<T>(lane: "price" | "chart" | "score", promise: Promise<T | undefined> | undefined): Promise<T | undefined> {
   if (!promise) return undefined;
-  const timeoutMs = laneTimeoutMs(lane);
+  const timeoutMs = displayLaneTimeoutMs(lane);
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
@@ -289,8 +289,8 @@ function startDisplayLane<T>(source: () => Promise<T | undefined> | undefined): 
   }
 }
 
-function laneTimeoutMs(lane: "price" | "chart" | "score"): number {
-  if (lane === "price") return numericEnv("STOCK_DISPLAY_PRICE_LANE_TIMEOUT_MS", 1_800);
-  if (lane === "chart") return numericEnv("STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS", 2_200);
-  return numericEnv("STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS", 2_500);
+export function displayLaneTimeoutMs(lane: "price" | "chart" | "score"): number {
+  if (lane === "price") return numericEnv("STOCK_DISPLAY_PRICE_LANE_TIMEOUT_MS", 900);
+  if (lane === "chart") return numericEnv("STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS", 1_000);
+  return numericEnv("STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS", 1_200);
 }

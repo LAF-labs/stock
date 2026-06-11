@@ -89,7 +89,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     partialData,
     retryLoad,
     refreshPrice,
-  } = useStockDashboardQueries(tickerParam);
+  } = useStockDashboardQueries(tickerParam, initialDisplayPayload);
   const displayData = data || (initialDisplayComplete ? initialDisplayData : undefined);
   const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");

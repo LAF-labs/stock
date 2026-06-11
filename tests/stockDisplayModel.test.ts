@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildStockDisplayPayload } from "../src/lib/stockDisplayModel";
+import { buildStockDisplayPayload, displayLaneTimeoutMs } from "../src/lib/stockDisplayModel";
+
+test("display model default lane deadlines stay under the first-paint budget", () => {
+  assert.equal(displayLaneTimeoutMs("price"), 900);
+  assert.equal(displayLaneTimeoutMs("chart"), 1_000);
+  assert.equal(displayLaneTimeoutMs("score"), 1_200);
+});
 
 test("display model returns identity-only payload while recovering core parts", async () => {
   const payload = await buildStockDisplayPayload({
