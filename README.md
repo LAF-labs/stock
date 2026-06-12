@@ -1,4 +1,4 @@
-# Stock Score Reader
+# 스톡스토커
 
 Next.js 기반 주식 티커 조회 리더입니다.
 

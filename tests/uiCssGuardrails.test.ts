@@ -44,7 +44,7 @@ test("first-screen display typography uses a calmer scale", () => {
 
 test("primary CTA styles use shared tokens instead of black overrides", () => {
   assert.match(css, /--cta-primary-bg:\s*var\(--accent\);/);
-  assert.match(css, /\.technical-analysis-link\s*\{[\s\S]*?background:\s*var\(--cta-primary-bg\);/);
+  assert.match(css, /\.technical-analysis-link\s*\{[\s\S]*?background:\s*var\(--cta-secondary-bg\);/);
   assert.doesNotMatch(css, /\.technical-analysis-link\s*\{[\s\S]*?background:\s*#111827;/);
 });
 
@@ -181,6 +181,14 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?repeat\(var\(--compare-cols\), minmax\(96px, 1fr\)\)/);
 });
 
+test("compare empty state gives mobile users a next action instead of blank space", () => {
+  assert.match(compareSource, /!states\.length \? <CompareEmptyState/);
+  assert.match(compareSource, /function CompareEmptyState/);
+  assert.match(compareSource, /엔비디아/);
+  assert.match(compareSource, /삼성전자/);
+  assert.match(css, /\.compare-empty-state\s*\{[\s\S]*?border-top:\s*12px solid #f2f4f6;/);
+});
+
 test("compare feed grid items can shrink inside mobile viewport", () => {
   assert.match(css, /\.compare-feed\s*\{[\s\S]*?min-width:\s*0;/);
   assert.match(css, /\.compare-section\s*\{[\s\S]*?min-width:\s*0;/);
@@ -222,11 +230,11 @@ test("mobile compare navigation is a compact horizontal action rail", () => {
 
 test("mobile route headers keep first content flush and compact", () => {
   assert.match(css, /\/\* Mobile route header polish \*\//);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?width:\s*100%;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.96\);/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?min-height:\s*52px;[\s\S]*?margin:\s*0;[\s\S]*?border-bottom:\s*1px solid var\(--line\);/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index a,[\s\S]*?\.technical-topbar a\s*\{[\s\S]*?min-height:\s*32px;[\s\S]*?font-size:\s*12px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index a,[\s\S]*?\.technical-topbar a\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?font-size:\s*13px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-picks\s*\{[\s\S]*?padding-top:\s*10px;[\s\S]*?padding-bottom:\s*12px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.technical-analysis-app \.technical-hero\s*\{[\s\S]*?border-top:\s*0;[\s\S]*?padding-top:\s*28px;/);
 });

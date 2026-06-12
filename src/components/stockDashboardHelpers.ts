@@ -30,11 +30,25 @@ const RECORD_LABELS: Record<string, string> = {
   avg_volume_60: "60일 평균 거래량",
   profitMargins: "순이익률",
   operatingMargins: "영업이익률",
+  grossMargins: "매출총이익률",
   returnOnEquity: "ROE",
   revenueGrowth: "매출 성장률",
   earningsGrowth: "이익 성장률",
+  operatingIncomeGrowth: "영업이익 성장률",
+  equityGrowth: "자본 성장률",
+  assetGrowth: "자산 성장률",
   totalRevenue: "총매출",
+  operatingIncome: "영업이익",
+  netIncome: "순이익",
   operatingCashflow: "영업현금흐름",
+  freeCashflow: "FCF (잉여현금흐름)",
+  totalCash: "현금성 자산",
+  totalDebt: "총부채",
+  totalAssets: "총자산",
+  currentAssets: "유동자산",
+  totalLiabilities: "총부채",
+  currentLiabilities: "유동부채",
+  totalEquity: "자본총계",
   debtToEquity: "부채/자본",
   currentRatio: "유동비율",
   quickRatio: "당좌비율",
@@ -45,7 +59,16 @@ const RECORD_LABELS: Record<string, string> = {
   income_statement: "손익계산서",
   balance_sheet: "재무상태표",
   cashflow: "현금흐름표",
+  period: "보고 기간",
+  periodEnded: "보고 기준일",
   reported_date: "보고 기준일",
+  salesPerShare: "SPS (주당매출)",
+  reserveRatio: "유보율",
+  borrowingsDependency: "차입금 의존도",
+  payoutRatio: "배당성향",
+  eva: "EVA (경제적 부가가치)",
+  ebitda: "EBITDA (상각전영업이익)",
+  evToEbitda: "EV/EBITDA (기업가치/상각전영업이익)",
   profitability_score: "수익성 기여도",
   growth_score: "성장성 기여도",
   health_score: "재무건전성 기여도",
@@ -128,8 +151,21 @@ const PRICE_RECORD_KEYS = new Set(["price", "previous_close", "high_52w", "low_5
 const HIDDEN_LABELED_ITEM_LABELS = new Set(["상품유형코드", "통화", "환율 기준", "매매 가능 여부", "거래가능여부", "거래 가능 여부", "거래상태", "적용 상한"]);
 const LABEL_REPLACEMENTS: Record<string, string> = {
   신뢰도: "근거 충분도",
+  PER: "PER (주가수익비율)",
+  "Forward PER": "Forward PER (예상 PER)",
+  PBR: "PBR (주가순자산비율)",
+  EPS: "EPS (주당순이익)",
+  BPS: "BPS (주당순자산)",
+  "EV/Revenue": "EV/Revenue (기업가치/매출)",
+  "Price/Sales": "Price/Sales (시가총액/매출)",
+  "OCF 마진": "OCF 마진 (영업현금흐름률)",
+  "OFC 마진": "OCF 마진 (영업현금흐름률)",
+  "FCF 마진": "FCF 마진 (잉여현금흐름률)",
+  "ROE 추정": "ROE (자기자본이익률) 추정",
 };
 const SOURCE_NOTE_RE = /^(?:yfinance|yahoo finance(?:\s*기준)?|data source|source)$/i;
+const CASHFLOW_MARGIN_LABEL_RE = /^(?:OFC|OCF|FCF)\s*마진(?:\s*\(.+\))?$/i;
+const MAX_REASONABLE_MARGIN_PERCENT = 500;
 
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const NOTE_COPY: Record<string, string> = {
@@ -490,8 +526,9 @@ function jsonDisplayValue(value: unknown): JsonValue | undefined {
 }
 
 export function formatMetricDisplayValue(item: LabeledValue, data?: StockScoreResponse): string {
-  if (!data) return formatValue(item.value);
   const label = item.label?.trim() || "";
+  if (CASHFLOW_MARGIN_LABEL_RE.test(label)) return formatCashflowMarginDisplayValue(item.value);
+  if (!data) return formatValue(item.value);
   if (label === "현재가") return formatPriceWithContext(data);
   if (label === "시가총액") return marketCapInlineDisplay(data);
   if (PRICE_METRIC_LABELS.has(label)) {
@@ -499,6 +536,22 @@ export function formatMetricDisplayValue(item: LabeledValue, data?: StockScoreRe
     if (parsed !== undefined) return formatCurrencyAmount(parsed, priceCurrency(data));
   }
   return formatValue(item.value);
+}
+
+function formatCashflowMarginDisplayValue(value: JsonValue | undefined): string {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || Math.abs(value * 100) > MAX_REASONABLE_MARGIN_PERCENT) return "-";
+    return formatPercent(value);
+  }
+  if (typeof value !== "string") return formatValue(value);
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-") return formatValue(value);
+  const match = trimmed.replaceAll(",", "").match(/[-+]?\d+(?:\.\d+)?/);
+  if (!match) return formatValue(value);
+  const parsed = Number(match[0]);
+  if (!Number.isFinite(parsed)) return "-";
+  const asPercent = trimmed.includes("%") ? parsed : parsed * 100;
+  return Math.abs(asPercent) > MAX_REASONABLE_MARGIN_PERCENT ? "-" : formatValue(value);
 }
 
 function marketCapInlineDisplay(data: StockScoreResponse): string {
@@ -932,7 +985,7 @@ export function directInputSymbolItem(value: string): SymbolSearchItem | undefin
 }
 
 export function humanizeRecordKey(key: string): string {
-  return RECORD_LABELS[key] || key.replaceAll("_", " ");
+  return RECORD_LABELS[key] || key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ");
 }
 
 export function formatRecordValue(key: string, value: JsonValue | undefined, data?: StockScoreResponse): string {

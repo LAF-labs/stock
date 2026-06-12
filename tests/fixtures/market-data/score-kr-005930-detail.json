@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "app": "Stock Score Reader",
+  "app": "스톡스토커",
   "requested_ticker": "KR:005930",
   "market": "KR",
   "symbol": "005930",

@@ -1196,6 +1196,12 @@ a:focus-visible {
   touch-action: pan-y;
 }
 
+#tv-attr-logo {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
 .chart-month-axis {
   position: absolute;
   left: 18px;
@@ -1303,7 +1309,7 @@ a:focus-visible {
 
 .trading-chart #tv-attr-logo {
   min-width: 44px;
-  min-height: 32px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
 }
@@ -1370,23 +1376,24 @@ a:focus-visible {
 }
 
 .technical-analysis-link {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: fit-content;
+  width: 100%;
   min-height: 44px;
   margin-top: 16px;
   padding: 0 16px;
   border-radius: 8px;
-  background: var(--cta-primary-bg);
-  color: var(--cta-primary-text);
+  background: var(--cta-secondary-bg);
+  color: var(--cta-secondary-text);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
   text-decoration: none;
 }
 
 .technical-analysis-link:hover {
-  background: var(--cta-primary-bg-hover);
+  background: var(--cta-secondary-bg-hover);
+  color: var(--accent);
 }
 
 .technical-analysis-app {
@@ -2234,26 +2241,40 @@ a:focus-visible {
   position: relative;
   display: inline-flex;
   align-items: center;
-  padding: 2px;
-  margin: -2px;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  margin: -4px;
   vertical-align: middle;
 }
 
 .info-tip {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: #e8edf3;
+  background: transparent;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0;
   line-height: 1;
   font-weight: 700;
+}
+
+.info-tip::before {
+  content: "?";
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e8edf3;
+  font-size: 10px;
 }
 
 .info-bubble {
@@ -2515,6 +2536,59 @@ a:focus-visible {
 
 .compare-pending {
   background: var(--surface-accent);
+  color: var(--accent);
+}
+
+.compare-empty-state {
+  display: grid;
+  gap: 14px;
+  padding: 24px 20px 30px;
+  border-top: 12px solid #f2f4f6;
+  background: var(--surface);
+}
+
+.compare-empty-state > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.compare-empty-state h2 {
+  margin: -6px 0 0;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.compare-empty-state > div {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.compare-empty-state > div::-webkit-scrollbar {
+  display: none;
+}
+
+.compare-empty-state button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--cta-secondary-bg);
+  color: var(--cta-secondary-text);
+  font-weight: 800;
+  scroll-snap-align: start;
+}
+
+.compare-empty-state button:hover {
+  background: var(--cta-secondary-bg-hover);
   color: var(--accent);
 }
 
@@ -4409,6 +4483,11 @@ body {
     background: #fff;
   }
 
+  .stock-app,
+  .compare-app {
+    padding-bottom: max(104px, calc(56px + env(safe-area-inset-bottom)));
+  }
+
   .stock-detail-app .stock-title-card,
   .compare-app .compare-hero {
     box-shadow: none;
@@ -4539,8 +4618,8 @@ body {
   }
 
   .quote-refresh-button {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
     font-size: 15px;
   }
 
@@ -4590,10 +4669,6 @@ body {
   }
 
   .stock-detail-app .hero-verdict p {
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
     line-height: 1.55;
   }
 
@@ -4675,7 +4750,7 @@ body {
 
   .quick-read .score-chip-row span,
   .quick-read .opportunity-chip {
-    min-height: 26px;
+    min-height: 30px;
     padding-inline: 8px;
     font-size: 11px;
   }
@@ -4873,10 +4948,11 @@ body {
 /* Mobile route header polish */
 @media (max-width: 640px) {
   .stock-search.search-collapsed {
-    position: fixed;
-    right: 0;
-    left: 0;
+    position: sticky;
     width: 100%;
+    background: rgba(255, 255, 255, 0.96);
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(18px);
   }
 
   .stock-detail-app .stock-feed {
@@ -4900,10 +4976,10 @@ body {
 
   .compare-side-index a,
   .technical-topbar a {
-    min-height: 32px;
-    padding: 0 11px;
+    min-height: 44px;
+    padding: 0 13px;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .compare-picks {
@@ -4923,6 +4999,44 @@ body {
   .technical-analysis-app .technical-hero {
     border-top: 0;
     padding-top: 28px;
+  }
+
+  .compare-picks span,
+  .compare-suggestions button,
+  .chart-mode-tabs button,
+  .technical-chart-legend button {
+    min-height: 44px;
+  }
+
+  .compare-picks button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .label-with-term {
+    gap: 0;
+  }
+
+  .info-tip-wrap {
+    min-width: 44px;
+    min-height: 44px;
+    margin: -14px -12px;
+  }
+
+  .info-tip {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .info-bubble {
+    position: fixed;
+    right: 16px;
+    left: 16px;
+    bottom: auto;
+    width: auto;
+    max-width: none;
+    min-width: 0;
   }
 }
 

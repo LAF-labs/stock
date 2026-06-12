@@ -191,6 +191,21 @@ except ModuleNotFoundError:
         kis_percent,
     )
 
+
+MAX_REASONABLE_CASHFLOW_MARGIN = 5.0
+APP_NAME = "스톡스토커"
+
+
+def sane_cashflow_margin(numerator: Any, denominator: Any) -> float | None:
+    parsed_numerator = as_float(numerator)
+    parsed_denominator = as_float(denominator)
+    if parsed_numerator is None or not parsed_denominator:
+        return None
+    margin = parsed_numerator / parsed_denominator
+    if not isinstance(margin, float) or not pd.notna(margin):
+        return None
+    return margin if abs(margin) <= MAX_REASONABLE_CASHFLOW_MARGIN else None
+
 try:
     from scripts.stock_score.presentation import (
         grade_for,
@@ -515,8 +530,8 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     operating_cashflow = as_float(fundamentals.get("operatingCashflow"))
     free_cashflow = as_float(fundamentals.get("freeCashflow"))
     total_revenue = as_float(fundamentals.get("totalRevenue"))
-    ocf_margin = (operating_cashflow / total_revenue) if operating_cashflow is not None and total_revenue else None
-    fcf_margin = (free_cashflow / total_revenue) if free_cashflow is not None and total_revenue else None
+    ocf_margin = sane_cashflow_margin(operating_cashflow, total_revenue)
+    fcf_margin = sane_cashflow_margin(free_cashflow, total_revenue)
     forward_pe = as_float(fundamentals.get("forwardPE"))
     ev_to_revenue = as_float(fundamentals.get("enterpriseToRevenue"))
     price_to_sales = as_float(fundamentals.get("priceToSalesTrailing12Months"))
@@ -845,7 +860,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     now = datetime.now(timezone.utc)
     return {
         "ok": True,
-        "app": "Stock Score Reader",
+        "app": APP_NAME,
         "requested_ticker": raw_ticker,
         "market": "US",
         "symbol": symbol,
@@ -1043,8 +1058,8 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     debt_to_equity = first_float(kis_financials.get("debtToEquity"), fundamentals.get("debtToEquity"))
     current_ratio = first_float(kis_financials.get("currentRatio"), fundamentals.get("currentRatio"))
     quick_ratio = first_float(kis_financials.get("quickRatio"), fundamentals.get("quickRatio"))
-    ocf_margin = operating_cashflow / total_revenue if operating_cashflow is not None and total_revenue else None
-    fcf_margin = free_cashflow / total_revenue if free_cashflow is not None and total_revenue else None
+    ocf_margin = sane_cashflow_margin(operating_cashflow, total_revenue)
+    fcf_margin = sane_cashflow_margin(free_cashflow, total_revenue)
     roe_raw = as_float(stock_info.get("roe"))
     if roe_raw is not None and abs(roe_raw) > 1:
         roe_raw = roe_raw / 100.0
@@ -1401,7 +1416,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     now = datetime.now(timezone.utc)
     return {
         "ok": True,
-        "app": "Stock Score Reader",
+        "app": APP_NAME,
         "requested_ticker": raw_ticker,
         "market": "KR",
         "symbol": symbol,
@@ -1537,7 +1552,7 @@ def build_technical_score_payload(
     technical_analysis["symbol"] = symbol
     return {
         "ok": True,
-        "app": "Stock Score Reader",
+        "app": APP_NAME,
         "requested_ticker": raw_ticker,
         "market": market,
         "symbol": symbol,

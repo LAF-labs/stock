@@ -1,5 +1,6 @@
 import { fetchKisDailyChart } from "@/lib/kisQuoteClient";
 import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
+import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { envValue } from "@/lib/supabaseRest";
 import type { StockPayload } from "@/lib/stockScoreContract";
@@ -17,7 +18,7 @@ export async function buildTechnicalScoreFastPathPayload(ticker: string): Promis
   technicalAnalysis.symbol = daily.symbol;
   return {
     ok: true,
-    app: "Stock Score Reader",
+    app: STOCKSTALKER_SERVICE_NAME,
     requested_ticker: daily.requestedTicker,
     market: daily.market,
     symbol: daily.symbol,

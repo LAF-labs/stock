@@ -19,6 +19,7 @@ import {
   formatPrimaryPrice,
   formatPriceWithContext,
   formatRecordValue,
+  humanizeRecordKey,
   formatSecondaryPrice,
   hasDisplayableStockPartialData,
   opportunityExtremes,
@@ -728,6 +729,13 @@ test("dashboard metric display formats money labels with stock context", () => {
   assert.equal(formatMetricDisplayValue({ label: "시가총액", value: "₩91.70B" }, krScore), "917억원");
 });
 
+test("dashboard metric display suppresses impossible cashflow margin percentages", () => {
+  assert.equal(formatMetricDisplayValue({ label: "OCF 마진", value: "+13443238808.8%" }), "-");
+  assert.equal(formatMetricDisplayValue({ label: "OFC 마진", value: "+13443238808.8%" }), "-");
+  assert.equal(formatMetricDisplayValue({ label: "FCF 마진", value: "+4908876066.4%" }), "-");
+  assert.equal(formatMetricDisplayValue({ label: "FCF 마진", value: "+18.4%" }), "+18.4%");
+});
+
 test("dailyChangeText prefers quote label, then quote value, then cached score value", () => {
   const score = { price_metrics: { latest_change: -0.0123 } } satisfies StockScoreResponse;
 
@@ -761,15 +769,26 @@ test("dashboard list display removes internal source and company metadata fields
       { label: "통화", value: "KRW" },
       { label: "환율 기준", value: "$1 = 약 1,370원" },
       { label: "Forward PER", value: "13.40", note: "yfinance" },
+      { label: "FCF 마진", value: "+12.4%" },
+      { label: "OFC 마진", value: "+14.2%" },
       { label: "거래가능여부", value: "Y" },
       { label: "신뢰도", value: "80.0%" },
     ]),
     [
       { label: "회사명", value: "삼성전자" },
-      { label: "Forward PER", value: "13.40", note: "yfinance" },
+      { label: "Forward PER (예상 PER)", value: "13.40", note: "yfinance" },
+      { label: "FCF 마진 (잉여현금흐름률)", value: "+12.4%" },
+      { label: "OCF 마진 (영업현금흐름률)", value: "+14.2%" },
       { label: "근거 충분도", value: "80.0%" },
     ],
   );
+});
+
+test("dashboard record labels avoid internal camelCase financial keys", () => {
+  assert.equal(humanizeRecordKey("freeCashflow"), "FCF (잉여현금흐름)");
+  assert.equal(humanizeRecordKey("grossMargins"), "매출총이익률");
+  assert.equal(humanizeRecordKey("evToEbitda"), "EV/EBITDA (기업가치/상각전영업이익)");
+  assert.equal(humanizeRecordKey("salesPerShare"), "SPS (주당매출)");
 });
 
 test("dashboard hides provider-only notes and explains recommendation mean", () => {

@@ -30,6 +30,11 @@ import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
 const LINE_COLORS = ["#3182f6", "#f04452", "#00a778", "#7c3aed", "#f59f00"];
+const COMPARE_EMPTY_SAMPLES = [
+  { label: "엔비디아", ticker: "US:NVDA" },
+  { label: "애플", ticker: "US:AAPL" },
+  { label: "삼성전자", ticker: "KR:005930" },
+];
 
 function compareHrefForTickers(tickers: string[], originTicker: string) {
   const params = new URLSearchParams();
@@ -159,6 +164,8 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </section>
       ) : null}
 
+      {!states.length ? <CompareEmptyState onSelect={addTicker} /> : null}
+
       {states.length ? (
         <div className="compare-feed">
           {!items.length ? <ComparePendingOverviewSkeleton /> : null}
@@ -169,6 +176,22 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </div>
       ) : null}
     </main>
+  );
+}
+
+function CompareEmptyState({ onSelect }: { onSelect: (ticker: string) => void }) {
+  return (
+    <section className="compare-empty-state">
+      <span>빠른 비교</span>
+      <h2>관심 종목을 골라보세요</h2>
+      <div>
+        {COMPARE_EMPTY_SAMPLES.map((sample) => (
+          <button key={sample.ticker} type="button" onClick={() => onSelect(sample.ticker)}>
+            {sample.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

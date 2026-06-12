@@ -160,6 +160,8 @@ class KisDomesticFundamentalTests(unittest.TestCase):
                 return_value=(
                     {
                         "totalRevenue": 1.0,
+                        "operatingCashflow": 20_000_000_000_000.0,
+                        "freeCashflow": 8_000_000_000_000.0,
                         "operatingMargins": 0.01,
                         "profitMargins": 0.01,
                         "returnOnEquity": 0.01,
@@ -184,6 +186,13 @@ class KisDomesticFundamentalTests(unittest.TestCase):
         self.assertIn("kis_domestic_financials", payload["financial_statement"])
         self.assertEqual(payload["financial_statement"]["kis_domestic_financials"]["normalized"]["totalRevenue"], 800000.0)
         self.assertEqual(payload["fetch"]["fundamentals_source"], "kis_domestic_financials+yfinance")
+        metrics_by_label = {
+            metric["label"]: metric["value"]
+            for component in payload["components"]
+            for metric in component.get("metrics", [])
+        }
+        self.assertEqual(metrics_by_label["OCF 마진"], "-")
+        self.assertEqual(metrics_by_label["FCF 마진"], "-")
 
 
 if __name__ == "__main__":

@@ -190,7 +190,6 @@ export default function StockHeader({
                 ? "현재가, 시가총액, 가격 흐름처럼 확보된 항목을 먼저 보여드립니다."
                 : "가격, 점수, 재무 지표를 묶어서 보여드립니다.")}
         </p>
-        {stockJudgment?.watch ? <p className="verdict-watch">{stockJudgment.watch}</p> : null}
         {compareHref ? (
           <a className="stock-mobile-action stock-verdict-action" href={compareHref}>
             다른 종목과 비교하기

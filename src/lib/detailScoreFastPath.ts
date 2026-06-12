@@ -1,6 +1,7 @@
 import { formatCurrencyAmount, formatPercent, formatValue } from "@/lib/format";
 import { fetchKisDailyChart, fetchKisQuote, type KisDailyChartBar } from "@/lib/kisQuoteClient";
 import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
+import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { findExactSymbol } from "@/lib/symbolSearch";
 import { envValue } from "@/lib/supabaseRest";
@@ -102,7 +103,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
 
   return {
     ok: true,
-    app: "Stock Score Reader",
+    app: STOCKSTALKER_SERVICE_NAME,
     requested_ticker: daily.requestedTicker,
     market: daily.market,
     symbol: daily.symbol,
@@ -228,7 +229,7 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
 
   return {
     ok: true,
-    app: "Stock Score Reader",
+    app: STOCKSTALKER_SERVICE_NAME,
     requested_ticker: ticker,
     market,
     symbol,

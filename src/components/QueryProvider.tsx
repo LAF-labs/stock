@@ -5,7 +5,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { del, get, set } from "idb-keyval";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 
 export const STOCK_QUERY_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -130,6 +130,16 @@ function createStockQueryPersister() {
 export default function QueryProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(createStockQueryClient);
   const [persister] = useState(createStockQueryPersister);
+  const [showDevtools, setShowDevtools] = useState(false);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(min-width: 641px)");
+    const update = () => setShowDevtools(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
 
   return (
     <PersistQueryClientProvider
@@ -143,7 +153,7 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      {process.env.NODE_ENV !== "production" ? <ReactQueryDevtools initialIsOpen={false} /> : null}
+      {showDevtools ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </PersistQueryClientProvider>
   );
 }
