@@ -80,6 +80,8 @@ export async function GET(request: NextRequest) {
     const settledScorePromise = settleStockScore(getStockScore(ticker, view, { forceRefresh }));
     const earlyScore = partial && !forceRefresh ? await waitForPartialStockScore(settledScorePromise, { view }) : undefined;
     if (earlyScore?.status === "timeout") {
+      const terminalResponse = await terminalUnavailableScoreResponse(ticker, view, cooldown);
+      if (terminalResponse) return terminalResponse;
       const pendingInput = {
         kind: "score",
         ticker,
@@ -101,6 +103,11 @@ export async function GET(request: NextRequest) {
     const settledScore = earlyScore?.status === "fulfilled" ? earlyScore : await settledScorePromise;
     if (settledScore.status === "rejected") throw settledScore.error;
     const result = settledScore.value;
+    const resultStatus = statusFromPayload(result.payload);
+    if (resultStatus === 202) {
+      const terminalResponse = await terminalUnavailableScoreResponse(ticker, view, cooldown);
+      if (terminalResponse) return terminalResponse;
+    }
     const scorePayload = await attachChartForTechnicalView(attachScoreParts(result), ticker, view);
     const enrichedPayload = await enrichScorePayloadForView(scorePayload, view);
     const payload = forceRefresh
@@ -112,7 +119,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json(
       payload,
       {
-        status: statusFromPayload(result.payload),
+        status: resultStatus,
         headers: forceRefresh ? privateNoStoreHeaders() : responseCacheHeaders(result),
       }
     );
@@ -121,15 +128,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("stock_snapshot_unavailable", { ticker, view, reason: error.payload.reason });
-      const terminalFailures = await readTerminalStockDisplayFailures(ticker, view);
-      if (terminalFailures.length) {
-        const terminalPayload = await terminalUnavailableStockPayload({ ticker, view, unavailableParts: terminalFailures });
-        if (terminalPayload) {
-          const response = NextResponse.json(terminalPayload, { status: 200, headers: stockPartialResponseCacheHeaders() });
-          if (cooldown) applyRefreshUserCookie(response, cooldown);
-          return response;
-        }
-      }
+      const terminalResponse = await terminalUnavailableScoreResponse(ticker, view, cooldown);
+      if (terminalResponse) return terminalResponse;
       const pendingInput = {
         kind: "score",
         ticker,
@@ -165,6 +165,18 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   }
+}
+
+type RefreshCooldownState = Awaited<ReturnType<typeof acquireRefreshCooldown>>;
+
+async function terminalUnavailableScoreResponse(ticker: string, view: ReturnType<typeof cleanView>, cooldown?: RefreshCooldownState): Promise<NextResponse | undefined> {
+  const terminalFailures = await readTerminalStockDisplayFailures(ticker, view);
+  if (!terminalFailures.length) return undefined;
+  const terminalPayload = await terminalUnavailableStockPayload({ ticker, view, unavailableParts: terminalFailures });
+  if (!terminalPayload) return undefined;
+  const response = NextResponse.json(terminalPayload, { status: 200, headers: stockPartialResponseCacheHeaders() });
+  if (cooldown) applyRefreshUserCookie(response, cooldown);
+  return response;
 }
 
 async function enrichScorePayloadForView(payload: StockPayload, view: ReturnType<typeof cleanView>): Promise<StockPayload> {

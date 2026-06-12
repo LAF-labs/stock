@@ -5,6 +5,7 @@ import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockScore
 import type { StockDisplayUnavailablePart } from "@/lib/stockDisplayTypes";
 import { numericEnv } from "@/lib/supabaseRest";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
+import { parseTickerRef } from "@/lib/tickerRef";
 
 export type StockPartName = "identity" | "quote" | "chart" | "score" | "technical" | "fundamentals";
 export type StockPartState = "fresh" | "stale" | "pending" | "miss" | "unavailable";
@@ -156,8 +157,7 @@ export async function terminalUnavailableStockPayload({
   view?: ScoreView;
   unavailableParts: StockDisplayUnavailablePart[];
 }): Promise<StockPayload | undefined> {
-  const identity = await localIdentityPayload(ticker);
-  if (!identity) return undefined;
+  const identity = await localIdentityPayload(ticker) || fallbackIdentityPayload(ticker);
   const parts = terminalUnavailableParts(unavailableParts, view);
   return attachParts(
     {
@@ -251,6 +251,16 @@ async function localIdentityPayload(ticker: string): Promise<StockPayload | unde
     korean_name: item.koreanName || undefined,
     english_name: item.englishName || undefined,
     instrument_type: item.instrumentType,
+  };
+}
+
+function fallbackIdentityPayload(ticker: string): StockPayload {
+  const target = parseTickerRef(ticker);
+  return {
+    market: target.market,
+    symbol: target.symbol,
+    name: target.symbol,
+    currency: target.market === "KR" ? "KRW" : "USD",
   };
 }
 
