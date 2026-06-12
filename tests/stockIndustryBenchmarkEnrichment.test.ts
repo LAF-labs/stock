@@ -112,7 +112,7 @@ test("industry benchmark enrichment replaces legacy benchmark labels without dup
   assert.equal(rows.find((row) => row.label === "업종 평균 PER")?.value, "11.00");
 });
 
-test("industry benchmark enrichment labels sector fallbacks as sector averages", async () => {
+test("industry benchmark enrichment keeps sector fallbacks internal in display labels", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 
@@ -151,8 +151,10 @@ test("industry benchmark enrichment labels sector fallbacks as sector averages",
   });
 
   const rows = enriched.valuation_rows as Array<{ label?: string; note?: string; value?: string }>;
-  assert.equal(rows.find((row) => row.label === "섹터 평균 PER")?.value, "31.30");
-  assert.equal(rows.find((row) => row.label === "섹터 평균 PER")?.note, "국내 정보기술 섹터 평균");
+  assert.equal(rows.find((row) => row.label === "업종 평균 PER")?.value, "31.30");
+  assert.equal(rows.find((row) => row.label === "업종 평균 PER")?.note, "국내 업종 평균");
+  assert.equal(rows.some((row) => `${row.label || ""} ${row.note || ""}`.includes("섹터")), false);
+  assert.equal(rows.some((row) => `${row.label || ""} ${row.note || ""}`.includes("정보기술")), false);
 });
 
 test("industry benchmark enrichment skips derivative-like products", async () => {

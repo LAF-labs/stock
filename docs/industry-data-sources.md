@@ -61,7 +61,7 @@ The benchmark lookup key is now scope-aware:
 
 Application requests read by `scope + canonical industry + metric + period` first, then fall back to legacy `market + industry + metric` rows during migrations or provider outages. KR and US stocks can share the same canonical industry label, but benchmark rows stay separated by `scope = KR` and `scope = OVERSEAS`.
 
-User-facing valuation rows should describe these rows as averages, not as `기준`: use `업종 평균 PER` when the industry row is available, `섹터 평균 PER` when the lookup falls back to a sector aggregate, and `시장 평균 PER` when only the market aggregate is available. Existing cached rows with the old `업종 기준` label are normalized by the display enrichment step so duplicate benchmark rows are not shown during rollout.
+User-facing valuation rows should describe these rows as averages, not as `기준`: use `업종 평균 PER` only. The broad Finviz sector is an internal grouping for lookup, fallback, audits, and model features; do not show sector names, `섹터 평균`, or `시장 평균` labels in product UI. Existing cached rows with the old `업종 기준` label, and transient internal fallback labels, are normalized by the display enrichment step so duplicate or internal benchmark rows are not shown during rollout.
 
 ## Benchmark Eligibility Rules
 

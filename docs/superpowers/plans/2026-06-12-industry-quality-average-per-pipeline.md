@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Improve domestic and US industry mapping quality, rename user-facing benchmark labels from "업종 기준" to average labels, and make industry/sector/market average PER/PBR appear reliably for single-stock pages while excluding derivative-like products by explicit rules.
+**Goal:** Improve domestic and US industry mapping quality, rename user-facing benchmark labels from "업종 기준" to "업종 평균", and make average PER/PBR appear reliably for single-stock pages while excluding derivative-like products by explicit rules.
 
-**Architecture:** Keep Finviz 144 industries as the shared canonical taxonomy. Prefer symbol-level `stock_symbol_industry_tags.taxonomy = finviz_canonical` for display and benchmark aggregation, fall back to `industry_taxonomy_map`, then sector/market benchmark rows when an industry sample is not available. Exclude non-single-stock asset classes before requesting industry benchmarks.
+**Architecture:** Keep Finviz 144 industries as the shared canonical taxonomy. Prefer symbol-level `stock_symbol_industry_tags.taxonomy = finviz_canonical` for display and benchmark aggregation, fall back to `industry_taxonomy_map`, then internal broad-sector/market aggregates when an industry sample is not available. User-facing labels remain `업종 평균`; broad sectors are internal only. Exclude non-single-stock asset classes before requesting industry benchmarks.
 
 **Tech Stack:** TypeScript app/server helpers, Python taxonomy maintenance scripts, Supabase SQL RPC, Node test runner, Python unittest.
 

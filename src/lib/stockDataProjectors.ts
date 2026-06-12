@@ -310,7 +310,7 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function industryBenchmarkRows(value: unknown): unknown[] | undefined {
-  const rows = arrayValue(value)?.filter(isIndustryBenchmarkRow);
+  const rows = arrayValue(value)?.filter(isIndustryBenchmarkRow).map(normalizeIndustryBenchmarkDisplayRow);
   return rows?.length ? rows : undefined;
 }
 
@@ -323,4 +323,19 @@ function isIndustryBenchmarkRow(item: unknown): boolean {
   if (!item || typeof item !== "object" || Array.isArray(item)) return false;
   const label = stringValue((item as Record<string, unknown>).label);
   return Boolean(label && (label.includes("업종 평균") || label.includes("섹터 평균") || label.includes("시장 평균") || label.includes("업종 기준")));
+}
+
+function normalizeIndustryBenchmarkDisplayRow(item: unknown): unknown {
+  const record = recordValue(item);
+  if (!record) return item;
+  const label = stringValue(record.label);
+  const note = stringValue(record.note);
+  const next = { ...record };
+  if (label?.includes("섹터 평균")) next.label = label.replace("섹터 평균", "업종 평균");
+  if (label?.includes("시장 평균")) next.label = label.replace("시장 평균", "업종 평균");
+  if (note?.includes("섹터 평균")) {
+    next.note = note.replace(/^(국내|해외)\s+.+\s+섹터 평균$/, "$1 업종 평균").replace("섹터 평균", "업종 평균");
+  }
+  if (note?.includes("시장 평균")) next.note = note.replace(/^(국내|해외)\s+.*시장 평균$/, "$1 업종 평균").replace("시장 평균", "업종 평균");
+  return next;
 }

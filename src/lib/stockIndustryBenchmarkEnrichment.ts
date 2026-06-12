@@ -134,15 +134,12 @@ function benchmarkNote(benchmark: IndustryBenchmark): string {
   const scope = benchmark.scope === "KR" || benchmark.market === "KR" ? "국내 " : "해외 ";
   const industry = cleanText(benchmark.industry) || cleanText(benchmark.providerGroupName);
   if (industry) return `${scope}${industry} 업종 평균`;
-  const sector = cleanText(benchmark.sector);
-  if (sector) return `${scope}${sector} 섹터 평균`;
-  return `${scope}전체 시장 평균`;
+  return `${scope}업종 평균`;
 }
 
 function benchmarkScopeLabel(benchmark: IndustryBenchmark): string {
-  if (cleanText(benchmark.industry) || cleanText(benchmark.providerGroupName)) return "업종 평균";
-  if (cleanText(benchmark.sector)) return "섹터 평균";
-  return "시장 평균";
+  void benchmark;
+  return "업종 평균";
 }
 
 function formatBenchmarkValue(value: number): string {

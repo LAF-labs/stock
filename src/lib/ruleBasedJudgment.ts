@@ -310,9 +310,8 @@ function benchmarkIndustryText(benchmark: IndustryBenchmark): string {
 function benchmarkIndustryPhrase(benchmark: IndustryBenchmark): string {
   const industry = benchmarkIndustryText(benchmark);
   if (industry) return `${industry} 업종`;
-  const sector = meaningfulText(benchmark.sector);
-  if (sector) return `${sector} 섹터`;
-  return "시장";
+  if (meaningfulText(benchmark.sector)) return "업종";
+  return "업종";
 }
 
 function secondSentence(input: { strongestLabel: string; valuation?: { body: string } }): string {
