@@ -269,7 +269,7 @@ test("display model does not materialize empty score chart arrays as chart parts
   assert.deepEqual(payload.completion.recoveringParts, ["chart"]);
 });
 
-test("display model treats one-bar newly listed charts as terminal insufficient history", async () => {
+test("display model treats one-bar newly listed charts as visible price history", async () => {
   for (const view of ["detail", "compare"] as const) {
     const payload = await buildStockDisplayPayload({
       ticker: "US:SPCX",
@@ -290,16 +290,17 @@ test("display model treats one-bar newly listed charts as terminal insufficient 
       },
     });
 
-    assert.equal(payload.chart, undefined);
-    assert.deepEqual(payload.completion.presentParts, ["identity", "price", "score"]);
+    assert.equal(Array.isArray(payload.chart?.value.chart_series), true);
+    assert.equal((payload.chart?.value.chart_series as unknown[] | undefined)?.length, 1);
+    assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
     assert.deepEqual(payload.completion.missingParts, []);
     assert.deepEqual(payload.completion.recoveringParts, []);
-    assert.deepEqual(payload.completion.unavailableParts, [{ part: "chart", reason: "no_history" }]);
+    assert.deepEqual(payload.completion.unavailableParts, []);
     assert.equal(payload.refresh.active, false);
   }
 });
 
-test("technical display suppresses one-bar technical analysis as insufficient history", async () => {
+test("technical display keeps one-bar price history visible while analysis is limited", async () => {
   const payload = await buildStockDisplayPayload({
     ticker: "US:SPCX",
     view: "technical",
@@ -322,16 +323,50 @@ test("technical display suppresses one-bar technical analysis as insufficient hi
     },
   });
 
-  assert.equal(payload.chart, undefined);
-  assert.equal(payload.technical, undefined);
-  assert.deepEqual(payload.completion.presentParts, ["identity", "price"]);
+  assert.equal(Array.isArray(payload.chart?.value.chart_series), true);
+  assert.equal((payload.chart?.value.chart_series as unknown[] | undefined)?.length, 1);
+  assert.equal(payload.technical?.value.type, "technical_analysis");
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "technical"]);
   assert.deepEqual(payload.completion.missingParts, []);
   assert.deepEqual(payload.completion.recoveringParts, []);
-  assert.deepEqual(payload.completion.unavailableParts, [
-    { part: "chart", reason: "no_history" },
-    { part: "technical", reason: "no_history" },
-  ]);
+  assert.deepEqual(payload.completion.unavailableParts, []);
   assert.equal(payload.refresh.active, false);
+});
+
+test("display model derives one-point chart from a dated quote when chart provider returns no rows", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:SPCX",
+    view: "detail",
+    sources: {
+      identity: async () => ({ ticker: "US:SPCX", market: "US", symbol: "SPCX", name: "스페이스X" }),
+      price: async () => ({
+        requested_ticker: "US:SPCX",
+        market: "US",
+        symbol: "SPCX",
+        name: "스페이스X",
+        currency: "USD",
+        latest_price: 135,
+        latest_price_label: "$135.00",
+        latest_bar_date: "2026-06-12",
+        price_metrics: { price: 135, latest_change: 0 },
+      }),
+      chart: async () => ({ chart_series: [] }),
+      score: async () => ({ ok: true, score: 47.3, quality_score: 47.3, chart_series: [] }),
+    },
+  });
+
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.equal(payload.chart?.source, "market-data");
+  assert.deepEqual(payload.chart?.value.chart_series, [{
+    date: "2026-06-12",
+    open: 135,
+    high: 135,
+    low: 135,
+    close: 135,
+    close_label: "$135.00",
+    currency: "USD",
+  }]);
 });
 
 test("display model materializes enriched score fields as first-class display parts", async () => {

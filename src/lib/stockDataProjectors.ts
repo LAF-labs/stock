@@ -259,7 +259,7 @@ function newsFromScore(score: StockScoreView | undefined): StockNewsView | undef
 }
 
 function hasUsableChart(chart: StockChartView | undefined): chart is StockChartView {
-  return !!chart && Array.isArray(chart.chart_series) && chart.chart_series.length >= 2;
+  return !!chart && Array.isArray(chart.chart_series) && chart.chart_series.length >= 1;
 }
 
 function usableChartRows(value: unknown): unknown[] | undefined {

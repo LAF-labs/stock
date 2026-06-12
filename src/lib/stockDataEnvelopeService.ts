@@ -57,7 +57,7 @@ export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput)
   const score = fulfilledValue(scoreResult);
   const price = fulfilledValue(priceResult) ?? priceFromScore(score);
   const chartPayload = fulfilledValue(chartResult);
-  const chart = chartWithUsableHistory(chartPayload) ?? chartFromScore(score);
+  const chart = chartWithUsableHistory(chartPayload) ?? chartFromScore(score) ?? chartFromPrice(price, score);
   const parts: StockDataEnvelope["parts"] = {
     identity: readyPart(identity, "symbol-master", generatedAt),
     ...(price ? { price: pricePartFromPayload(price) ?? readyPart(price, "derived", generatedAt) } : {}),
@@ -149,12 +149,46 @@ function chartFromScore(score: StockScoreView | undefined): StockChartView | und
   };
 }
 
+function chartFromPrice(price: StockPriceView | undefined, score: StockScoreView | undefined): StockChartView | undefined {
+  if (!price) return undefined;
+  const priceMetrics = recordValue(price.price_metrics) || recordValue(score?.price_metrics);
+  const latestPrice = numberValue(price.latest_price) ?? numberValue(priceMetrics?.price) ?? numberValue(score?.latest_price);
+  const latestBarDate = stringValue(price.latest_bar_date) || stringValue(score?.latest_bar_date);
+  if (!positiveNumber(latestPrice) || !latestBarDate) return undefined;
+
+  const currency = stringValue(price.currency) || stringValue(score?.currency);
+  const closeLabel = stringValue(price.latest_price_label) || stringValue(score?.latest_price_label);
+  const volume = numberValue(price.volume) ?? numberValue(priceMetrics?.volume);
+  const volumeLabel = stringValue(price.volume_label);
+
+  return {
+    requested_ticker: stringValue(price.requested_ticker) || stringValue(score?.requested_ticker),
+    market: stringValue(price.market) || stringValue(score?.market),
+    symbol: stringValue(price.symbol) || stringValue(score?.symbol),
+    name: stringValue(price.name) || stringValue(score?.name) || stringValue(score?.display_name),
+    currency,
+    chart_series: [{
+      date: latestBarDate,
+      open: latestPrice,
+      high: latestPrice,
+      low: latestPrice,
+      close: latestPrice,
+      ...(closeLabel ? { close_label: closeLabel } : {}),
+      ...(currency ? { currency } : {}),
+      ...(volume !== undefined ? { volume } : {}),
+      ...(volumeLabel ? { volume_label: volumeLabel } : {}),
+    }],
+    latest_bar_date: latestBarDate,
+    ...(priceMetrics ? { price_metrics: priceMetrics } : {}),
+  };
+}
+
 function chartWithUsableHistory(chart: StockChartView | undefined): StockChartView | undefined {
   return hasUsableChartSeries(chart?.chart_series) ? chart : undefined;
 }
 
 function hasUsableChartSeries(value: unknown): value is StockChartView["chart_series"] {
-  return Array.isArray(value) && value.length >= 2;
+  return Array.isArray(value) && value.length >= 1;
 }
 
 function hasInsufficientChartHistory(value: unknown): boolean {
@@ -241,4 +275,20 @@ function startDisplayLane<T>(source: () => Promise<T | undefined> | undefined): 
 
 function terminalFailureLaneTimeoutMs(): number {
   return numericEnv("STOCK_DISPLAY_TERMINAL_FAILURE_TIMEOUT_MS", 700);
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function positiveNumber(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
