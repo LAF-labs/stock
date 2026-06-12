@@ -175,8 +175,14 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /홈으로 돌아가기/);
   assert.match(compareSource, /tickers\.length <= 1/);
   assert.match(compareSource, /disabled=\{removeDisabled\}/);
+  assert.match(compareSource, /const \[isSearchCollapsed, setIsSearchCollapsed\] = useState\(false\);/);
+  assert.match(compareSource, /className="stock-search-form compare-add-form"/);
+  assert.match(compareSource, /variant="floating"/);
+  assert.match(compareSource, /isCollapsed=\{isSearchCollapsed\}/);
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
   assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
+  assert.match(css, /\.compare-landing,[\s\S]*?\.compare-picks,[\s\S]*?\.compare-toolbar\s*\{[\s\S]*?border:\s*1px solid var\(--line\);[\s\S]*?border-radius:\s*8px;/);
+  assert.match(css, /\.compare-toolbar\.search-collapsed\s*\{[\s\S]*?justify-items:\s*end;/);
   assert.match(css, /\.compare-card-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
   assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?minmax\(88px,\s*88px\)[\s\S]*?repeat\(var\(--compare-cols\), minmax\(104px, 1fr\)\)/);
 });

@@ -43,7 +43,7 @@ test("rule judgment flags expensive PER against industry benchmark", () => {
   });
 
   assert.equal(judgment.model, "rule-v2");
-  assert.equal(judgment.promptVersion, "stock-rule-judge-v3");
+  assert.equal(judgment.promptVersion, "stock-rule-judge-v4");
   assert.equal(judgment.headline, "수익성은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
@@ -168,6 +168,45 @@ test("rule judgment can use PBR industry benchmark when PER is missing", () => {
   );
   assert.equal(judgment.watch, "PBR이 국내 반도체 업종 상위권 기준 2.0배보다 높은지 먼저 확인해요.");
   assert.equal(judgment.tone, "cautious");
+});
+
+test("rule judgment ignores zero valuation placeholders", () => {
+  const stock = compactRuleJudgmentStock({
+    market: "US",
+    symbol: "QQQ",
+    name: "INVESCO QQQ TRUST",
+    score: 57,
+    components: [
+      { label: "거래 안정성", score: 90.8 },
+      { label: "밸류에이션", score: 50 },
+    ],
+    valuation_rows: [
+      { label: "PER", value: "-" },
+      { label: "Forward PER", value: "-" },
+      { label: "PBR", value: "0.00" },
+    ],
+  });
+
+  const judgment = buildRuleBasedJudgment(stock, {
+    benchmarks: [
+      {
+        market: "US",
+        scope: "OVERSEAS",
+        metric: "pbr",
+        sector: "ETF",
+        industry: "",
+        median: 4.8,
+        p25: 3.1,
+        p75: 6.2,
+        sampleCount: 20,
+      },
+    ],
+    cacheBucketStart: "2026-06-05T00:00:00.000Z",
+  });
+
+  assert.doesNotMatch(judgment.body, /PBR이 .*0\.0배/);
+  assert.match(judgment.body, /업종 기준 PER\/PBR이 들어오면/);
+  assert.equal(judgment.watch, "거래 안정성 점수와 가격 부담 지표를 함께 확인해요.");
 });
 
 test("rule judgment mentions high opportunity separately from cautious quality", () => {

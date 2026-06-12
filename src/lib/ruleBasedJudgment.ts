@@ -1,3 +1,5 @@
+import { STOCK_RULE_JUDGMENT_PROMPT_VERSION } from "@/lib/judgmentCache";
+
 export type IndustryBenchmark = {
   scope?: "KR" | "OVERSEAS";
   market?: string;
@@ -63,7 +65,7 @@ export type BuildRuleJudgmentOptions = {
 };
 
 const RULE_MODEL = "rule-v2";
-const PROMPT_VERSION = "stock-rule-judge-v3";
+const PROMPT_VERSION = STOCK_RULE_JUDGMENT_PROMPT_VERSION;
 const PROHIBITED_WORDS = /매수|매도|추천|목표가/g;
 
 export function compactRuleJudgmentStock(raw: Record<string, unknown>): RuleJudgmentStock {
@@ -356,7 +358,8 @@ function scoreTone(score: number, risk: unknown): "positive" | "neutral" | "caut
 
 function valuationNumber(stock: RuleJudgmentStock, label: string): number | undefined {
   const row = stock.valuation.find((item) => normalizeLabel(item.label) === normalizeLabel(label));
-  return parseFiniteNumber(row?.value);
+  const value = parseFiniteNumber(row?.value);
+  return typeof value === "number" && value > 0 ? value : undefined;
 }
 
 function componentLabel(component: CompactComponent | undefined): string {

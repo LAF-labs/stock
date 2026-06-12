@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .formatting import as_int, num_label, pct
+from .formatting import as_int, num_label, pct, price_label
 from .scoring import OpportunityResult
 
 
@@ -59,6 +59,7 @@ def opportunity_components_for(
     *,
     latest_price: float | None,
     target_mean_price: float | None,
+    currency: str = "USD",
     analyst_count: float | None,
     recommendation_mean: float | None,
     avg_volume_20: float | None,
@@ -97,8 +98,8 @@ def opportunity_components_for(
             "summary": "평균 목표가, 투자의견, 커버리지 수를 보수적으로 봐요.",
             "metrics": [
                 {"label": "목표가 여지", "value": pct(target_upside)},
+                {"label": "평균 목표가", "value": price_label(target_mean_price, currency)},
                 {"label": "애널리스트 수", "value": num_label(as_int(analyst_count), "명")},
-                {"label": "투자의견 평균", "value": f"{recommendation_mean:.2f}" if recommendation_mean is not None else "-"},
             ],
         },
         {

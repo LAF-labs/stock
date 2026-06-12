@@ -6,7 +6,8 @@ import dynamic from "next/dynamic";
 import {
   SOURCE_VENDOR_TEXT,
   chartSummary,
-  componentWord,
+  componentHasDisplayableScore,
+  componentScoreText,
   easySentence,
   factorSummary,
   formatMetricDisplayValue,
@@ -14,6 +15,7 @@ import {
   formatRecordValue,
   humanizeRecordKey,
   isRecordValue,
+  metricDisplayLabel,
   shouldUseCompactMetricGrid,
   termTipFor,
   usableChartPoints,
@@ -166,6 +168,7 @@ export function FactorStory({
       <div className="factor-list">
         {components.map((component) => {
           const score = clampScore(component.score);
+          const hasDisplayableScore = componentHasDisplayableScore(component);
           const visibleMetrics = visibleLabeledItems(component.metrics);
           return (
             <article key={component.key || component.label}>
@@ -174,19 +177,21 @@ export function FactorStory({
                   <strong>{component.label || component.key}</strong>
                   <TermHelp label={component.label || component.key || ""} />
                 </div>
-                <span className="factor-score">
-                  {score.toFixed(1)} · {componentWord(score)}
+                <span className={`factor-score${hasDisplayableScore ? "" : " is-missing"}`}>
+                  {componentScoreText(component)}
                 </span>
               </div>
-              <i>
-                <b style={{ width: `${score}%` }} />
-              </i>
+              {hasDisplayableScore ? (
+                <i>
+                  <b style={{ width: `${score}%` }} />
+                </i>
+              ) : null}
               <p>{factorSummary(component)}</p>
               <ul className={shouldUseCompactMetricGrid({ ...component, metrics: visibleMetrics }) ? "compact-metric-grid" : undefined}>
                 {visibleMetrics.map((metric) => (
                   <li key={`${component.key}-${metric.label}`}>
                     <span>
-                      <LabelWithTerm label={metric.label || "항목"} />
+                      <LabelWithTerm label={metricDisplayLabel(metric, stock) || "항목"} />
                     </span>
                     <strong>{formatMetricDisplayValue(metric, stock)}</strong>
                   </li>
@@ -223,7 +228,7 @@ export function SimpleList({
         {visibleItems.map((item, index) => (
           <div key={`${item.label}-${index}`}>
             <dt>
-              <LabelWithTerm label={item.label || `항목 ${index + 1}`} />
+              <LabelWithTerm label={metricDisplayLabel(item, stock) || `항목 ${index + 1}`} />
             </dt>
             <dd>
               <strong>{formatMetricDisplayValue(item, stock)}</strong>

@@ -21,5 +21,5 @@ test("symbol query keys trim queries without changing user intent", () => {
 });
 
 test("judgment query keys include score version and input hash", () => {
-  assert.deepEqual(stockQueryKeys.judgment("US:KO", "score-v1", "abc123"), ["stock", "judgment", "US:KO", "score-v1", "abc123"]);
+  assert.deepEqual(stockQueryKeys.judgment("US:KO", "score-v1", "abc123"), ["stock", "judgment", "US:KO", "score-v1", "stock-rule-judge-v4", "abc123"]);
 });

@@ -1961,6 +1961,11 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.factor-score.is-missing {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .factor-list i {
   display: block;
   height: 8px;
@@ -2318,7 +2323,12 @@ a:focus-visible {
   width: min(960px, 100%);
 }
 
-.compare-landing {
+.compare-landing,
+.compare-picks,
+.compare-toolbar {
+  margin: 12px 20px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
 }
 
@@ -2326,11 +2336,15 @@ a:focus-visible {
   position: sticky;
   top: 0;
   z-index: 5;
-  display: block;
+  display: grid;
+  align-items: center;
   padding: 12px 20px;
   background: rgba(255, 255, 255, 0.96);
-  border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px);
+}
+
+.compare-toolbar.search-collapsed {
+  justify-items: end;
 }
 
 .compare-back {
@@ -2348,22 +2362,22 @@ a:focus-visible {
 }
 
 .compare-add-form {
-  display: block;
+  width: 100%;
 }
 
-.compare-add-form .symbol-search-box {
+.compare-add-form:not(.symbol-autocomplete-floating) .symbol-search-box {
   grid-template-columns: minmax(0, 1fr) 72px;
 }
 
-.compare-add-form input,
-.compare-add-form button,
+.compare-add-form:not(.symbol-autocomplete-floating) input,
+.compare-add-form:not(.symbol-autocomplete-floating) button,
 .compare-suggestions button,
 .compare-picks span {
   border: 0;
   border-radius: 8px;
 }
 
-.compare-add-form input {
+.compare-add-form:not(.symbol-autocomplete-floating) input {
   min-height: 44px;
   width: 100%;
   padding: 0 14px;
@@ -2375,18 +2389,18 @@ a:focus-visible {
   text-transform: none;
 }
 
-.compare-add-form input:disabled {
+.compare-add-form:not(.symbol-autocomplete-floating) input:disabled {
   opacity: 0.55;
 }
 
-.compare-add-form button {
+.compare-add-form:not(.symbol-autocomplete-floating) button {
   min-height: 44px;
   background: var(--cta-primary-bg);
   color: var(--cta-primary-text);
   font-weight: 700;
 }
 
-.compare-add-form button:disabled {
+.compare-add-form:not(.symbol-autocomplete-floating) button:disabled {
   background: var(--cta-disabled-bg);
   color: var(--cta-primary-text);
   cursor: default;
@@ -2458,7 +2472,7 @@ a:focus-visible {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-inline: contain;
   scroll-snap-type: x proximity;
-  padding: 0 20px 14px;
+  padding: 12px 20px;
   background: var(--surface);
   scrollbar-width: none;
 }
@@ -3529,6 +3543,7 @@ a:focus-visible {
   }
 
   .compare-landing,
+  .compare-picks,
   .compare-toolbar,
   .compare-errors,
   .compare-status,
@@ -3536,27 +3551,35 @@ a:focus-visible {
     grid-column: 2;
   }
 
+  .compare-landing,
+  .compare-picks,
+  .compare-toolbar {
+    margin-inline: 0;
+  }
+
   .compare-toolbar {
     top: 16px;
-    margin-top: 0;
+    margin-top: 16px;
     padding: 14px 16px;
     border: 1px solid var(--line);
-    border-radius: 0 0 8px 8px;
+    border-radius: 8px;
   }
 
   .compare-landing {
     margin-top: 16px;
-    border-radius: 8px 8px 0 0;
+    border-radius: 8px;
   }
 
   .compare-hero {
     padding: 38px 32px 26px;
-    border-radius: 8px 8px 0 0;
+    border-radius: 8px;
   }
 
   .compare-picks {
+    margin-top: 16px;
     padding-inline: 32px;
-    padding-bottom: 22px;
+    padding-top: 14px;
+    padding-bottom: 14px;
   }
 
   .compare-suggestions {
@@ -3612,19 +3635,19 @@ a:focus-visible {
 
   .stock-search-form > div,
   .symbol-search-box,
-  .compare-add-form .symbol-search-box {
+  .compare-add-form:not(.symbol-autocomplete-floating) .symbol-search-box {
     grid-template-columns: minmax(0, 1fr) 68px;
   }
 
   .stock-search-form input,
   .stock-search-form button,
-  .compare-add-form input,
-  .compare-add-form button {
+  .compare-add-form:not(.symbol-autocomplete-floating) input,
+  .compare-add-form:not(.symbol-autocomplete-floating) button {
     min-height: 48px;
   }
 
   .stock-search-form input,
-  .compare-add-form input {
+  .compare-add-form:not(.symbol-autocomplete-floating) input {
     font-size: 18px;
   }
 
@@ -5182,7 +5205,6 @@ body {
     position: relative;
     z-index: 2;
     border: 1px solid var(--coach-line);
-    border-bottom: 0;
     background:
       linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(232, 243, 255, 0.96) 100%),
       #fff;
@@ -5196,12 +5218,13 @@ body {
   }
 
   .compare-app .compare-picks {
-    background: transparent;
+    border-color: var(--coach-line);
+    background: #fff;
+    box-shadow: var(--coach-section-shadow);
   }
 
   .compare-app .compare-toolbar {
     border: 1px solid var(--coach-line);
-    border-top: 0;
     box-shadow: var(--coach-section-shadow);
   }
 

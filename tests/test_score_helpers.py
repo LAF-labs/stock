@@ -303,6 +303,7 @@ class ScoreHelperTests(unittest.TestCase):
             opportunity,
             latest_price=100.0,
             target_mean_price=125.0,
+            currency="USD",
             analyst_count=7,
             recommendation_mean=1.83,
             avg_volume_20=123_456,
@@ -321,7 +322,8 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertEqual(components[0]["metrics"][0], {"label": "근거 충분도", "value": "80.0%"})
         self.assertEqual(components[1]["metrics"][0], {"label": "근거 충분도", "value": "70.0%"})
         self.assertEqual(components[2]["metrics"][0], {"label": "목표가 여지", "value": "+25.0%"})
-        self.assertEqual(components[2]["metrics"][1], {"label": "애널리스트 수", "value": "7명"})
+        self.assertEqual(components[2]["metrics"][1], {"label": "평균 목표가", "value": "$125.00"})
+        self.assertEqual(components[2]["metrics"][2], {"label": "애널리스트 수", "value": "7명"})
         for component in components:
             labels = [metric["label"] for metric in component["metrics"]]
             self.assertNotIn("신뢰도", labels)

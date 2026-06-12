@@ -1,4 +1,5 @@
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+export const STOCK_RULE_JUDGMENT_PROMPT_VERSION = "stock-rule-judge-v4";
 
 type JudgmentBenchmarkTokenInput = {
   scope?: string;
@@ -17,7 +18,7 @@ export function judgmentBucketStart(date = new Date(), bucketMs = SIX_HOURS_MS):
   return new Date(Math.floor(time / bucketMs) * bucketMs).toISOString();
 }
 
-export function judgmentCacheKeyFor(model: string, date = new Date(), promptVersion = "stock-rule-judge-v3", benchmarkToken = "bench:legacy"): string {
+export function judgmentCacheKeyFor(model: string, date = new Date(), promptVersion = STOCK_RULE_JUDGMENT_PROMPT_VERSION, benchmarkToken = "bench:legacy"): string {
   return `${model}:${promptVersion}:${judgmentBucketStart(date)}:${benchmarkToken}`;
 }
 

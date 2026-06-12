@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiLimitPolicy } from "@/lib/apiRateLimit";
 import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { readJsonObjectWithLimit, jsonError, sameOriginBrowserWriteGuard } from "@/lib/apiGuards";
-import { judgmentBenchmarkCacheToken, judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
+import { STOCK_RULE_JUDGMENT_PROMPT_VERSION, judgmentBenchmarkCacheToken, judgmentBucketStart, judgmentCacheKeyFor } from "@/lib/judgmentCache";
 import { getIndustryBenchmarksForStock } from "@/lib/industryBenchmarks";
 import { enrichStockPayloadWithSymbolProfile, payloadHasUsableIndustryProfile } from "@/lib/symbolProfiles";
 import {
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const RULE_MODEL = "rule-v2";
-const PROMPT_VERSION = "stock-rule-judge-v3";
+const PROMPT_VERSION = STOCK_RULE_JUDGMENT_PROMPT_VERSION;
 const SUPABASE_TABLE = "stock_rule_judgments";
 const MAX_JUDGMENT_BODY_BYTES = 64 * 1024;
 

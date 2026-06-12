@@ -4,7 +4,7 @@
   "watch": "PER과 최근 가격 흐름을 먼저 확인해요.",
   "tone": "neutral",
   "model": "rule-v2",
-  "promptVersion": "stock-rule-judge-v3",
+  "promptVersion": "stock-rule-judge-v4",
   "cached": true,
   "cacheBucketStart": "2026-06-05T00:00:00.000Z"
 }

@@ -175,7 +175,7 @@ test("judgment query option is disabled until stable input hash and payload exis
   assert.equal(judgmentQueryOptions({ ticker: "US:KO", scoreVersion: "v1", inputHash: "abc", payload: undefined }).enabled, false);
   const option = judgmentQueryOptions({ ticker: "US:KO", scoreVersion: "v1", inputHash: "abc", payload: { requested_ticker: "US:KO" } });
   assert.equal(option.enabled, true);
-  assert.deepEqual(option.queryKey, ["stock", "judgment", "US:KO", "v1", "abc"]);
+  assert.deepEqual(option.queryKey, ["stock", "judgment", "US:KO", "v1", "stock-rule-judge-v4", "abc"]);
 });
 
 test("pending polling follows the shared backoff and stops on non-pollable states", () => {

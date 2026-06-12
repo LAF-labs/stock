@@ -39,7 +39,7 @@ test("judgment cache key changes when industry benchmark coverage changes", () =
 
   assert.equal(emptyToken, "bench:none");
   assert.match(benchmarkToken, /^bench:OVERSEAS:US:quarter:per:필수소비재:음식료·외식:22\.74:23$/);
-  assert.notEqual(judgmentCacheKeyFor("rule-v1", date, "stock-rule-judge-v3", emptyToken), judgmentCacheKeyFor("rule-v1", date, "stock-rule-judge-v3", benchmarkToken));
+  assert.notEqual(judgmentCacheKeyFor("rule-v1", date, "stock-rule-judge-v4", emptyToken), judgmentCacheKeyFor("rule-v1", date, "stock-rule-judge-v4", benchmarkToken));
 });
 
 test("batch status reports total collector outage as 502", () => {
