@@ -10,7 +10,8 @@ import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { attachQuoteParts } from "@/lib/stockPartsResponse";
 import { getStockQuote, quoteResponseCacheHeaders, quoteStatusFromPayload } from "@/lib/stockQuoteCache";
 import { enqueueStockPendingPayload, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
-import { resolveTickerAlias } from "@/lib/tickerRef";
+import { readTerminalStockDisplayFailures } from "@/lib/stockRefreshFailures";
+import { parseTickerRef, resolveTickerAlias } from "@/lib/tickerRef";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,6 +69,11 @@ export async function GET(request: NextRequest) {
     const result = await getStockQuote(ticker, { forceRefresh });
     const resultPayload = attachQuoteParts(result);
     const payload = await enrichQuotePayloadForDisplay(resultPayload);
+    const resultStatus = quoteStatusFromPayload(payload);
+    if (resultStatus === 202) {
+      const terminalResponse = await terminalUnavailableQuoteResponse(ticker, cooldown);
+      if (terminalResponse) return terminalResponse;
+    }
 
     const response = NextResponse.json(
       {
@@ -75,7 +81,7 @@ export async function GET(request: NextRequest) {
         ...(cooldown ? { refresh_cooldown: cooldownPayload(cooldown.nextAllowedAt) } : {}),
       },
       {
-        status: quoteStatusFromPayload(payload),
+        status: resultStatus,
         headers: forceRefresh ? privateNoStoreHeaders() : quoteResponseCacheHeaders({ ...result, payload }),
       }
     );
@@ -84,6 +90,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("quote_snapshot_unavailable", { ticker, reason: error.payload.reason });
+      const terminalResponse = await terminalUnavailableQuoteResponse(ticker, cooldown);
+      if (terminalResponse) return terminalResponse;
       const pendingPayload = await enqueueStockPendingPayload({
         kind: "quote",
         ticker,
@@ -96,6 +104,8 @@ export async function GET(request: NextRequest) {
     }
 
     console.warn("quote_provider_unavailable", { ticker, error: safeErrorMessage(error) });
+    const terminalResponse = await terminalUnavailableQuoteResponse(ticker, cooldown);
+    if (terminalResponse) return terminalResponse;
     const response = NextResponse.json(
       {
         ok: false,
@@ -107,4 +117,38 @@ export async function GET(request: NextRequest) {
     if (cooldown) applyRefreshUserCookie(response, cooldown);
     return response;
   }
+}
+
+type RefreshCooldownState = Awaited<ReturnType<typeof acquireRefreshCooldown>>;
+
+async function terminalUnavailableQuoteResponse(ticker: string, cooldown?: RefreshCooldownState): Promise<NextResponse | undefined> {
+  const terminalFailures = await readTerminalStockDisplayFailures(ticker, "detail");
+  if (!terminalFailures.some((item) => item.part === "price" && item.reason === "provider_confirmed_empty")) return undefined;
+  const target = parseTickerRef(ticker);
+  const payload = await enrichQuotePayloadForDisplay({
+    ok: true,
+    type: "quote",
+    requested_ticker: ticker,
+    market: target.market,
+    symbol: target.symbol,
+    name: target.symbol,
+    currency: target.market === "KR" ? "KRW" : "USD",
+    server_cache: {
+      state: "unavailable",
+      source: "terminal_failure",
+      refresh_started: false,
+      unavailable_parts: ["price"],
+    },
+    parts: {
+      quote: {
+        state: "unavailable",
+        source: "provider",
+        reason: "provider_confirmed_empty",
+        refresh_started: false,
+      },
+    },
+  });
+  const response = NextResponse.json(payload, { status: 200, headers: privateNoStoreHeaders() });
+  if (cooldown) applyRefreshUserCookie(response, cooldown);
+  return response;
 }

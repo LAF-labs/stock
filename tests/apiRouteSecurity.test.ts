@@ -110,6 +110,46 @@ test("quote route rejects missing and invalid API ticker input", async () => {
   assert.match(missing.headers.get("Cache-Control") || "", /no-store/);
 });
 
+test("quote route returns non-pollable unavailable quote for terminal provider-empty work", async () => {
+  restoreEnv();
+  process.env.VERCEL = "1";
+  process.env.STOCK_DATA_RUNTIME = "snapshot";
+  process.env.STOCK_RATE_LIMIT_SECRET = "r".repeat(32);
+  process.env.STOCK_REFRESH_COOKIE_SECRET = "c".repeat(32);
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+
+  let enqueueCalls = 0;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/rpc/acquire_stock_api_rate_limit")) {
+      return Response.json({ allowed: true, remaining: 44, reset_at: new Date(Date.now() + 60_000).toISOString() });
+    }
+    if (url.includes("/rest/v1/stock_quote_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_refresh_jobs")) {
+      return Response.json([
+        { kind: "quote", view_mode: null, last_error: "provider_confirmed_empty: No data found" },
+      ]);
+    }
+    if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
+      enqueueCalls += 1;
+      return Response.json({ id: "job-vld", status: "queued" });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  const response = await getQuote(request("/api/quote?ticker=US:VLD"));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.type, "quote");
+  assert.equal(payload.server_cache.state, "unavailable");
+  assert.equal(payload.parts.quote.state, "unavailable");
+  assert.equal(enqueueCalls, 0);
+});
+
 test("quote display enrichment uses local symbol names before Supabase profiles", async () => {
   restoreEnv();
   delete process.env.SUPABASE_URL;
