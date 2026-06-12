@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   MAX_COMPARE,
+  averageAnchoredFill,
   bestBy,
   compareItemTitle,
   compareDateAlignedSeries,
@@ -217,6 +218,16 @@ test("compare price tone keeps missing and flat moves neutral", () => {
   assert.equal(comparePriceTone(0), "price-neutral");
   assert.equal(comparePriceTone(0.012), "price-up");
   assert.equal(comparePriceTone(-0.012), "price-down");
+});
+
+test("average anchored fill keeps metric averages at half width", () => {
+  assert.equal(averageAnchoredFill(20, [10, 20, 30]), 50);
+  assert.equal(averageAnchoredFill(30, [10, 20, 30]), 100);
+  assert.equal(averageAnchoredFill(10, [10, 20, 30]), 0);
+  assert.equal(averageAnchoredFill(1.9, [1.9, -22.1]), 100);
+  assert.equal(averageAnchoredFill(-22.1, [1.9, -22.1]), 0);
+  assert.equal(averageAnchoredFill(5, [5, 5]), 50);
+  assert.equal(averageAnchoredFill(undefined, [5, 10]), 0);
 });
 
 test("semanticMetricRows maps compare items into accessible table rows", () => {

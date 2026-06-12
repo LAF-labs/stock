@@ -7,6 +7,7 @@ import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { ComparePendingOverviewSkeleton } from "@/components/StockLoadingSkeletons";
 import {
   MAX_COMPARE,
+  averageAnchoredFill,
   bestBy,
   compareDateAlignedSeries,
   compareItemSubtitle,
@@ -226,16 +227,20 @@ function CompareReadyCard({ item }: { item: CompareItem }) {
         </div>
         <em className={comparePriceTone(item.daily)}>{percentText(item.daily)}</em>
       </div>
-      <div className="compare-score-line">
-        <strong>{item.score.toFixed(1)}점</strong>
-        <span>{item.provisional ? item.provisionalLabel || "현재 점수" : `품질 ${scoreWord(item.score)}`}</span>
-      </div>
-      <i className="compare-card-scorebar" aria-hidden="true">
-        <em style={{ width: `${item.score}%` }} />
-      </i>
-      <div className="compare-opportunity-line">
-        <span>기회</span>
-        <strong>{item.opportunityScore === undefined ? "-" : `${item.opportunityScore.toFixed(1)}점`}</strong>
+      <div className="compare-score-grid" aria-label={`${compareItemTitle(item)} 점수`}>
+        <CompareScoreTile
+          label="품질"
+          value={`${item.score.toFixed(1)}점`}
+          caption={item.provisional ? item.provisionalLabel || "현재 점수" : `품질 ${scoreWord(item.score)}`}
+          score={item.score}
+        />
+        <CompareScoreTile
+          label="기회"
+          value={item.opportunityScore === undefined ? "-" : `${item.opportunityScore.toFixed(1)}점`}
+          caption={item.opportunityScore === undefined ? "확인 중" : `기회 ${scoreWord(item.opportunityScore)}`}
+          score={item.opportunityScore}
+          tone="opportunity"
+        />
       </div>
       <dl>
         <div>
@@ -255,8 +260,35 @@ function CompareReadyCard({ item }: { item: CompareItem }) {
   );
 }
 
+function CompareScoreTile({
+  label,
+  value,
+  caption,
+  score,
+  tone = "quality",
+}: {
+  label: string;
+  value: string;
+  caption: string;
+  score?: number;
+  tone?: "quality" | "opportunity";
+}) {
+  const width = typeof score === "number" && Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0;
+  return (
+    <div className={`compare-score-tile ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{caption}</small>
+      <i className={score === undefined ? "pending" : undefined} aria-hidden="true">
+        <em style={{ width: `${width}%` }} />
+      </i>
+    </div>
+  );
+}
+
 function ComparePartialCard({ state }: { state: Extract<CompareLoadState, { status: "partial" }> }) {
   const identity = stockHeaderIdentity(state.data);
+  const price = formatPrimaryPrice(state.data);
   return (
     <article className="compare-stock-card compare-pending-card">
       <div className="compare-card-top">
@@ -265,13 +297,11 @@ function ComparePartialCard({ state }: { state: Extract<CompareLoadState, { stat
           <strong className={identity.primaryKind === "name" ? "name-primary" : "ticker-primary"}>{identity.primary}</strong>
           {identity.secondary ? <small>{identity.secondary}</small> : null}
         </div>
-        <em className="price-neutral">{formatPrimaryPrice(state.data) || "종목 확인"}</em>
+        <em className="price-neutral">{price || "종목 확인"}</em>
       </div>
-      <div className="compare-score-line">
-        <span>현재가</span>
-        <strong>{formatPrimaryPrice(state.data)}</strong>
+      <div className="compare-score-grid compare-score-grid-single">
+        <CompareScoreTile label="현재가" value={price || "-"} caption="확인된 가격" />
       </div>
-      <i className="compare-card-scorebar pending" aria-hidden="true" />
     </article>
   );
 }
@@ -286,11 +316,14 @@ function CompareSkeletonCard({ ticker }: { ticker: string }) {
         </div>
         <em className="price-neutral">확인 중</em>
       </div>
-      <div className="compare-score-line">
-        <span className="skeleton-block small" />
-        <span className="skeleton-block score" />
+      <div className="compare-score-grid compare-score-grid-single">
+        <div className="compare-score-tile skeleton">
+          <span className="skeleton-block small" />
+          <strong><span className="skeleton-block score" /></strong>
+          <small className="skeleton-block small" />
+          <i className="pending" aria-hidden="true" />
+        </div>
       </div>
-      <i className="compare-card-scorebar pending" aria-hidden="true" />
     </article>
   );
 }
@@ -394,8 +427,6 @@ type MetricRow = {
 type PreparedMetricRow = {
   row: MetricRow;
   best?: CompareItem;
-  min?: number;
-  max?: number;
   values: Map<string, number | undefined>;
 };
 
@@ -439,29 +470,22 @@ function prepareMetricRow(items: CompareItem[], row: MetricRow): PreparedMetricR
   const values = new Map<string, number | undefined>();
   let best: CompareItem | undefined;
   let bestValue: number | undefined;
-  let min: number | undefined;
-  let max: number | undefined;
 
   for (const item of items) {
     const current = row.value(item);
     values.set(item.ticker, current);
     if (typeof current !== "number" || !Number.isFinite(current)) continue;
-    if (min === undefined || current < min) min = current;
-    if (max === undefined || current > max) max = current;
     if (row.best && (bestValue === undefined || (row.best === "low" ? current < bestValue : current > bestValue))) {
       best = item;
       bestValue = current;
     }
   }
 
-  return { row, best, min, max, values };
+  return { row, best, values };
 }
 
-function metricFill(value: number | undefined, row: MetricRow, min: number | undefined, max: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || min === undefined || max === undefined) return 0;
-  if (max === min) return 100;
-  const fill = row.best === "low" ? ((max - value) / (max - min)) * 100 : ((value - min) / (max - min)) * 100;
-  return Math.max(6, Math.min(100, fill));
+function metricFill(value: number | undefined, values: Map<string, number | undefined>): number {
+  return averageAnchoredFill(value, Array.from(values.values()));
 }
 
 function CompareMatrix({ items }: { items: CompareItem[] }) {
@@ -516,12 +540,17 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                   ))}
                 </div>
                 {rows.map((prepared) => {
-                  const { row, best, min, max, values } = prepared;
+                  const { row, best, values } = prepared;
                   return (
                     <article key={row.label} className="compare-metric-row">
                       <header>
-                        <strong>{row.label}</strong>
-                        <span>{row.description}</span>
+                        <div className="compare-metric-label">
+                          <strong>{row.label}</strong>
+                          <details className="compare-metric-help">
+                            <summary aria-label={`${row.label} 설명 보기`}>?</summary>
+                            <span>{row.description}</span>
+                          </details>
+                        </div>
                       </header>
                       {items.map((item) => {
                         const value = values.get(item.ticker);
@@ -533,7 +562,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
                           >
                             <strong>{row.display(value)}</strong>
                             <i aria-hidden="true">
-                              <em style={{ width: `${metricFill(value, row, min, max)}%` }} />
+                              <em style={{ width: `${metricFill(value, values)}%` }} />
                             </i>
                             {isBest ? <small>{row.best === "low" ? "부담 낮음" : "가장 높음"}</small> : null}
                           </div>

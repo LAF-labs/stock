@@ -2648,12 +2648,10 @@ a:focus-visible {
 .compare-stock-card {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(210px, 1.15fr) minmax(142px, 0.62fr) minmax(132px, 0.52fr) minmax(220px, 0.95fr);
-  grid-template-areas:
-    "top score opportunity metrics"
-    "top bar opportunity metrics";
-  align-items: center;
-  gap: 10px 18px;
+  grid-template-columns: minmax(210px, 1.05fr) minmax(252px, 1.15fr) minmax(220px, 0.95fr);
+  grid-template-areas: "top scores metrics";
+  align-items: stretch;
+  gap: 12px 18px;
   padding: 18px;
 }
 
@@ -2741,64 +2739,88 @@ a:focus-visible {
   font-weight: 600;
 }
 
-.compare-score-line {
-  grid-area: score;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0;
+.compare-score-grid {
+  grid-area: scores;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.compare-score-line strong {
+.compare-score-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.compare-score-tile {
+  min-width: 0;
+  min-height: 112px;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 6px;
+  align-content: start;
+  padding: 14px;
+  border: 1px solid rgba(49, 130, 246, 0.12);
+  border-radius: 16px;
+  background: rgba(232, 243, 255, 0.46);
+}
+
+.compare-score-tile span,
+.compare-score-tile small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compare-score-tile span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compare-score-tile strong {
+  min-width: 0;
   color: var(--accent);
-  font-size: 28px;
-  line-height: 1;
+  font-size: 24px;
+  line-height: 1.05;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
-.compare-score-line span {
+.compare-score-tile small {
   color: var(--subtext);
+  font-size: 13px;
+  line-height: 1.35;
   font-weight: 700;
-  white-space: nowrap;
 }
 
-.compare-card-scorebar {
-  grid-area: bar;
+.compare-score-tile i {
   display: block;
   height: 7px;
-  margin-top: 0;
   overflow: hidden;
   border-radius: 999px;
   background: #e5e8eb;
 }
 
-.compare-card-scorebar em {
+.compare-score-tile i em {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
 }
 
-.compare-card-scorebar.pending {
+.compare-score-tile.opportunity strong {
+  color: #0f9f6e;
+}
+
+.compare-score-tile.opportunity i em {
+  background: #0f9f6e;
+}
+
+.compare-score-tile i.pending {
   background: linear-gradient(90deg, #d5dde7 35%, #edf1f5 35%);
 }
 
-.compare-opportunity-line {
-  grid-area: opportunity;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 0;
-  color: var(--subtext);
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.compare-opportunity-line strong {
-  color: #0f9f6e;
-  font-size: 18px;
-  overflow-wrap: anywhere;
+.compare-score-tile.skeleton strong {
+  display: block;
 }
 
 .compare-stock-card dl {
@@ -2933,8 +2955,7 @@ a:focus-visible {
   .ticker-chips,
   .compare-side-index,
   .compare-picks,
-  .compare-suggestions,
-  .compare-metric-table {
+  .compare-suggestions {
     -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
     mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
   }
@@ -2943,9 +2964,9 @@ a:focus-visible {
 .compare-metric-column-head,
 .compare-metric-row {
   display: grid;
-  grid-template-columns: minmax(150px, 0.9fr) repeat(var(--compare-cols), minmax(96px, 1fr));
+  grid-template-columns: minmax(88px, 88px) repeat(var(--compare-cols), minmax(104px, 1fr));
   gap: 6px;
-  min-width: min(100%, calc(150px + var(--compare-cols) * 96px + (var(--compare-cols) + 1) * 6px));
+  min-width: min(100%, calc(88px + var(--compare-cols) * 104px + (var(--compare-cols) + 1) * 6px));
 }
 
 .compare-metric-column-head {
@@ -2979,11 +3000,6 @@ a:focus-visible {
   font-weight: 700;
 }
 
-.compare-metric-row header span {
-  margin-top: 5px;
-  line-height: 1.45;
-}
-
 .compare-metric-row header,
 .compare-metric-cell {
   min-width: 0;
@@ -2991,6 +3007,64 @@ a:focus-visible {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.compare-metric-row header {
+  width: 100%;
+  aspect-ratio: 1;
+  align-self: start;
+  display: grid;
+  align-items: center;
+  padding: 8px;
+  border-color: rgba(49, 130, 246, 0.12);
+  background: transparent;
+}
+
+.compare-metric-label {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.compare-metric-row header .compare-metric-label > strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.compare-metric-help {
+  width: max-content;
+}
+
+.compare-metric-help summary {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-accent);
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.compare-metric-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.compare-metric-help span {
+  display: block;
+  width: min(180px, calc(100vw - 48px));
+  margin-top: 7px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: #191f28;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 600;
 }
 
 .compare-metric-cell.best {
@@ -3685,11 +3759,13 @@ a:focus-visible {
     grid-template-columns: 1fr;
     grid-template-areas:
       "top"
-      "score"
-      "bar"
-      "opportunity"
+      "scores"
       "metrics";
     align-items: stretch;
+  }
+
+  .compare-score-tile {
+    min-height: 108px;
   }
 
   .component-compare-list article > div > span {
@@ -3709,8 +3785,16 @@ a:focus-visible {
 
   .compare-metric-column-head,
   .compare-metric-row {
-    grid-template-columns: minmax(132px, 0.9fr) repeat(var(--compare-cols), minmax(88px, 1fr));
-    min-width: calc(132px + var(--compare-cols) * 88px + (var(--compare-cols) + 1) * 6px);
+    grid-template-columns: minmax(88px, 88px) repeat(var(--compare-cols), minmax(88px, 1fr));
+    min-width: calc(88px + var(--compare-cols) * 88px + (var(--compare-cols) + 1) * 6px);
+  }
+
+  .compare-score-grid {
+    gap: 8px;
+  }
+
+  .compare-score-tile {
+    padding: 12px;
   }
 }
 
@@ -3827,9 +3911,12 @@ body {
   padding: 20px;
 }
 
-.compare-score-line strong,
-.compare-opportunity-line strong {
+.compare-score-tile strong {
   color: var(--coach-blue);
+}
+
+.compare-score-tile.opportunity strong {
+  color: #0f9f6e;
 }
 
 .compare-metric-group {
@@ -4865,7 +4952,7 @@ body {
   font-weight: 600;
 }
 
-.compare-score-line strong {
+.compare-score-tile strong {
   font-size: 24px;
   font-weight: 600;
 }
@@ -4923,7 +5010,7 @@ body {
     font-size: 26px;
   }
 
-  .compare-score-line strong {
+  .compare-score-tile strong {
     font-size: 22px;
   }
 
@@ -5037,6 +5124,115 @@ body {
     width: auto;
     max-width: none;
     min-width: 0;
+  }
+}
+
+/* Desktop shadow layout refinement */
+@media (min-width: 900px) {
+  :root {
+    --coach-shadow: 0 12px 28px rgba(49, 130, 246, 0.11);
+    --coach-section-shadow: 0 8px 20px rgba(25, 31, 40, 0.065);
+    --coach-side-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
+  }
+
+  .stock-detail-app,
+  .compare-app {
+    width: min(860px, calc(100% - 96px));
+    overflow: visible;
+  }
+
+  .stock-detail-app:has(> .stock-detail-index),
+  .compare-app {
+    width: min(1180px, calc(100% - 96px));
+  }
+
+  .stock-detail-index,
+  .compare-side-index {
+    box-shadow: var(--coach-side-shadow);
+  }
+
+  .stock-detail-app .stock-feed {
+    gap: 32px;
+    margin-top: 16px;
+  }
+
+  .stock-detail-app .stock-feed-section {
+    display: grid;
+    gap: 32px;
+  }
+
+  .compare-app .compare-feed {
+    gap: 32px;
+    margin-top: 32px;
+  }
+
+  .stock-detail-app .stock-title-card {
+    box-shadow: var(--coach-shadow);
+  }
+
+  .stock-detail-app .chart-story,
+  .stock-detail-app .factor-card,
+  .stock-detail-app .accordion-card,
+  .stock-detail-app .static-card,
+  .compare-app .compare-section {
+    box-shadow: var(--coach-section-shadow);
+  }
+
+  .compare-app .compare-landing {
+    position: relative;
+    z-index: 2;
+    border: 1px solid var(--coach-line);
+    border-bottom: 0;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(232, 243, 255, 0.96) 100%),
+      #fff;
+    box-shadow: var(--coach-shadow);
+  }
+
+  .compare-app .compare-hero {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .compare-app .compare-picks {
+    background: transparent;
+  }
+
+  .compare-app .compare-toolbar {
+    border: 1px solid var(--coach-line);
+    border-top: 0;
+    box-shadow: var(--coach-section-shadow);
+  }
+
+  .dashboard-landing,
+  .landing-story-section {
+    overflow: visible;
+  }
+
+  .landing-visual {
+    box-shadow: 0 14px 32px rgba(49, 130, 246, 0.14);
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1120px) {
+  .compare-stock-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "scores"
+      "metrics";
+    align-items: stretch;
+  }
+
+  .compare-stock-card dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .compare-stock-card dl div {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
 

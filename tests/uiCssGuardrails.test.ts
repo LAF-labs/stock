@@ -36,7 +36,7 @@ test("first-screen display typography uses a calmer scale", () => {
   assert.match(css, /\.stock-detail-app \.stock-name-row h2\s*\{[\s\S]*?font-size:\s*42px;[\s\S]*?font-weight:\s*600;/);
   assert.match(css, /\.stock-detail-app \.price-block strong\s*\{[\s\S]*?font-size:\s*36px;[\s\S]*?font-weight:\s*600;/);
   assert.match(css, /\.compare-app \.compare-hero h1\s*\{[\s\S]*?font-size:\s*30px;[\s\S]*?font-weight:\s*600;/);
-  assert.match(css, /\.compare-score-line strong\s*\{[\s\S]*?font-size:\s*24px;[\s\S]*?font-weight:\s*600;/);
+  assert.match(css, /\.compare-score-tile strong\s*\{[\s\S]*?font-size:\s*24px;[\s\S]*?font-weight:\s*600;/);
   assert.match(css, /\.technical-analysis-app \.technical-hero-heading h1\s*\{[\s\S]*?font-size:\s*36px;[\s\S]*?font-weight:\s*600;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-name-row h2\s*\{[\s\S]*?font-size:\s*30px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-app \.compare-hero h1\s*\{[\s\S]*?font-size:\s*26px;/);
@@ -178,7 +178,18 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
   assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
   assert.match(css, /\.compare-card-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
-  assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?repeat\(var\(--compare-cols\), minmax\(96px, 1fr\)\)/);
+  assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?minmax\(88px,\s*88px\)[\s\S]*?repeat\(var\(--compare-cols\), minmax\(104px, 1fr\)\)/);
+});
+
+test("compare cards give quality and opportunity matching mobile-safe score hierarchy", () => {
+  const scoreTileTextRule = css.match(/\.compare-score-tile span,[\s\S]*?\.compare-score-tile small\s*\{([^}]*)\}/)?.[1] || "";
+
+  assert.match(compareSource, /<CompareScoreTile[\s\S]*label="품질"[\s\S]*<CompareScoreTile[\s\S]*label="기회"/);
+  assert.doesNotMatch(compareSource, /compare-score-line|compare-opportunity-line|compare-card-scorebar/);
+  assert.match(css, /\.compare-stock-card\s*\{[\s\S]*?grid-template-areas:\s*"top scores metrics";/);
+  assert.match(css, /\.compare-score-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(scoreTileTextRule, /overflow-wrap:\s*anywhere;/);
+  assert.doesNotMatch(scoreTileTextRule, /white-space:\s*nowrap;/);
 });
 
 test("compare empty state gives mobile users a next action instead of blank space", () => {
@@ -213,7 +224,8 @@ test("wide mobile content scrolls inside its own touch container", () => {
   assert.match(compareMetricTableRule, /width:\s*100%;/);
   assert.match(compareMetricTableRule, /min-width:\s*0;/);
   assert.match(compareMetricTableRule, /max-width:\s*100%;/);
-  assert.match(css, /\.compare-metric-row\s*\{[\s\S]*?min-width:\s*calc\(132px \+ var\(--compare-cols\) \* 88px \+ \(var\(--compare-cols\) \+ 1\) \* 6px\);/);
+  assert.match(css, /\.compare-metric-row\s*\{[\s\S]*?min-width:\s*calc\(88px \+ var\(--compare-cols\) \* 88px \+ \(var\(--compare-cols\) \+ 1\) \* 6px\);/);
+  assert.doesNotMatch(css, /\.compare-suggestions,[\s\S]*?\.compare-metric-table\s*\{[\s\S]*?mask-image:/);
 });
 
 test("mobile compare navigation is a compact horizontal action rail", () => {

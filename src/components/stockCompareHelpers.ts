@@ -140,6 +140,23 @@ export function ratioText(value: number | undefined, suffix = ""): string {
   return `${KO_KR_RATIO_FORMATTER.format(value)}${suffix}`;
 }
 
+export function averageAnchoredFill(value: number | undefined, values: Array<number | undefined>): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  const finiteValues = values.filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+  if (!finiteValues.length) return 0;
+
+  const average = finiteValues.reduce((sum, item) => sum + item, 0) / finiteValues.length;
+  const min = Math.min(...finiteValues);
+  const max = Math.max(...finiteValues);
+  const largestDistance = Math.max(Math.abs(max - average), Math.abs(average - min));
+  if (largestDistance === 0) return 50;
+
+  const fill = 50 + ((value - average) / largestDistance) * 50;
+  if (fill <= 1e-9) return 0;
+  if (fill >= 100 - 1e-9) return 100;
+  return Math.max(0, Math.min(100, fill));
+}
+
 export type SemanticMetricRow<T> = {
   label: string;
   value: (item: T) => number | undefined;
