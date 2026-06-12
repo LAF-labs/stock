@@ -79,6 +79,33 @@ test("display model marks provider-confirmed empty lanes unavailable instead of 
   assert.equal(payload.refresh.active, false);
 });
 
+test("display model uses terminal refresh failures even when provider lanes miss their deadline", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:DEAD",
+    view: "technical",
+    sources: {
+      identity: async () => ({ ticker: "US:DEAD", market: "US", symbol: "DEAD", name: "Dead Provider" }),
+      price: async () => undefined,
+      chart: async () => undefined,
+      score: async () => undefined,
+      terminalFailures: async () => [
+        { part: "price", reason: "provider_confirmed_empty" },
+        { part: "chart", reason: "provider_confirmed_empty" },
+        { part: "technical", reason: "provider_confirmed_empty" },
+      ],
+    },
+  });
+
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.deepEqual(payload.completion.unavailableParts, [
+    { part: "price", reason: "provider_confirmed_empty" },
+    { part: "chart", reason: "provider_confirmed_empty" },
+    { part: "technical", reason: "provider_confirmed_empty" },
+  ]);
+  assert.equal(payload.refresh.active, false);
+});
+
 test("display model normalizes legacy app names in score payloads", async () => {
   const payload = await buildStockDisplayPayload({
     ticker: "KR:005930",

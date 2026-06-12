@@ -30,6 +30,7 @@ export type StockDisplaySources = {
   price?: (ticker: string) => Promise<StockDisplaySourceResult<StockPriceView>>;
   chart?: (ticker: string) => Promise<StockDisplaySourceResult<StockChartView>>;
   score?: (ticker: string, view: StockDisplayView) => Promise<StockDisplaySourceResult<StockScoreView>>;
+  terminalFailures?: (ticker: string, view: StockDisplayView) => Promise<StockDisplayUnavailablePart[]>;
 };
 
 export type StockDisplayScoreSourceDeps = {
@@ -77,12 +78,14 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   const pricePromise = withLaneDeadline("price", startDisplayLane(() => sources.price?.(ticker)));
   const chartPromise = withLaneDeadline("chart", startDisplayLane(() => sources.chart?.(ticker)));
   const scorePromise = withLaneDeadline("score", startDisplayLane(() => sources.score?.(ticker, input.view)));
+  const terminalFailuresPromise = withDeadline(startDisplayLane(() => sources.terminalFailures?.(ticker, input.view)), terminalFailureLaneTimeoutMs());
 
-  const [identityResult, priceResult, chartResult, scoreResult] = await Promise.allSettled([
+  const [identityResult, priceResult, chartResult, scoreResult, terminalFailuresResult] = await Promise.allSettled([
     identityPromise,
     pricePromise,
     chartPromise,
     scorePromise,
+    terminalFailuresPromise,
   ]);
 
   const identity = fulfilledValue(identityResult) ?? fallbackIdentity(ticker);
@@ -95,8 +98,10 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   const news = newsFromScore(score);
   const presentParts = presentDisplayParts({ price, chart, score, technical, fundamentals, industryBenchmark, news }, input.view);
   const requiredParts = displayRequiredParts(input.view, score);
-  const unavailableParts = unavailablePartsFromLaneResults({ priceResult, chartResult, scoreResult }, input.view)
-    .filter((item) => !presentParts.includes(item.part));
+  const unavailableParts = uniqueUnavailableParts([
+    ...unavailablePartsFromLaneResults({ priceResult, chartResult, scoreResult }, input.view),
+    ...(fulfilledValue(terminalFailuresResult) || []),
+  ]).filter((item) => !presentParts.includes(item.part));
   const completion = planStockDisplayCompletion({
     ticker,
     view: input.view,
@@ -347,6 +352,16 @@ function unavailablePartsFromLaneResults(
   return parts;
 }
 
+function uniqueUnavailableParts(parts: StockDisplayUnavailablePart[]): StockDisplayUnavailablePart[] {
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    const key = `${part.part}:${part.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadIdentity(ticker: string, sources: StockDisplaySources): Promise<StockIdentityView> {
   const fromSource = await sources.identity?.(ticker).catch(() => undefined);
   if (fromSource) return fromSource;
@@ -400,6 +415,10 @@ function defaultDisplaySources(): StockDisplaySources {
     },
     score: async (ticker, view) => {
       return readStockDisplayScoreSource(ticker, view);
+    },
+    terminalFailures: async (ticker, view) => {
+      const { readTerminalStockDisplayFailures } = await import("@/lib/stockRefreshFailures");
+      return readTerminalStockDisplayFailures(ticker, view);
     },
   };
 }
@@ -460,8 +479,11 @@ function defaultDisplayScoreSourceDeps(): StockDisplayScoreSourceDeps {
 }
 
 async function withLaneDeadline<T>(lane: "price" | "chart" | "score", promise: Promise<T | undefined> | undefined): Promise<T | undefined> {
+  return withDeadline(promise, displayLaneTimeoutMs(lane));
+}
+
+async function withDeadline<T>(promise: Promise<T | undefined> | undefined, timeoutMs: number): Promise<T | undefined> {
   if (!promise) return undefined;
-  const timeoutMs = displayLaneTimeoutMs(lane);
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
@@ -490,4 +512,8 @@ export function displayLaneTimeoutMs(lane: "price" | "chart" | "score"): number 
     return numericEnv("STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS", partialStockScoreTimeoutMs("detail"));
   }
   return partialStockScoreTimeoutMs("detail");
+}
+
+function terminalFailureLaneTimeoutMs(): number {
+  return numericEnv("STOCK_DISPLAY_TERMINAL_FAILURE_TIMEOUT_MS", 700);
 }
