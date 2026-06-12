@@ -273,6 +273,14 @@ class PublishStockSnapshotsTests(unittest.TestCase):
                 allow_queue_row_errors=True,
             )
         )
+        self.assertTrue(
+            publisher.publish_payload_ok(
+                [{"ticker": "US:WARM", "errors": [{"error": "kis_not_found"}]}],
+                queue_rows,
+                allow_queue_row_errors=True,
+                allow_warm_row_errors=True,
+            )
+        )
 
     def test_permanent_refresh_failure_classifies_invalid_symbols(self):
         self.assertEqual(permanent_refresh_failure("kis_not_found"), False)

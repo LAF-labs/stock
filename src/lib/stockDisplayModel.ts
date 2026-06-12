@@ -1,5 +1,6 @@
 import { planStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
+import { partialStockScoreTimeoutMs } from "@/lib/stockScorePartialFastPath";
 import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import { numericEnv } from "@/lib/supabaseRest";
@@ -458,5 +459,8 @@ function startDisplayLane<T>(source: () => Promise<T | undefined> | undefined): 
 export function displayLaneTimeoutMs(lane: "price" | "chart" | "score"): number {
   if (lane === "price") return numericEnv("STOCK_DISPLAY_PRICE_LANE_TIMEOUT_MS", 900);
   if (lane === "chart") return numericEnv("STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS", 1_000);
-  return numericEnv("STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS", 1_200);
+  if (process.env.STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS?.trim()) {
+    return numericEnv("STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS", partialStockScoreTimeoutMs("detail"));
+  }
+  return partialStockScoreTimeoutMs("detail");
 }

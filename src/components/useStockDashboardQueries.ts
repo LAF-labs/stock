@@ -145,7 +145,7 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     displayData,
   });
   const detailViewState = dashboardLoadStateFromDetailView(dashboardStateFromDetailView(detailViewQuery.data), ticker);
-  const state = detailViewState || legacyState;
+  const state = chooseDashboardLoadState(detailViewState, legacyState);
   const quoteState = quoteStateFromQuery(ticker, quoteQuery.data, quoteQuery.error, quoteQuery.isLoading);
   const judgmentState = judgmentStateFromQuery(rawScoreData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(rawScoreData));
   const data = ticker && state.status === "success" ? state.data : undefined;
@@ -192,6 +192,16 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     retryLoad,
     refreshPrice,
   };
+}
+
+export function chooseDashboardLoadState(
+  detailViewState: DashboardLoadState | undefined,
+  legacyState: DashboardLoadState,
+): DashboardLoadState {
+  if (!detailViewState) return legacyState;
+  if (detailViewState.status === "success") return detailViewState;
+  if (legacyState.status === "success") return legacyState;
+  return detailViewState;
 }
 
 function dashboardLoadStateFromDetailView(

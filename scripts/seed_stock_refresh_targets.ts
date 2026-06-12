@@ -55,15 +55,70 @@ export const stockRefreshTargetIntervals = {
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_TIMEOUT_MS = 20_000;
+const QUOTE_ONLY_TIER = "etf";
+const ETF_NAME_PREFIXES = [
+  "1Q",
+  "ACE",
+  "ARIRANG",
+  "FOCUS",
+  "HANARO",
+  "HK",
+  "KBSTAR",
+  "KIWOOM",
+  "KOACT",
+  "KODEX",
+  "KOSEF",
+  "PLUS",
+  "RISE",
+  "SOL",
+  "TIME",
+  "TIGER",
+  "TREX",
+  "WON",
+  "BNK ",
+  "IBK ",
+  "DAISHIN",
+  "마이티",
+  "파워",
+];
+const ETF_NAME_TERMS = [
+  "ETF",
+  "ETN",
+  "TDF",
+  "공모주",
+  "국채",
+  "나스닥",
+  "데일리",
+  "레버리지",
+  "미국채",
+  "버퍼",
+  "상장지수",
+  "선물",
+  "액티브",
+  "인덱스",
+  "인버스",
+  "채권",
+  "커버드콜",
+  "타겟",
+  "혼합",
+  "S&P500",
+];
 
 export function buildRefreshTargetRow(row: SymbolMasterRow): RefreshTargetRow {
   const market = marketValue(row.market);
   const symbol = stringValue(row.ticker)?.toUpperCase();
   if (!market || !symbol) throw new Error("invalid symbol master row");
 
-  const instrumentType = (stringValue(row.instrumentType) || "UNKNOWN").toUpperCase();
+  const sourceInstrumentType = (stringValue(row.instrumentType) || "UNKNOWN").toUpperCase();
   const exchange = stringValue(row.exchange)?.toUpperCase() || null;
   const name = stringValue(row.koreanName) || stringValue(row.englishName) || symbol;
+  const instrumentType = refreshTargetInstrumentType({
+    market,
+    symbol,
+    exchange,
+    name,
+    sourceInstrumentType,
+  });
   const base = {
     market,
     symbol,
@@ -80,6 +135,7 @@ export function buildRefreshTargetRow(row: SymbolMasterRow): RefreshTargetRow {
       name,
       exchange_name: stringValue(row.exchangeName) || null,
       standard_code: stringValue(row.standardCode) || null,
+      source_instrument_type: sourceInstrumentType,
     },
   };
 
@@ -96,17 +152,8 @@ export function buildRefreshTargetRow(row: SymbolMasterRow): RefreshTargetRow {
     };
   }
 
-  if (instrumentType === "ETF") {
-    return {
-      ...base,
-      enabled: true,
-      tier: "etf",
-      quote_interval_seconds: stockRefreshTargetIntervals.etf.quote,
-      score_detail_interval_seconds: null,
-      score_compare_interval_seconds: null,
-      score_technical_interval_seconds: null,
-      chart_interval_seconds: null,
-    };
+  if (instrumentType === "ETF" || instrumentType === "PREFERRED_STOCK" || instrumentType === "KONEX_STOCK") {
+    return quoteOnlyTargetRow(base);
   }
 
   return {
@@ -119,6 +166,56 @@ export function buildRefreshTargetRow(row: SymbolMasterRow): RefreshTargetRow {
     score_technical_interval_seconds: null,
     chart_interval_seconds: null,
   };
+}
+
+function quoteOnlyTargetRow(base: Omit<RefreshTargetRow, "enabled" | "tier" | "quote_interval_seconds" | "score_detail_interval_seconds" | "score_compare_interval_seconds" | "score_technical_interval_seconds" | "chart_interval_seconds">): RefreshTargetRow {
+  return {
+    ...base,
+    enabled: true,
+    tier: QUOTE_ONLY_TIER,
+    quote_interval_seconds: stockRefreshTargetIntervals.etf.quote,
+    score_detail_interval_seconds: null,
+    score_compare_interval_seconds: null,
+    score_technical_interval_seconds: null,
+    chart_interval_seconds: null,
+  };
+}
+
+function refreshTargetInstrumentType({
+  market,
+  symbol,
+  exchange,
+  name,
+  sourceInstrumentType,
+}: {
+  market: "US" | "KR";
+  symbol: string;
+  exchange: string | null;
+  name: string;
+  sourceInstrumentType: string;
+}): string {
+  if (market === "KR" && exchange === "KONEX") return "KONEX_STOCK";
+  if (isPreferredShareName(symbol, name)) return "PREFERRED_STOCK";
+  if (sourceInstrumentType === "ETF" || isEtfLikeName(name)) return "ETF";
+  return sourceInstrumentType;
+}
+
+function isPreferredShareName(symbol: string, name: string): boolean {
+  const compactName = name.replace(/\s+/g, "").toUpperCase();
+  return (
+    /(?:[0-9]+)?우(?:B|C)?(?:\(전환\))?$/.test(compactName) ||
+    compactName.includes("우선주") ||
+    compactName.includes("우선") ||
+    /\/P(R|FD?)?$/i.test(symbol)
+  );
+}
+
+function isEtfLikeName(name: string): boolean {
+  const upperName = name.toUpperCase();
+  return (
+    ETF_NAME_PREFIXES.some((prefix) => upperName.startsWith(prefix)) ||
+    ETF_NAME_TERMS.some((term) => upperName.includes(term.toUpperCase()))
+  );
 }
 
 export function refreshTargetRowsFromSymbols(symbols: SymbolMasterRow[]): RefreshTargetRow[] {

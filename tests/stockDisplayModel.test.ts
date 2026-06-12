@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildStockDisplayPayload, displayLaneTimeoutMs, readStockDisplayScoreSource } from "../src/lib/stockDisplayModel";
+import { partialStockScoreTimeoutMs } from "../src/lib/stockScorePartialFastPath";
 
-test("display model default lane deadlines stay under the first-paint budget", () => {
+test("display model keeps price and chart lanes fast while score uses the interactive score SLA", () => {
   assert.equal(displayLaneTimeoutMs("price"), 900);
   assert.equal(displayLaneTimeoutMs("chart"), 1_000);
-  assert.equal(displayLaneTimeoutMs("score"), 1_200);
+  assert.equal(displayLaneTimeoutMs("score"), partialStockScoreTimeoutMs("detail"));
 });
 
 test("display model returns identity-only payload while recovering core parts", async () => {

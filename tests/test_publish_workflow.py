@@ -128,6 +128,7 @@ class PublishWorkflowTests(unittest.TestCase):
         drain_block = score_block.split("python scripts/publish_stock_snapshots.py", 1)[0].split("ARGS=(", 1)[1]
 
         self.assertIn("--allow-queue-row-errors", drain_block)
+        self.assertIn("--allow-warm-row-errors", drain_block)
 
     def test_industry_benchmark_worker_runs_once_after_us_aftermarket(self):
         text = BENCHMARK_WORKFLOW_PATH.read_text(encoding="utf-8")

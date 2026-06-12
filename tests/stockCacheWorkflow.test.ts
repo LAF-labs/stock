@@ -26,6 +26,7 @@ test("stock cache workflow checks and drains due chart jobs as a bounded backsto
 test("stock cache workflow prewarms hot technical score snapshots", () => {
   assert.match(workflowSource, /STOCK_SCORE_WARM_TICKERS/);
   assert.match(workflowSource, /STOCK_SCORE_WARM_VIEWS/);
+  assert.match(workflowSource, /STOCK_SCORE_WARM_VIEWS: \$\{\{ vars\.STOCK_SCORE_WARM_VIEWS \|\| 'detail,compare,technical' \}\}/);
   assert.match(workflowSource, /NVDA,TSLA,GOOGL/);
   assert.match(workflowSource, /005930,000660/);
   assert.match(workflowSource, /--views "\$STOCK_SCORE_WARM_VIEWS"/);
