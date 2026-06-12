@@ -22,15 +22,19 @@ export async function readTerminalStockDisplayFailures(tickerRef: string, view: 
     limit: "30",
   });
 
-  const response = await fetchWithTimeout(
-    `${config.url}/rest/v1/stock_refresh_jobs?${query.toString()}`,
-    { headers: supabaseHeaders(config.key), cache: "no-store" },
-    terminalFailureReadTimeoutMs()
-  );
-  if (!response.ok) return [];
-  const rows = (await response.json().catch(() => [])) as unknown;
-  if (!Array.isArray(rows)) return [];
-  return uniqueUnavailableParts(rows.flatMap((row) => terminalStockDisplayFailureParts(row, view)));
+  try {
+    const response = await fetchWithTimeout(
+      `${config.url}/rest/v1/stock_refresh_jobs?${query.toString()}`,
+      { headers: supabaseHeaders(config.key), cache: "no-store" },
+      terminalFailureReadTimeoutMs()
+    );
+    if (!response.ok) return [];
+    const rows = (await response.json().catch(() => [])) as unknown;
+    if (!Array.isArray(rows)) return [];
+    return uniqueUnavailableParts(rows.flatMap((row) => terminalStockDisplayFailureParts(row, view)));
+  } catch {
+    return [];
+  }
 }
 
 export function terminalStockDisplayFailureParts(row: unknown, displayView: StockDisplayView): StockDisplayUnavailablePart[] {

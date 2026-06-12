@@ -58,6 +58,26 @@ test("score classifier keeps partial snapshots as successful query data", () => 
   assert.equal(result.pending?.queued, true);
 });
 
+test("score classifier keeps terminal unavailable partials non-pollable", () => {
+  const result = classifyScorePayload(
+    {
+      ok: true,
+      type: "partial_stock_snapshot",
+      requested_ticker: "US:VLD",
+      symbol: "VLD",
+      parts: {
+        chart: { state: "unavailable" },
+        technical: { state: "unavailable" },
+      },
+      server_cache: { state: "unavailable", source: "terminal_failure", refresh_started: false },
+    },
+    200,
+  );
+
+  assert.equal(result.state, "partial");
+  assert.equal(result.pending, undefined);
+});
+
 test("score classifier keeps quote-only fast path as partial until enrichment lands", () => {
   const result = classifyScorePayload(
     {

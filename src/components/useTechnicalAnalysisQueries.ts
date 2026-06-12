@@ -31,7 +31,7 @@ import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 export type TechnicalLoadState =
   | { status: "loading"; ticker?: string; data?: undefined; error?: undefined; pending?: undefined }
   | { status: "success"; ticker: string; data: StockScoreResponse; error?: undefined; pending?: undefined }
-  | { status: "partial"; ticker: string; data: StockScoreResponse; error?: undefined; pending: SnapshotPendingState }
+  | { status: "partial"; ticker: string; data: StockScoreResponse; error?: undefined; pending?: SnapshotPendingState; terminalUnavailable?: boolean }
   | { status: "pending"; ticker: string; data?: undefined; error?: undefined; pending: SnapshotPendingState }
   | { status: "error"; ticker: string; data?: undefined; error: string; pending?: undefined };
 
@@ -74,7 +74,12 @@ export function useTechnicalAnalysisQueries(ticker: string, detailHref: string, 
     () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? stockScoreDataFromDisplayPayload(initialDisplayPayload) : undefined,
     [initialDisplayPayload, ticker]
   );
-  const displayData = displayQuery.data?.state === "ready" ? stockScoreDataFromDisplayPayload(displayQuery.data.data) : initialDisplayData;
+  const displayPayload = displayQuery.data?.state === "ready"
+    ? displayQuery.data.data
+    : initialDisplayPayload && initialDisplayPayload.ticker === ticker
+      ? initialDisplayPayload
+      : undefined;
+  const displayData = displayPayload ? stockScoreDataFromDisplayPayload(displayPayload) : initialDisplayData;
 
   useEffect(() => {
     const result = scoreQuery.data;
@@ -95,7 +100,7 @@ export function useTechnicalAnalysisQueries(ticker: string, detailHref: string, 
   }, [displayQuery, quoteQuery, scoreQuery]);
 
   return {
-    state: technicalStateFromQuery(ticker, scoreQuery.data, scoreQuery.error, scoreQuery.isLoading, quote, displayData),
+    state: technicalStateFromQuery(ticker, scoreQuery.data, scoreQuery.error, scoreQuery.isLoading, quote, displayData, technicalDisplayTerminalUnavailable(displayPayload)),
     quote,
     retryTechnical,
   };
@@ -108,7 +113,9 @@ function technicalStateFromQuery(
   isLoading: boolean,
   quote: StockQuoteResponse | undefined,
   displayData: StockScoreResponse | undefined,
+  displayTerminalUnavailable: boolean,
 ): TechnicalLoadState {
+  const terminalUnavailable = displayTerminalUnavailable || technicalPayloadTerminalUnavailable(result?.payload);
   if (displayData && isTechnicalAnalysisPayload(displayData.technical_analysis) && result?.state !== "ready") {
     return { status: "success", ticker, data: scoreDataWithQuote(displayData, quote) };
   }
@@ -124,12 +131,12 @@ function technicalStateFromQuery(
   }
 
   if (result?.state === "partial") {
-    const pending = snapshotPendingFromPayload(result.payload, ticker) || pendingFromApiPending(result.pending, ticker) || pendingFromTicker(ticker);
+    const pending = terminalUnavailable ? undefined : snapshotPendingFromPayload(result.payload, ticker) || pendingFromApiPending(result.pending, ticker) || pendingFromTicker(ticker);
     const partial = chooseRicherStockData(
       displayData,
       partialStockDataFromPayload(result.payload, ticker) || result.data || partialStockDataFromTicker(ticker),
     ) || partialStockDataFromTicker(ticker);
-    return { status: "partial", ticker, data: scoreDataWithQuote(partial, quote), pending };
+    return { status: "partial", ticker, data: scoreDataWithQuote(partial, quote), pending, terminalUnavailable };
   }
 
   if (result?.state === "pending") {
@@ -137,6 +144,14 @@ function technicalStateFromQuery(
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     const partial = chooseRicherStockData(displayData, quotePartial);
     if (partial) {
+      if (terminalUnavailable) {
+        return {
+          status: "partial",
+          ticker,
+          data: scoreDataWithQuote(partial, quote),
+          terminalUnavailable: true,
+        };
+      }
       return {
         status: "partial",
         ticker,
@@ -155,6 +170,14 @@ function technicalStateFromQuery(
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     const partial = chooseRicherStockData(displayData, quotePartial);
     if (partial) {
+      if (terminalUnavailable) {
+        return {
+          status: "partial",
+          ticker,
+          data: scoreDataWithQuote(partial, quote),
+          terminalUnavailable: true,
+        };
+      }
       return {
         status: "partial",
         ticker,
@@ -169,6 +192,14 @@ function technicalStateFromQuery(
     const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
     const partial = chooseRicherStockData(displayData, quotePartial);
     if (partial) {
+      if (terminalUnavailable) {
+        return {
+          status: "partial",
+          ticker,
+          data: scoreDataWithQuote(partial, quote),
+          terminalUnavailable: true,
+        };
+      }
       return {
         status: "partial",
         ticker,
@@ -185,12 +216,41 @@ function technicalStateFromQuery(
   }
 
   const fallbackPartial = chooseRicherStockData(displayData, partialStockDataFromTicker(ticker)) || partialStockDataFromTicker(ticker);
+  if (terminalUnavailable) {
+    return {
+      status: "partial",
+      ticker,
+      data: fallbackPartial,
+      terminalUnavailable: true,
+    };
+  }
   return {
     status: "partial",
     ticker,
     data: fallbackPartial,
     pending: pendingFromTicker(ticker),
   };
+}
+
+export function technicalDisplayTerminalUnavailable(payload: StockDisplayPayload | undefined): boolean {
+  if (!payload || payload.view !== "technical" || payload.completion.recoveringParts.length > 0) return false;
+  const unavailable = new Set(payload.completion.unavailableParts.map((item) => item.part));
+  return unavailable.has("technical") || unavailable.has("chart");
+}
+
+function technicalPayloadTerminalUnavailable(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "partial_stock_snapshot") return false;
+  const parts = record.parts && typeof record.parts === "object" && !Array.isArray(record.parts)
+    ? record.parts as Record<string, unknown>
+    : undefined;
+  if (!parts) return false;
+  return partUnavailable(parts.technical) || partUnavailable(parts.chart);
+}
+
+function partUnavailable(part: unknown): boolean {
+  return Boolean(part && typeof part === "object" && !Array.isArray(part) && (part as Record<string, unknown>).state === "unavailable");
 }
 
 function technicalPlaceholder(ticker: string): TechnicalScoreQueryResult {

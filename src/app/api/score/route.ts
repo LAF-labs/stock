@@ -8,7 +8,8 @@ import { userScoreRefreshPriority } from "@/lib/stockRefreshPriorities";
 import { getStockChart } from "@/lib/stockChartCache";
 import { isStockDataUnavailableError } from "@/lib/stockDataRuntime";
 import { enqueueStockPendingPayload, optimisticStockPendingPayload, stockPartialResponseCacheHeaders, stockPendingJsonResponse } from "@/lib/stockPendingResponse";
-import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "@/lib/stockPartsResponse";
+import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload, terminalUnavailableStockPayload } from "@/lib/stockPartsResponse";
+import { readTerminalStockDisplayFailures } from "@/lib/stockRefreshFailures";
 import { enqueueScoreRefreshAfterUnavailable, settleStockScore, waitForPartialStockScore } from "@/lib/stockScorePartialFastPath";
 import { cleanView, getStockScore, responseCacheHeaders, statusFromPayload, type StockPayload, type StockScoreResult } from "@/lib/stockSnapshotCache";
 import { enrichStockPayloadWithIndustryBenchmarks } from "@/lib/stockIndustryBenchmarkEnrichment";
@@ -120,6 +121,15 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (isStockDataUnavailableError(error)) {
       console.info("stock_snapshot_unavailable", { ticker, view, reason: error.payload.reason });
+      const terminalFailures = await readTerminalStockDisplayFailures(ticker, view);
+      if (terminalFailures.length) {
+        const terminalPayload = await terminalUnavailableStockPayload({ ticker, view, unavailableParts: terminalFailures });
+        if (terminalPayload) {
+          const response = NextResponse.json(terminalPayload, { status: 200, headers: stockPartialResponseCacheHeaders() });
+          if (cooldown) applyRefreshUserCookie(response, cooldown);
+          return response;
+        }
+      }
       const pendingInput = {
         kind: "score",
         ticker,

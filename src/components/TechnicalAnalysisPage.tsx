@@ -38,7 +38,7 @@ export default function TechnicalAnalysisPage({ ticker, initialDisplayPayload }:
       ) : null}
 
       {data && technical ? <TechnicalAnalysisFeed data={data} technical={technical} identity={identity} displayTicker={displayTicker} /> : null}
-      {state.status === "partial" ? <TechnicalAnalysisPendingFeed data={state.data} identity={identity} displayTicker={displayTicker} /> : null}
+      {state.status === "partial" ? <TechnicalAnalysisPendingFeed data={state.data} identity={identity} displayTicker={displayTicker} terminalUnavailable={state.terminalUnavailable === true} /> : null}
     </main>
   );
 }

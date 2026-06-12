@@ -2,6 +2,7 @@ import { getStockChart, type StockChartResult } from "@/lib/stockChartCache";
 import { getStockQuote, type StockQuoteResult } from "@/lib/stockQuoteCache";
 import type { StockPendingPayload } from "@/lib/stockPendingResponse";
 import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockScoreContract";
+import type { StockDisplayUnavailablePart } from "@/lib/stockDisplayTypes";
 import { numericEnv } from "@/lib/supabaseRest";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 
@@ -146,6 +147,48 @@ export async function pendingPartialStockPayload({
   );
 }
 
+export async function terminalUnavailableStockPayload({
+  ticker,
+  view,
+  unavailableParts,
+}: {
+  ticker: string;
+  view?: ScoreView;
+  unavailableParts: StockDisplayUnavailablePart[];
+}): Promise<StockPayload | undefined> {
+  const identity = await localIdentityPayload(ticker);
+  if (!identity) return undefined;
+  const parts = terminalUnavailableParts(unavailableParts, view);
+  return attachParts(
+    {
+      ok: true,
+      type: "partial_stock_snapshot",
+      ticker,
+      requested_ticker: ticker,
+      market: stringField(identity.market),
+      symbol: stringField(identity.symbol),
+      name: stringField(identity.name),
+      exchange: stringField(identity.exchange),
+      currency: stringField(identity.currency),
+      display_name: stringField(identity.display_name),
+      korean_name: stringField(identity.korean_name),
+      english_name: stringField(identity.english_name),
+      instrument_type: stringField(identity.instrument_type),
+      server_cache: {
+        state: "unavailable",
+        source: "terminal_failure",
+        refresh_started: false,
+        recovering_parts: [],
+        unavailable_parts: unavailableParts.map((item) => item.part),
+      },
+    },
+    {
+      identity: { state: "fresh", source: "symbol_master" },
+      ...parts,
+    }
+  );
+}
+
 async function trackReadyPart(
   readyParts: PendingPartialReadyPart[],
   kind: "quote",
@@ -270,6 +313,25 @@ function pendingParts(pending: StockPendingPayload, view?: ScoreView): StockPart
   if (pending.kind === "chart") return { chart: status };
   if (pending.kind === "score" && view === "technical") return { technical: status };
   return { score: status };
+}
+
+function terminalUnavailableParts(unavailableParts: StockDisplayUnavailablePart[], view?: ScoreView): StockParts {
+  const status = compactPart({
+    state: "unavailable",
+    source: "provider",
+    reason: "provider_confirmed_empty",
+    refresh_started: false,
+  });
+  const parts: StockParts = {};
+  for (const item of unavailableParts) {
+    if (item.reason !== "provider_confirmed_empty") continue;
+    if (item.part === "price") parts.quote = status;
+    if (item.part === "chart") parts.chart = status;
+    if (item.part === "technical" || (item.part === "score" && view === "technical")) parts.technical = status;
+    if (item.part === "score" && view !== "technical") parts.score = status;
+    if (item.part === "fundamentals") parts.fundamentals = status;
+  }
+  return parts;
 }
 
 function compactPart(part: StockPartStatus): StockPartStatus {

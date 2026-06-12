@@ -115,10 +115,12 @@ export function TechnicalAnalysisPendingFeed({
   data,
   identity,
   displayTicker,
+  terminalUnavailable = false,
 }: {
   data: StockScoreResponse;
   identity: StockHeaderIdentity | undefined;
   displayTicker: string;
+  terminalUnavailable?: boolean;
 }) {
   const chartPointCount = usableChartPoints(data.chart_series).length;
   const hasPriceOrChart = chartPointCount > 1 || (typeof data.latest_price === "number" && Number.isFinite(data.latest_price));
@@ -142,13 +144,21 @@ export function TechnicalAnalysisPendingFeed({
         </div>
         <div className="technical-summary">
           <span>{hasPriceOrChart ? "가격 흐름" : "종목 정보"}</span>
-          <strong>{hasPriceOrChart ? "현재 확인된 가격 흐름입니다." : "종목 정보를 확인했어요."}</strong>
-          <p>{chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
+          <strong>{hasPriceOrChart ? "현재 확인된 가격 흐름입니다." : terminalUnavailable ? "표시할 가격 흐름이 없어요." : "종목 정보를 확인했어요."}</strong>
+          <p>{chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : terminalUnavailable ? "제공자가 현재 이 종목의 일봉 데이터를 반환하지 않아요." : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
         </div>
       </section>
       {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
-      {chartPointCount >= 2 ? <TechnicalOverlayChart points={data.chart_series} /> : <TechnicalChartPendingSkeleton />}
+      {chartPointCount >= 2 ? <TechnicalOverlayChart points={data.chart_series} /> : terminalUnavailable ? <TechnicalChartUnavailablePanel /> : <TechnicalChartPendingSkeleton />}
     </div>
+  );
+}
+
+function TechnicalChartUnavailablePanel() {
+  return (
+    <section className="technical-chart-panel technical-pending-card" aria-label="가격 캔들 없음">
+      <p className="technical-chart-empty">가격 캔들과 보조지표를 그릴 일봉 데이터가 없어요.</p>
+    </section>
   );
 }
 

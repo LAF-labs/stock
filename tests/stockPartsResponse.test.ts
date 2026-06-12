@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload } from "../src/lib/stockPartsResponse";
+import { attachChartPartToPayload, attachScoreParts, pendingPartialStockPayload, terminalUnavailableStockPayload } from "../src/lib/stockPartsResponse";
 import type { StockPendingPayload } from "../src/lib/stockPendingResponse";
 import type { StockChartResult } from "../src/lib/stockChartCache";
 import type { StockScoreResult } from "../src/lib/stockSnapshotCache";
@@ -143,6 +143,28 @@ test("pendingPartialStockPayload returns ready quote and chart parts while score
   assert.equal((payload?.parts as Record<string, Record<string, unknown>>).quote.state, "fresh");
   assert.equal((payload?.parts as Record<string, Record<string, unknown>>).chart.state, "fresh");
   assert.equal(Array.isArray(payload?.chart_series), true);
+});
+
+test("terminalUnavailableStockPayload marks provider-empty technical parts unavailable without pending work", async () => {
+  const payload = await terminalUnavailableStockPayload({
+    ticker: "KR:005930",
+    view: "technical",
+    unavailableParts: [
+      { part: "price", reason: "provider_confirmed_empty" },
+      { part: "chart", reason: "provider_confirmed_empty" },
+      { part: "technical", reason: "provider_confirmed_empty" },
+    ],
+  });
+
+  assert.ok(payload);
+  const parts = payload?.parts as Record<string, Record<string, unknown>>;
+  assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.equal(payload?.pending_snapshot, undefined);
+  assert.equal(parts.identity.state, "fresh");
+  assert.equal(parts.quote.state, "unavailable");
+  assert.equal(parts.chart.state, "unavailable");
+  assert.equal(parts.technical.state, "unavailable");
+  assert.equal((payload?.server_cache as Record<string, unknown>).refresh_started, false);
 });
 
 test("pendingPartialStockPayload prefers symbol master names over numeric quote names", async () => {
