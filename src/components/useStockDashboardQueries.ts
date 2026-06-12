@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { JudgmentState, PriceRefreshState, QuoteState } from "@/components/StockHeader";
 import {
   chooseRicherStockData,
+  dashboardStateFromDetailView,
   partialStockDataFromPayload,
   partialStockDataFromQuote,
   partialStockDataFromTicker,
@@ -17,6 +18,7 @@ import {
 } from "@/components/stockDashboardHelpers";
 import { refreshQuote as refreshQuoteRequest } from "@/lib/stockQueryFns";
 import {
+  detailViewQueryOptions,
   judgmentQueryOptions,
   displayQueryOptions,
   displayQueryResultFromPayload,
@@ -51,6 +53,7 @@ export type StockDashboardQueryView = {
   quoteData: StockQuoteResponse | undefined;
   data: StockScoreResponse | undefined;
   partialData: StockScoreResponse | undefined;
+  hasDetailViewResponse: boolean;
   retryLoad: () => void;
   refreshPrice: () => void;
 };
@@ -81,6 +84,10 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     initialData: initialDisplayResult,
     enabled,
     placeholderData: (previous) => previous,
+  });
+  const detailViewQuery = useQuery({
+    ...detailViewQueryOptions(tickerKey, "detail"),
+    enabled,
   });
   const quoteQuery = useQuery({
     ...quoteQueryOptions(tickerKey),
@@ -129,7 +136,7 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
   }, [refreshNextAllowedAt]);
 
   const priceRefreshState = priceRefreshStateFromMutation(refreshResult, refreshPending, refreshError, cooldownTick);
-  const state = dashboardStateFromQuery({
+  const legacyState = dashboardStateFromQuery({
     ticker,
     scoreResult: scoreQuery.data,
     scoreError: scoreQuery.error,
@@ -137,6 +144,8 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     quoteData,
     displayData,
   });
+  const detailViewState = dashboardLoadStateFromDetailView(dashboardStateFromDetailView(detailViewQuery.data), ticker);
+  const state = detailViewState || legacyState;
   const quoteState = quoteStateFromQuery(ticker, quoteQuery.data, quoteQuery.error, quoteQuery.isLoading);
   const judgmentState = judgmentStateFromQuery(rawScoreData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(rawScoreData));
   const data = ticker && state.status === "success" ? state.data : undefined;
@@ -156,11 +165,12 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
 
   const retryLoad = useCallback(() => {
     if (!ticker) return;
+    void detailViewQuery.refetch();
     void displayQuery.refetch();
     void scoreQuery.refetch();
     void quoteQuery.refetch();
     if (rawScoreData) void judgmentQuery.refetch();
-  }, [displayQuery, judgmentQuery, quoteQuery, rawScoreData, scoreQuery, ticker]);
+  }, [detailViewQuery, displayQuery, judgmentQuery, quoteQuery, rawScoreData, scoreQuery, ticker]);
 
   const refreshPrice = useCallback(() => {
     if (!ticker) return;
@@ -178,8 +188,24 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     quoteData,
     data,
     partialData,
+    hasDetailViewResponse: Boolean(detailViewQuery.data),
     retryLoad,
     refreshPrice,
+  };
+}
+
+function dashboardLoadStateFromDetailView(
+  detailState: ReturnType<typeof dashboardStateFromDetailView>,
+  ticker: string | undefined,
+): DashboardLoadState | undefined {
+  if (!ticker || !detailState) return undefined;
+  if (detailState.status === "error") return { status: "error", error: detailState.error || "데이터를 불러오지 못했어요." };
+  if (!detailState.data) return undefined;
+  if (detailState.status === "success") return { status: "success", data: detailState.data };
+  return {
+    status: "partial",
+    data: detailState.data,
+    pending: detailViewPending(ticker),
   };
 }
 
@@ -376,6 +402,14 @@ function quoteFirstPending(ticker: string): SnapshotPendingState {
     message: "가격 데이터와 점수, 재무 지표를 계속 맞춰보고 있어요.",
     ticker,
     queued: false,
+  };
+}
+
+function detailViewPending(ticker: string): SnapshotPendingState {
+  return {
+    message: "확보된 정보부터 먼저 보여주고 있어요.",
+    ticker,
+    queued: true,
   };
 }
 

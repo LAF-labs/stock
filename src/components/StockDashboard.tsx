@@ -89,6 +89,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     quoteData,
     data,
     partialData,
+    hasDetailViewResponse,
     retryLoad,
     refreshPrice,
   } = useStockDashboardQueries(tickerParam, initialDisplayPayload);
@@ -232,13 +233,13 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         />
       </section>
 
-      {tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData) && (
+      {tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData, hasDetailViewResponse) && (
         <StockDetailLoadingSkeleton tickerLabel={dashboardInputValue(tickerParam)} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
 
-      {displayPartialData && hasDisplayablePartialData && !displayData ? (
+      {displayPartialData && (hasDisplayablePartialData || hasDetailViewResponse) && !displayData ? (
         <PartialStockFeed data={displayPartialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
       ) : null}
 

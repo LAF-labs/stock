@@ -6,6 +6,7 @@ import {
   chartPointPriceLabel,
   chooseRicherStockData,
   dashboardInputValue,
+  dashboardStateFromDetailView,
   dashboardSearchInputValue,
   dashboardSearchSyncDecision,
   dashboardTickerFromSearchParam,
@@ -45,6 +46,7 @@ import {
   visibleRecordEntries,
 } from "../src/components/stockDashboardHelpers";
 import { compactRuleJudgmentStock, tickerFromRuleJudgmentStock, validRuleJudgmentStock } from "../src/lib/ruleBasedJudgment";
+import type { StockDetailViewResponse } from "../src/lib/stockDetailViewTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "../src/lib/types";
 
 const implementationCacheSource = ["client", "cache"].join("_");
@@ -326,6 +328,42 @@ test("dashboard keeps skeleton priority while non-displayable data is still load
   assert.equal(shouldShowStockSkeleton("loading", false), true);
   assert.equal(shouldShowStockSkeleton("pending", false), true);
   assert.equal(shouldShowStockSkeleton("partial", false), true);
+});
+
+test("dashboard can leave full skeleton for identity-only detail view after first response", () => {
+  const detailView = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:VLD",
+    requestedTicker: "US:VLD",
+    view: "detail",
+    generatedAt: "2026-06-12T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    degradedReason: "identity_only",
+    nextPollMs: 1500,
+    identity: { ticker: "US:VLD", market: "US", symbol: "VLD", name: "Velo3D" },
+    sections: {},
+    parts: {
+      price: { state: "refreshing" },
+      chart: { state: "refreshing" },
+      score: { state: "refreshing" },
+      financials: { state: "missing" },
+      analyst: { state: "missing" },
+    },
+    jobs: [],
+  } satisfies StockDetailViewResponse;
+  const state = dashboardStateFromDetailView(detailView);
+
+  assert.equal(state?.status, "partial");
+  assert.equal(state?.data?.symbol, "VLD");
+  assert.equal(shouldShowStockSkeleton("partial", false, true), false);
+});
+
+test("dashboard only keeps full skeleton for detail-view before the first response", () => {
+  assert.equal(shouldShowStockSkeleton("loading", false, false), true);
+  assert.equal(shouldShowStockSkeleton("partial", false, false), true);
+  assert.equal(shouldShowStockSkeleton("partial", false, true), false);
+  assert.equal(shouldShowStockSkeleton("success", false, true), false);
 });
 
 test("scoreDataWithQuote overlays fresh quote fields without losing score fields", () => {
