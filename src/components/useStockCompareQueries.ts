@@ -10,7 +10,7 @@ import {
   toCompareItem,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { hasDisplayableScoreComponents, hasDisplayableStockPartialData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
+import { hasDisplayableScoreComponents, hasDisplayableStockPartialData, partialStockDataFromTicker, stockHeaderIdentity, usableChartPoints } from "@/components/stockDashboardHelpers";
 import { compareQueryOptions, displayQueryOptions, displayQueryResultFromPayload } from "@/lib/stockQueryOptions";
 import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult, DisplayQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
@@ -26,12 +26,15 @@ export type CompareLoadState =
 export type StockCompareQueryView = {
   states: CompareLoadState[];
   items: CompareItem[];
+  chartItems: CompareChartItem[];
   partialStates: Array<Extract<CompareLoadState, { status: "partial" }>>;
   waitingStates: Array<Extract<CompareLoadState, { status: "loading" | "pending" }>>;
   pendingStates: Array<Extract<CompareLoadState, { status: "pending" | "partial" }>>;
   errorStates: Array<Extract<CompareLoadState, { status: "error" }>>;
   retryCompare: () => void;
 };
+
+export type CompareChartItem = Pick<CompareItem, "ticker" | "identity" | "data">;
 
 export function useStockCompareQueries(tickers: readonly string[], initialDisplayPayloads: readonly StockDisplayPayload[] = []): StockCompareQueryView {
   const compareQuery = useQuery({
@@ -68,6 +71,7 @@ export function useStockCompareQueries(tickers: readonly string[], initialDispla
     [compareQuery.data, compareQuery.error, compareQuery.isLoading, displayFallbacks, tickers],
   );
   const items = useMemo(() => compareItemsFromStates(states), [states]);
+  const chartItems = useMemo(() => compareChartItemsFromStates(states), [states]);
   const partialStates = useMemo(
     () => states.filter((state): state is Extract<CompareLoadState, { status: "partial" }> => state.status === "partial" && !shouldPromotePartialCompareData(state.data)),
     [states],
@@ -89,6 +93,7 @@ export function useStockCompareQueries(tickers: readonly string[], initialDispla
   return {
     states,
     items,
+    chartItems,
     partialStates,
     waitingStates,
     pendingStates,
@@ -104,6 +109,18 @@ export function compareItemsFromStates(states: readonly CompareLoadState[]): Com
       return [toCompareItem(state.data, state.ticker, { provisional: true, provisionalLabel: "가격 기준 참고값" })];
     }
     return [];
+  });
+}
+
+export function compareChartItemsFromStates(states: readonly CompareLoadState[]): CompareChartItem[] {
+  return states.flatMap((state) => {
+    if (state.status !== "success" && state.status !== "partial") return [];
+    if (usableChartPoints(state.data.chart_series).length < 1) return [];
+    return [{
+      ticker: displayTickerRef(state.ticker) || state.data.symbol || state.data.requested_ticker || state.ticker,
+      identity: stockHeaderIdentity(state.data),
+      data: state.data,
+    }];
   });
 }
 
@@ -128,7 +145,7 @@ export function shouldPromotePartialCompareData(data: StockScoreResponse): boole
 
 function hasPriceSignal(data: StockScoreResponse): boolean {
   if (hasFiniteNumber(data.latest_price)) return true;
-  return usableChartPoints(data.chart_series).length >= 2;
+  return usableChartPoints(data.chart_series).length >= 1;
 }
 
 function hasTerminalInsufficientChartHistory(data: StockScoreResponse): boolean {

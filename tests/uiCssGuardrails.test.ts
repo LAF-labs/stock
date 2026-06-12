@@ -161,11 +161,29 @@ test("chart story does not truncate fetched history on the client", () => {
   assert.match(stockDetailSectionsSource, /<LazyTradingPriceChart points=\{chartPoints\}/);
 });
 
-test("newly listed chart empty state does not reuse absolute chart fallback overlay", () => {
+test("newly listed detail chart renders a one-bar chart instead of an empty state", () => {
+  assert.match(stockDetailSectionsSource, /if \(usable\.length < 1\)/);
+  assert.doesNotMatch(stockDetailSectionsSource, /if \(usable\.length < 2\)/);
+});
+
+test("newly listed zero-bar chart empty state does not reuse absolute chart fallback overlay", () => {
   const emptyStoryBlock = stockDetailSectionsSource.match(/className="chart-story chart-empty-story"[\s\S]*?<\/section>/)?.[0] || "";
   assert.match(emptyStoryBlock, /chart-empty-note/);
   assert.doesNotMatch(emptyStoryBlock, /chart-fallback/);
   assert.match(css, /\.chart-empty-note\s*\{[\s\S]*?position:\s*static;/);
+});
+
+test("technical pending view shows a one-bar candle before trend analysis is available", () => {
+  const technicalSectionsSource = readFileSync(join(process.cwd(), "src/components/TechnicalAnalysisSections.tsx"), "utf8");
+  assert.match(technicalSectionsSource, /chartPointCount >= 1 \? <TechnicalOverlayChart/);
+  assert.doesNotMatch(technicalSectionsSource, /chartPointCount >= 2 \? <TechnicalOverlayChart/);
+  assert.match(technicalSectionsSource, /아직 하루치라 방향을 판단하기엔 이릅니다/);
+});
+
+test("compare chart is driven by visible price history instead of scored compare cards", () => {
+  assert.match(compareSource, /const \{ states, items, chartItems,/);
+  assert.match(compareSource, /<CompareChart items=\{chartItems\}/);
+  assert.doesNotMatch(compareSource, /items\.length >= 2 \? <CompareChart items=\{items\}/);
 });
 
 test("waiting states use shared skeletons instead of error containers", () => {

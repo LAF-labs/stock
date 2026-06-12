@@ -318,7 +318,7 @@ function PartialStockFeed({
   pending: SnapshotPendingState | undefined;
   onRetry: () => void;
 }) {
-  const hasChart = usableChartPoints(data.chart_series).length >= 2;
+  const hasChart = usableChartPoints(data.chart_series).length >= 1;
   const hasFactors = hasDisplayableScoreComponents(data.components) || hasDisplayableScoreComponents(data.opportunity_components);
   const hasMetrics = Boolean(data.key_metrics?.length);
   const hasProfile = Boolean(data.stock_profile?.length);

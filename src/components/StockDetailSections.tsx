@@ -48,6 +48,11 @@ export function ChartStory({
   const usable = useMemo(() => usableChartPoints(points), [points]);
   const [chartMode, setChartMode] = useState<"line" | "candle">("line");
   const summaryId = useId();
+  const hasSinglePricePoint = usable.length === 1;
+
+  useEffect(() => {
+    if (hasSinglePricePoint) setChartMode("candle");
+  }, [hasSinglePricePoint]);
 
   function onChartTabKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
@@ -60,14 +65,14 @@ export function ChartStory({
     }
   }
 
-  if (usable.length < 2) {
+  if (usable.length < 1) {
     return (
       <section className="chart-story chart-empty-story" role="status">
         <div className="section-title">
           <span>가격 흐름</span>
           <h2>상장한 지 얼마 되지 않아 데이터가 부족해요</h2>
         </div>
-        <p className="chart-empty-note">현재가처럼 확인 가능한 값은 먼저 보여주고, 일봉이 더 쌓이면 가격 흐름 차트를 표시할게요.</p>
+        <p className="chart-empty-note">현재가처럼 확인 가능한 값은 먼저 보여주고, 가격 기록이 확인되면 차트도 함께 표시할게요.</p>
       </section>
     );
   }
@@ -78,7 +83,7 @@ export function ChartStory({
       <div className="chart-title-row">
         <div className="section-title">
           <span>가격 흐름</span>
-          <h2>최근 1년은 이렇게 움직였어요</h2>
+          <h2>{hasSinglePricePoint ? "첫 가격 기록이 확인됐어요" : "최근 1년은 이렇게 움직였어요"}</h2>
         </div>
         <div className="chart-mode-tabs" role="tablist" aria-label="차트 표시 방식" onKeyDown={onChartTabKeyDown}>
           <button type="button" role="tab" aria-selected={chartMode === "line"} tabIndex={chartMode === "line" ? 0 : -1} className={chartMode === "line" ? "active" : undefined} onClick={() => setChartMode("line")}>
@@ -92,6 +97,7 @@ export function ChartStory({
       <p id={summaryId} className="sr-only">
         {chartSummary(chartPoints)}
       </p>
+      {hasSinglePricePoint ? <p className="chart-context-note">아직 하루치라 흐름을 판단하기엔 이르지만, 확인된 가격 기록은 먼저 보여드려요.</p> : null}
       <LazyTradingPriceChart points={chartPoints} mode={chartMode} describedBy={summaryId} />
       <div className="pattern-chips">
         {(patterns || []).slice(0, 3).map((pattern) => (

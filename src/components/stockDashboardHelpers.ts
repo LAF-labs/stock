@@ -1019,7 +1019,11 @@ export function dailyToneClass(text: string): "price-up" | "price-down" | "price
 }
 
 export function chartSummary(points: UsableChartPoint[]): string {
-  if (points.length < 2) return "가격 차트 데이터가 충분하지 않아요.";
+  if (points.length < 1) return "가격 차트 데이터가 충분하지 않아요.";
+  if (points.length === 1) {
+    const point = points[0];
+    return `${point.date} 첫 가격 기록입니다. 확인된 가격은 ${chartPointPriceLabel(point)}입니다.`;
+  }
   const first = points[0];
   const last = points[points.length - 1];
   let high = first;

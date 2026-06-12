@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   TECHNICAL_OVERLAY_CONTROLS,
   candleShapeForPoint,
+  technicalChartHasDrawablePrice,
   defaultTechnicalOverlayVisibility,
   technicalOverlayAvailability,
 } from "../src/components/TechnicalOverlayChart";
@@ -33,6 +34,12 @@ test("technical chart renders price as candle shapes with OHLC fallback", () => 
   );
   assert.equal(fallback?.tone, "flat");
   assert.equal(fallback?.bodyHeight, 2);
+});
+
+test("technical chart treats one valid candle as drawable price data", () => {
+  assert.equal(technicalChartHasDrawablePrice([{ date: "2026-06-11", close: 135 }]), true);
+  assert.equal(technicalChartHasDrawablePrice([]), false);
+  assert.equal(technicalChartHasDrawablePrice([{ date: "2026-06-11" }]), false);
 });
 
 test("technical overlay controls exclude price and default every indicator on", () => {

@@ -56,6 +56,10 @@ export function technicalOverlayAvailability(technical: TechnicalAnalysisPayload
   };
 }
 
+export function technicalChartHasDrawablePrice(points: ChartSeriesPoint[] | undefined): boolean {
+  return usableChartPoints(points).length >= 1;
+}
+
 export default function TechnicalOverlayChart({
   points,
   technical,
@@ -65,7 +69,7 @@ export default function TechnicalOverlayChart({
 }) {
   const [visibleOverlays, setVisibleOverlays] = useState<TechnicalOverlayVisibility>(() => defaultTechnicalOverlayVisibility());
   const chartPoints = usableChartPoints(points).slice(-160);
-  if (chartPoints.length < 2) {
+  if (!technicalChartHasDrawablePrice(points)) {
     return (
       <section className="technical-chart-panel">
         <div className="section-title">

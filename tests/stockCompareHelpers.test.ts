@@ -148,6 +148,19 @@ test("compare chart series align by trading date instead of point index", () => 
   assert.equal(aligned.series[1].points[2].value, 120);
 });
 
+test("compare chart keeps one-bar newly listed series as a visible point", () => {
+  const item = {
+    ticker: "SPCX",
+    score: 0,
+    data: { chart_series: [{ date: "2026-06-11", close: 135 }] },
+  } as any;
+
+  assert.deepEqual(normalizedPoints(item), [{ date: "2026-06-11", value: 100 }]);
+  const aligned = compareDateAlignedSeries([item]);
+  assert.deepEqual(aligned.dates, ["2026-06-11"]);
+  assert.equal(aligned.series[0]?.points.length, 1);
+});
+
 test("compare bestBy evaluates each item once", () => {
   let calls = 0;
   const items = [

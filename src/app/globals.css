@@ -1146,6 +1146,15 @@ a:focus-visible {
   font-weight: 600;
 }
 
+.chart-context-note {
+  max-width: 680px;
+  margin: -4px 0 14px;
+  color: var(--subtext);
+  font-size: 15px;
+  line-height: 1.65;
+  font-weight: 600;
+}
+
 .factor-empty-note {
   margin: 0;
   color: var(--subtext);

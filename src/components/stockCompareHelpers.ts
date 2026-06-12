@@ -61,9 +61,15 @@ export type CompareAlignedPoint = {
 };
 
 export type CompareAlignedSeries = {
-  item: CompareItem;
+  item: CompareChartSource;
   ticker: string;
   points: CompareAlignedPoint[];
+};
+
+export type CompareChartSource = {
+  ticker: string;
+  identity: StockHeaderIdentity;
+  data: StockScoreResponse;
 };
 
 const KO_KR_RATIO_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
@@ -291,11 +297,11 @@ export function displayName(data: StockScoreResponse): string {
   return stockHeaderIdentity(data).primary || data.name || data.symbol || data.requested_ticker || "-";
 }
 
-export function compareItemTitle(item: CompareItem): string {
+export function compareItemTitle(item: CompareChartSource): string {
   return item.identity.primary || displayName(item.data) || item.ticker;
 }
 
-export function compareItemSubtitle(item: CompareItem): string | undefined {
+export function compareItemSubtitle(item: CompareChartSource): string | undefined {
   const subtitle = item.identity.secondary;
   return subtitle && subtitle !== compareItemTitle(item) ? subtitle : undefined;
 }
@@ -317,9 +323,9 @@ export function pendingMessage(result: BatchScoreResult | undefined): string {
   return "선택한 종목을 같은 기준으로 비교합니다.";
 }
 
-export function normalizedPoints(item: CompareItem) {
+export function normalizedPoints(item: { data: StockScoreResponse }) {
   const usable = usableChartPoints(item.data.chart_series);
-  if (usable.length < 2) return [];
+  if (usable.length < 1) return [];
   const first = usable[0].close;
   if (!Number.isFinite(first) || first === 0) return [];
   return usable.map((point) => ({
@@ -328,7 +334,7 @@ export function normalizedPoints(item: CompareItem) {
   }));
 }
 
-export function compareDateAlignedSeries(items: readonly CompareItem[]): { dates: string[]; series: CompareAlignedSeries[] } {
+export function compareDateAlignedSeries<T extends CompareChartSource>(items: readonly T[]): { dates: string[]; series: Array<CompareAlignedSeries & { item: T }> } {
   const dateSet = new Set<string>();
   const rawSeries = items.map((item) => {
     const points = normalizedPoints(item);

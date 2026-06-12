@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { compareDateAlignedSeries } from "../src/components/stockCompareHelpers";
 import {
+  compareChartItemsFromStates,
   compareItemsFromStates,
   compareStockDataWithDisplayFallback,
   shouldPromotePartialCompareData,
@@ -160,6 +161,30 @@ test("compare chart skeleton stops for newly listed one-bar chart partials", () 
 
   assert.equal(items.length, 0);
   assert.equal(shouldShowCompareChartSkeleton([first, second], items, false), false);
+});
+
+test("compare chart uses one-bar partial price data even when score cards stay partial", () => {
+  const newlyListed = {
+    status: "partial",
+    ticker: "US:SPCX",
+    data: {
+      requested_ticker: "US:SPCX",
+      symbol: "SPCX",
+      market: "US",
+      name: "스페이스X",
+      latest_price: 135,
+      latest_price_label: "$135.00",
+      chart_series: [{ date: "2026-06-11", close: 135, volume: 0 }],
+    } as unknown as StockScoreResponse,
+    message: "가격은 확인됐어요.",
+  } satisfies Extract<CompareLoadState, { status: "partial" }>;
+
+  assert.equal(compareItemsFromStates([newlyListed]).length, 0);
+
+  const chartItems = compareChartItemsFromStates([newlyListed]);
+  assert.equal(chartItems.length, 1);
+  assert.equal(chartItems[0]?.ticker, "SPCX");
+  assert.deepEqual(compareDateAlignedSeries(chartItems).series[0]?.points.map((point) => point.value), [100]);
 });
 
 test("compare data merges display chart and metrics into lean ready score results", () => {

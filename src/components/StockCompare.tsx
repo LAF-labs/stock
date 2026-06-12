@@ -28,7 +28,7 @@ import {
   type CompareItem,
 } from "@/components/stockCompareHelpers";
 import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
-import { shouldShowCompareChartSkeleton, shouldShowCompareOverviewSkeleton, useStockCompareQueries, type CompareLoadState } from "@/components/useStockCompareQueries";
+import { shouldShowCompareChartSkeleton, shouldShowCompareOverviewSkeleton, useStockCompareQueries, type CompareChartItem, type CompareLoadState } from "@/components/useStockCompareQueries";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
@@ -71,11 +71,11 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const firstTickerLabel = firstTicker ? displayTickerRef(firstTicker) : "";
   const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
   const [input, setInput] = useState("");
-  const { states, items, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
+  const { states, items, chartItems, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
   const compareLimitReached = tickers.length >= MAX_COMPARE;
   const firstItem = useMemo(() => (firstTicker ? items.find((item) => item.ticker === firstTickerLabel) : undefined), [firstTicker, items, firstTickerLabel]);
-  const hasCompareChart = useMemo(() => compareDateAlignedSeries(items).series.some((entry) => entry.points.length >= 2), [items]);
+  const hasCompareChart = useMemo(() => compareDateAlignedSeries(chartItems).series.some((entry) => entry.points.length >= 1), [chartItems]);
   const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -215,7 +215,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         <div className="compare-feed">
           {shouldShowCompareOverviewSkeleton(states, items) ? <ComparePendingOverviewSkeleton /> : null}
           <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
-          {items.length >= 2 ? <CompareChart items={items} /> : null}
+          {chartItems.length ? <CompareChart items={chartItems} /> : null}
           {shouldShowCompareChartSkeleton(states, items, hasCompareChart) ? <CompareChartPendingSkeleton /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}
@@ -395,14 +395,14 @@ function CompareChartPendingSkeleton() {
   );
 }
 
-function CompareChart({ items }: { items: CompareItem[] }) {
+function CompareChart({ items }: { items: CompareChartItem[] }) {
   const aligned = compareDateAlignedSeries(items);
   const series = aligned.series
     .map((entry, index) => ({
       ...entry,
       color: LINE_COLORS[index % LINE_COLORS.length],
     }))
-    .filter((entry) => entry.points.length >= 2);
+    .filter((entry) => entry.points.length >= 1);
 
   if (!series.length) {
     return (
@@ -436,21 +436,27 @@ function CompareChart({ items }: { items: CompareItem[] }) {
   return (
     <section className="compare-section">
       <span>가격 흐름</span>
-      <h2>1년 전을 100으로 맞춰봤어요</h2>
+      <h2>{series.some((entry) => entry.points.length >= 2) ? "1년 전을 100으로 맞춰봤어요" : "확인된 가격을 100으로 맞춰봤어요"}</h2>
       <p id={summaryId} className="sr-only">비교 가격 흐름 요약: {chartSummary}</p>
       <div className="compare-chart">
         <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="비교 가격 흐름" aria-describedby={summaryId}>
           <line x1={padX} y1={y(100)} x2={width - padX} y2={y(100)} className="compare-base-line" />
           {series.map((entry) => (
-            <polyline
-              key={entry.item.ticker}
-              points={entry.points.map((point) => `${x(point.dateIndex)},${y(point.value)}`).join(" ")}
-              fill="none"
-              stroke={entry.color}
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <g key={entry.item.ticker}>
+              {entry.points.length >= 2 ? (
+                <polyline
+                  points={entry.points.map((point) => `${x(point.dateIndex)},${y(point.value)}`).join(" ")}
+                  fill="none"
+                  stroke={entry.color}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : null}
+              {entry.points.map((point) => (
+                <circle key={`${entry.item.ticker}-${point.date}`} cx={x(point.dateIndex)} cy={y(point.value)} r="5" fill={entry.color} />
+              ))}
+            </g>
           ))}
         </svg>
       </div>

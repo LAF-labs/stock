@@ -123,7 +123,7 @@ export function TechnicalAnalysisPendingFeed({
   terminalUnavailable?: boolean;
 }) {
   const chartPointCount = usableChartPoints(data.chart_series).length;
-  const hasPriceOrChart = chartPointCount > 1 || (typeof data.latest_price === "number" && Number.isFinite(data.latest_price));
+  const hasPriceOrChart = chartPointCount >= 1 || (typeof data.latest_price === "number" && Number.isFinite(data.latest_price));
   const limitedWarnings =
     chartPointCount > 1 && chartPointCount < 80
       ? ["상장 후 가격 기록이 아직 짧아요. 이동평균, 피보나치, FVG/OB 같은 신호는 충분한 봉이 쌓이면 더 안정적으로 표시됩니다."]
@@ -144,12 +144,12 @@ export function TechnicalAnalysisPendingFeed({
         </div>
         <div className="technical-summary">
           <span>{hasPriceOrChart ? "가격 흐름" : "종목 정보"}</span>
-          <strong>{hasPriceOrChart ? "현재 확인된 가격 정보입니다." : terminalUnavailable ? "상장한 지 얼마 되지 않아 데이터가 부족해요." : "종목 정보를 확인했어요."}</strong>
-          <p>{chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : terminalUnavailable ? "현재가처럼 확인 가능한 값은 먼저 보여주고, 일봉이 더 쌓이면 차트와 보조지표를 표시할게요." : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
+          <strong>{chartPointCount === 1 ? "첫 가격 기록이 확인됐어요." : hasPriceOrChart ? "현재 확인된 가격 정보입니다." : terminalUnavailable ? "상장한 지 얼마 되지 않아 데이터가 부족해요." : "종목 정보를 확인했어요."}</strong>
+          <p>{chartPointCount === 1 ? "아직 하루치라 방향을 판단하기엔 이릅니다. 며칠 더 쌓이면 오르는 힘과 흔들림을 함께 볼 수 있어요." : chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : terminalUnavailable ? "현재가처럼 확인 가능한 값은 먼저 보여주고, 일봉이 더 쌓이면 가격 흐름을 표시할게요." : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
         </div>
       </section>
       {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
-      {chartPointCount >= 2 ? <TechnicalOverlayChart points={data.chart_series} /> : terminalUnavailable ? <TechnicalChartUnavailablePanel /> : <TechnicalChartPendingSkeleton />}
+      {chartPointCount >= 1 ? <TechnicalOverlayChart points={data.chart_series} /> : terminalUnavailable ? <TechnicalChartUnavailablePanel /> : <TechnicalChartPendingSkeleton />}
     </div>
   );
 }
