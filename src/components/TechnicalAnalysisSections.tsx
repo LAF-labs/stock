@@ -87,7 +87,11 @@ export function TechnicalAnalysisFeed({
   displayTicker: string;
 }) {
   const signals = technicalSignals(technical);
-  const warnings = technicalWarnings(technical);
+  const chartPointCount = usableChartPoints(data.chart_series).length;
+  const warnings =
+    chartPointCount === 1
+      ? ["가격 기록이 하루치라 이동평균이나 추세 신호는 아직 참고하기 어려워요."]
+      : technicalWarnings(technical);
   const bullets = technicalSummaryBullets(technical);
   const summaryTone = normalizedTone(String(technical.summary?.tone || ""));
   const confluenceScore = typeof technical.confluence?.score === "number" ? Math.max(0, Math.min(100, technical.confluence.score)) : undefined;
@@ -248,7 +252,7 @@ function TechnicalWarnings({ warnings }: { warnings: string[] }) {
 
   return (
     <section className="technical-warning">
-      <strong>데이터 해석 범위</strong>
+      <strong>참고할 점</strong>
       {warnings.map((warning) => <p key={warning}>{warning}</p>)}
     </section>
   );

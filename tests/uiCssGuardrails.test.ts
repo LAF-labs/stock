@@ -178,6 +178,7 @@ test("technical pending view shows a one-bar candle before trend analysis is ava
   assert.match(technicalSectionsSource, /chartPointCount >= 1 \? <TechnicalOverlayChart/);
   assert.doesNotMatch(technicalSectionsSource, /chartPointCount >= 2 \? <TechnicalOverlayChart/);
   assert.match(technicalSectionsSource, /아직 하루치라 방향을 판단하기엔 이릅니다/);
+  assert.match(technicalSectionsSource, /가격 기록이 하루치라 이동평균이나 추세 신호는 아직 참고하기 어려워요/);
   assert.match(technicalSectionsSource, /const chartPointCount = usableChartPoints\(data\.chart_series\)\.length;[\s\S]*const summaryHeadline = chartPointCount === 1/);
 });
 
