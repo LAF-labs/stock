@@ -105,8 +105,11 @@ test("landing hero has four scrollable headline sections and a seamless stock lo
   assert.match(css, /\.landing-loop-window\s*\{[\s\S]*?mask-image:\s*linear-gradient\(90deg, transparent 0, #000 22px, #000 calc\(100% - 22px\), transparent 100%\);/);
 });
 
-test("home search is a floating pill that collapses to an icon-only circle", () => {
+test("home search is a floating pill that collapses to a compact text pill", () => {
   assert.match(dashboardSource, /isSearchCollapsed/);
+  assert.match(dashboardSource, /isSearchExpanding/);
+  assert.match(dashboardSource, /searchExpandTimerRef/);
+  assert.match(dashboardSource, /search-expanding/);
   assert.match(dashboardSource, /variant="floating"/);
   assert.match(dashboardSource, /onExpandRequest/);
   assert.match(dashboardSource, /scrollY/);
@@ -282,9 +285,12 @@ test("mobile route headers keep first content flush and compact", () => {
   assert.match(autocompleteSource, /function collapsedContentWidth/);
   assert.match(autocompleteSource, /"--symbol-search-content-width"/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-collapsed\s*\{[\s\S]*?min-height:\s*80px;[\s\S]*?height:\s*80px;[\s\S]*?background:\s*transparent;[\s\S]*?border-bottom:\s*0;/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;[\s\S]*?width:\s*clamp\(104px,\s*calc\(var\(--symbol-search-content-width,\s*8ch\) \+ 54px\),\s*calc\(100vw - 32px\)\);[\s\S]*?margin-inline:\s*auto;[\s\S]*?transform:\s*none;/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-box\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) 24px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;[\s\S]*?width:\s*clamp\(96px,\s*calc\(var\(--symbol-search-content-width,\s*8ch\) \+ 32px\),\s*calc\(100vw - 32px\)\);[\s\S]*?margin-inline:\s*auto;[\s\S]*?transform:\s*none;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-expanding \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?right:\s*16px;[\s\S]*?left:\s*16px;[\s\S]*?width:\s*calc\(100vw - 32px\);[\s\S]*?transform-origin:\s*center top;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-box\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating input\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?color:\s*var\(--muted\);[\s\S]*?font-size:\s*13px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?opacity:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action svg\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?min-height:\s*52px;[\s\S]*?margin:\s*0;[\s\S]*?border-bottom:\s*1px solid var\(--line\);/);

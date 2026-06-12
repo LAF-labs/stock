@@ -110,15 +110,34 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         : undefined;
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
+  const [isSearchExpanding, setIsSearchExpanding] = useState(false);
   const lastScrollYRef = useRef(0);
   const isSearchCollapsedRef = useRef(false);
+  const searchExpandTimerRef = useRef<number | undefined>(undefined);
   const previousTickerParamRef = useRef(tickerParam);
 
   function setSearchCollapsed(nextCollapsed: boolean) {
+    const wasCollapsed = isSearchCollapsedRef.current;
     if (isSearchCollapsedRef.current === nextCollapsed) return;
     isSearchCollapsedRef.current = nextCollapsed;
+    if (wasCollapsed && !nextCollapsed) {
+      setIsSearchExpanding(true);
+      if (searchExpandTimerRef.current !== undefined) window.clearTimeout(searchExpandTimerRef.current);
+      searchExpandTimerRef.current = window.setTimeout(() => {
+        setIsSearchExpanding(false);
+        searchExpandTimerRef.current = undefined;
+      }, 380);
+    } else if (nextCollapsed) {
+      if (searchExpandTimerRef.current !== undefined) window.clearTimeout(searchExpandTimerRef.current);
+      searchExpandTimerRef.current = undefined;
+      setIsSearchExpanding(false);
+    }
     setIsSearchCollapsed(nextCollapsed);
   }
+
+  useEffect(() => () => {
+    if (searchExpandTimerRef.current !== undefined) window.clearTimeout(searchExpandTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let ticking = false;
@@ -223,7 +242,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const searchSectionClassName = ["stock-search", isSearchCollapsed ? "search-collapsed" : ""].filter(Boolean).join(" ");
+  const searchSectionClassName = ["stock-search", isSearchCollapsed ? "search-collapsed" : "", isSearchExpanding ? "search-expanding" : ""].filter(Boolean).join(" ");
 
   return (
     <main className="stock-app stock-detail-app">
