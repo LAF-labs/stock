@@ -125,6 +125,41 @@ test("compare chart skeleton shows only while comparable chart data is still pen
   assert.equal(shouldShowCompareChartSkeleton([{ status: "success", ticker: "US:FRSH", data: first.data }, { status: "success", ticker: "US:BOX", data: second.data }], items, false), false);
 });
 
+test("compare chart skeleton stops for newly listed one-bar chart partials", () => {
+  const first = {
+    status: "partial",
+    ticker: "US:SPCX",
+    data: {
+      requested_ticker: "US:SPCX",
+      symbol: "SPCX",
+      market: "US",
+      name: "SpaceX",
+      latest_price: 135,
+      quality_score: 50,
+      chart_series: [{ date: "2026-06-11", close: 135, volume: 0 }],
+    } as unknown as StockScoreResponse,
+    message: "상장 초기 데이터 부족",
+  } satisfies Extract<CompareLoadState, { status: "partial" }>;
+  const second = {
+    status: "partial",
+    ticker: "US:IPO2",
+    data: {
+      requested_ticker: "US:IPO2",
+      symbol: "IPO2",
+      market: "US",
+      name: "Recent IPO",
+      latest_price: 42,
+      quality_score: 48,
+      chart_series: [{ date: "2026-06-11", close: 42, volume: 0 }],
+    } as unknown as StockScoreResponse,
+    message: "상장 초기 데이터 부족",
+  } satisfies Extract<CompareLoadState, { status: "partial" }>;
+  const items = compareItemsFromStates([first, second]);
+
+  assert.equal(items.length, 2);
+  assert.equal(shouldShowCompareChartSkeleton([first, second], items, false), false);
+});
+
 test("compare data merges display chart and metrics into lean ready score results", () => {
   const leanReadyScore = {
     ok: true,

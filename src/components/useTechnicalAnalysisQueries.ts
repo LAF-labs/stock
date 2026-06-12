@@ -106,7 +106,7 @@ export function useTechnicalAnalysisQueries(ticker: string, detailHref: string, 
   };
 }
 
-function technicalStateFromQuery(
+export function technicalStateFromQuery(
   ticker: string,
   result: TechnicalScoreQueryResult | undefined,
   error: unknown,
@@ -116,6 +116,19 @@ function technicalStateFromQuery(
   displayTerminalUnavailable: boolean,
 ): TechnicalLoadState {
   const terminalUnavailable = displayTerminalUnavailable || technicalPayloadTerminalUnavailable(result?.payload);
+  if (terminalUnavailable) {
+    const quotePartial = quote ? partialStockDataFromQuote(quote, ticker) : undefined;
+    const readyData = result?.state === "ready" ? result.data : undefined;
+    const resultPartial = result?.state === "partial" ? partialStockDataFromPayload(result.payload, ticker) || result.data : undefined;
+    const partial = chooseRicherStockData(displayData, chooseRicherStockData(readyData, resultPartial) || quotePartial) || partialStockDataFromTicker(ticker);
+    return {
+      status: "partial",
+      ticker,
+      data: scoreDataWithQuote(partial, quote),
+      terminalUnavailable: true,
+    };
+  }
+
   if (displayData && isTechnicalAnalysisPayload(displayData.technical_analysis) && result?.state !== "ready") {
     return { status: "success", ticker, data: scoreDataWithQuote(displayData, quote) };
   }

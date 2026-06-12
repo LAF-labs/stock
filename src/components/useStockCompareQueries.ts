@@ -114,7 +114,11 @@ export function shouldShowCompareOverviewSkeleton(states: readonly CompareLoadSt
 
 export function shouldShowCompareChartSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[], hasCompareChart: boolean): boolean {
   if (items.length < 2 || hasCompareChart) return false;
-  return states.some((state) => state.status === "loading" || state.status === "pending" || state.status === "partial");
+  return states.some((state) => {
+    if (state.status === "loading" || state.status === "pending") return true;
+    if (state.status === "partial") return !hasTerminalInsufficientChartHistory(state.data);
+    return false;
+  });
 }
 
 export function shouldPromotePartialCompareData(data: StockScoreResponse): boolean {
@@ -125,6 +129,10 @@ export function shouldPromotePartialCompareData(data: StockScoreResponse): boole
 function hasPriceSignal(data: StockScoreResponse): boolean {
   if (hasFiniteNumber(data.latest_price)) return true;
   return usableChartPoints(data.chart_series).length >= 2;
+}
+
+function hasTerminalInsufficientChartHistory(data: StockScoreResponse): boolean {
+  return Array.isArray(data.chart_series) && data.chart_series.length > 0 && usableChartPoints(data.chart_series).length < 2;
 }
 
 function isIdentityOnlyFastPath(data: StockScoreResponse): boolean {

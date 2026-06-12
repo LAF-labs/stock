@@ -269,6 +269,71 @@ test("display model does not materialize empty score chart arrays as chart parts
   assert.deepEqual(payload.completion.recoveringParts, ["chart"]);
 });
 
+test("display model treats one-bar newly listed charts as terminal insufficient history", async () => {
+  for (const view of ["detail", "compare"] as const) {
+    const payload = await buildStockDisplayPayload({
+      ticker: "US:SPCX",
+      view,
+      sources: {
+        identity: async () => ({ ticker: "US:SPCX", market: "US", symbol: "SPCX", name: "SpaceX" }),
+        price: async () => ({ latest_price: 135, latest_price_label: "$135.00" }),
+        chart: async () => ({
+          chart_series: [{ date: "2026-06-11", open: 135, high: 135, low: 135, close: 135, volume: 0 }],
+        }),
+        score: async () => ({
+          ok: true,
+          score: 50,
+          quality_score: 50,
+          latest_price: 135,
+          chart_series: [{ date: "2026-06-11", open: 135, high: 135, low: 135, close: 135, volume: 0 }],
+        }),
+      },
+    });
+
+    assert.equal(payload.chart, undefined);
+    assert.deepEqual(payload.completion.presentParts, ["identity", "price", "score"]);
+    assert.deepEqual(payload.completion.missingParts, []);
+    assert.deepEqual(payload.completion.recoveringParts, []);
+    assert.deepEqual(payload.completion.unavailableParts, [{ part: "chart", reason: "no_history" }]);
+    assert.equal(payload.refresh.active, false);
+  }
+});
+
+test("technical display suppresses one-bar technical analysis as insufficient history", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:SPCX",
+    view: "technical",
+    sources: {
+      identity: async () => ({ ticker: "US:SPCX", market: "US", symbol: "SPCX", name: "SpaceX" }),
+      price: async () => ({ latest_price: 135, latest_price_label: "$135.00" }),
+      chart: async () => ({
+        chart_series: [{ date: "2026-06-11", open: 135, high: 135, low: 135, close: 135, volume: 0 }],
+      }),
+      score: async () => ({
+        ok: true,
+        latest_price: 135,
+        chart_series: [{ date: "2026-06-11", open: 135, high: 135, low: 135, close: 135, volume: 0 }],
+        technical_analysis: {
+          type: "technical_analysis",
+          status: "limited",
+          summary: { headline: "데이터가 부족해요" },
+        },
+      }),
+    },
+  });
+
+  assert.equal(payload.chart, undefined);
+  assert.equal(payload.technical, undefined);
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price"]);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.deepEqual(payload.completion.unavailableParts, [
+    { part: "chart", reason: "no_history" },
+    { part: "technical", reason: "no_history" },
+  ]);
+  assert.equal(payload.refresh.active, false);
+});
+
 test("display model materializes enriched score fields as first-class display parts", async () => {
   const payload = await buildStockDisplayPayload({
     ticker: "US:KO",

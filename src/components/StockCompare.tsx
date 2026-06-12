@@ -215,7 +215,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         <div className="compare-feed">
           {shouldShowCompareOverviewSkeleton(states, items) ? <ComparePendingOverviewSkeleton /> : null}
           <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
-          {items.length >= 2 && hasCompareChart ? <CompareChart items={items} /> : null}
+          {items.length >= 2 ? <CompareChart items={items} /> : null}
           {shouldShowCompareChartSkeleton(states, items, hasCompareChart) ? <CompareChartPendingSkeleton /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}

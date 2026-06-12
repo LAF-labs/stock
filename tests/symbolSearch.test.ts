@@ -73,6 +73,34 @@ test("local symbol index returns instant multi-field suggestions without remote 
   assert.deepEqual(searchSymbolIndex(index, { query: "삼전", limit: 5 }).map((item) => item.key), ["KR:005930"]);
 });
 
+test("curated newly listed SPCX symbol is searchable by Korean names and nicknames", () => {
+  const index = buildSymbolSearchIndex([]);
+
+  for (const query of ["SPCX", "스페이스X", "스페이스엑스", "스엑스", "스엑"]) {
+    const [item] = searchSymbolIndex(index, { query, limit: 5 });
+    assert.equal(item?.key, "US:SPCX", query);
+    assert.equal(item?.displayName, "스페이스X", query);
+    assert.equal(item?.listingStatus, "newly_listed", query);
+  }
+});
+
+test("curated SPCX search result is served before an empty Supabase response", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";
+
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return Response.json([]);
+  }) as typeof fetch;
+
+  const [item] = await searchSymbols({ query: "스엑", limit: 8 });
+
+  assert.equal(item?.key, "US:SPCX");
+  assert.equal(item?.displayName, "스페이스X");
+  assert.equal(calls, 0);
+});
+
 test("symbol search uses Supabase RPC when available", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";

@@ -25,7 +25,8 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
   const score = normalizeDisplayScore(partValue(envelope.parts.score));
   const chart = partValue(envelope.parts.chart);
   const price = normalizePriceWithChart(partValue(envelope.parts.price), chart, score);
-  const technical = partValue(envelope.parts.technical) ?? technicalFromScore(score);
+  const suppressTechnical = envelope.view === "technical" && unavailableReasonForPart(envelope, "chart") === "no_history";
+  const technical = suppressTechnical ? undefined : partValue(envelope.parts.technical) ?? technicalFromScore(score);
   const fundamentals = partValue(envelope.parts.fundamentals) ?? fundamentalsFromScore(score);
   const industryBenchmark = partValue(envelope.parts.industryBenchmark) ?? industryBenchmarkFromScore(score);
   const news = partValue(envelope.parts.news) ?? newsFromScore(score);
@@ -185,6 +186,11 @@ function unavailablePartsFromEnvelope(envelope: StockDataEnvelope, requiredParts
     }
   }
   return parts;
+}
+
+function unavailableReasonForPart(envelope: StockDataEnvelope, part: StockDisplayPartName): StockDisplayUnavailablePart["reason"] | undefined {
+  const state = envelope.parts[part];
+  return state?.state === "unavailable" ? displayUnavailableReason(state.reason) : undefined;
 }
 
 function stalePartsFromEnvelope(envelope: StockDataEnvelope, presentParts: StockDisplayPartName[]): StockDisplayPartName[] {

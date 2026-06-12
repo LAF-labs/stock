@@ -56,7 +56,8 @@ export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput)
   const identity = fulfilledValue(identityResult) ?? fallbackIdentity(ticker);
   const score = fulfilledValue(scoreResult);
   const price = fulfilledValue(priceResult) ?? priceFromScore(score);
-  const chart = fulfilledValue(chartResult) ?? chartFromScore(score);
+  const chartPayload = fulfilledValue(chartResult);
+  const chart = chartWithUsableHistory(chartPayload) ?? chartFromScore(score);
   const parts: StockDataEnvelope["parts"] = {
     identity: readyPart(identity, "symbol-master", generatedAt),
     ...(price ? { price: pricePartFromPayload(price) ?? readyPart(price, "derived", generatedAt) } : {}),
@@ -66,6 +67,7 @@ export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput)
 
   applyUnavailableParts(parts, uniqueUnavailableParts([
     ...unavailablePartsFromLaneResults({ priceResult, chartResult, scoreResult }, input.view),
+    ...insufficientHistoryUnavailableParts({ chartPayload, score, hasUsableChart: Boolean(chart), view: input.view }),
     ...(fulfilledValue(terminalFailuresResult) || []),
   ]), generatedAt);
 
@@ -147,8 +149,32 @@ function chartFromScore(score: StockScoreView | undefined): StockChartView | und
   };
 }
 
+function chartWithUsableHistory(chart: StockChartView | undefined): StockChartView | undefined {
+  return hasUsableChartSeries(chart?.chart_series) ? chart : undefined;
+}
+
 function hasUsableChartSeries(value: unknown): value is StockChartView["chart_series"] {
   return Array.isArray(value) && value.length >= 2;
+}
+
+function hasInsufficientChartHistory(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.length < 2;
+}
+
+function insufficientHistoryUnavailableParts(input: {
+  chartPayload: StockChartView | undefined;
+  score: StockScoreView | undefined;
+  hasUsableChart: boolean;
+  view: StockDisplayView;
+}): StockDisplayUnavailablePart[] {
+  if (input.hasUsableChart) return [];
+  const hasOneBarHistory =
+    hasInsufficientChartHistory(input.chartPayload?.chart_series) ||
+    hasInsufficientChartHistory(input.score?.chart_series);
+  if (!hasOneBarHistory) return [];
+  const parts: StockDisplayUnavailablePart[] = [{ part: "chart", reason: "no_history" }];
+  if (input.view === "technical") parts.push({ part: "technical", reason: "no_history" });
+  return parts;
 }
 
 function fulfilledValue<T>(result: PromiseSettledResult<T>): T | undefined {

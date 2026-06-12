@@ -7,6 +7,7 @@ import {
   exactSymbolFromIndex,
   localSymbolSearchCacheKey,
   normalizeSymbolMarket,
+  searchCuratedSymbolOverrides,
   searchSymbolIndex,
   toSymbolSearchItem,
   type SymbolSearchIndexEntry,
@@ -50,6 +51,8 @@ export async function searchSymbols(input: SymbolSearchInput): Promise<SymbolSea
   const market = normalizeSymbolMarket(input.market);
   const aliasItem = await exactAliasSearchItem(query, market);
   if (aliasItem) return [aliasItem];
+  const curatedItems = searchCuratedSymbolOverrides({ query, limit, market });
+  if (curatedItems.length) return curatedItems;
   const rpcItems = await searchSupabaseSymbols({ query, limit, market });
   if (rpcItems) return rpcItems;
   return searchCachedLocalIndex(await localSymbolIndex(), { query, limit, market });

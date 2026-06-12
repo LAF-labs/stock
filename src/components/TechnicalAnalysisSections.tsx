@@ -144,8 +144,8 @@ export function TechnicalAnalysisPendingFeed({
         </div>
         <div className="technical-summary">
           <span>{hasPriceOrChart ? "가격 흐름" : "종목 정보"}</span>
-          <strong>{hasPriceOrChart ? "현재 확인된 가격 흐름입니다." : terminalUnavailable ? "표시할 가격 흐름이 없어요." : "종목 정보를 확인했어요."}</strong>
-          <p>{chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : terminalUnavailable ? "제공자가 현재 이 종목의 일봉 데이터를 반환하지 않아요." : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
+          <strong>{hasPriceOrChart ? "현재 확인된 가격 정보입니다." : terminalUnavailable ? "상장한 지 얼마 되지 않아 데이터가 부족해요." : "종목 정보를 확인했어요."}</strong>
+          <p>{chartPointCount > 1 ? `${chartPointCount}개 일봉을 먼저 반영했어요.` : terminalUnavailable ? "현재가처럼 확인 가능한 값은 먼저 보여주고, 일봉이 더 쌓이면 차트와 보조지표를 표시할게요." : "가격 정보가 들어오는 대로 이 화면에 바로 반영됩니다."}</p>
         </div>
       </section>
       {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
@@ -157,7 +157,7 @@ export function TechnicalAnalysisPendingFeed({
 function TechnicalChartUnavailablePanel() {
   return (
     <section className="technical-chart-panel technical-pending-card" aria-label="가격 캔들 없음">
-      <p className="technical-chart-empty">가격 캔들과 보조지표를 그릴 일봉 데이터가 없어요.</p>
+      <p className="technical-chart-empty">상장 초기이거나 가격 기록이 짧아 아직 기술적 분석을 계산하기 어려워요.</p>
     </section>
   );
 }

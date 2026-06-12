@@ -61,7 +61,15 @@ export function ChartStory({
   }
 
   if (usable.length < 2) {
-    return null;
+    return (
+      <section className="chart-story chart-empty-story" role="status">
+        <div className="section-title">
+          <span>가격 흐름</span>
+          <h2>상장한 지 얼마 되지 않아 데이터가 부족해요</h2>
+        </div>
+        <p className="chart-fallback">현재가처럼 확인 가능한 값은 먼저 보여주고, 일봉이 더 쌓이면 가격 흐름 차트를 표시할게요.</p>
+      </section>
+    );
   }
   const chartPoints = usable;
 
