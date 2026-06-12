@@ -19,6 +19,7 @@ import {
   formatPrimaryPrice,
   formatSecondaryPrice,
   hasDisplayableStockPartialData,
+  partialStockStatusSummary,
   scoreDataWithQuote,
   shouldShowStockSkeleton,
   stockMarketCapDisplay,
@@ -295,6 +296,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
 function PartialStockFeed({
   data,
   quote,
+  pending,
   onRetry,
 }: {
   data: StockScoreResponse;
@@ -312,7 +314,7 @@ function PartialStockFeed({
   return (
     <div className="stock-feed partial-stock-feed" role="status" aria-live="polite">
       <DetailSection id="detail-summary">
-        <PartialStockSummary data={data} quote={quote} onRetry={onRetry} />
+        <PartialStockSummary data={data} quote={quote} pending={pending} onRetry={onRetry} />
       </DetailSection>
       {hasChart ? (
         <DetailSection id="detail-chart">
@@ -352,10 +354,12 @@ function PartialStockFeed({
 function PartialStockSummary({
   data,
   quote,
+  pending,
   onRetry,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
+  pending: SnapshotPendingState | undefined;
   onRetry: () => void;
 }) {
   const displayData = scoreDataWithQuote(data, quote);
@@ -367,7 +371,8 @@ function PartialStockSummary({
   const qualityScore = typeof rawScore === "number" && Number.isFinite(rawScore) ? clampScore(rawScore) : undefined;
   const { strongest, weakest } = strongestAndWeakest(displayData);
   const marketCap = stockMarketCapDisplay(displayData);
-  const summary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "가격과 빠른 점수를 먼저 반영했어요.");
+  const defaultSummary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "가격과 빠른 점수를 먼저 반영했어요.");
+  const summary = partialStockStatusSummary(defaultSummary, pending);
 
   return (
     <section className="stock-title-card partial-stock-title-card">

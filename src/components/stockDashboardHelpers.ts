@@ -699,6 +699,13 @@ export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: str
   };
 }
 
+export function partialStockStatusSummary(defaultSummary: string, pending: SnapshotPendingState | undefined): string {
+  if (!pending) return defaultSummary;
+  if (pending.message) return pending.message;
+  if (pending.queued) return "정식 데이터 생성 작업이 대기열에서 처리 중입니다.";
+  return defaultSummary;
+}
+
 function arrayFromUnknown(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
 }

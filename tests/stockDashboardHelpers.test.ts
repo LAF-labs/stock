@@ -322,6 +322,12 @@ test("dashboard uses full skeleton only when no useful partial data is present",
   assert.equal(shouldShowStockSkeleton("error"), false);
 });
 
+test("dashboard keeps skeleton priority while non-displayable data is still loading", () => {
+  assert.equal(shouldShowStockSkeleton("loading", false), true);
+  assert.equal(shouldShowStockSkeleton("pending", false), true);
+  assert.equal(shouldShowStockSkeleton("partial", false), true);
+});
+
 test("scoreDataWithQuote overlays fresh quote fields without losing score fields", () => {
   const score = {
     requested_ticker: "US:KO",

@@ -218,6 +218,41 @@ test("TypeScript snapshot worker retries provider misses instead of creating dea
   assert.equal(failCall.body.p_retry_after_seconds, 120);
 });
 
+test("TypeScript snapshot worker fails ok false score payloads instead of completing empty snapshots", async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({
+      url: String(input),
+      body: init?.body ? JSON.parse(String(init.body)) : {},
+    });
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+
+  const options = parseOptions(["--drain-queue", "--kind", "score", "--allow-score-python-fallback", "--worker-id", "worker-1"], {});
+  const row = await publishQueueJobWithCollector(
+    { id: "job-vld", kind: "score", market: "US", symbol: "VLD", view_mode: "detail", attempts: 1 },
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    options,
+    async () => ({
+      payload: {
+        ok: false,
+        status: 404,
+        error: "kis_not_found",
+        message: "not found",
+      },
+    })
+  );
+
+  const failCall = calls.find((call) => call.url.endsWith("/rest/v1/rpc/fail_stock_refresh_job"));
+  const completeCall = calls.find((call) => call.url.endsWith("/rest/v1/rpc/complete_stock_refresh_job"));
+  assert.equal(row.status, "failed");
+  assert.ok(failCall);
+  assert.equal(completeCall, undefined);
+  assert.equal(failCall.body.p_job_id, "job-vld");
+  assert.equal(failCall.body.p_error, "kis_not_found");
+  assert.equal(failCall.body.p_permanent, false);
+});
+
 test("TypeScript snapshot worker dry-runs quote tickers without provider calls", async () => {
   let calls = 0;
   globalThis.fetch = (async () => {

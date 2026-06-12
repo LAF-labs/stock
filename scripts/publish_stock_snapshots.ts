@@ -322,6 +322,7 @@ export async function publishQueueJobWithCollector(
         throw new Error("score job requires legacy score fallback worker");
       }
       const result = await collectScore(ticker, view);
+      assertSuccessfulScorePayload(result.payload);
       await tryUpsertChartSnapshotFromTechnicalPayload(config, ticker, view, result.payload);
     } else {
       throw new Error(`unsupported refresh job kind: ${String(kind || "")}`);
@@ -338,6 +339,11 @@ export async function publishQueueJobWithCollector(
   }
 
   return row;
+}
+
+function assertSuccessfulScorePayload(payload: StockPayload) {
+  if (payload.ok !== false) return;
+  throw new Error(stringValue(payload.error) || stringValue(payload.message) || "score_payload_failed");
 }
 
 async function publishChartSnapshot(ticker: string, config: SupabaseConfig) {
