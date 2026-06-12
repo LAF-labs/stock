@@ -56,7 +56,7 @@ function ShareCandles({ candles }: { candles: StockShareCandle[] }) {
       <div style={styles.chartGridLineMid} />
       <div style={styles.chartGridLineBottom} />
       {shapes.map((shape) => (
-        <div key={shape.key}>
+        <div key={shape.key} style={{ display: "contents" }}>
           <div
             style={{
               position: "absolute",

@@ -8,6 +8,7 @@ import {
   stockShareMetadataFromPayload,
   stockShareOriginFromEnv,
 } from "../src/lib/stockShareMetadata";
+import { stockShareImageResponse } from "../src/app/api/og/shareImage";
 import type { DisplayPart, StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 
 test("stock share metadata names the stock, latest change, current price, and market cap", () => {
@@ -91,6 +92,28 @@ test("share image candles keep the latest daily OHLC points", () => {
   assert.deepEqual(candles.map((candle) => candle.date), ["2026-06-10", "2026-06-11"]);
   assert.equal(candles[0].tone, "up");
   assert.equal(candles[1].tone, "down");
+});
+
+test("stock share image renders candle data as a PNG", async () => {
+  const candles = chartCandlesForShareImage([
+    { date: "2026-06-09", open: 10, high: 12, low: 9, close: 11 },
+    { date: "2026-06-10", open: 11, high: 14, low: 10, close: 13 },
+    { date: "2026-06-11", open: 13, high: 15, low: 12, close: 12.5 },
+  ]);
+  const response = stockShareImageResponse({
+    serviceName: STOCKSTALKER_SERVICE_NAME,
+    title: "삼성전자",
+    ticker: "KR:005930",
+    price: "187,400원",
+    change: "+2.1%",
+    description: "현재가 187,400원 · 시가총액 310조원",
+    candles,
+  });
+  const image = Buffer.from(await response.arrayBuffer());
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/png");
+  assert.deepEqual([...image.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 });
 
 function sharePayload(overrides: {

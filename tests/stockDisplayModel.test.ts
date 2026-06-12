@@ -48,6 +48,21 @@ test("display model keeps provider timeouts recoverable instead of terminal", as
   assert.deepEqual(payload.completion.recoveringParts, ["chart", "technical"]);
 });
 
+test("display model normalizes legacy app names in score payloads", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "KR:005930",
+    view: "detail",
+    sources: {
+      identity: async () => ({ ticker: "KR:005930", market: "KR", symbol: "005930", name: "삼성전자" }),
+      price: async () => ({ latest_price: 70000 }),
+      chart: async () => ({ chart_series: [{ date: "2026-06-09", close: 69000 }, { date: "2026-06-10", close: 70000 }] }),
+      score: async () => ({ app: "Stock Score Reader", score: 70, quality_score: 70 }),
+    },
+  });
+
+  assert.equal(payload.score?.value.app, "스톡스토커");
+});
+
 test("display model marks chart and technical present independently", async () => {
   const payload = await buildStockDisplayPayload({
     ticker: "US:KO",

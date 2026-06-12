@@ -1,5 +1,6 @@
 import { planStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
+import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import { numericEnv } from "@/lib/supabaseRest";
 import { normalizeTickerRef, parseTickerRef } from "@/lib/tickerRef";
@@ -48,7 +49,7 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   ]);
 
   const identity = fulfilledValue(identityResult) ?? fallbackIdentity(ticker);
-  const score = fulfilledValue(scoreResult);
+  const score = normalizeDisplayScore(fulfilledValue(scoreResult));
   const price = fulfilledValue(priceResult) ?? priceFromScore(score);
   const chart = fulfilledValue(chartResult) ?? chartFromScore(score);
   const technical = technicalFromScore(score);
@@ -99,6 +100,10 @@ function publicCompletion(completion: ReturnType<typeof planStockDisplayCompleti
     recoveringParts: completion.recoveringParts,
     unavailableParts: completion.unavailableParts,
   };
+}
+
+function normalizeDisplayScore(score: StockScoreView | undefined): StockScoreView | undefined {
+  return score ? { ...score, app: STOCKSTALKER_SERVICE_NAME } : undefined;
 }
 
 function presentDisplayParts(
