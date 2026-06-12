@@ -33,7 +33,7 @@ test("technical display terminal unavailable is derived from completion instead 
   assert.equal(technicalDisplayTerminalUnavailable({ ...payload, completion: { ...payload.completion, recoveringParts: ["chart"] } }), false);
 });
 
-test("terminal insufficient history keeps technical ready payload in partial unavailable mode", () => {
+test("terminal unavailable display payload keeps technical ready payload in partial unavailable mode", () => {
   const data = {
     requested_ticker: "US:SPCX",
     symbol: "SPCX",
@@ -62,4 +62,39 @@ test("terminal insufficient history keeps technical ready payload in partial una
   assert.equal(state.ticker, "US:SPCX");
   assert.equal(state.terminalUnavailable, true);
   assert.equal(state.pending, undefined);
+});
+
+test("technical ready payload keeps one-bar display chart when score chart is empty", () => {
+  const scoreData = {
+    requested_ticker: "US:SPCX",
+    symbol: "SPCX",
+    market: "US",
+    name: "스페이스X",
+    latest_price: 135,
+    latest_bar_date: "2026-06-12",
+    chart_series: [],
+    technical_analysis: {
+      type: "technical_analysis",
+      status: "unavailable",
+      summary: { headline: "아직 판단할 차트 데이터가 부족해요" },
+    },
+  } as unknown as StockScoreResponse;
+  const displayData = {
+    ...scoreData,
+    chart_series: [{ date: "2026-06-12", open: 135, high: 135, low: 135, close: 135 }],
+  } as unknown as StockScoreResponse;
+
+  const state = technicalStateFromQuery(
+    "US:SPCX",
+    { state: "ready", status: 200, data: scoreData, payload: scoreData },
+    undefined,
+    false,
+    undefined,
+    displayData,
+    false,
+  );
+
+  assert.equal(state.status, "success");
+  assert.equal(state.data.chart_series?.length, 1);
+  assert.equal(state.data.chart_series?.[0]?.close, 135);
 });

@@ -392,7 +392,7 @@ export function stockDataUsefulness(data: StockScoreResponse | undefined): numbe
 
   if (stringFromUnknown(record.name) || stringFromUnknown(record.display_name) || stringFromUnknown(record.symbol)) score += 1;
   if (numberFromUnknown(record.latest_price) !== undefined || stringFromUnknown(record.latest_price_label)) score += 4;
-  if (usableChartPoints(data.chart_series).length >= 2) score += 4;
+  if (usableChartPoints(data.chart_series).length >= 1) score += 4;
   if (numberFromUnknown(record.quality_score) !== undefined || numberFromUnknown(record.score) !== undefined) score += 4;
   if (arrayFromUnknown(record.key_metrics)?.length) score += 2;
   if (arrayFromUnknown(record.valuation_rows)?.length) score += 2;
@@ -439,7 +439,7 @@ export function partialStockDataFromPayload(payload: unknown, fallbackTicker: st
   };
 
   const hasIdentity = Boolean(data.name || data.symbol || data.exchange);
-  return data.latest_price !== undefined || usableChartPoints(data.chart_series).length > 1 || hasIdentity ? data : undefined;
+  return data.latest_price !== undefined || usableChartPoints(data.chart_series).length >= 1 || hasIdentity ? data : undefined;
 }
 
 export function partialStockDataFromQuote(quote: StockQuoteResponse, fallbackTicker: string): StockScoreResponse | undefined {

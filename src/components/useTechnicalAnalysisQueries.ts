@@ -11,6 +11,7 @@ import {
   partialStockDataFromTicker,
   scoreDataWithQuote,
   snapshotPendingFromPayload,
+  usableChartPoints,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
 import {
@@ -134,13 +135,14 @@ export function technicalStateFromQuery(
   }
 
   if (result?.state === "ready") {
-    if (!isTechnicalAnalysisPayload(result.data.technical_analysis)) {
+    const readyData = technicalReadyDataWithDisplayChart(result.data, displayData);
+    if (!isTechnicalAnalysisPayload(readyData.technical_analysis)) {
       if (displayData) {
         return { status: "partial", ticker, data: scoreDataWithQuote(displayData, quote), pending: quoteFirstPending(ticker) };
       }
       return { status: "error", ticker, error: "기술적 분석 데이터를 찾지 못했어요." };
     }
-    return { status: "success", ticker, data: scoreDataWithQuote(result.data, quote) };
+    return { status: "success", ticker, data: scoreDataWithQuote(readyData, quote) };
   }
 
   if (result?.state === "partial") {
@@ -249,6 +251,26 @@ export function technicalDisplayTerminalUnavailable(payload: StockDisplayPayload
   if (!payload || payload.view !== "technical" || payload.completion.recoveringParts.length > 0) return false;
   const unavailable = new Set(payload.completion.unavailableParts.map((item) => item.part));
   return unavailable.has("technical") || unavailable.has("chart");
+}
+
+function technicalReadyDataWithDisplayChart(
+  data: StockScoreResponse,
+  displayData: StockScoreResponse | undefined,
+): StockScoreResponse {
+  if (!displayData || usableChartPoints(displayData.chart_series).length < 1) return data;
+  return {
+    ...displayData,
+    ...data,
+    chart_series: displayData.chart_series,
+    latest_bar_date: data.latest_bar_date || displayData.latest_bar_date,
+    latest_price: data.latest_price ?? displayData.latest_price,
+    latest_price_label: data.latest_price_label || displayData.latest_price_label,
+    price_metrics: {
+      ...(displayData.price_metrics || {}),
+      ...(data.price_metrics || {}),
+    },
+    technical_analysis: data.technical_analysis || displayData.technical_analysis,
+  };
 }
 
 function technicalPayloadTerminalUnavailable(payload: unknown): boolean {
