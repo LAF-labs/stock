@@ -161,6 +161,13 @@ test("chart story does not truncate fetched history on the client", () => {
   assert.match(stockDetailSectionsSource, /<LazyTradingPriceChart points=\{chartPoints\}/);
 });
 
+test("newly listed chart empty state does not reuse absolute chart fallback overlay", () => {
+  const emptyStoryBlock = stockDetailSectionsSource.match(/className="chart-story chart-empty-story"[\s\S]*?<\/section>/)?.[0] || "";
+  assert.match(emptyStoryBlock, /chart-empty-note/);
+  assert.doesNotMatch(emptyStoryBlock, /chart-fallback/);
+  assert.match(css, /\.chart-empty-note\s*\{[\s\S]*?position:\s*static;/);
+});
+
 test("waiting states use shared skeletons instead of error containers", () => {
   assert.match(loadingSkeletonSource, /function StockDetailLoadingSkeleton/);
   assert.match(loadingSkeletonSource, /function TechnicalAnalysisLoadingSkeleton/);
