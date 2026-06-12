@@ -76,6 +76,7 @@ test("display query polls from refresh metadata instead of pending state names",
 
   assert.equal(stockQueryShouldPoll(display), true);
   assert.equal(stockQueryRefetchIntervalMs(display, 0), 1500);
+  assert.equal(stockQueryRefetchIntervalMs(display, STOCK_QUERY_MAX_PENDING_POLLS + 10), 1500);
 });
 
 test("display query result can be seeded from server-rendered payload", () => {
@@ -198,7 +199,8 @@ test("pending polling follows the shared backoff and stops on non-pollable state
 
   assert.equal(stockQueryShouldPoll(queuedPending), true);
   assert.equal(stockQueryRefetchIntervalMs(queuedPending, 2), 3_000);
-  assert.equal(stockQueryRefetchIntervalMs(queuedPending, STOCK_QUERY_MAX_PENDING_POLLS), false);
+  assert.equal(stockQueryRefetchIntervalMs(queuedPending, STOCK_QUERY_MAX_PENDING_POLLS), 60_000);
+  assert.equal(stockQueryRefetchIntervalMs(queuedPending, STOCK_QUERY_MAX_PENDING_POLLS + 8), 60_000);
   assert.equal(stockQueryShouldPoll(clientOnlyPending), false);
   assert.equal(stockQueryRefetchIntervalMs({ state: "ready", status: 200, payload: {}, data: {} }, 0), false);
 });

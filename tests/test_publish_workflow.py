@@ -25,12 +25,17 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("needs: market_guard", text)
         self.assertIn("needs.market_guard.outputs.run == '1'", text)
 
-    def test_refresh_queue_worker_serializes_overlapping_runs(self):
+    def test_refresh_queue_worker_serializes_overlapping_runs_per_lane(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        workflow_header = text.split("\njobs:", 1)[0]
 
-        self.assertIn("concurrency:", text)
-        self.assertIn("publish-stock-snapshots", text)
-        self.assertIn("cancel-in-progress: false", text)
+        self.assertNotIn("\nconcurrency:", workflow_header)
+        for job_name in ["quote", "score", "chart"]:
+            with self.subTest(job_name=job_name):
+                block = workflow_job_block(text, job_name)
+                self.assertIn("concurrency:", block)
+                self.assertIn(f"publish-stock-snapshots-{job_name}", block)
+                self.assertIn("cancel-in-progress: false", block)
 
     def test_refresh_queue_worker_keeps_score_job_independent_from_quote_failures(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -225,6 +230,15 @@ def workflow_default_int(block: str, name: str) -> int:
     if not match:
         raise AssertionError(f"{name} default not found")
     return int(match.group(1))
+
+
+def workflow_job_block(text: str, job_name: str) -> str:
+    marker = f"\n  {job_name}:"
+    if marker not in text:
+        raise AssertionError(f"{job_name} job not found")
+    rest = text.split(marker, 1)[1]
+    next_job = re.search(r"\n  [a-zA-Z0-9_-]+:", rest)
+    return rest[: next_job.start()] if next_job else rest
 
 
 if __name__ == "__main__":

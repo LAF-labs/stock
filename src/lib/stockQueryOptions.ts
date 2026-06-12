@@ -25,6 +25,7 @@ import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export const STOCK_QUERY_MAX_PENDING_POLLS = 24;
 export const STOCK_QUERY_PENDING_BACKOFF_SECONDS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 60] as const;
+export const STOCK_QUERY_BACKGROUND_POLL_INTERVAL_MS = 60_000;
 export const STOCK_SYMBOL_SEARCH_STALE_TIME_MS = 24 * 60 * 60 * 1000;
 
 export const stockQueryStaleTimesMs = {
@@ -164,9 +165,9 @@ export function stockQueryRefetchIntervalMs(
   view: StockScoreView = "detail",
 ): number | false {
   if (!stockQueryShouldPoll(result)) return false;
-  if (attempt >= STOCK_QUERY_MAX_PENDING_POLLS) return false;
   const displayPollMs = displayRefetchIntervalMs(result);
   if (displayPollMs !== undefined) return displayPollMs;
+  if (attempt >= STOCK_QUERY_MAX_PENDING_POLLS) return STOCK_QUERY_BACKGROUND_POLL_INTERVAL_MS;
   void view;
   return stockPendingRetryDelayMs(attempt);
 }
