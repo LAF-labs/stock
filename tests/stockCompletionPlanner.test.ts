@@ -24,6 +24,22 @@ test("detail identity-only display still owes price, chart, and score recovery",
   assert.equal(plan.actions[0].ticker, "KR:005930");
 });
 
+test("identity-only detail display plans quote chart and score recovery", () => {
+  const plan = planStockDisplayCompletion({
+    ticker: "US:VLD",
+    view: "detail",
+    presentParts: ["identity"],
+    requiredParts: ["identity", "price", "chart", "score"],
+  });
+
+  assert.deepEqual(plan.missingParts, ["price", "chart", "score"]);
+  assert.deepEqual(plan.recoveringParts, ["price", "chart", "score"]);
+  assert.deepEqual(plan.actions.map((action) => action.queueKind), ["quote", "chart", "score"]);
+  assert.equal(plan.actions.find((action) => action.part === "price")?.kind, "fetch_quote");
+  assert.equal(plan.actions.find((action) => action.part === "chart")?.kind, "fetch_chart");
+  assert.equal(plan.actions.find((action) => action.part === "score")?.kind, "refresh_score");
+});
+
 test("technical display recovers chart before technical analysis", () => {
   const plan = planStockDisplayCompletion({
     ticker: "US:KO",
