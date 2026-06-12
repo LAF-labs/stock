@@ -24,6 +24,7 @@ const ENV_KEYS = [
   "STOCK_PENDING_PARTIAL_PARTS_TIMEOUT_MS",
   "STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS",
   "STOCK_PENDING_PARTIAL_TECHNICAL_SCORE_TIMEOUT_MS",
+  "STOCK_YAHOO_FALLBACK",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -39,6 +40,7 @@ function restoreEnv() {
     }
   }
   globalThis.fetch = originalFetch;
+  process.env.STOCK_YAHOO_FALLBACK = "0";
   clearSymbolProfileCacheForTests();
   clearStockRefreshEnqueueMemoryForTests();
 }

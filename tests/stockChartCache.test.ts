@@ -12,6 +12,8 @@ const ENV_KEYS = [
   "SUPABASE_WRITE_TIMEOUT_MS",
   "STOCK_CHART_SUPABASE_READ_TIMEOUT_MS",
   "STOCK_CHART_SUPABASE_WRITE_TIMEOUT_MS",
+  "STOCK_YAHOO_FALLBACK",
+  "STOCK_YAHOO_TIMEOUT_MS",
 ] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
@@ -135,6 +137,55 @@ test("stock chart cache reports snapshot misses without provider calls", async (
       return true;
     }
   );
+});
+
+test("stock chart cache refreshes cold charts inline from Yahoo fallback", async () => {
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.STOCK_YAHOO_FALLBACK = "1";
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("query1.finance.yahoo.com/v8/finance/chart/FASTCHART")) {
+      return Response.json({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "USD",
+                exchangeName: "NMS",
+                regularMarketPrice: 12.5,
+                chartPreviousClose: 11.5,
+              },
+              timestamp: [1780531200, 1780617600],
+              indicators: {
+                quote: [
+                  {
+                    open: [11, 12],
+                    high: [12, 13],
+                    low: [10, 11],
+                    close: [11.5, 12.5],
+                    volume: [1000, 1100],
+                  },
+                ],
+              },
+            },
+          ],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const result = await getStockChart("US:FASTCHART");
+
+  assert.equal(result.cache.state, "miss");
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.cache.lastBarDate, "2026-06-05");
+  assert.equal((result.payload.chart_series as unknown[]).length, 2);
+  assert.equal((result.payload.fetch as Record<string, unknown>).provider, "yahoo_finance");
 });
 
 test("stock chart cache queues forced misses before regular chart misses", async () => {

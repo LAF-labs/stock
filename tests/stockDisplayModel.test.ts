@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { buildStockDisplayPayload, displayLaneTimeoutMs, readStockDisplayScoreSource } from "../src/lib/stockDisplayModel";
 import { partialStockScoreTimeoutMs } from "../src/lib/stockScorePartialFastPath";
+import { providerEmptyError } from "../src/lib/stockProviderErrors";
 
 test("display model keeps price and chart lanes fast while score uses the interactive score SLA", () => {
   assert.equal(displayLaneTimeoutMs("price"), 900);
@@ -47,6 +48,35 @@ test("display model keeps provider timeouts recoverable instead of terminal", as
   assert.equal(payload.price?.value.latest_price, 60);
   assert.deepEqual(payload.completion.unavailableParts, []);
   assert.deepEqual(payload.completion.recoveringParts, ["chart", "technical"]);
+});
+
+test("display model marks provider-confirmed empty lanes unavailable instead of recovering forever", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:DELISTED",
+    view: "detail",
+    sources: {
+      identity: async () => ({ ticker: "US:DELISTED", market: "US", symbol: "DELISTED", name: "Delisted Inc" }),
+      price: async () => {
+        throw providerEmptyError("No data found, symbol may be delisted");
+      },
+      chart: async () => {
+        throw providerEmptyError("empty daily chart");
+      },
+      score: async () => {
+        throw providerEmptyError("kis_not_found");
+      },
+    },
+  });
+
+  assert.deepEqual(payload.completion.presentParts, ["identity"]);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.deepEqual(payload.completion.unavailableParts, [
+    { part: "price", reason: "provider_confirmed_empty" },
+    { part: "chart", reason: "provider_confirmed_empty" },
+    { part: "score", reason: "provider_confirmed_empty" },
+  ]);
+  assert.equal(payload.refresh.active, false);
 });
 
 test("display model normalizes legacy app names in score payloads", async () => {

@@ -2,7 +2,9 @@ import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil } from "@/lib/m
 import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
 import { publicRefreshErrorCode } from "@/lib/errorSafety";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
+import { fetchLiveDailyChart, liveStockProviderConfigured } from "@/lib/stockLiveProvider";
 import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
+import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { STOCK_REFRESH_PRIORITIES } from "@/lib/stockRefreshPriorities";
 import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { sanitizeSnapshotPayload } from "@/lib/snapshotPayloadSanitizer";
@@ -11,7 +13,7 @@ import { normalizeTickerRef } from "@/lib/tickerRef";
 
 export type ChartPayload = Record<string, unknown>;
 export type ChartCacheState = "fresh" | "stale" | "miss";
-export type ChartCacheSource = "memory" | "supabase";
+export type ChartCacheSource = "memory" | "supabase" | "market-data";
 
 export type StockChartResult = {
   payload: ChartPayload;
@@ -28,7 +30,7 @@ export type StockChartResult = {
   };
 };
 
-type StoredChartSnapshot = {
+export type StoredChartSnapshot = {
   ticker: string;
   payload: ChartPayload;
   fetchedAt: string;
@@ -48,10 +50,12 @@ type SupabaseChartRow = {
 
 declare global {
   var __stockChartMemoryCache: Map<string, StoredChartSnapshot> | undefined;
+  var __stockChartInflight: Map<string, Promise<StoredChartSnapshot>> | undefined;
 }
 
 const SUPABASE_TABLE = "stock_chart_snapshots";
 const memoryCache = (globalThis.__stockChartMemoryCache ??= new Map<string, StoredChartSnapshot>());
+const inflightRefreshes = (globalThis.__stockChartInflight ??= new Map<string, Promise<StoredChartSnapshot>>());
 
 function isFresh(snapshot: StoredChartSnapshot, nowMs: number): boolean {
   return Date.parse(snapshot.expiresAt) > nowMs;
@@ -128,6 +132,17 @@ function scheduleQueuedRefresh(ticker: string, priority: number, reason: StockDa
   void enqueueStockRefreshJob({ kind: "chart", ticker, priority, reason }).catch(() => undefined);
 }
 
+function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredChartSnapshot) {
+  void refreshChartSnapshot(ticker, {
+    fallbackSnapshot,
+    unavailableReason: "stale_refresh",
+  }).catch(() => undefined);
+}
+
+function inlineChartRefreshAvailable(): boolean {
+  return liveStockProviderConfigured();
+}
+
 export async function getStockChart(
   tickerRef: string,
   options: { forceRefresh?: boolean; enqueueOnMiss?: boolean; enqueueStaleRefresh?: boolean } = {}
@@ -167,9 +182,32 @@ export async function getStockChart(
   if (!options.forceRefresh && staleCandidate) {
     rememberMemorySnapshot(staleCandidate, nowMs);
     if (options.enqueueStaleRefresh !== false) {
-      scheduleQueuedRefresh(ticker, STOCK_REFRESH_PRIORITIES.STALE_CHART_REFRESH, "stale_refresh");
+      if (inlineChartRefreshAvailable()) {
+        scheduleInlineRefresh(ticker, staleCandidate);
+      } else {
+        scheduleQueuedRefresh(ticker, STOCK_REFRESH_PRIORITIES.STALE_CHART_REFRESH, "stale_refresh");
+      }
     }
     return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
+  }
+
+  if (inlineChartRefreshAvailable()) {
+    try {
+      const refreshed = await refreshChartSnapshot(ticker, {
+        fallbackSnapshot: freshCandidate || staleCandidate,
+        unavailableReason: options.forceRefresh ? "refresh_background_only" : "snapshot_miss",
+      });
+      if (!refreshed.refreshed) {
+        const state = freshCandidate && refreshed.snapshot === freshCandidate ? "fresh" : "stale";
+        const source = freshCandidate && refreshed.snapshot === freshCandidate ? freshSource : staleSource;
+        return decorate(refreshed.snapshot, state, source, { refreshStarted: true });
+      }
+      return decorate(refreshed.snapshot, "miss", "market-data");
+    } catch (error) {
+      if (freshCandidate) return decorate(freshCandidate, "fresh", freshSource, { refreshError: publicRefreshErrorCode(error) });
+      if (staleCandidate) return decorate(staleCandidate, "stale", staleSource, { refreshError: publicRefreshErrorCode(error) });
+      throw error;
+    }
   }
 
   if (freshCandidate) return decorate(freshCandidate, "fresh", freshSource, { refreshError: publicRefreshErrorCode(new Error("refresh_background_only")) });
@@ -187,6 +225,58 @@ export async function getStockChart(
     ticker,
     reason: options.forceRefresh ? "refresh_background_only" : "snapshot_miss",
   });
+}
+
+export async function refreshChartSnapshot(
+  ticker: string,
+  options: { fallbackSnapshot?: StoredChartSnapshot; unavailableReason?: StockDataUnavailableReason } = {}
+): Promise<{ snapshot: StoredChartSnapshot; refreshed: boolean; lease?: StockRefreshLeaseResult }> {
+  const target = normalizeTickerRef(ticker);
+  const existing = inflightRefreshes.get(target);
+  if (existing) return { snapshot: await existing, refreshed: true };
+
+  const promise = (async () => {
+    const lease = await acquireStockRefreshLease({
+      kind: "chart",
+      ticker: target,
+      lockSeconds: numericEnv("STOCK_CHART_REFRESH_LEASE_SECONDS", 45),
+    });
+
+    if (!lease.acquired) {
+      if (options.fallbackSnapshot) return { snapshot: options.fallbackSnapshot, refreshed: false, lease };
+      throw new StockDataUnavailableError({
+        kind: "chart",
+        ticker: target,
+        reason: options.unavailableReason || "snapshot_miss",
+      });
+    }
+
+    const daily = await fetchLiveDailyChart(target);
+    const fetchedAtMs = Date.now();
+    const fetchedAt = new Date(fetchedAtMs).toISOString();
+    const { expiresAt, staleExpiresAt } = await chartSnapshotExpiresAt(target, fetchedAtMs);
+    const snapshot: StoredChartSnapshot = {
+      ticker: target,
+      payload: chartPayloadFromDaily(target, daily),
+      fetchedAt,
+      expiresAt,
+      staleExpiresAt,
+      lastBarDate: daily.latestDate,
+    };
+
+    rememberMemorySnapshot(snapshot, fetchedAtMs);
+    await writeSupabaseChartSnapshot(snapshot);
+    return { snapshot, refreshed: true, lease };
+  })();
+
+  const snapshotPromise = promise.then((result) => result.snapshot);
+  void snapshotPromise.catch(() => undefined);
+  inflightRefreshes.set(target, snapshotPromise);
+  try {
+    return await promise;
+  } finally {
+    inflightRefreshes.delete(target);
+  }
 }
 
 export async function writeSupabaseChartSnapshot(snapshot: StoredChartSnapshot): Promise<void> {
@@ -241,6 +331,28 @@ export function lastBarDateFromChartPayload(payload: ChartPayload): string | und
     }
   }
   return undefined;
+}
+
+function chartPayloadFromDaily(ticker: string, daily: Awaited<ReturnType<typeof fetchLiveDailyChart>>): ChartPayload {
+  const target = normalizeTickerRef(ticker);
+  return {
+    ok: true,
+    type: "chart",
+    requested_ticker: target,
+    market: daily.market,
+    symbol: daily.symbol,
+    name: daily.name,
+    exchange: daily.exchange,
+    ...(daily.exchangeCode ? { exchange_code: daily.exchangeCode } : {}),
+    currency: daily.currency,
+    chart_series: daily.chartSeries,
+    latest_bar_date: daily.latestDate,
+    price_metrics: daily.priceMetrics,
+    fetch: {
+      ...daily.fetch,
+      provider_mode: "chart_snapshot_refresh",
+    },
+  };
 }
 
 export function chartResponseCacheHeaders(result: StockChartResult): HeadersInit {

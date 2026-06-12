@@ -294,10 +294,38 @@ def job_retry_after_seconds(job: dict[str, Any]) -> int:
 
 def permanent_refresh_failure(error: str) -> bool:
     normalized = error.strip().lower()
+    if not normalized:
+        return False
+    transient_markers = (
+        "fetch failed",
+        "rate limit",
+        "rate_limited",
+        "timeout",
+        "timed out",
+        "token_failed",
+        "expired token",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    )
+    if any(marker in normalized for marker in transient_markers):
+        return False
     permanent_markers = (
         "invalid_ticker",
         "unsupported refresh job kind",
         "unsupported score view",
+        "kis_not_found",
+        "no data found",
+        "symbol may be delisted",
+        "possibly delisted",
+        "empty price",
+        "empty daily chart",
+        "daily chart was not found",
+        "chart_series_missing",
+        "no price data found",
+        "not found",
+        "http 404",
     )
     return any(marker in normalized for marker in permanent_markers)
 

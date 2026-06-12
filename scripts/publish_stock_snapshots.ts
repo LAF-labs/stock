@@ -3,9 +3,10 @@ import { fileURLToPath } from "node:url";
 
 import { getStockQuote } from "@/lib/stockQuoteCache";
 import { getStockScore, type ScoreView, type StockPayload } from "@/lib/stockSnapshotCache";
-import { chartSnapshotExpiresAt, getStockChart, lastBarDateFromChartPayload, writeSupabaseChartSnapshotWithConfig } from "@/lib/stockChartCache";
+import { chartSnapshotExpiresAt, getStockChart, lastBarDateFromChartPayload, refreshChartSnapshot, writeSupabaseChartSnapshotWithConfig } from "@/lib/stockChartCache";
 import { QUOTE_CACHE_FRESH_SECONDS, QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { runScoreCollector } from "@/lib/pythonStockCollector";
+import { providerConfirmedEmptyMessage } from "@/lib/stockProviderErrors";
 import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
@@ -121,7 +122,10 @@ export function retryAfterSeconds(job: RefreshJob): number {
 
 export function permanentRefreshFailure(error: string): boolean {
   const normalized = error.trim().toLowerCase();
-  return ["invalid_ticker", "unsupported refresh job kind", "unsupported score view"].some((marker) => normalized.includes(marker));
+  return (
+    ["invalid_ticker", "unsupported refresh job kind", "unsupported score view"].some((marker) => normalized.includes(marker)) ||
+    providerConfirmedEmptyMessage(normalized)
+  );
 }
 
 export async function claimRefreshJobs(config: SupabaseConfig, options: Options): Promise<RefreshJob[]> {
@@ -352,12 +356,8 @@ async function publishChartSnapshot(ticker: string, config: SupabaseConfig) {
   const existing = await getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false }).catch(() => undefined);
   if (existing?.cache.state === "fresh") return;
 
-  const payload = await runScoreCollector(ticker, "technical");
-  const chartPayload = chartPayloadFromTechnicalPayload(ticker, payload);
-  const fetchedAtMs = Date.now();
-  const fetchedAt = new Date(fetchedAtMs).toISOString();
-  const { expiresAt, staleExpiresAt } = await chartSnapshotExpiresAt(ticker, fetchedAtMs);
-  await upsertChartSnapshot(config, ticker, chartPayload, fetchedAt, expiresAt, staleExpiresAt);
+  const refreshed = await refreshChartSnapshot(ticker);
+  await upsertChartSnapshot(config, ticker, refreshed.snapshot.payload, refreshed.snapshot.fetchedAt, refreshed.snapshot.expiresAt, refreshed.snapshot.staleExpiresAt);
 }
 
 export async function maybeUpsertChartSnapshotFromTechnicalPayload(

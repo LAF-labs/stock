@@ -142,3 +142,15 @@ test("refresh target cleanup migration turns product-like targets into quote-onl
   assert.match(migration, /delete from public\.stock_refresh_jobs/i);
   assert.match(migration, /status in \('queued', 'running'\)/i);
 });
+
+test("provider-empty cleanup migration dead-letters terminal no-data refresh jobs", () => {
+  const migration = readFileSync("supabase/migrations/20260612142000_mark_provider_empty_refresh_jobs_dead.sql", "utf8");
+
+  assert.match(migration, /set status = 'dead'/i);
+  assert.match(migration, /provider_confirmed_empty/i);
+  assert.match(migration, /empty price/i);
+  assert.match(migration, /kis_not_found/i);
+  assert.match(migration, /chart_series_missing/i);
+  assert.match(migration, /not \(/i);
+  assert.match(migration, /fetch failed/i);
+});

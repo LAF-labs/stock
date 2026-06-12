@@ -1,4 +1,4 @@
-import { fetchKisDailyChart } from "@/lib/kisQuoteClient";
+import { fetchLiveDailyChart, liveStockProviderConfigured } from "@/lib/stockLiveProvider";
 import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
@@ -7,11 +7,11 @@ import type { StockPayload } from "@/lib/stockScoreContract";
 
 export function technicalRequestFastPathEnabled(env: Record<string, string | undefined> = process.env): boolean {
   const raw = env.STOCK_TECHNICAL_REQUEST_FAST_PATH?.trim().toLowerCase();
-  return raw !== "0" && raw !== "false" && raw !== "off";
+  return raw !== "0" && raw !== "false" && raw !== "off" && liveStockProviderConfigured(env);
 }
 
 export async function buildTechnicalScoreFastPathPayload(ticker: string): Promise<StockPayload> {
-  const daily = await fetchKisDailyChart(ticker);
+  const daily = await fetchLiveDailyChart(ticker);
   const technicalAnalysis = buildTechnicalAnalysis(daily.chartSeries);
   technicalAnalysis.ticker = `${daily.market}:${daily.symbol}`;
   technicalAnalysis.market = daily.market;

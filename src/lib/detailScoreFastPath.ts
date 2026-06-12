@@ -1,7 +1,8 @@
 import { formatCurrencyAmount, formatPercent, formatValue } from "@/lib/format";
-import { fetchKisDailyChart, fetchKisQuote, type KisDailyChartBar } from "@/lib/kisQuoteClient";
+import type { KisDailyChartBar } from "@/lib/kisQuoteClient";
 import { SCORE_MODEL_VERSION } from "@/lib/scoreModel";
 import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
+import { fetchLiveDailyChart, fetchLiveQuote, liveStockProviderConfigured } from "@/lib/stockLiveProvider";
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { findExactSymbol } from "@/lib/symbolSearch";
 import { envValue } from "@/lib/supabaseRest";
@@ -44,23 +45,23 @@ const NEUTRAL_SCORE = 50;
 export function detailRequestFastPathEnabled(env: Record<string, string | undefined> = process.env): boolean {
   const raw = env.STOCK_DETAIL_REQUEST_FAST_PATH?.trim().toLowerCase();
   if (raw === "0" || raw === "false" || raw === "off") return false;
-  return Boolean((env.STOCK_API_APP_KEY || env.KIS_APP_KEY) && (env.STOCK_API_APP_SECRET || env.KIS_APP_SECRET));
+  return liveStockProviderConfigured(env);
 }
 
 export async function buildDetailScoreFastPathPayload(ticker: string, view: ScoreView = "detail"): Promise<StockPayload> {
   if (view === "compare") {
     try {
-      const quote = await fetchKisQuote(ticker);
+      const quote = await fetchLiveQuote(ticker);
       return buildQuoteOnlyDetailScorePayload(quote, view);
     } catch {
       return buildCompareIdentityScorePayload(ticker, view);
     }
   }
 
-  const dailyPromise = fetchKisDailyChart(ticker);
+  const dailyPromise = fetchLiveDailyChart(ticker);
   const daily = await withTimeout(dailyPromise, detailDailyFastPathTimeoutMs()).catch(() => undefined);
   if (!daily) {
-    const quote = await fetchKisQuote(ticker);
+    const quote = await fetchLiveQuote(ticker);
     return buildQuoteOnlyDetailScorePayload(quote, view);
   }
 

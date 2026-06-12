@@ -2,6 +2,7 @@ import { planStockDisplayCompletion } from "@/lib/stockCompletionPlanner";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import { partialStockScoreTimeoutMs } from "@/lib/stockScorePartialFastPath";
 import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
+import { isProviderConfirmedEmptyError } from "@/lib/stockProviderErrors";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import { numericEnv } from "@/lib/supabaseRest";
 import { normalizeTickerRef, parseTickerRef } from "@/lib/tickerRef";
@@ -11,6 +12,7 @@ import type {
   StockChartView,
   StockDisplayPayload,
   StockDisplayPartName,
+  StockDisplayUnavailablePart,
   StockDisplayView,
   StockFundamentalsView,
   StockIdentityView,
@@ -93,11 +95,14 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   const news = newsFromScore(score);
   const presentParts = presentDisplayParts({ price, chart, score, technical, fundamentals, industryBenchmark, news }, input.view);
   const requiredParts = displayRequiredParts(input.view, score);
+  const unavailableParts = unavailablePartsFromLaneResults({ priceResult, chartResult, scoreResult }, input.view)
+    .filter((item) => !presentParts.includes(item.part));
   const completion = planStockDisplayCompletion({
     ticker,
     view: input.view,
     requiredParts,
     presentParts,
+    unavailableParts,
   });
 
   const refreshActive = completion.recoveringParts.length > 0;
@@ -321,6 +326,27 @@ function fulfilledValue<T>(result: PromiseSettledResult<T>): T | undefined {
   return result.status === "fulfilled" ? result.value : undefined;
 }
 
+function unavailablePartsFromLaneResults(
+  results: {
+    priceResult: PromiseSettledResult<unknown>;
+    chartResult: PromiseSettledResult<unknown>;
+    scoreResult: PromiseSettledResult<unknown>;
+  },
+  view: StockDisplayView,
+): StockDisplayUnavailablePart[] {
+  const parts: StockDisplayUnavailablePart[] = [];
+  if (results.priceResult.status === "rejected" && isProviderConfirmedEmptyError(results.priceResult.reason)) {
+    parts.push({ part: "price", reason: "provider_confirmed_empty" });
+  }
+  if (results.chartResult.status === "rejected" && isProviderConfirmedEmptyError(results.chartResult.reason)) {
+    parts.push({ part: "chart", reason: "provider_confirmed_empty" });
+  }
+  if (results.scoreResult.status === "rejected" && isProviderConfirmedEmptyError(results.scoreResult.reason)) {
+    parts.push({ part: view === "technical" ? "technical" : "score", reason: "provider_confirmed_empty" });
+  }
+  return parts;
+}
+
 async function loadIdentity(ticker: string, sources: StockDisplaySources): Promise<StockIdentityView> {
   const fromSource = await sources.identity?.(ticker).catch(() => undefined);
   if (fromSource) return fromSource;
@@ -394,7 +420,8 @@ async function requestFastPathDisplayScore(
     }
     if (!(await deps.detailFastPathEnabled())) return undefined;
     return await deps.buildDetailFastPathPayload(ticker, view);
-  } catch {
+  } catch (error) {
+    if (isProviderConfirmedEmptyError(error)) throw error;
     return undefined;
   }
 }

@@ -283,13 +283,14 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         )
 
     def test_permanent_refresh_failure_classifies_invalid_symbols(self):
-        self.assertEqual(permanent_refresh_failure("kis_not_found"), False)
-        self.assertEqual(permanent_refresh_failure("KIS HTTP 404"), False)
+        self.assertEqual(permanent_refresh_failure("kis_not_found"), True)
+        self.assertEqual(permanent_refresh_failure("KIS HTTP 404"), True)
+        self.assertEqual(permanent_refresh_failure("No data found, symbol may be delisted"), True)
         self.assertEqual(permanent_refresh_failure("invalid_ticker"), True)
         self.assertEqual(permanent_refresh_failure("unsupported score view: bogus"), True)
         self.assertEqual(permanent_refresh_failure("temporary rate limited"), False)
 
-    def test_publish_queue_job_retries_provider_misses_without_permanent_failure(self):
+    def test_publish_queue_job_marks_provider_misses_permanent(self):
         calls = []
 
         def fake_fetch_score(*_args, **_kwargs):
@@ -331,7 +332,7 @@ class PublishStockSnapshotsTests(unittest.TestCase):
         self.assertEqual(calls[0]["job_id"], "job-aplt")
         self.assertEqual(calls[0]["error"], "kis_not_found")
         self.assertEqual(calls[0]["retry_after_seconds"], 120)
-        self.assertEqual(calls[0]["permanent"], False)
+        self.assertEqual(calls[0]["permanent"], True)
 
     def test_fail_refresh_job_marks_permanent_failures(self):
         calls = []

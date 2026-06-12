@@ -32,11 +32,31 @@ test("TypeScript operations report summarizes queue backlog and stale locks", ()
   assert.equal(summary.queued_jobs, 14);
   assert.equal(summary.running_jobs, 3);
   assert.equal(summary.dead_jobs, 1);
+  assert.equal(summary.total_dead_jobs, 1);
+  assert.equal(summary.terminal_empty_dead_jobs, 0);
   assert.equal(summary.stale_running_jobs, 2);
   assert.equal(summary.oldest_due_age_minutes, 30.0);
   assert.deepEqual(summary.oldest_due_age_minutes_by_kind, { score: 30.0, quote: 20.0, chart: 10.0 });
   assert.equal(summary.by_status.queued, 14);
   assert.equal(summary.by_kind.score, 13);
+});
+
+test("TypeScript operations report excludes terminal provider-empty dead jobs from actionable dead count", () => {
+  const summary = summarizeQueueRows(
+    [
+      { kind: "quote", status: "dead", jobs: 3 },
+      { kind: "score", status: "queued", jobs: 1, oldest_run_after: "2026-06-05T11:00:00+00:00" },
+    ],
+    new Date("2026-06-05T11:30:00+00:00"),
+    [
+      { kind: "quote", status: "dead", last_error: "provider_confirmed_empty: NAS: empty price" },
+      { kind: "score", status: "dead", last_error: "provider_confirmed_empty: kis_not_found" },
+    ]
+  );
+
+  assert.equal(summary.total_dead_jobs, 3);
+  assert.equal(summary.terminal_empty_dead_jobs, 2);
+  assert.equal(summary.dead_jobs, 1);
 });
 
 test("TypeScript operations report ignores completed jobs when calculating due queue age", () => {
@@ -385,6 +405,9 @@ test("TypeScript operations report fetches Supabase report through REST only", a
       return jsonResponse([
         { market: "US", symbol: "NVDA", tier: "cold_stock", instrument_type: "STOCK", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: 604800 },
       ]);
+    }
+    if (url.includes("/rest/v1/stock_refresh_jobs?")) {
+      return jsonResponse([{ kind: "quote", status: "dead", last_error: "provider_confirmed_empty: empty price" }]);
     }
     if (url.includes("/rest/v1/market_calendar?")) {
       return jsonResponse([{ market: "US", trade_date: "2026-06-08", is_open: true }]);

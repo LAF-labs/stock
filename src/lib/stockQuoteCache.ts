@@ -1,10 +1,10 @@
 import { cacheExpiresAtForMarket, marketFromTicker, secondsUntil, type MarketSession } from "@/lib/marketCalendar";
 import { publicRefreshErrorCode, safeErrorMessage } from "@/lib/errorSafety";
 import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
-import { fetchKisQuote, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { formatCurrencyAmount } from "@/lib/format";
 import { getMarketDataServiceQuote, marketDataServiceConfig } from "@/lib/marketDataServiceClient";
 import { QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
+import { fetchLiveQuote, liveStockProviderConfigured } from "@/lib/stockLiveProvider";
 import { StockDataUnavailableError, type StockDataUnavailableReason } from "@/lib/stockDataRuntime";
 import { acquireStockRefreshLease, type StockRefreshLeaseResult } from "@/lib/stockRefreshLease";
 import { enqueueStockRefreshJob } from "@/lib/stockRefreshQueue";
@@ -132,15 +132,7 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
 }
 
 async function collectLiveQuotePayload(ticker: string): Promise<StockPayload> {
-  if (kisQuoteConfigured()) {
-    return fetchKisQuote(ticker);
-  }
-
-  throw new StockDataUnavailableError({
-    kind: "quote",
-    ticker,
-    reason: "refresh_background_only",
-  });
+  return fetchLiveQuote(ticker);
 }
 
 async function refreshQuoteSnapshot(
@@ -168,7 +160,7 @@ async function refreshQuoteSnapshot(
       });
     }
 
-    if (!kisQuoteConfigured()) {
+    if (!liveStockProviderConfigured()) {
       throw new StockDataUnavailableError({
         kind: "quote",
         ticker,
@@ -279,7 +271,7 @@ function scheduleInlineRefresh(ticker: string, fallbackSnapshot: StoredQuoteSnap
 }
 
 function inlineQuoteRefreshAvailable(): boolean {
-  return kisQuoteConfigured() || !!marketDataServiceConfig();
+  return liveStockProviderConfigured() || !!marketDataServiceConfig();
 }
 
 export async function getStockQuote(tickerRef: string, options: { forceRefresh?: boolean } = {}): Promise<StockQuoteResult> {

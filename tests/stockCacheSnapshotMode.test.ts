@@ -31,6 +31,7 @@ const ENV_KEYS = [
   "STOCK_SCORE_SUPABASE_WRITE_TIMEOUT_MS",
   "STOCK_QUOTE_SUPABASE_READ_TIMEOUT_MS",
   "STOCK_QUOTE_SUPABASE_WRITE_TIMEOUT_MS",
+  "STOCK_YAHOO_FALLBACK",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -57,6 +58,7 @@ function useSnapshotOnlyRuntime() {
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.MARKET_DATA_SERVICE_URL;
   delete process.env.MARKET_DATA_INTERNAL_TOKEN;
+  process.env.STOCK_YAHOO_FALLBACK = "0";
 }
 
 test.afterEach(restoreEnv);
@@ -521,6 +523,53 @@ test("quote cache reports background-only refresh in Vercel snapshot mode", asyn
       return true;
     }
   );
+});
+
+test("quote cache refreshes cold quotes from Yahoo fallback in Vercel snapshot mode", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_YAHOO_FALLBACK = "1";
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("query1.finance.yahoo.com/v8/finance/chart/YHFAST")) {
+      return Response.json({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "USD",
+                exchangeName: "NMS",
+                regularMarketPrice: 42.5,
+                chartPreviousClose: 40,
+              },
+              timestamp: [1780531200, 1780617600],
+              indicators: {
+                quote: [
+                  {
+                    open: [39, 41],
+                    high: [41, 43],
+                    low: [38, 40],
+                    close: [40, 42.5],
+                    volume: [1000, 1500],
+                  },
+                ],
+              },
+            },
+          ],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockQuote("US:YHFAST", { forceRefresh: true });
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.latest_price, 42.5);
+  assert.equal(result.payload.previous_close, 40);
+  assert.equal(result.cache.source, "market-data");
+  assert.equal((result.payload.fetch as Record<string, unknown>).provider, "yahoo_finance");
 });
 
 test("quote force refresh serves existing snapshot when a provider refresh lease is already active", async () => {

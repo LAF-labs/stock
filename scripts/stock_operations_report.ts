@@ -1,4 +1,5 @@
 import { fetchWithTimeout, supabaseHeaders } from "@/lib/supabaseRest";
+import { providerConfirmedEmptyMessage } from "@/lib/stockProviderErrors";
 import { loadLocalEnvFiles } from "./localEnv";
 
 export const DEFAULT_SCORE_MODEL_VERSION = "score-v5-dual-quality-opportunity-2026-06-05";
@@ -82,7 +83,7 @@ export type MarketDataServiceConfig = {
   required?: boolean;
 };
 
-export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
+export function summarizeQueueRows(rows: JsonRecord[], now = new Date(), deadRows: JsonRecord[] = []) {
   const byStatus: Record<string, number> = {};
   const byKind: Record<string, number> = {};
   const oldestRunAfterByKind: Record<string, string> = {};
@@ -118,11 +119,17 @@ export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
       .filter((entry): entry is [string, number] => typeof entry[1] === "number")
   );
 
+  const totalDeadJobs = byStatus.dead || 0;
+  const terminalEmptyDeadJobs = Math.min(totalDeadJobs, deadRows.filter(isTerminalEmptyDeadJob).length);
+  const unexpectedDeadJobs = Math.max(0, totalDeadJobs - terminalEmptyDeadJobs);
+
   return {
     total_jobs: total,
     queued_jobs: byStatus.queued || 0,
     running_jobs: byStatus.running || 0,
-    dead_jobs: byStatus.dead || 0,
+    dead_jobs: unexpectedDeadJobs,
+    total_dead_jobs: totalDeadJobs,
+    terminal_empty_dead_jobs: terminalEmptyDeadJobs,
     succeeded_jobs: byStatus.succeeded || 0,
     failed_jobs: byStatus.failed || 0,
     stale_running_jobs: staleRunning,
@@ -132,6 +139,13 @@ export function summarizeQueueRows(rows: JsonRecord[], now = new Date()) {
     by_status: byStatus,
     by_kind: byKind,
   };
+}
+
+function isTerminalEmptyDeadJob(row: JsonRecord): boolean {
+  const status = stringValue(row.status)?.toLowerCase();
+  if (status && status !== "dead") return false;
+  const error = stringValue(row.last_error);
+  return Boolean(error && providerConfirmedEmptyMessage(error));
 }
 
 export function summarizeScoreSnapshots(
@@ -388,19 +402,20 @@ export async function fetchSupabaseReport(
 ) {
   const rawOperations = await postSupabaseRpc(config, "stock_operations_report", { p_score_stale_hours: staleAfterHours });
   const refreshQueueRows = isRecord(rawOperations) && Array.isArray(rawOperations.refresh_queue) ? rawOperations.refresh_queue.filter(isRecord) : [];
-  const [scoreRows, quoteRows, benchmarkRows, targetRows, calendarRows] = await Promise.all([
+  const [scoreRows, quoteRows, benchmarkRows, targetRows, calendarRows, deadJobRows] = await Promise.all([
     fetchScoreSnapshotRows(config, sampleLimit),
     fetchQuoteSnapshotRows(config, sampleLimit),
     fetchIndustryBenchmarkRows(config, sampleLimit),
     fetchRefreshTargetRows(config),
     fetchMarketCalendarRows(config),
+    fetchDeadRefreshJobRows(config),
   ]);
   const generatedAt = new Date();
   generatedAt.setMilliseconds(0);
   return {
     ok: true,
     generated_at: generatedAt.toISOString().replace(".000Z", "+00:00"),
-    refresh_queue: summarizeQueueRows(refreshQueueRows, generatedAt),
+    refresh_queue: summarizeQueueRows(refreshQueueRows, generatedAt, deadJobRows),
     score_snapshots: isRecord(rawOperations) && isRecord(rawOperations.score_snapshots) ? rawOperations.score_snapshots : {},
     score_calibration: summarizeScoreSnapshots(scoreRows, expectedModelVersion, generatedAt, staleAfterHours),
     quote_freshness: summarizeQuoteSnapshots(quoteRows, generatedAt),
@@ -586,6 +601,15 @@ export async function fetchRefreshTargetRows(config: SupabaseReportConfig) {
       "chart_interval_seconds",
     ].join(","),
     order: "market.asc,symbol.asc",
+  });
+}
+
+export async function fetchDeadRefreshJobRows(config: SupabaseReportConfig) {
+  return fetchRows(config, "stock_refresh_jobs", {
+    select: "kind,market,symbol,view_mode,status,last_error,updated_at",
+    status: "eq.dead",
+    order: "updated_at.desc",
+    limit: "1000",
   });
 }
 
