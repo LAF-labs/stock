@@ -393,6 +393,14 @@ def drain_refresh_queue(config: SupabasePublishConfig, args: argparse.Namespace)
     return rows
 
 
+def publish_payload_ok(rows: list[dict[str, Any]], queue_rows: list[dict[str, Any]], allow_queue_row_errors: bool = False) -> bool:
+    if any(row["errors"] for row in rows):
+        return False
+    if allow_queue_row_errors:
+        return True
+    return not any(row["errors"] for row in queue_rows)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Publish legacy stock score snapshots into Supabase.")
     parser.add_argument("--ticker", action="append", help="Ticker to publish. Can be repeated or comma-separated.")
@@ -409,6 +417,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--queue-kind", choices=("score",), default="score", help="Claim score jobs only. Quote jobs are handled by the TypeScript worker.")
     parser.add_argument("--queue-limit", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LIMIT", 50), help="Maximum queued jobs to claim in this run.")
     parser.add_argument("--queue-lock-seconds", type=int, default=numeric_env("STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS", 900), help="Queue job lock duration.")
+    parser.add_argument("--allow-queue-row-errors", action="store_true", help="Record per-job queue failures without failing the whole worker process.")
     parser.add_argument("--worker-id", default=os.environ.get("STOCK_SNAPSHOT_WORKER_ID"), help="Stable worker id for queued job claims.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser
@@ -445,12 +454,13 @@ def main() -> int:
             rows.append({"ticker": ticker, "scores": {}, "errors": [{"error": str(exc)}]})
 
     payload = {
-        "ok": not any(row["errors"] for row in rows) and not any(row["errors"] for row in queue_rows),
+        "ok": publish_payload_ok(rows, queue_rows, args.allow_queue_row_errors),
         "dry_run": args.dry_run,
         "tickers": len(tickers),
         "rows": rows,
         "queue_jobs": len(queue_rows),
         "queue_rows": queue_rows,
+        "queue_row_errors_allowed": args.allow_queue_row_errors,
     }
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

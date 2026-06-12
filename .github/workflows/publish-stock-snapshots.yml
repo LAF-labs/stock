@@ -228,6 +228,7 @@ jobs:
             --queue-kind score
             --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT"
             --views "$STOCK_SCORE_WARM_VIEWS"
+            --allow-queue-row-errors
             --worker-id "github-score-${{ github.run_id }}-${{ github.run_attempt }}"
             --json
           )

@@ -257,6 +257,23 @@ class PublishStockSnapshotsTests(unittest.TestCase):
 
         self.assertEqual(args.score_ttl_seconds, 1800)
 
+    def test_queue_row_errors_can_be_recorded_without_failing_worker_run(self):
+        direct_rows = [{"ticker": "US:NVDA", "errors": []}]
+        queue_rows = [
+            {"ticker": "US:NVDA", "status": "succeeded", "errors": []},
+            {"ticker": "US:APLT", "status": "failed", "errors": [{"error": "kis_not_found"}]},
+        ]
+
+        self.assertFalse(publisher.publish_payload_ok(direct_rows, queue_rows, allow_queue_row_errors=False))
+        self.assertTrue(publisher.publish_payload_ok(direct_rows, queue_rows, allow_queue_row_errors=True))
+        self.assertFalse(
+            publisher.publish_payload_ok(
+                [{"ticker": "US:NVDA", "errors": [{"error": "warm ticker failed"}]}],
+                queue_rows,
+                allow_queue_row_errors=True,
+            )
+        )
+
     def test_permanent_refresh_failure_classifies_invalid_symbols(self):
         self.assertEqual(permanent_refresh_failure("kis_not_found"), False)
         self.assertEqual(permanent_refresh_failure("KIS HTTP 404"), False)

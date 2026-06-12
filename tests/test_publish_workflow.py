@@ -96,6 +96,13 @@ class PublishWorkflowTests(unittest.TestCase):
             score_block.index("Check due legacy score refresh jobs"),
         )
 
+    def test_score_queue_worker_records_row_failures_without_failing_workflow(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        score_block = text.split("\n  score:", 1)[1]
+        drain_block = score_block.split("python scripts/publish_stock_snapshots.py", 1)[0].split("ARGS=(", 1)[1]
+
+        self.assertIn("--allow-queue-row-errors", drain_block)
+
     def test_industry_benchmark_worker_runs_once_after_us_aftermarket(self):
         text = BENCHMARK_WORKFLOW_PATH.read_text(encoding="utf-8")
 
