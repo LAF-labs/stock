@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { ComparePendingOverviewSkeleton } from "@/components/StockLoadingSkeletons";
@@ -16,6 +16,7 @@ import {
   componentScore,
   displayTickerRef,
   normalizeTicker,
+  opportunityComponentScore,
   parseTickers,
   percentText,
   removeCompareTicker,
@@ -75,6 +76,45 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const firstItem = useMemo(() => (firstTicker ? items.find((item) => item.ticker === firstTickerLabel) : undefined), [firstTicker, items, firstTickerLabel]);
   const hasCompareChart = useMemo(() => compareDateAlignedSeries(items).series.some((entry) => entry.points.length >= 2), [items]);
   const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
+  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
+  const lastScrollYRef = useRef(0);
+  const isSearchCollapsedRef = useRef(false);
+
+  function setCompareSearchCollapsed(nextCollapsed: boolean) {
+    if (isSearchCollapsedRef.current === nextCollapsed) return;
+    isSearchCollapsedRef.current = nextCollapsed;
+    setIsSearchCollapsed(nextCollapsed);
+  }
+
+  useEffect(() => {
+    let ticking = false;
+    lastScrollYRef.current = window.scrollY;
+
+    function updateSearchChrome() {
+      const scrollY = window.scrollY;
+      const delta = scrollY - lastScrollYRef.current;
+
+      if (scrollY <= 16) {
+        setCompareSearchCollapsed(false);
+      } else if (delta > 8 && scrollY > 92) {
+        setCompareSearchCollapsed(true);
+      } else if (delta < -24) {
+        setCompareSearchCollapsed(false);
+      }
+
+      lastScrollYRef.current = scrollY;
+      ticking = false;
+    }
+
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(updateSearchChrome);
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
@@ -115,32 +155,32 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           </div>
           <div className="compare-count">{selectedCount}/{MAX_COMPARE}</div>
         </section>
-
-        <section className="compare-picks" aria-label="선택된 종목">
-          {tickers.length ? tickers.map((ticker) => {
-            const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
-            const partial = partialStates.find((state) => state.ticker === ticker);
-            const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
-            const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
-            const removeDisabled = tickers.length <= 1;
-            return (
-              <span key={ticker}>
-                {label}
-                <button
-                  type="button"
-                  onClick={() => removeTicker(ticker)}
-                  aria-label={`${label} 삭제`}
-                  disabled={removeDisabled}
-                >
-                  ×
-                </button>
-              </span>
-            );
-          }) : <span>비교할 종목을 추가해주세요</span>}
-        </section>
       </section>
 
-      <section className="compare-toolbar">
+      <section className="compare-picks" aria-label="선택된 종목">
+        {tickers.length ? tickers.map((ticker) => {
+          const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
+          const partial = partialStates.find((state) => state.ticker === ticker);
+          const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
+          const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
+          const removeDisabled = tickers.length <= 1;
+          return (
+            <span key={ticker}>
+              {label}
+              <button
+                type="button"
+                onClick={() => removeTicker(ticker)}
+                aria-label={`${label} 삭제`}
+                disabled={removeDisabled}
+              >
+                ×
+              </button>
+            </span>
+          );
+        }) : <span>비교할 종목을 추가해주세요</span>}
+      </section>
+
+      <section className={["compare-toolbar", isSearchCollapsed ? "search-collapsed" : ""].filter(Boolean).join(" ")}>
         <SymbolAutocomplete
           id="compare-ticker"
           value={input}
@@ -150,7 +190,10 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           buttonLabel={compareLimitReached ? "완료" : "추가"}
           label="비교할 국내·미국 주식 검색"
           disabled={compareLimitReached}
-          className="compare-add-form"
+          className="stock-search-form compare-add-form"
+          variant="floating"
+          isCollapsed={isSearchCollapsed}
+          onExpandRequest={() => setCompareSearchCollapsed(false)}
         />
       </section>
 
@@ -173,6 +216,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
           {items.length >= 2 && hasCompareChart ? <CompareChart items={items} /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
+          {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
         </div>
       ) : null}
@@ -462,6 +506,7 @@ const METRIC_ROWS: MetricRow[] = [
   { group: "business", label: "매출 성장률", description: "사업이 커지는 속도", value: (item) => item.revenueGrowth, display: percentText, best: "high" },
   { group: "risk", label: "부채/자본", description: "낮을수록 부담이 덜해요", value: (item) => item.debtToEquity, display: (value) => ratioText(value, "%"), best: "low" },
   { group: "risk", label: "유동비율", description: "높을수록 단기 체력이 좋아요", value: (item) => item.currentRatio, display: ratioText, best: "high" },
+  { group: "risk", label: "베타", description: "낮을수록 시장 대비 가격 흔들림이 작아요", value: (item) => item.beta, display: ratioText, best: "low" },
   { group: "valuation", label: "PER", description: "낮을수록 현재 이익 대비 부담이 덜해요", value: (item) => item.per, display: ratioText, best: "low" },
   { group: "valuation", label: "Forward PER", description: "낮을수록 예상 이익 대비 부담이 덜해요", value: (item) => item.forwardPer, display: ratioText, best: "low" },
 ];
@@ -588,28 +633,54 @@ const COMPONENT_ROWS = [
   { key: "valuation", label: "가격 부담", description: "실적과 자산 대비 현재 가격 부담을 봅니다." },
 ];
 
-function ComponentMatrix({ items }: { items: CompareItem[] }) {
+const OPPORTUNITY_COMPONENT_ROWS = [
+  { key: "opportunity_momentum", label: "기회 모멘텀", description: "최근 가격 흐름이 기회로 이어지는지 봅니다." },
+  { key: "opportunity_growth", label: "성장 기대", description: "성장 지표와 중기 흐름을 함께 봅니다." },
+  { key: "opportunity_analyst", label: "목표가 여지", description: "목표가와 투자의견 근거를 봅니다." },
+  { key: "opportunity_liquidity", label: "유동성", description: "거래량 체력과 관심 증가를 봅니다." },
+  { key: "opportunity_risk", label: "위험 제어", description: "변동성, 과열, 베타 부담을 봅니다." },
+];
+
+type ComponentMatrixRow = {
+  key: string;
+  label: string;
+  description: string;
+};
+
+function ComponentMatrix({
+  items,
+  matrixRows = COMPONENT_ROWS,
+  eyebrow = "항목별 점수",
+  title = "무엇이 강하고 약한지 보여요",
+  scoreFor = componentScore,
+}: {
+  items: CompareItem[];
+  matrixRows?: ComponentMatrixRow[];
+  eyebrow?: string;
+  title?: string;
+  scoreFor?: (item: CompareItem, key: string) => number | undefined;
+}) {
   const componentMetricRows = useMemo(
-    () => COMPONENT_ROWS.map((row) => ({
+    () => matrixRows.map((row) => ({
       label: row.label,
-      value: (item: CompareItem) => componentScore(item, row.key),
+      value: (item: CompareItem) => scoreFor(item, row.key),
       display: (value: number | undefined) => (value === undefined ? "-" : value.toFixed(1)),
     })),
-    []
+    [matrixRows, scoreFor]
   );
   const rows = useMemo(() => semanticMetricRows(items, componentMetricRows), [items, componentMetricRows]);
   const visualRows = useMemo(
-    () => COMPONENT_ROWS.map((row) => ({
+    () => matrixRows.map((row) => ({
       ...row,
-      best: bestBy(items, (item) => componentScore(item, row.key)),
-      values: new Map(items.map((item) => [item.ticker, componentScore(item, row.key)])),
+      best: bestBy(items, (item) => scoreFor(item, row.key)),
+      values: new Map(items.map((item) => [item.ticker, scoreFor(item, row.key)])),
     })),
-    [items]
+    [items, matrixRows, scoreFor]
   );
   return (
     <section className="compare-section">
-      <span>항목별 점수</span>
-      <h2>무엇이 강하고 약한지 보여요</h2>
+      <span>{eyebrow}</span>
+      <h2>{title}</h2>
       <div className="sr-only">
         <table>
           <caption>종목별 항목 점수</caption>
@@ -660,5 +731,17 @@ function ComponentMatrix({ items }: { items: CompareItem[] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function OpportunityComponentMatrix({ items }: { items: CompareItem[] }) {
+  return (
+    <ComponentMatrix
+      items={items}
+      matrixRows={OPPORTUNITY_COMPONENT_ROWS}
+      eyebrow="기회 점수 이유"
+      title="지금 볼 만한 이유를 나눠봤어요"
+      scoreFor={opportunityComponentScore}
+    />
   );
 }

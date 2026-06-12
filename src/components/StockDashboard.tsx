@@ -19,7 +19,9 @@ import {
   formatPrimaryPrice,
   formatSecondaryPrice,
   hasDisplayableStockPartialData,
+  partialStockDataFromTicker,
   partialStockStatusSummary,
+  priceVolatilitySummaryItems,
   scoreDataWithQuote,
   shouldShowStockSkeleton,
   stockMarketCapDisplay,
@@ -96,6 +98,13 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   const displayData = data || (initialDisplayComplete ? initialDisplayData : undefined);
   const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
   const hasDisplayablePartialData = hasDisplayableStockPartialData(displayPartialData);
+  const showStockSkeleton = Boolean(tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData, hasDetailViewResponse));
+  const skeletonTickerLabel =
+    displayPartialData || quoteData
+      ? stockHeaderIdentity(displayPartialData || scoreDataWithQuote(partialStockDataFromTicker(tickerParam || ""), quoteData), quoteData).primary
+      : tickerParam
+        ? dashboardInputValue(tickerParam)
+        : undefined;
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -233,13 +242,13 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         />
       </section>
 
-      {tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData, hasDetailViewResponse) && (
-        <StockDetailLoadingSkeleton tickerLabel={dashboardInputValue(tickerParam)} />
+      {showStockSkeleton && (
+        <StockDetailLoadingSkeleton tickerLabel={skeletonTickerLabel} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
 
-      {displayPartialData && (hasDisplayablePartialData || hasDetailViewResponse) && !displayData ? (
+      {!showStockSkeleton && displayPartialData && (hasDisplayablePartialData || hasDetailViewResponse) && !displayData ? (
         <PartialStockFeed data={displayPartialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
       ) : null}
 
@@ -265,6 +274,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
             </DetailSection>
             <DetailSection id="detail-chart">
               <ChartStory points={displayData.chart_series} patterns={displayData.chart_patterns} technicalAnalysisHref={technicalAnalysisHrefForPayload(displayData)} />
+              <SimpleList title="가격·변동성 요약" description="가격 흐름을 볼 때 함께 참고하는 숫자예요." items={priceVolatilitySummaryItems(displayData)} stock={displayData} desktopOpen />
             </DetailSection>
             <DetailSection id="detail-factors">
               <FactorStory components={displayData.components} stock={displayData} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
@@ -320,6 +330,7 @@ function PartialStockFeed({
       {hasChart ? (
         <DetailSection id="detail-chart">
           <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
+          <SimpleList title="가격·변동성 요약" description="가격 흐름을 볼 때 함께 참고하는 숫자예요." items={priceVolatilitySummaryItems(data)} stock={data} desktopOpen />
         </DetailSection>
       ) : null}
       {hasFactors ? (

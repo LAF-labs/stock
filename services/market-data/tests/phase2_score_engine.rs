@@ -603,6 +603,31 @@ fn no_forward_weak_quality_growth_story_stays_below_good_range() {
 }
 
 #[test]
+fn opportunity_risk_component_exposes_beta_metric_when_available() {
+    let output = compute_score(nvda_like_input(), ScoreView::Detail).expect("score");
+    let risk_metrics = output
+        .payload
+        .get("opportunity_components")
+        .and_then(Value::as_array)
+        .and_then(|components| {
+            components.iter().find(|component| {
+                component.get("key").and_then(Value::as_str) == Some("opportunity_risk")
+            })
+        })
+        .and_then(|component| component.get("metrics"))
+        .and_then(Value::as_array)
+        .expect("risk metrics");
+
+    assert!(
+        risk_metrics.iter().any(|metric| {
+            metric.get("label").and_then(Value::as_str) == Some("베타")
+                && metric.get("value").and_then(Value::as_str) == Some("1.90")
+        }),
+        "risk metrics should include the beta value, got {risk_metrics:?}"
+    );
+}
+
+#[test]
 fn fcf_only_weak_cashflow_caps_expensive_no_forward_valuation() {
     let mut input = speculative_no_forward_input();
     input.profit_margin = Some(0.18);

@@ -27,7 +27,9 @@ import {
   partialStockDataFromQuote,
   partialStockDataFromTicker,
   partialStockDataFromPayload,
+  priceVolatilitySummaryItems,
   riskLevelLabel,
+  scoreConfidenceChips,
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
@@ -286,7 +288,7 @@ test("dashboard can render a useful partial view from quote before score is read
   assert.equal(stockMarketCapDisplay(partial || {}).primary, "25조 2320억원");
   assert.equal(partial?.server_cache?.source, "quote_partial");
   assert.equal(hasDisplayableStockPartialData(partial), true);
-  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), false);
+  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), true);
 });
 
 test("dashboard keeps deadline identity placeholders behind the skeleton", () => {
@@ -320,7 +322,7 @@ test("dashboard does not replace the skeleton with profile-only partial data", (
 test("dashboard uses full skeleton only when no useful partial data is present", () => {
   assert.equal(shouldShowStockSkeleton("loading"), true);
   assert.equal(shouldShowStockSkeleton("pending"), true);
-  assert.equal(shouldShowStockSkeleton("pending", true), false);
+  assert.equal(shouldShowStockSkeleton("pending", true), true);
   assert.equal(shouldShowStockSkeleton("success"), false);
   assert.equal(shouldShowStockSkeleton("error"), false);
 });
@@ -357,7 +359,7 @@ test("dashboard can leave full skeleton for identity-only detail view after firs
 
   assert.equal(state?.status, "partial");
   assert.equal(state?.data?.symbol, "VLD");
-  assert.equal(shouldShowStockSkeleton("partial", false, true), false);
+  assert.equal(shouldShowStockSkeleton("partial", false, true), true);
 });
 
 test("dashboard promotes detail-view financial and analyst sections into visible stock data", () => {
@@ -412,10 +414,11 @@ test("dashboard promotes detail-view financial and analyst sections into visible
   assert.ok(stockDataUsefulness(state?.data) >= 12);
 });
 
-test("dashboard only keeps full skeleton for detail-view before the first response", () => {
+test("dashboard keeps skeleton for detail-view until the ready response", () => {
   assert.equal(shouldShowStockSkeleton("loading", false, false), true);
   assert.equal(shouldShowStockSkeleton("partial", false, false), true);
-  assert.equal(shouldShowStockSkeleton("partial", false, true), false);
+  assert.equal(shouldShowStockSkeleton("partial", false, true), true);
+  assert.equal(shouldShowStockSkeleton("partial", true, true), true);
   assert.equal(shouldShowStockSkeleton("success", false, true), false);
 });
 
@@ -748,6 +751,45 @@ test("shouldUseCompactMetricGrid keeps only short numeric metric groups horizont
   );
 });
 
+test("scoreConfidenceChips exposes score confidence without noisy missing values", () => {
+  assert.deepEqual(
+    scoreConfidenceChips({
+      opportunity_confidence: 0.734,
+      sia_snapshot: { confidence: 0.812 },
+    }),
+    [
+      { label: "품질 근거", value: "81%" },
+      { label: "기회 근거", value: "73%" },
+    ],
+  );
+
+  assert.deepEqual(scoreConfidenceChips({ sia_snapshot: { confidence: Number.NaN } as any }), []);
+});
+
+test("priceVolatilitySummaryItems selects compact chart context from raw price metrics", () => {
+  assert.deepEqual(
+    priceVolatilitySummaryItems({
+      currency: "USD",
+      price_metrics: {
+        rsi14: 63.25,
+        atr14_pct: 0.034,
+        sma50: 142.12,
+        sma200: 118.55,
+        avg_volume_60: 150_000_000,
+        distance_from_52w_high: -0.081,
+      },
+    }),
+    [
+      { label: "RSI14", value: "63.25" },
+      { label: "ATR14 비중", value: "3.4%" },
+      { label: "50일 평균", value: "$142.12" },
+      { label: "200일 평균", value: "$118.55" },
+      { label: "60일 평균 거래량", value: "150,000,000" },
+      { label: "52주 고점 거리", value: "-8.1%" },
+    ],
+  );
+});
+
 test("factorSummary avoids trading-status wording in quality reasons", () => {
   assert.equal(
     factorSummary({
@@ -826,6 +868,72 @@ test("dashboard metric display formats money labels with stock context", () => {
   assert.equal(formatMetricDisplayValue({ label: "시가총액", value: "₩91.70B" }, krScore), "917억원");
 });
 
+test("dashboard metric display prioritizes average target price over raw recommendation mean", async () => {
+  const helpers = await import("../src/components/stockDashboardHelpers");
+  const metricDisplayLabel = helpers.metricDisplayLabel as undefined | ((item: { label?: string; value?: unknown }, data?: StockScoreResponse) => string | undefined);
+  assert.equal(typeof metricDisplayLabel, "function");
+
+  const usScore = {
+    market: "US",
+    currency: "USD",
+    financials: {
+      targetMeanPrice: 125,
+      recommendationMean: 1.83,
+    },
+  } satisfies StockScoreResponse;
+
+  assert.equal(metricDisplayLabel?.({ label: "투자의견 평균", value: "1.83" }, usScore), "평균 목표가");
+  assert.equal(formatMetricDisplayValue({ label: "투자의견 평균", value: "1.83" }, usScore), "$125.00");
+  assert.equal(formatMetricDisplayValue({ label: "투자의견 평균", value: "1.83" }, { market: "US", currency: "USD" }), "1.83 / 5");
+});
+
+test("dashboard marks neutral fallback components without usable evidence as scoreless", async () => {
+  const helpers = await import("../src/components/stockDashboardHelpers");
+  const componentHasDisplayableScore = helpers.componentHasDisplayableScore as undefined | ((component: { key?: string; score?: number; metrics?: Array<{ label?: string; value?: unknown }> }) => boolean);
+  const componentScoreText = helpers.componentScoreText as undefined | ((component: { key?: string; score?: number; metrics?: Array<{ label?: string; value?: unknown }> }) => string);
+
+  assert.equal(typeof componentHasDisplayableScore, "function");
+  assert.equal(typeof componentScoreText, "function");
+
+  const missingAnalyst = {
+    key: "opportunity_analyst",
+    label: "목표가 여지",
+    score: 50,
+    metrics: [
+      { label: "목표가 여지", value: "-" },
+      { label: "애널리스트 수", value: "-" },
+      { label: "투자의견 평균", value: "-" },
+    ],
+  };
+  const missingValuation = {
+    key: "valuation",
+    label: "밸류에이션",
+    score: 50,
+    metrics: [
+      { label: "PER", value: "-" },
+      { label: "Forward PER", value: "-" },
+      { label: "PBR", value: "0.00" },
+      { label: "시가총액", value: "$474.51B" },
+    ],
+  };
+  const scoredMomentum = {
+    key: "momentum",
+    label: "모멘텀",
+    score: 72.2,
+    metrics: [
+      { label: "1개월 수익률", value: "+1.6%" },
+      { label: "3개월 수익률", value: "+20.4%" },
+    ],
+  };
+
+  assert.equal(componentHasDisplayableScore?.(missingAnalyst), false);
+  assert.equal(componentScoreText?.(missingAnalyst), "점수 없음");
+  assert.equal(componentHasDisplayableScore?.(missingValuation), false);
+  assert.equal(componentScoreText?.(missingValuation), "점수 없음");
+  assert.equal(componentHasDisplayableScore?.(scoredMomentum), true);
+  assert.equal(componentScoreText?.(scoredMomentum), "72.2 · 무난");
+});
+
 test("dashboard metric display suppresses impossible cashflow margin percentages", () => {
   assert.equal(formatMetricDisplayValue({ label: "OCF 마진", value: "+13443238808.8%" }), "-");
   assert.equal(formatMetricDisplayValue({ label: "OFC 마진", value: "+13443238808.8%" }), "-");
@@ -851,6 +959,7 @@ test("dailyToneClass separates neutral missing and flat price states", () => {
 test("dashboard record formatting hides provider-only fields and formats ratio fields", () => {
   assert.equal(formatRecordValue("return_1m", 0.123), "+12.3%");
   assert.equal(formatRecordValue("debtToEquity", 55.432), "55.4%");
+  assert.equal(formatRecordValue("recommendationMean", 1.83), "1.83 / 5");
   assert.equal(formatRecordValue("targetMeanPrice", 86.06, { market: "US", currency: "USD" }), "$86.06");
   assert.equal(formatRecordValue("targetMeanPrice", 86.06), "86.06");
   assert.equal(formatRecordValue("totalRevenue", 49_284_001_792, { market: "US", currency: "USD", usd_krw_rate: 1370 }), "67조 5191억원 ($49.3B)");

@@ -322,7 +322,7 @@ fn build_output(
     let opportunity_grade = grade_for(opportunity.score);
     let signal = signal_for(score, input.rsi14, input.return_3m);
     let components = components_for(scores);
-    let opportunity_components = opportunity_components_for(&opportunity);
+    let opportunity_components = opportunity_components_for(&opportunity, &input);
     let requested_ticker = format!("{}:{symbol}", market_code(input.market));
     let payload_symbol = symbol.clone();
     let latest_change = match (input.latest_price, input.previous_close) {
@@ -404,7 +404,10 @@ fn components_for(scores: ComponentScores) -> Vec<ScoreComponent> {
     ]
 }
 
-fn opportunity_components_for(opportunity: &OpportunityResult) -> Vec<ScoreComponent> {
+fn opportunity_components_for(
+    opportunity: &OpportunityResult,
+    input: &ScoreEngineInput,
+) -> Vec<ScoreComponent> {
     vec![
         component(
             "opportunity_momentum",
@@ -430,24 +433,52 @@ fn opportunity_components_for(opportunity: &OpportunityResult) -> Vec<ScoreCompo
             "L",
             opportunity.components.liquidity,
         ),
-        component(
+        component_with_metrics(
             "opportunity_risk",
             "Risk control",
             "R",
             opportunity.components.risk,
+            risk_control_metrics(input),
         ),
     ]
 }
 
 fn component(key: &str, label: &str, short: &str, score: ComponentScore) -> ScoreComponent {
+    component_with_metrics(key, label, short, score, Vec::new())
+}
+
+fn component_with_metrics(
+    key: &str,
+    label: &str,
+    short: &str,
+    score: ComponentScore,
+    metrics: Vec<ScoreMetric>,
+) -> ScoreComponent {
     ScoreComponent {
         key: key.to_string(),
         label: label.to_string(),
         short: short.to_string(),
         score: round1(score.score),
         summary: format!("{label} score"),
-        metrics: Vec::new(),
+        metrics,
     }
+}
+
+fn risk_control_metrics(input: &ScoreEngineInput) -> Vec<ScoreMetric> {
+    let mut metrics = Vec::new();
+    if let Some(atr14_pct) = finite(input.atr14_pct) {
+        metrics.push(ScoreMetric {
+            label: "ATR14".to_string(),
+            value: format!("{:.1}%", atr14_pct * 100.0),
+        });
+    }
+    if let Some(beta) = finite(input.beta) {
+        metrics.push(ScoreMetric {
+            label: "베타".to_string(),
+            value: format!("{beta:.2}"),
+        });
+    }
+    metrics
 }
 
 fn momentum_score(input: &ScoreEngineInput) -> ComponentScore {

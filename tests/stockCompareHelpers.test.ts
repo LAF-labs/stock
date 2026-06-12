@@ -12,6 +12,7 @@ import {
   isPartialCompareResult,
   normalizeTicker,
   normalizedPoints,
+  opportunityComponentScore,
   parseTickers,
   pendingMessage,
   removeCompareTicker,
@@ -67,7 +68,7 @@ test("compare helpers build stable compare item fields", () => {
       { label: "Forward PER", value: 31.2 },
     ],
     price_metrics: { latest_change: 0.012, return_52w: 0.42 },
-    financials: { profitMargins: 0.22, revenueGrowth: 0.18 },
+    financials: { profitMargins: 0.22, revenueGrowth: 0.18, beta: 1.23 },
   } as unknown as StockScoreResponse;
 
   const item = toCompareItem(data, "US:MRVL");
@@ -77,6 +78,7 @@ test("compare helpers build stable compare item fields", () => {
   assert.equal(item.opportunityScore, 91.5);
   assert.equal(item.per, 1234.5);
   assert.equal(item.forwardPer, 31.2);
+  assert.equal(item.beta, 1.23);
   assert.equal(item.marketCap, "91조원 ($65B)");
   assert.equal(item.strongest?.key, "profitability");
   assert.equal(item.weakest?.key, "valuation");
@@ -161,6 +163,22 @@ test("compare bestBy evaluates each item once", () => {
 
   assert.equal(best?.ticker, "B");
   assert.equal(calls, items.length);
+});
+
+test("opportunityComponentScore reads opportunity breakdown scores separately from quality components", () => {
+  const item = {
+    ticker: "NVDA",
+    data: {
+      components: [{ key: "momentum", score: 80 }],
+      opportunity_components: [
+        { key: "opportunity_momentum", score: 72.4 },
+        { key: "opportunity_risk", score: 41.6 },
+      ],
+    },
+  } as any;
+
+  assert.equal(opportunityComponentScore(item, "opportunity_risk"), 41.6);
+  assert.equal(opportunityComponentScore(item, "momentum"), undefined);
 });
 
 test("compare pending message never exposes queue retry seconds", () => {

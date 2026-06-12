@@ -8,6 +8,7 @@ import {
   formatSecondaryPrice,
   opportunityExtremes,
   riskLevelLabel,
+  scoreConfidenceChips,
   scoreDataWithQuote,
   signalLabel,
   stockHeaderFreshnessTimeChip,
@@ -78,6 +79,9 @@ export default function StockHeader({
   const opportunity = opportunityExtremes(displayData.opportunity_components);
   const stockJudgment = judgmentState.status === "success" ? judgmentState.judgment : undefined;
   const headerTime = stockHeaderFreshnessTimeChip(data, quote);
+  const confidenceChips = scoreConfidenceChips(displayData);
+  const qualityConfidence = confidenceChips.find((chip) => chip.label === "품질 근거");
+  const opportunityConfidence = confidenceChips.find((chip) => chip.label === "기회 근거");
   const qualityScoreStyle = { "--score-angle": `${(qualityScore ?? 0) * 3.6}deg` } as CSSProperties;
   const opportunityScoreStyle = { "--score-angle": `${(opportunityScore ?? 0) * 3.6}deg` } as CSSProperties;
 
@@ -144,6 +148,7 @@ export default function StockHeader({
               <div className="score-chip-row" aria-label="품질 점수 보조 신호">
                 <span>매수신호 {signal}</span>
                 <span>변동성 {risk}</span>
+                {qualityConfidence ? <span>{qualityConfidence.label} {String(qualityConfidence.value)}</span> : null}
               </div>
             </div>
           </article>
@@ -171,6 +176,11 @@ export default function StockHeader({
                   </span>
                 ) : null}
               </div>
+              {opportunityConfidence ? (
+                <div className="score-chip-row" aria-label="기회 점수 근거 충분도">
+                  <span>{opportunityConfidence.label} {String(opportunityConfidence.value)}</span>
+                </div>
+              ) : null}
             </div>
           </article>
         ) : null}

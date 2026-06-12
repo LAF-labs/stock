@@ -45,6 +45,7 @@ export type CompareItem = {
   revenueGrowth?: number;
   debtToEquity?: number;
   currentRatio?: number;
+  beta?: number;
   per?: number;
   forwardPer?: number;
   marketCap: string;
@@ -117,6 +118,34 @@ export function valuationByLabel(data: StockScoreResponse, label: string): numbe
   if (typeof raw !== "string") return undefined;
   const parsed = Number(raw.replaceAll(",", ""));
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function metricNumberByLabel(data: StockScoreResponse, labels: string[]): number | undefined {
+  const normalizedLabels = new Set(labels.map((label) => label.toLowerCase()));
+  for (const item of data.key_metrics || []) {
+    const label = item.label?.trim().toLowerCase();
+    if (!label || !normalizedLabels.has(label)) continue;
+    const parsed = numberFromMetricValue(item.value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function numberFromMetricValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const match = value.trim().replaceAll(",", "").match(/[-+]?\d+(?:\.\d+)?/);
+  if (!match) return undefined;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function betaForCompare(data: StockScoreResponse): number | undefined {
+  return (
+    numberFromRecord(data.financials, "beta")
+    ?? numberFromRecord(data.price_metrics, "beta")
+    ?? metricNumberByLabel(data, ["베타", "Beta"])
+  );
 }
 
 export function scoreWord(score: number): string {
@@ -217,6 +246,7 @@ export function toCompareItem(data: StockScoreResponse, requestedTicker: string,
     revenueGrowth: numberFromRecord(data.financials, "revenueGrowth"),
     debtToEquity: numberFromRecord(data.financials, "debtToEquity"),
     currentRatio: numberFromRecord(data.financials, "currentRatio"),
+    beta: betaForCompare(data),
     per: valuationByLabel(data, "PER"),
     forwardPer: valuationByLabel(data, "Forward PER"),
     marketCap: [marketCap.primary, marketCap.secondary].filter(Boolean).join(" "),
@@ -241,6 +271,11 @@ export function bestBy(items: CompareItem[], value: (item: CompareItem) => numbe
 
 export function componentScore(item: CompareItem, key: string): number | undefined {
   const score = componentByKey(item.data, key)?.score;
+  return typeof score === "number" ? clampScore(score) : undefined;
+}
+
+export function opportunityComponentScore(item: CompareItem, key: string): number | undefined {
+  const score = item.data.opportunity_components?.find((component) => component.key === key)?.score;
   return typeof score === "number" ? clampScore(score) : undefined;
 }
 

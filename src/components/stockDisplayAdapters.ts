@@ -102,7 +102,7 @@ function stockScoreDataFromSections(input: {
     stock_profile: arrayValue(financials.stock_profile) as StockScoreResponse["stock_profile"] || arrayValue(score.stock_profile) as StockScoreResponse["stock_profile"],
     valuation_rows: arrayValue(financials.valuation_rows) as StockScoreResponse["valuation_rows"] || arrayValue(score.valuation_rows) as StockScoreResponse["valuation_rows"],
     news: arrayValue(analyst.news) as StockScoreResponse["news"] || arrayValue(analyst.items) as StockScoreResponse["news"] || arrayValue(score.news) as StockScoreResponse["news"],
-    price_metrics: (recordValue(price.price_metrics) || recordValue(chart.price_metrics) || recordValue(score.price_metrics)) as StockScoreResponse["price_metrics"],
+    price_metrics: mergeMetricRecords(score.price_metrics, chart.price_metrics, price.price_metrics) as StockScoreResponse["price_metrics"],
     financials: (financialRecord(financials) || recordValue(score.financials)) as StockScoreResponse["financials"],
     financial_statement: (recordValue(financials.financial_statement) || recordValue(score.financial_statement)) as StockScoreResponse["financial_statement"],
     technical_analysis: recordValue(technical) as StockScoreResponse["technical_analysis"],
@@ -153,6 +153,19 @@ function mergeSectionRecords(...values: Array<unknown>): Record<string, unknown>
       } else {
         merged[key] = nextValue;
       }
+    }
+  }
+  return Object.keys(merged).length ? merged : undefined;
+}
+
+function mergeMetricRecords(...values: Array<unknown>): Record<string, unknown> | undefined {
+  const merged: Record<string, unknown> = {};
+  for (const value of values) {
+    const record = recordValue(value);
+    if (!record) continue;
+    for (const [key, nextValue] of Object.entries(record)) {
+      if (nextValue === undefined || nextValue === null) continue;
+      merged[key] = nextValue;
     }
   }
   return Object.keys(merged).length ? merged : undefined;

@@ -1,4 +1,4 @@
-import { formatApproxKrwAmount, formatCompactUsd, formatCurrencyAmount, formatKoreanWonLarge, formatPercent, formatValue, recordEntries } from "@/lib/format";
+import { clampScore, formatApproxKrwAmount, formatCompactUsd, formatCurrencyAmount, formatKoreanWonLarge, formatPercent, formatValue, recordEntries } from "@/lib/format";
 import { stockScoreDataFromDetailView } from "@/components/stockDisplayAdapters";
 import { displayTicker, isUsDerivativeSymbol } from "@/lib/symbolDisplay";
 import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
@@ -56,7 +56,7 @@ const RECORD_LABELS: Record<string, string> = {
   quickRatio: "당좌비율",
   targetMeanPrice: "평균 목표가",
   numberOfAnalystOpinions: "애널리스트 수",
-  recommendationMean: "투자의견 평균",
+  recommendationMean: "투자의견 점수 (1=매수, 5=매도)",
   beta: "베타",
   income_statement: "손익계산서",
   balance_sheet: "재무상태표",
@@ -168,6 +168,14 @@ const LABEL_REPLACEMENTS: Record<string, string> = {
 const SOURCE_NOTE_RE = /^(?:yfinance|yahoo finance(?:\s*기준)?|data source|source)$/i;
 const CASHFLOW_MARGIN_LABEL_RE = /^(?:OFC|OCF|FCF)\s*마진(?:\s*\(.+\))?$/i;
 const MAX_REASONABLE_MARGIN_PERCENT = 500;
+const NEUTRAL_FALLBACK_SCORE = 50;
+const ANALYST_COMPONENT_KEYS = new Set(["opportunity_analyst", "analyst"]);
+const VALUATION_COMPONENT_KEYS = new Set(["valuation", "opportunity_valuation"]);
+const NON_EVIDENCE_METRIC_LABEL_RE = /^(?:시가총액|근거 충분도|보강 상태)$/;
+const VALUATION_EVIDENCE_LABEL_RE = /^(?:Forward PER|PER|PBR|EV\/Revenue|Price\/Sales|EPS|BPS)(?:\s*\(.+\))?$/;
+const ANALYST_COUNT_LABEL_RE = /^(?:애널리스트 수|커버리지 수)$/;
+const RECOMMENDATION_MEAN_LABEL_RE = /^투자의견 평균$/;
+const TARGET_PRICE_LABEL_RE = /^평균 목표가$/;
 
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const NOTE_COPY: Record<string, string> = {
@@ -202,6 +210,7 @@ const TERM_TIPS = [
   { term: "밸류에이션", keys: ["밸류에이션"], body: "현재 가격이 실적이나 자산에 비해 부담스러운지 봐요." },
   { term: "근거 충분도", keys: ["근거 충분도"], body: "이 항목 점수에 쓸 데이터가 얼마나 충분했는지 보여줘요." },
   { term: "투자의견 평균", keys: ["투자의견 평균", "recommendationmean"], body: "애널리스트 투자의견을 평균낸 값이에요. 1에 가까울수록 매수 쪽, 5에 가까울수록 매도 쪽이에요." },
+  { term: "투자의견 점수", keys: ["투자의견 점수"], body: "애널리스트 투자의견을 점수로 평균낸 값이에요. 1에 가까울수록 매수 쪽, 5에 가까울수록 매도 쪽이에요." },
 ];
 
 export type SnapshotPendingState = {
@@ -324,8 +333,9 @@ export function dashboardSearchSyncDecision(input: {
 }
 
 export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = false, hasDetailViewResponse = false): boolean {
-  if (hasDetailViewResponse) return status === "loading";
-  return status === "loading" || ((status === "pending" || status === "partial") && !hasUsefulPartialData);
+  void hasUsefulPartialData;
+  void hasDetailViewResponse;
+  return status === "loading" || status === "pending" || status === "partial";
 }
 
 export function dashboardStateFromDetailView(result: StockDetailViewResponse | undefined): { status: "partial" | "success" | "error"; data?: StockScoreResponse; error?: string } | undefined {
@@ -540,6 +550,14 @@ function jsonDisplayValue(value: unknown): JsonValue | undefined {
 export function formatMetricDisplayValue(item: LabeledValue, data?: StockScoreResponse): string {
   const label = item.label?.trim() || "";
   if (CASHFLOW_MARGIN_LABEL_RE.test(label)) return formatCashflowMarginDisplayValue(item.value);
+  if (RECOMMENDATION_MEAN_LABEL_RE.test(label)) {
+    const targetPrice = averageTargetPriceValue(data);
+    if (targetPrice !== undefined) {
+      return typeof targetPrice === "number" ? formatCurrencyAmount(targetPrice, data ? priceCurrency(data) : undefined) : formatValue(targetPrice);
+    }
+    const recommendationMean = moneyNumber(item.value);
+    return recommendationMean === undefined ? formatValue(item.value) : `${formatValue(recommendationMean)} / 5`;
+  }
   if (!data) return formatValue(item.value);
   if (label === "현재가") return formatPriceWithContext(data);
   if (label === "시가총액") return marketCapInlineDisplay(data);
@@ -548,6 +566,24 @@ export function formatMetricDisplayValue(item: LabeledValue, data?: StockScoreRe
     if (parsed !== undefined) return formatCurrencyAmount(parsed, priceCurrency(data));
   }
   return formatValue(item.value);
+}
+
+export function metricDisplayLabel(item: LabeledValue, data?: StockScoreResponse): string | undefined {
+  const label = displayLabeledItemLabel(item.label);
+  if (!label) return label;
+  if (RECOMMENDATION_MEAN_LABEL_RE.test(label)) {
+    return averageTargetPriceValue(data) !== undefined ? "평균 목표가" : "투자의견 점수";
+  }
+  return label;
+}
+
+function averageTargetPriceValue(data: StockScoreResponse | undefined): JsonValue | undefined {
+  if (!data) return undefined;
+  const financialTarget = numberFromJsonRecord(data.financials, "targetMeanPrice");
+  if (financialTarget !== undefined && financialTarget > 0) return financialTarget;
+  const row = data.valuation_rows?.find((item) => TARGET_PRICE_LABEL_RE.test(item.label?.trim() || ""));
+  if (row && !isMissingDisplayValue(row.value)) return row.value;
+  return undefined;
 }
 
 function formatCashflowMarginDisplayValue(value: JsonValue | undefined): string {
@@ -758,6 +794,55 @@ export function scoreDataWithQuote(data: StockScoreResponse, quote: StockQuoteRe
   if (latestPriceLabel) nextData.latest_price_label = latestPriceLabel;
   if (usdKrwLabel) nextData.usd_krw_label = usdKrwLabel;
   return nextData;
+}
+
+export function scoreConfidenceChips(data: StockScoreResponse): LabeledValue[] {
+  const snapshot = recordFromUnknown(data.sia_snapshot);
+  const qualityConfidence = confidenceRatio(numberFromUnknown(snapshot?.confidence));
+  const opportunityConfidence = confidenceRatio(
+    numberFromUnknown(data.opportunity_confidence) ?? numberFromUnknown(snapshot?.opportunity_confidence)
+  );
+  const chips: LabeledValue[] = [];
+  if (qualityConfidence !== undefined) {
+    chips.push({ label: "품질 근거", value: formatConfidencePercent(qualityConfidence) });
+  }
+  if (opportunityConfidence !== undefined) {
+    chips.push({ label: "기회 근거", value: formatConfidencePercent(opportunityConfidence) });
+  }
+  return chips;
+}
+
+export function priceVolatilitySummaryItems(data: StockScoreResponse): LabeledValue[] {
+  const metrics = data.price_metrics;
+  if (!metrics) return [];
+  const currency = priceCurrency(data);
+  const items: LabeledValue[] = [];
+  addSummaryItem(items, "RSI14", formatValue(numberFromJsonRecord(metrics, "rsi14")));
+  addSummaryItem(items, "ATR14 비중", formatUnsignedPercent(numberFromJsonRecord(metrics, "atr14_pct")));
+  addSummaryItem(items, "50일 평균", formatCurrencyAmount(numberFromJsonRecord(metrics, "sma50"), currency));
+  addSummaryItem(items, "200일 평균", formatCurrencyAmount(numberFromJsonRecord(metrics, "sma200"), currency));
+  addSummaryItem(items, "60일 평균 거래량", formatValue(numberFromJsonRecord(metrics, "avg_volume_60")));
+  addSummaryItem(items, "52주 고점 거리", formatPercent(numberFromJsonRecord(metrics, "distance_from_52w_high")));
+  return items;
+}
+
+function addSummaryItem(items: LabeledValue[], label: string, value: string) {
+  if (!value || value === "-") return;
+  items.push({ label, value });
+}
+
+function confidenceRatio(value: number | undefined): number | undefined {
+  if (value === undefined || value < 0 || value > 1) return undefined;
+  return value;
+}
+
+function formatConfidencePercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatUnsignedPercent(value: number | undefined): string {
+  if (value === undefined) return "-";
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 const SIGNAL_LABELS: Record<string, string> = {
@@ -1011,6 +1096,7 @@ export function formatRecordValue(key: string, value: JsonValue | undefined, dat
   if (typeof value === "number") {
     if (PERCENT_RECORD_KEYS.has(key)) return formatPercent(value);
     if (key === "debtToEquity") return `${value.toFixed(1)}%`;
+    if (key === "recommendationMean") return `${formatValue(value)} / 5`;
     if (LARGE_MONEY_RECORD_KEYS.has(key)) return financialMoneyDisplay(value, data);
     if (data && PRICE_RECORD_KEYS.has(key)) return formatCurrencyAmount(value, priceCurrency(data));
   }
@@ -1030,6 +1116,53 @@ export function componentWord(score: number): string {
   if (score >= 60) return "무난";
   if (score >= 45) return "보통";
   return "주의";
+}
+
+export function componentHasDisplayableScore(component: ScoreComponent): boolean {
+  const score = numberFromUnknown(component.score);
+  if (score === undefined) return false;
+  if (Math.abs(score - NEUTRAL_FALLBACK_SCORE) > 0.05) return true;
+
+  const key = component.key?.trim() || "";
+  if (ANALYST_COMPONENT_KEYS.has(key)) return component.metrics?.some(isAnalystEvidenceMetric) || false;
+  if (VALUATION_COMPONENT_KEYS.has(key)) return component.metrics?.some(isValuationEvidenceMetric) || false;
+  return true;
+}
+
+export function componentScoreText(component: ScoreComponent): string {
+  if (!componentHasDisplayableScore(component)) return "점수 없음";
+  const score = clampScore(component.score);
+  return `${score.toFixed(1)} · ${componentWord(score)}`;
+}
+
+function isAnalystEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  if (TARGET_PRICE_LABEL_RE.test(label)) return hasUsableMetricValue(metric);
+  if (label === "목표가 여지") return hasUsableMetricValue(metric);
+  if (ANALYST_COUNT_LABEL_RE.test(label)) {
+    const count = moneyNumber(metric.value);
+    return count !== undefined && count > 0;
+  }
+  if (RECOMMENDATION_MEAN_LABEL_RE.test(label)) return hasUsableMetricValue(metric);
+  return false;
+}
+
+function isValuationEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  if (!VALUATION_EVIDENCE_LABEL_RE.test(label)) return false;
+  const parsed = moneyNumber(metric.value);
+  return parsed !== undefined && parsed > 0;
+}
+
+function hasUsableMetricValue(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  if (NON_EVIDENCE_METRIC_LABEL_RE.test(label)) return false;
+  return !isMissingDisplayValue(metric.value);
+}
+
+function isMissingDisplayValue(value: unknown): boolean {
+  const text = formatValue(value as JsonValue | undefined).trim();
+  return !text || text === "-" || /^n\/a$/i.test(text) || text === "없음" || text === "대기";
 }
 
 export function strongestAndWeakest(data: StockScoreResponse) {

@@ -52,6 +52,21 @@ test("display payload adapter merges financial sections without duplicate valuat
   assert.equal((adapted.industry_benchmarks as unknown[] | undefined)?.length, 1);
 });
 
+test("display payload adapter merges score price metrics behind live price metrics", () => {
+  const adapted = stockScoreDataFromDisplayPayload(displayPayload({
+    price: { price_metrics: { latest_change: 0.012 } },
+    chart: { price_metrics: { avg_volume_60: 100_000 } },
+    score: { price_metrics: { rsi14: 63.2, sma50: 142.1, latest_change: 0.01 } },
+  }));
+
+  assert.deepEqual(adapted.price_metrics, {
+    rsi14: 63.2,
+    sma50: 142.1,
+    avg_volume_60: 100_000,
+    latest_change: 0.012,
+  });
+});
+
 test("display payload completeness separates full data from recoverable partials", () => {
   assert.equal(stockDisplayPayloadIsComplete(displayPayload({
     price: { latest_price: 187400 },
