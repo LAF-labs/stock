@@ -128,6 +128,17 @@ test("dashboard has no legacy manual browser persistence pipeline", () => {
   );
 });
 
+test("dashboard keeps partial stock content behind the loading skeleton", () => {
+  const dashboard = componentSource("StockDashboard.tsx");
+
+  assert.match(dashboard, /const showStockSkeleton = /, "dashboard should centralize skeleton visibility");
+  assert.match(
+    dashboard,
+    /!\s*showStockSkeleton && displayPartialData/,
+    "partial stock content must not render while the skeleton is active",
+  );
+});
+
 test("no unreviewed stock data owner components are introduced", () => {
   for (const file of serverStateOwners) {
     assert.ok(componentSource(file).length > 0, `${file} should exist`);
