@@ -134,10 +134,8 @@ jobs:
       STOCK_SCORE_WARM_VIEWS: ${{ vars.STOCK_SCORE_WARM_VIEWS || 'technical' }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '100' }}
-      STOCK_CHART_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_CHART_SNAPSHOT_QUEUE_LIMIT || '15' }}
       STOCK_SCORE_STALE_HOURS: ${{ vars.STOCK_SCORE_STALE_HOURS || '24' }}
       STOCK_REFRESH_PLANNER_SCORE_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_SCORE_LIMIT || '50' }}
-      STOCK_REFRESH_PLANNER_CHART_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_CHART_LIMIT || '15' }}
       STOCK_STALE_SCORE_REFRESH_LIMIT: ${{ vars.STOCK_STALE_SCORE_REFRESH_LIMIT || '50' }}
       STOCK_LEGACY_SCORE_WORKER_ENABLED: ${{ vars.STOCK_LEGACY_SCORE_WORKER_ENABLED || '1' }}
 
@@ -170,13 +168,6 @@ jobs:
             --limit "$STOCK_STALE_SCORE_REFRESH_LIMIT" \
             --json
 
-      - name: Plan chart refresh target jobs
-        run: |
-          node --import tsx scripts/plan_stock_refresh_jobs.ts \
-            --kind chart \
-            --limit "$STOCK_REFRESH_PLANNER_CHART_LIMIT" \
-            --json
-
       - name: Check due legacy score refresh jobs
         id: legacy_score_queue
         if: env.STOCK_LEGACY_SCORE_WORKER_ENABLED == '1'
@@ -192,25 +183,15 @@ jobs:
             --github-output-key run \
             --json
 
-      - name: Check due chart refresh jobs
-        id: chart_queue
-        run: |
-          node --import tsx scripts/stock_refresh_queue_status.ts \
-            --kind chart \
-            --due-only \
-            --force-if-list "$MANUAL_WARM_TICKERS" \
-            --github-output-key run \
-            --json
-
       - name: Set up Python
-        if: steps.legacy_score_queue.outputs.run == '1' || steps.chart_queue.outputs.run == '1'
+        if: steps.legacy_score_queue.outputs.run == '1'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install collector dependencies
-        if: steps.legacy_score_queue.outputs.run == '1' || steps.chart_queue.outputs.run == '1'
+        if: steps.legacy_score_queue.outputs.run == '1'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
@@ -238,8 +219,67 @@ jobs:
           python scripts/publish_stock_snapshots.py \
             "${ARGS[@]}"
 
+  chart:
+    needs: market_guard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
+      STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
+      STOCK_API_BASE: ${{ vars.STOCK_API_BASE || 'https://openapi.koreainvestment.com:9443' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      MANUAL_WARM_TICKERS: ${{ github.event.inputs.tickers || '' }}
+      STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
+      STOCK_CHART_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_CHART_SNAPSHOT_QUEUE_LIMIT || '15' }}
+      STOCK_REFRESH_PLANNER_CHART_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_CHART_LIMIT || '15' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Plan chart refresh target jobs
+        run: |
+          node --import tsx scripts/plan_stock_refresh_jobs.ts \
+            --kind chart \
+            --limit "$STOCK_REFRESH_PLANNER_CHART_LIMIT" \
+            --json
+
+      - name: Check due chart refresh jobs
+        id: chart_queue
+        run: |
+          node --import tsx scripts/stock_refresh_queue_status.ts \
+            --kind chart \
+            --due-only \
+            --force-if-list "$MANUAL_WARM_TICKERS" \
+            --github-output-key run \
+            --json
+
+      - name: Set up Python
+        if: steps.chart_queue.outputs.run == '1'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install collector dependencies
+        if: steps.chart_queue.outputs.run == '1'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
       - name: Drain chart refresh queue
-        if: always() && steps.chart_queue.outputs.run == '1'
+        if: steps.chart_queue.outputs.run == '1'
         run: |
           TICKERS="${MANUAL_WARM_TICKERS:-}"
           ARGS=(

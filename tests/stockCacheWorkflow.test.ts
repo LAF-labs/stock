@@ -5,19 +5,20 @@ import test from "node:test";
 const workflowSource = readFileSync(".github/workflows/publish-stock-snapshots.yml", "utf8");
 
 test("stock cache workflow checks and drains due chart jobs as a bounded backstop", () => {
-  const scoreDrainIndex = workflowSource.indexOf("Drain legacy score refresh queue");
-  const chartDrainIndex = workflowSource.indexOf("Drain chart refresh queue");
+  const scoreBlock = workflowSource.split("\n  score:", 2)[1].split("\n  chart:", 1)[0];
+  const chartBlock = workflowSource.split("\n  chart:", 2)[1];
 
-  assert.match(workflowSource, /id:\s*chart_queue/);
-  assert.match(workflowSource, /--kind chart/);
-  assert.match(workflowSource, /Drain chart refresh queue/);
-  assert.match(workflowSource, /steps\.chart_queue\.outputs\.run == '1'/);
-  assert.match(workflowSource, /STOCK_CHART_SNAPSHOT_QUEUE_LIMIT/);
-  assert.match(workflowSource, /--no-warm-from-demand/);
-  assert.match(workflowSource, /if:\s*always\(\) && steps\.chart_queue\.outputs\.run == '1'/);
+  assert.doesNotMatch(scoreBlock, /Drain chart refresh queue/);
+  assert.match(chartBlock, /needs: market_guard/);
+  assert.match(chartBlock, /if: always\(\)/);
+  assert.match(chartBlock, /id:\s*chart_queue/);
+  assert.match(chartBlock, /--kind chart/);
+  assert.match(chartBlock, /Drain chart refresh queue/);
+  assert.match(chartBlock, /steps\.chart_queue\.outputs\.run == '1'/);
+  assert.match(chartBlock, /STOCK_CHART_SNAPSHOT_QUEUE_LIMIT/);
+  assert.match(chartBlock, /--no-warm-from-demand/);
+  assert.match(chartBlock, /if:\s*steps\.chart_queue\.outputs\.run == '1'/);
   assert.doesNotMatch(workflowSource, /STOCK_CHART_WARM_TICKERS/);
-  assert.ok(scoreDrainIndex > 0);
-  assert.ok(chartDrainIndex > scoreDrainIndex);
 });
 
 test("stock cache workflow prewarms hot technical score snapshots", () => {
@@ -34,7 +35,8 @@ test("stock cache workflow prewarms hot technical score snapshots", () => {
 
 test("stock cache workflow plans SLA target jobs before stale backstops", () => {
   const quoteBlock = workflowSource.split("\n  quote:", 2)[1].split("\n  score:", 1)[0];
-  const scoreBlock = workflowSource.split("\n  score:", 2)[1];
+  const scoreBlock = workflowSource.split("\n  score:", 2)[1].split("\n  chart:", 1)[0];
+  const chartBlock = workflowSource.split("\n  chart:", 2)[1];
 
   assert.match(quoteBlock, /STOCK_REFRESH_PLANNER_QUOTE_LIMIT/);
   assert.match(quoteBlock, /Plan quote refresh target jobs/);
@@ -43,9 +45,10 @@ test("stock cache workflow plans SLA target jobs before stale backstops", () => 
   assert.ok(quoteBlock.indexOf("Plan quote refresh target jobs") < quoteBlock.indexOf("Enqueue stale quote refresh jobs"));
 
   assert.match(scoreBlock, /STOCK_REFRESH_PLANNER_SCORE_LIMIT/);
-  assert.match(scoreBlock, /STOCK_REFRESH_PLANNER_CHART_LIMIT/);
   assert.match(scoreBlock, /Plan score refresh target jobs/);
-  assert.match(scoreBlock, /Plan chart refresh target jobs/);
   assert.ok(scoreBlock.indexOf("Plan score refresh target jobs") < scoreBlock.indexOf("Enqueue stale score snapshot refresh jobs"));
-  assert.ok(scoreBlock.indexOf("Plan chart refresh target jobs") < scoreBlock.indexOf("Check due chart refresh jobs"));
+
+  assert.match(chartBlock, /STOCK_REFRESH_PLANNER_CHART_LIMIT/);
+  assert.match(chartBlock, /Plan chart refresh target jobs/);
+  assert.ok(chartBlock.indexOf("Plan chart refresh target jobs") < chartBlock.indexOf("Check due chart refresh jobs"));
 });
