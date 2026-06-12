@@ -10,10 +10,6 @@ on:
   schedule:
     - cron: "*/5 * * * *"
 
-concurrency:
-  group: publish-stock-snapshots
-  cancel-in-progress: false
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -51,6 +47,9 @@ jobs:
     if: needs.market_guard.outputs.run == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: publish-stock-snapshots-quote
+      cancel-in-progress: false
     env:
       STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
       STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
@@ -61,6 +60,7 @@ jobs:
       STOCK_WARM_TICKERS: ${{ vars.STOCK_WARM_TICKERS || vars.STOCK_SNAPSHOT_TICKERS }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_SNAPSHOT_QUEUE_LIMIT || '100' }}
+      STOCK_SNAPSHOT_QUEUE_CONCURRENCY: ${{ vars.STOCK_SNAPSHOT_QUEUE_CONCURRENCY || '4' }}
       STOCK_REFRESH_PLANNER_QUOTE_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_QUOTE_LIMIT || '50' }}
       STOCK_STALE_QUOTE_REFRESH_LIMIT: ${{ vars.STOCK_STALE_QUOTE_REFRESH_LIMIT || '50' }}
       STOCK_WARM_BATCH_SIZE: ${{ vars.STOCK_WARM_BATCH_SIZE || '50' }}
@@ -104,6 +104,7 @@ jobs:
             --drain-queue
             --kind quote
             --queue-limit "$STOCK_SNAPSHOT_QUEUE_LIMIT"
+            --queue-concurrency "$STOCK_SNAPSHOT_QUEUE_CONCURRENCY"
             --warm-batch-size "$STOCK_WARM_BATCH_SIZE"
             --warm-pool-limit "$STOCK_WARM_POOL_LIMIT"
             --worker-id "github-quote-${{ github.run_id }}-${{ github.run_attempt }}"
@@ -123,6 +124,9 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    concurrency:
+      group: publish-stock-snapshots-score
+      cancel-in-progress: false
     env:
       STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
       STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
@@ -224,6 +228,9 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: publish-stock-snapshots-chart
+      cancel-in-progress: false
     env:
       STOCK_API_APP_KEY: ${{ secrets.STOCK_API_APP_KEY }}
       STOCK_API_APP_SECRET: ${{ secrets.STOCK_API_APP_SECRET }}
@@ -233,6 +240,7 @@ jobs:
       MANUAL_WARM_TICKERS: ${{ github.event.inputs.tickers || '' }}
       STOCK_SNAPSHOT_SLEEP_SECONDS: ${{ vars.STOCK_SNAPSHOT_SLEEP_SECONDS || '0.5' }}
       STOCK_CHART_SNAPSHOT_QUEUE_LIMIT: ${{ vars.STOCK_CHART_SNAPSHOT_QUEUE_LIMIT || '15' }}
+      STOCK_CHART_SNAPSHOT_QUEUE_CONCURRENCY: ${{ vars.STOCK_CHART_SNAPSHOT_QUEUE_CONCURRENCY || '2' }}
       STOCK_REFRESH_PLANNER_CHART_LIMIT: ${{ vars.STOCK_REFRESH_PLANNER_CHART_LIMIT || '15' }}
 
     steps:
@@ -287,6 +295,7 @@ jobs:
             --drain-queue
             --kind chart
             --queue-limit "$STOCK_CHART_SNAPSHOT_QUEUE_LIMIT"
+            --queue-concurrency "$STOCK_CHART_SNAPSHOT_QUEUE_CONCURRENCY"
             --worker-id "github-chart-${{ github.run_id }}-${{ github.run_attempt }}"
             --no-warm-from-demand
             --json

@@ -16,6 +16,8 @@ test("stock cache workflow checks and drains due chart jobs as a bounded backsto
   assert.match(chartBlock, /Drain chart refresh queue/);
   assert.match(chartBlock, /steps\.chart_queue\.outputs\.run == '1'/);
   assert.match(chartBlock, /STOCK_CHART_SNAPSHOT_QUEUE_LIMIT/);
+  assert.match(chartBlock, /STOCK_CHART_SNAPSHOT_QUEUE_CONCURRENCY/);
+  assert.match(chartBlock, /--queue-concurrency "\$STOCK_CHART_SNAPSHOT_QUEUE_CONCURRENCY"/);
   assert.match(chartBlock, /--no-warm-from-demand/);
   assert.match(chartBlock, /if:\s*steps\.chart_queue\.outputs\.run == '1'/);
   assert.doesNotMatch(workflowSource, /STOCK_CHART_WARM_TICKERS/);
@@ -39,6 +41,8 @@ test("stock cache workflow plans SLA target jobs before stale backstops", () => 
   const chartBlock = workflowSource.split("\n  chart:", 2)[1];
 
   assert.match(quoteBlock, /STOCK_REFRESH_PLANNER_QUOTE_LIMIT/);
+  assert.match(quoteBlock, /STOCK_SNAPSHOT_QUEUE_CONCURRENCY/);
+  assert.match(quoteBlock, /--queue-concurrency "\$STOCK_SNAPSHOT_QUEUE_CONCURRENCY"/);
   assert.match(quoteBlock, /Plan quote refresh target jobs/);
   assert.match(quoteBlock, /node --import tsx scripts\/plan_stock_refresh_jobs\.ts/);
   assert.match(quoteBlock, /--kind quote/);

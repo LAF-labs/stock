@@ -7,6 +7,7 @@ import { chartSnapshotExpiresAt, getStockChart, lastBarDateFromChartPayload, wri
 import { QUOTE_CACHE_FRESH_SECONDS, QUOTE_CACHE_STALE_SECONDS } from "@/lib/quoteContract";
 import { runScoreCollector } from "@/lib/pythonStockCollector";
 import { stockCachePolicyFreshSeconds, stockCachePolicyStaleSeconds } from "@/lib/stockCachePolicy";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import { loadLocalEnvFiles } from "./localEnv";
@@ -47,6 +48,7 @@ export type Options = {
   skipScore: boolean;
   skipChart: boolean;
   queueLimit: number;
+  queueConcurrency: number;
   queueLockSeconds: number;
   workerId: string;
   sleepSeconds: number;
@@ -400,14 +402,22 @@ export function chartPayloadFromTechnicalPayload(ticker: string, payload: StockP
   };
 }
 
+export async function drainRefreshJobs(
+  jobs: RefreshJob[],
+  config: SupabaseConfig,
+  options: Options,
+  publisher: (job: RefreshJob, config: SupabaseConfig, options: Options) => Promise<Record<string, unknown>> = publishQueueJob
+) {
+  const paceStart = createQueueStartPacer(options.sleepSeconds * 1000);
+  return mapWithConcurrency(jobs, options.queueConcurrency, async (job) => {
+    await paceStart();
+    return publisher(job, config, options);
+  });
+}
+
 export async function drainRefreshQueue(config: SupabaseConfig, options: Options) {
   const jobs = await claimRefreshJobs(config, options);
-  const rows: Array<Record<string, unknown>> = [];
-  for (let index = 0; index < jobs.length; index += 1) {
-    if (index > 0 && options.sleepSeconds > 0) await sleep(options.sleepSeconds * 1000);
-    rows.push(await publishQueueJob(jobs[index], config, options));
-  }
-  return rows;
+  return drainRefreshJobs(jobs, config, options);
 }
 
 async function fetchDemandWarmTickers(config: SupabaseConfig, options: Options): Promise<string[]> {
@@ -494,6 +504,7 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
     skipScore: true,
     skipChart: true,
     queueLimit: positiveInteger(env.STOCK_SNAPSHOT_QUEUE_LIMIT, 50),
+    queueConcurrency: positiveInteger(env.STOCK_SNAPSHOT_QUEUE_CONCURRENCY, 1),
     queueLockSeconds: positiveInteger(env.STOCK_SNAPSHOT_QUEUE_LOCK_SECONDS, 900),
     workerId: env.STOCK_SNAPSHOT_WORKER_ID || `stock-snapshot-ts-${process.pid}`,
     sleepSeconds: positiveNumber(env.STOCK_SNAPSHOT_SLEEP_SECONDS, 0),
@@ -526,6 +537,7 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
     else if (arg === "--skip-score") options.skipScore = true;
     else if (arg === "--allow-score-python-fallback") options.allowScorePythonFallback = true;
     else if (arg === "--queue-limit") options.queueLimit = positiveInteger(next(), options.queueLimit);
+    else if (arg === "--queue-concurrency") options.queueConcurrency = positiveInteger(next(), options.queueConcurrency);
     else if (arg === "--queue-lock-seconds") options.queueLockSeconds = positiveInteger(next(), options.queueLockSeconds);
     else if (arg === "--worker-id") options.workerId = next();
     else if (arg === "--sleep-seconds") options.sleepSeconds = positiveNumber(next(), options.sleepSeconds);
@@ -614,8 +626,24 @@ function validIso(value: string | undefined): string | undefined {
   return value && Number.isFinite(Date.parse(value)) ? value : undefined;
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function createQueueStartPacer(intervalMs: number) {
+  const normalizedIntervalMs = Math.max(0, intervalMs);
+  let first = true;
+  let chain: Promise<void> = Promise.resolve();
+  return async () => {
+    if (normalizedIntervalMs <= 0) return;
+    if (first) {
+      first = false;
+      return;
+    }
+    const wait: Promise<void> = chain.then(() => sleep(normalizedIntervalMs));
+    chain = wait.catch(() => undefined);
+    await wait;
+  };
 }
 
 function isMainModule(): boolean {

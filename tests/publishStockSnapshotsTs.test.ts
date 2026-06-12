@@ -16,6 +16,7 @@ import {
   selectWarmTickerBatch,
   mergeWarmTickerPool,
   maybeUpsertChartSnapshotFromTechnicalPayload,
+  drainRefreshJobs,
   upsertChartSnapshot,
   run,
   upsertQuoteSnapshot,
@@ -35,6 +36,12 @@ test("TypeScript snapshot worker defaults to quote-only queue drain", () => {
   assert.equal(options.skipQuote, false);
   assert.equal(options.skipScore, true);
   assert.equal(options.queueLimit, 50);
+  assert.equal(options.queueConcurrency, 1);
+});
+
+test("TypeScript snapshot worker parses queue concurrency from env and CLI", () => {
+  assert.equal(parseOptions(["--drain-queue", "--kind", "quote"], { STOCK_SNAPSHOT_QUEUE_CONCURRENCY: "4" }).queueConcurrency, 4);
+  assert.equal(parseOptions(["--drain-queue", "--kind", "quote", "--queue-concurrency", "2"], { STOCK_SNAPSHOT_QUEUE_CONCURRENCY: "4" }).queueConcurrency, 2);
 });
 
 test("TypeScript snapshot worker parses canonical tickers and views", () => {
@@ -99,6 +106,33 @@ test("TypeScript snapshot worker claims quote jobs with kind-specific RPC", asyn
     p_lock_seconds: 900,
   });
   assert.equal(calls[0].authorization, "Bearer service-role-key");
+});
+
+test("TypeScript snapshot worker drains independent queue jobs with bounded concurrency", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const options = parseOptions(["--drain-queue", "--kind", "quote", "--queue-concurrency", "2", "--sleep-seconds", "0"], {});
+
+  const rows = await drainRefreshJobs(
+    [
+      { id: "job-1", kind: "quote", market: "US", symbol: "A" },
+      { id: "job-2", kind: "quote", market: "US", symbol: "B" },
+      { id: "job-3", kind: "quote", market: "US", symbol: "C" },
+      { id: "job-4", kind: "quote", market: "US", symbol: "D" },
+    ],
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    options,
+    async (job) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return { job_id: job.id, status: "succeeded" };
+    }
+  );
+
+  assert.equal(maxActive, 2);
+  assert.deepEqual(rows.map((row) => row.job_id), ["job-1", "job-2", "job-3", "job-4"]);
 });
 
 test("TypeScript snapshot worker accepts chart queue mode", async () => {
