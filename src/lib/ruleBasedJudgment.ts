@@ -286,15 +286,15 @@ function valuationMetricBenchmarkText(label: "Forward PER" | "PER" | "EV/Revenue
 }
 
 function benchmarkComparisonLabel(benchmark: IndustryBenchmark): string {
-  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 기준`.trim();
+  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 평균`.trim();
 }
 
 function benchmarkUpperLabel(benchmark: IndustryBenchmark): string {
-  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 상위권 기준`.trim();
+  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 상위권 평균`.trim();
 }
 
 function benchmarkLowerLabel(benchmark: IndustryBenchmark): string {
-  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 하위권 기준`.trim();
+  return `${benchmarkScopeText(benchmark)}${benchmarkIndustryPhrase(benchmark)} 하위권 평균`.trim();
 }
 
 function benchmarkScopeText(benchmark: IndustryBenchmark): string {
@@ -304,17 +304,20 @@ function benchmarkScopeText(benchmark: IndustryBenchmark): string {
 }
 
 function benchmarkIndustryText(benchmark: IndustryBenchmark): string {
-  return meaningfulText(benchmark.industry) || meaningfulText(benchmark.providerGroupName) || meaningfulText(benchmark.sector) || "";
+  return meaningfulText(benchmark.industry) || meaningfulText(benchmark.providerGroupName) || "";
 }
 
 function benchmarkIndustryPhrase(benchmark: IndustryBenchmark): string {
   const industry = benchmarkIndustryText(benchmark);
-  return industry ? `${industry} 업종` : "업종";
+  if (industry) return `${industry} 업종`;
+  const sector = meaningfulText(benchmark.sector);
+  if (sector) return `${sector} 섹터`;
+  return "시장";
 }
 
 function secondSentence(input: { strongestLabel: string; valuation?: { body: string } }): string {
   if (input.valuation) return `${input.strongestLabel}은 강점이고 ${input.valuation.body}`;
-  return `${input.strongestLabel}은 강점이고 업종 기준 PER/PBR이 들어오면 가격 부담을 더 정확히 볼 수 있어요.`;
+  return `${input.strongestLabel}은 강점이고 업종 평균 PER/PBR이 들어오면 가격 부담을 더 정확히 볼 수 있어요.`;
 }
 
 function watchSentence(input: { strongestLabel: string; valuation?: { watch: string } }): string {

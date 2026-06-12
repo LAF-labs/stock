@@ -21,6 +21,15 @@ type IndustryTaxonomyRow = {
   confidence?: number | string | null;
 };
 
+type SymbolIndustryTagRow = {
+  taxonomy?: string | null;
+  code?: string | null;
+  name?: string | null;
+  level?: number | string | null;
+  confidence?: number | string | null;
+  source?: string | null;
+};
+
 type IndustryTaxonomyCacheEntry = {
   value?: IndustryTaxonomyMapping;
   expiresAt: number;
@@ -31,7 +40,9 @@ declare global {
 }
 
 const SUPABASE_TABLE = "industry_taxonomy_map";
+const SYMBOL_TAG_TABLE = "stock_symbol_industry_tags";
 const PROFILE_TAXONOMY = "profile_primary";
+const SYMBOL_CANONICAL_TAXONOMY = "finviz_canonical";
 const DEFAULT_CACHE_SECONDS = 24 * 60 * 60;
 const taxonomyCache = (globalThis.__stockIndustryTaxonomyCache ??= new Map<string, IndustryTaxonomyCacheEntry>());
 
@@ -39,14 +50,17 @@ export async function getIndustryTaxonomyMappingForProfile(
   profile: SymbolIndustryProfile | undefined
 ): Promise<IndustryTaxonomyMapping | undefined> {
   const sourceKey = sourceKeyForProfile(profile);
-  if (!sourceKey) return undefined;
+  const symbolKey = symbolTagSourceKeyForProfile(profile);
+  if (!sourceKey && !symbolKey) return undefined;
 
-  const key = `${PROFILE_TAXONOMY}:${sourceKey}`;
+  const key = `${SYMBOL_CANONICAL_TAXONOMY}:${symbolKey || ""}:${PROFILE_TAXONOMY}:${sourceKey || ""}`;
   const now = Date.now();
   const cached = taxonomyCache.get(key);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  const value = await fetchIndustryTaxonomyMapping(PROFILE_TAXONOMY, sourceKey);
+  const value =
+    (await fetchSymbolCanonicalTagMapping(profile)) ||
+    (sourceKey ? await fetchIndustryTaxonomyMapping(PROFILE_TAXONOMY, sourceKey) : undefined);
   taxonomyCache.set(key, {
     value,
     expiresAt: now + cacheSeconds() * 1000,
@@ -58,6 +72,11 @@ export async function getIndustryTaxonomyMappingForProfile(
 export function sourceKeyForProfile(profile: SymbolIndustryProfile | undefined): string | undefined {
   if (!profile?.market || !profile.primaryIndustryKey) return undefined;
   return [profile.market, profile.primarySectorKey || "", profile.primaryIndustryKey].join(":");
+}
+
+function symbolTagSourceKeyForProfile(profile: SymbolIndustryProfile | undefined): string | undefined {
+  if (!profile?.market || !profile.symbol) return undefined;
+  return [profile.market, profile.symbol].join(":");
 }
 
 export function clearIndustryTaxonomyCacheForTests() {
@@ -102,6 +121,38 @@ async function fetchIndustryTaxonomyMapping(taxonomy: string, sourceKey: string)
   }
 }
 
+async function fetchSymbolCanonicalTagMapping(profile: SymbolIndustryProfile | undefined): Promise<IndustryTaxonomyMapping | undefined> {
+  const symbolKey = symbolTagSourceKeyForProfile(profile);
+  if (!profile?.market || !profile.symbol || !symbolKey) return undefined;
+
+  const config = supabaseReadConfig();
+  if (!config) return undefined;
+
+  const query = new URLSearchParams();
+  query.set("select", ["taxonomy", "code", "name", "level", "confidence", "source"].join(","));
+  query.set("market", `eq.${profile.market}`);
+  query.set("symbol", `eq.${profile.symbol}`);
+  query.set("taxonomy", `eq.${SYMBOL_CANONICAL_TAXONOMY}`);
+  query.set("level", "in.(1,2)");
+  query.set("order", "level.asc,confidence.desc,updated_at.desc");
+
+  try {
+    const response = await fetchWithTimeout(
+      `${config.url}/rest/v1/${SYMBOL_TAG_TABLE}?${query.toString()}`,
+      {
+        headers: supabaseHeaders(config.key),
+        cache: "no-store",
+      },
+      numericEnv("STOCK_INDUSTRY_TAXONOMY_TIMEOUT_MS", 1_500)
+    );
+    if (!response.ok) return undefined;
+    const rows = (await response.json()) as SymbolIndustryTagRow[];
+    return mappingFromSymbolTagRows(symbolKey, rows);
+  } catch {
+    return undefined;
+  }
+}
+
 function mappingFromRow(row: IndustryTaxonomyRow | undefined): IndustryTaxonomyMapping | undefined {
   if (!row?.taxonomy || !row.source_key) return undefined;
   return {
@@ -112,6 +163,22 @@ function mappingFromRow(row: IndustryTaxonomyRow | undefined): IndustryTaxonomyM
     canonicalIndustryKey: meaningfulText(row.canonical_industry_key),
     canonicalIndustryName: meaningfulText(row.canonical_industry_name),
     confidence: numberFromValue(row.confidence),
+  };
+}
+
+function mappingFromSymbolTagRows(sourceKey: string, rows: SymbolIndustryTagRow[]): IndustryTaxonomyMapping | undefined {
+  const sector = rows.find((row) => numberFromValue(row.level) === 1 && meaningfulText(row.name));
+  const industry = rows.find((row) => numberFromValue(row.level) === 2 && meaningfulText(row.name));
+  if (!sector && !industry) return undefined;
+
+  return {
+    taxonomy: SYMBOL_CANONICAL_TAXONOMY,
+    sourceKey,
+    canonicalSectorKey: meaningfulText(sector?.code),
+    canonicalSectorName: meaningfulText(sector?.name),
+    canonicalIndustryKey: meaningfulText(industry?.code),
+    canonicalIndustryName: meaningfulText(industry?.name),
+    confidence: numberFromValue(industry?.confidence) ?? numberFromValue(sector?.confidence),
   };
 }
 

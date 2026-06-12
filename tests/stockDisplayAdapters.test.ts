@@ -39,16 +39,16 @@ test("display payload adapter merges financial sections without duplicate valuat
       key_metrics: [{ label: "시가총액", value: "1조원" }],
       valuation_rows: [
         { label: "Forward PER", value: "21.4" },
-        { label: "업종 기준 PER", value: "24.0" },
+        { label: "업종 평균 PER", value: "24.0" },
       ],
     },
     industryBenchmark: {
       industry_benchmarks: [{ metric: "per", value: 24 }],
-      valuation_rows: [{ label: "업종 기준 PER", value: "24.0" }],
+      valuation_rows: [{ label: "업종 평균 PER", value: "24.0" }],
     },
   }));
 
-  assert.deepEqual(adapted.valuation_rows?.map((row) => row.label), ["Forward PER", "업종 기준 PER"]);
+  assert.deepEqual(adapted.valuation_rows?.map((row) => row.label), ["Forward PER", "업종 평균 PER"]);
   assert.equal((adapted.industry_benchmarks as unknown[] | undefined)?.length, 1);
 });
 

@@ -322,5 +322,5 @@ function fundamentalValuationRows(value: unknown): unknown[] | undefined {
 function isIndustryBenchmarkRow(item: unknown): boolean {
   if (!item || typeof item !== "object" || Array.isArray(item)) return false;
   const label = stringValue((item as Record<string, unknown>).label);
-  return Boolean(label && label.includes("업종 기준"));
+  return Boolean(label && (label.includes("업종 평균") || label.includes("섹터 평균") || label.includes("시장 평균") || label.includes("업종 기준")));
 }

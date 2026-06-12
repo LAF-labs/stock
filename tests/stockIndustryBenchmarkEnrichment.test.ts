@@ -70,13 +70,13 @@ test("industry benchmark enrichment appends benchmark rows to score valuation pa
   const rows = enriched.valuation_rows as Array<{ label?: string; value?: string; note?: string }>;
   const benchmarks = enriched.industry_benchmarks as Array<{ metric?: string; median?: number }>;
 
-  assert.equal(rows.some((row) => row.label === "업종 기준 PER" && row.value === "18.25"), true);
-  assert.equal(rows.some((row) => row.label === "업종 기준 PBR" && row.value === "4.10"), true);
-  assert.equal(rows.find((row) => row.label === "업종 기준 PER")?.note, "해외 음료 업종 기준");
+  assert.equal(rows.some((row) => row.label === "업종 평균 PER" && row.value === "18.25"), true);
+  assert.equal(rows.some((row) => row.label === "업종 평균 PBR" && row.value === "4.10"), true);
+  assert.equal(rows.find((row) => row.label === "업종 평균 PER")?.note, "해외 음료 업종 평균");
   assert.deepEqual(benchmarks.map((item) => item.metric), ["per", "pbr"]);
 });
 
-test("industry benchmark enrichment does not duplicate existing benchmark labels", async () => {
+test("industry benchmark enrichment replaces legacy benchmark labels without duplicates", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 
@@ -107,6 +107,82 @@ test("industry benchmark enrichment does not duplicate existing benchmark labels
   });
 
   const rows = enriched.valuation_rows as Array<{ label?: string; value?: string }>;
-  assert.equal(rows.filter((row) => row.label === "업종 기준 PER").length, 1);
-  assert.equal(rows.find((row) => row.label === "업종 기준 PER")?.value, "11.00");
+  assert.equal(rows.filter((row) => row.label === "업종 평균 PER").length, 1);
+  assert.equal(rows.some((row) => row.label === "업종 기준 PER"), false);
+  assert.equal(rows.find((row) => row.label === "업종 평균 PER")?.value, "11.00");
+});
+
+test("industry benchmark enrichment labels sector fallbacks as sector averages", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    const metric = url.searchParams.get("metric")?.replace(/^eq\./, "") || "";
+    const industry = url.searchParams.get("industry") || "";
+    if (metric !== "per" || industry !== "eq.") {
+      return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify([
+        {
+          scope: "KR",
+          market: "KR",
+          sector: "정보기술",
+          industry: "",
+          metric,
+          period: "quarter",
+          median: 31.3,
+          sample_count: 9,
+          source: "score_snapshot",
+        },
+      ]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }) as typeof fetch;
+
+  const enriched = await enrichStockPayloadWithIndustryBenchmarks({
+    ok: true,
+    market: "KR",
+    symbol: "005930",
+    sector: "정보기술",
+    industry: "얇은 업종",
+    valuation_rows: [],
+  });
+
+  const rows = enriched.valuation_rows as Array<{ label?: string; note?: string; value?: string }>;
+  assert.equal(rows.find((row) => row.label === "섹터 평균 PER")?.value, "31.30");
+  assert.equal(rows.find((row) => row.label === "섹터 평균 PER")?.note, "국내 정보기술 섹터 평균");
+});
+
+test("industry benchmark enrichment skips derivative-like products", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  const enriched = await enrichStockPayloadWithIndustryBenchmarks({
+    ok: true,
+    requested_ticker: "KR:252670",
+    market: "KR",
+    symbol: "252670",
+    name: "KODEX 200선물인버스2X",
+    instrument_type: "ETF",
+    industry_profile: {
+      asset_class: "etf",
+      name: "KODEX 200선물인버스2X",
+      instrument_type: "ETF",
+    },
+    sector: "금융",
+    industry: "ETF",
+    valuation_rows: [{ label: "PER", value: "-" }],
+  });
+
+  assert.equal(fetchCalls, 0);
+  assert.equal(enriched.industry_benchmarks, undefined);
+  assert.deepEqual(enriched.valuation_rows, [{ label: "PER", value: "-" }]);
 });

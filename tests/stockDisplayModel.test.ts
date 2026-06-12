@@ -385,7 +385,7 @@ test("display model materializes enriched score fields as first-class display pa
         stock_profile: [{ label: "섹터", value: "Consumer Defensive" }],
         valuation_rows: [
           { label: "Forward PER", value: "21.4" },
-          { label: "업종 기준 PER", value: "24.0" },
+          { label: "업종 평균 PER", value: "24.0" },
         ],
         financials: { profitMargins: 0.22, revenueGrowth: 0.04 },
         financial_statement: { period: "TTM" },
@@ -403,7 +403,7 @@ test("display model materializes enriched score fields as first-class display pa
   assert.equal((payload.fundamentals.value.key_metrics as unknown[]).length, 1);
   assert.deepEqual((payload.fundamentals.value.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["Forward PER"]);
   assert.equal((payload.industryBenchmark.value.industry_benchmarks as unknown[]).length, 1);
-  assert.deepEqual((payload.industryBenchmark.value.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["업종 기준 PER"]);
+  assert.deepEqual((payload.industryBenchmark.value.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["업종 평균 PER"]);
   assert.equal((payload.news.value.items as unknown[]).length, 1);
 });
 

@@ -386,7 +386,7 @@ test("dashboard promotes detail-view financial and analyst sections into visible
         stock_profile: [{ label: "섹터", value: "Consumer Defensive" }],
         valuation_rows: [
           { label: "Forward PER", value: "21.4" },
-          { label: "업종 기준 PER", value: "24.0" },
+          { label: "업종 평균 PER", value: "24.0" },
         ],
         financials: { profitMargins: 0.22, revenueGrowth: 0.04 },
         financial_statement: { period: "TTM" },
@@ -745,7 +745,7 @@ test("shouldUseCompactMetricGrid keeps only short numeric metric groups horizont
       label: "밸류에이션",
       metrics: [
         { label: "Forward PER", value: "22.8x" },
-        { label: "업종 기준 PER", value: "12.8x" },
+        { label: "업종 평균 PER", value: "12.8x" },
         { label: "시가총액", value: "$264.2B" },
       ],
     }),

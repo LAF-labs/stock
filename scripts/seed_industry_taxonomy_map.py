@@ -9,69 +9,27 @@ from typing import Any
 import requests
 
 from backfill_symbol_profiles import ROOT, clean_text, env_value, slug, upsert_rows
+try:
+    from finviz_industry_taxonomy import (
+        FINVIZ_INDUSTRIES,
+        canonical_industry_for_provider,
+        canonical_industry_key_for,
+        canonical_names_for_provider,
+        finviz_slug,
+    )
+except ModuleNotFoundError:
+    from scripts.finviz_industry_taxonomy import (
+        FINVIZ_INDUSTRIES,
+        canonical_industry_for_provider,
+        canonical_industry_key_for,
+        canonical_names_for_provider,
+        finviz_slug,
+    )
 from run_industry_maintenance import hydrate_service_role_from_cli
 
 
 TAXONOMY_TABLE = "industry_taxonomy_map"
 PROFILE_TAXONOMY = "profile_primary"
-
-SECTOR_KO = {
-    "Basic Materials": "소재",
-    "Consumer Discretionary": "경기소비재",
-    "Consumer Staples": "필수소비재",
-    "Energy": "에너지",
-    "Finance": "금융",
-    "Health Care": "헬스케어",
-    "Industrials": "산업재",
-    "Miscellaneous": "기타",
-    "Real Estate": "부동산",
-    "Technology": "정보기술",
-    "Telecommunications": "통신서비스",
-    "Utilities": "유틸리티",
-    "Communication Services": "커뮤니케이션",
-    "Consumer Cyclical": "경기소비재",
-    "Consumer Defensive": "필수소비재",
-    "Financial Services": "금융",
-    "Healthcare": "헬스케어",
-}
-
-US_INDUSTRY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("스팩", ("blank checks", "shell companies")),
-    ("반도체", ("semiconductor",)),
-    ("소프트웨어", ("software", "saas", "edp services", "computer services", "information technology services")),
-    ("하드웨어·전자장비", ("computer manufacturing", "electronic components", "telecommunications equipment")),
-    ("바이오·제약", ("biotechnology", "pharmaceutical", "medicinal chemicals")),
-    ("의료기기·서비스", ("medical specialities", "medical/dental instruments", "hospital", "managed health care", "health care services")),
-    ("은행", ("major banks", "commercial banks", "savings institutions", "banks", "banking")),
-    ("보험", ("insurance",)),
-    ("금융서비스", ("investment managers", "finance companies", "investment bankers", "brokerage", "asset management", "mortgage")),
-    ("리츠", ("real estate investment trusts", "reit")),
-    ("부동산", ("real estate",)),
-    ("석유·가스", ("oil", "gas", "coal", "integrated oil")),
-    ("전력·유틸리티", ("electric utilities", "water supply", "power generation", "natural gas distribution")),
-    ("금속·광업", ("metal mining", "precious metals", "aluminum", "steel", "mining")),
-    ("금속·광업", ("gold", "silver", "other metals and minerals")),
-    ("종이·목재", ("forest products", "paper")),
-    ("화학", ("chemicals",)),
-    ("자동차", ("auto manufacturing", "auto parts", "automotive", "motor vehicles")),
-    ("자동차", ("auto manufacturers", "auto & truck dealerships")),
-    ("운송", ("air freight", "marine transportation", "railroads", "trucking", "transportation services")),
-    ("항공·방산", ("aerospace", "military/government/technical")),
-    ("기계·산업장비", ("industrial machinery", "industrial specialties", "construction/ag equipment", "building products")),
-    ("건설·엔지니어링", ("homebuilding", "engineering", "construction")),
-    ("소매", ("retail", "catalog/specialty distribution")),
-    ("의류·소비재", ("apparel", "footwear", "household & personal products")),
-    ("가구·가전", ("furnishings", "fixtures", "appliances")),
-    ("포장재", ("packaging", "containers")),
-    ("레저·여행", ("leisure", "travel services", "recreational vehicles")),
-    ("음식료·외식", ("restaurants", "food", "beverages", "meat/poultry/fish")),
-    ("미디어·엔터", ("broadcasting", "movies/entertainment", "advertising", "publishing")),
-    ("인터넷·플랫폼", ("internet content", "information")),
-    ("통신서비스", ("telecommunications", "cable", "wireless")),
-    ("교육서비스", ("educational services",)),
-    ("농업", ("farming", "agricultural")),
-)
-
 
 def read_config() -> tuple[str, str]:
     url = (env_value("SUPABASE_URL") or "").rstrip("/")
@@ -115,6 +73,8 @@ def fetch_profiles() -> list[dict[str, Any]]:
 
 def mapping_rows(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_source_key: dict[str, dict[str, Any]] = {}
+    for row in finviz_master_rows():
+        by_source_key[f"{row['taxonomy']}:{row['source_key']}"] = row
     for profile in profiles:
         market = clean_text(profile.get("market")).upper()
         sector = clean_text(profile.get("primary_sector"))
@@ -125,35 +85,54 @@ def mapping_rows(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
 
         source_key = f"{market}:{sector_key}:{industry_key}"
-        canonical_sector, canonical_industry, confidence = canonical_names(market, sector, industry)
-        by_source_key[source_key] = {
+        canonical_item, confidence = canonical_industry_for_provider(market, sector, industry)
+        canonical_sector = canonical_item.sector_ko
+        canonical_industry = canonical_item.industry_ko
+        by_source_key[f"{PROFILE_TAXONOMY}:{source_key}"] = {
             "taxonomy": PROFILE_TAXONOMY,
             "source_key": source_key,
             "code": industry_key,
             "name": industry,
             "canonical_sector_key": slug(canonical_sector),
             "canonical_sector_name": canonical_sector,
-            "canonical_industry_key": slug(f"{canonical_sector}:{canonical_industry}"),
+            "canonical_industry_key": canonical_industry_key_for(canonical_item),
             "canonical_industry_name": canonical_industry,
             "confidence": confidence,
         }
     return sorted(by_source_key.values(), key=lambda row: row["source_key"])
 
 
+def finviz_master_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in FINVIZ_INDUSTRIES:
+        base = {
+            "code": item.slug,
+            "name": item.name,
+            "canonical_sector_key": slug(item.sector_ko),
+            "canonical_sector_name": item.sector_ko,
+            "canonical_industry_key": canonical_industry_key_for(item),
+            "canonical_industry_name": item.industry_ko,
+            "confidence": 1,
+        }
+        rows.append({"taxonomy": "finviz_industry", "source_key": f"US:finviz:{finviz_slug(item.sector)}:{item.slug}", **base})
+        for sector_key in profile_sector_key_aliases(item.sector):
+            rows.append({"taxonomy": PROFILE_TAXONOMY, "source_key": f"US:{sector_key}:{item.slug}", **base})
+            rows.append({"taxonomy": PROFILE_TAXONOMY, "source_key": f"US:{sector_key}:{sector_key}_{item.slug}", **base})
+    return rows
+
+
+def profile_sector_key_aliases(provider_sector: str) -> tuple[str, ...]:
+    aliases = {
+        "Consumer Cyclical": ("consumer_cyclical", "consumer_discretionary"),
+        "Consumer Defensive": ("consumer_defensive", "consumer_staples"),
+        "Financial": ("financial", "finance", "financial_services"),
+        "Healthcare": ("healthcare", "health_care"),
+    }
+    return aliases.get(provider_sector, (finviz_slug(provider_sector),))
+
+
 def canonical_names(market: str, sector: str, industry: str) -> tuple[str, str, float]:
-    if market == "KR" and has_hangul(industry):
-        return sector or "기타", industry, 0.95
-
-    canonical_sector = SECTOR_KO.get(sector, sector or "기타")
-    lowered = industry.lower()
-    for canonical_industry, needles in US_INDUSTRY_RULES:
-        if any(needle in lowered for needle in needles):
-            return canonical_sector, canonical_industry, 0.82
-    return canonical_sector, industry, 0.65
-
-
-def has_hangul(value: str) -> bool:
-    return any("가" <= char <= "힣" for char in value)
+    return canonical_names_for_provider(market, sector, industry)
 
 
 def write_audit(rows: list[dict[str, Any]], path: Path | None) -> None:

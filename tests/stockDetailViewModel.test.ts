@@ -143,7 +143,7 @@ test("detail view preserves enriched financial and analyst display parts", () =>
     industryBenchmark: {
       value: {
         industry_benchmarks: [{ metric: "per", value: 24 }],
-        valuation_rows: [{ label: "업종 기준 PER", value: "24.0" }],
+        valuation_rows: [{ label: "업종 평균 PER", value: "24.0" }],
       },
       freshness: "fresh",
       source: "derived",
@@ -171,7 +171,7 @@ test("detail view preserves enriched financial and analyst display parts", () =>
   assert.equal(view.sections.score?.quality_score, 74);
   assert.equal(Array.isArray(view.sections.financials?.key_metrics), true);
   assert.equal(Array.isArray(view.sections.financials?.industry_benchmarks), true);
-  assert.deepEqual((view.sections.financials?.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["Forward PER", "업종 기준 PER"]);
+  assert.deepEqual((view.sections.financials?.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["Forward PER", "업종 평균 PER"]);
   assert.equal(Array.isArray(view.sections.analyst?.news), true);
   assert.equal(view.parts.financials.state, "ready");
   assert.equal(view.parts.analyst.state, "ready");

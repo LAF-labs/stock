@@ -144,7 +144,7 @@ Quote serving contract values shared by Next and Rust live in `shared/quote-cont
 
 판단문은 LLM 호출 없이 서버 룰 엔진에서 생성합니다. 결과는 `stock_rule_judgments`에 6시간 버킷으로 캐시하고, 프로세스 메모리 캐시를 먼저 확인해 인기 종목 반복 조회 비용을 줄입니다. PER/PBR 업종 비교는 `stock_industry_benchmarks`를 읽으며, 이 테이블은 요청 경로에서 집계하지 않습니다.
 
-종목별 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 한 종목이 여러 taxonomy/tag를 가질 수 있지만 런타임 판단에는 `stock_symbol_profiles.primary_sector`와 `primary_industry`를 우선 사용합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
+종목별 raw 업종은 `stock_symbol_profiles`와 `stock_symbol_industry_tags`에 사전 백필합니다. 런타임 표시는 Finviz 144개 canonical 업종의 한국어 표시명을 사용하며, 종목별 `stock_symbol_industry_tags.taxonomy = finviz_canonical` 태그를 우선하고 없을 때 `industry_taxonomy_map`의 source-key mapping으로 fallback합니다. 국내/미국 종목은 같은 canonical 업종 체계를 공유하지만, 업종 PER/PBR benchmark는 `scope=KR`과 `scope=OVERSEAS`로 분리해 계산합니다. profile 조회는 프로세스 메모리에 기본 24시간 캐시되며, yfinance/KIS 같은 외부 제공자 조회는 사용자 요청 중 실행하지 않습니다.
 업종 원천과 운영 주기는 [docs/industry-data-sources.md](docs/industry-data-sources.md)에, 점수 모델 버전/캐시/스모크 운영은 [docs/score-system-operations.md](docs/score-system-operations.md)에 정리되어 있습니다. 점수 정확도 개선을 위한 데이터 보강 검토는 [docs/score-data-enrichment-review.md](docs/score-data-enrichment-review.md)를 보세요.
 
 운영 리포트는 refresh queue backlog, stale/dead job, score snapshot 모델 분포, 점수 동점률, 결측/저신뢰 고득점 위험을 한 번에 확인합니다. `thresholds`는 배포를 막는 실패 기준이고, `freshness_risks`는 demand-driven cache에서 임계값을 넘지 않아도 확인해야 하는 경고입니다. `MARKET_DATA_SERVICE_URL`과 `MARKET_DATA_INTERNAL_TOKEN`이 설정되어 있으면 Rust market-data `/healthz`와 인증된 `/metrics`도 함께 점검합니다. 직접 진단할 때는 bearer 인증이 필요한 `/readyz`를 사용해 cache/queue backend가 memory인지, score durable refresh가 아직 비활성인지 확인하세요.
@@ -187,6 +187,7 @@ python scripts/backfill_symbol_profiles.py --source master --batch-size 1000
 python scripts/backfill_symbol_profiles.py --source kind --market KR --batch-size 1000
 python scripts/backfill_symbol_profiles.py --source nasdaq --market US --batch-size 1000
 python scripts/seed_industry_taxonomy_map.py
+python scripts/sync_canonical_industry_tags.py
 ```
 
 `master`는 전체 종목을 pending profile로 빠르게 채웁니다. 국내 종목은 KIND 상장법인목록 bulk download를 1차 업종 소스로 사용합니다. 이 파일은 한 번의 요청으로 회사명, 시장구분, 종목코드, 업종, 주요제품, 상장일을 내려주므로 KOSPI/KOSDAQ/KONEX를 종목별 외부 호출 없이 채울 수 있습니다. 미국 종목은 Nasdaq screener bulk source를 1차 업종 소스로 사용하고, `yfinance`는 bulk source 구멍을 메우는 수동 fallback으로만 사용합니다. `SUPABASE_SERVICE_ROLE_KEY`가 있으면 REST upsert를 쓰고, service role key가 없으면 `.env.supabase.local`의 `SUPABASE_ACCESS_TOKEN`으로 `supabase db query`를 실행합니다.
@@ -197,9 +198,10 @@ python scripts/seed_industry_taxonomy_map.py
 python scripts/run_industry_maintenance.py --seed-master --refresh-classifications
 python scripts/run_industry_maintenance.py --run-yfinance-fallback --lane KR:KOSPI:50 --lane KR:KOSDAQ:50
 python scripts/seed_industry_taxonomy_map.py
+python scripts/sync_canonical_industry_tags.py
 ```
 
-매일 갱신할 대상은 업종 자체가 아니라 업종별 valuation benchmark입니다. 배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 하루 1회 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
+매일 갱신할 대상은 업종별 valuation benchmark입니다. `seed_industry_taxonomy_map.py`는 Finviz 144개 canonical 업종 원장과 국내/미국 raw 업종 매핑을 다시 심어도 안전합니다. 배포 후 Supabase migration을 적용한 뒤, 운영 작업에서 아래 RPC를 하루 1회 실행해 업종/섹터 벤치마크를 갱신합니다. 기본 표본 수는 8개이고, 기존 `stock_score_snapshots`의 detail payload에서 PER, Forward PER, PBR, Price/Sales, EV/Revenue를 집계합니다.
 
 ```sql
 select public.refresh_stock_industry_benchmarks(current_date, 8);
@@ -207,6 +209,13 @@ select public.refresh_stock_industry_benchmarks(current_date, 8);
 
 ```bash
 python scripts/run_industry_maintenance.py --refresh-benchmarks
+python scripts/sync_external_industry_benchmarks.py
+```
+
+Finviz가 429로 막힌 동안에는 provider를 더 치지 않고 기존 Finviz benchmark row를 유지할 수 있습니다.
+
+```bash
+python scripts/sync_external_industry_benchmarks.py --finviz-existing-benchmark-fallback-only
 ```
 
 점수 모델 변경 배포 후에는 새 모델 버전 캐시만 사용되는지 확인하고, 대표 종목 가드레일을 통과하는지 스모크 체크를 실행합니다.

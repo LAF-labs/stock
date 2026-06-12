@@ -16,10 +16,25 @@ import warnings
 import pandas as pd
 import pandas_market_calendars as mcal
 
+try:
+    from finviz_industry_taxonomy import (
+        FINVIZ_INDUSTRIES,
+        canonical_names_for_provider,
+        finviz_industry_by_name,
+    )
+except ModuleNotFoundError:
+    from scripts.finviz_industry_taxonomy import (
+        FINVIZ_INDUSTRIES,
+        canonical_names_for_provider,
+        finviz_industry_by_name,
+    )
+
 ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_TABLE = "stock_industry_benchmarks"
 ENV_FILES = (".env.local", ".env.supabase.local")
 BENCHMARK_EXPIRY_GRACE_HOURS = 12
+DEFAULT_FINVIZ_CACHE_PATH = ROOT / "tmp" / "finviz-industry-groups-v120.html"
+DEFAULT_FINVIZ_CACHE_MAX_AGE_HOURS = 20.0
 
 FINVIZ_SOURCE = "finviz_industry"
 FINVIZ_BASE_URL = "https://finviz.com/groups.ashx"
@@ -40,56 +55,6 @@ FINVIZ_SECTORS = {
     "technology": "Technology",
     "utilities": "Utilities",
 }
-
-SECTOR_KO = {
-    "Basic Materials": "소재",
-    "Communication Services": "커뮤니케이션",
-    "Consumer Cyclical": "경기소비재",
-    "Consumer Defensive": "필수소비재",
-    "Energy": "에너지",
-    "Financial": "금융",
-    "Healthcare": "헬스케어",
-    "Industrials": "산업재",
-    "Real Estate": "부동산",
-    "Technology": "정보기술",
-    "Utilities": "유틸리티",
-}
-
-US_INDUSTRY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("스팩", ("blank checks", "shell companies")),
-    ("반도체", ("semiconductor",)),
-    ("소프트웨어", ("software", "saas", "edp services", "computer services", "information technology services")),
-    ("하드웨어·전자장비", ("computer manufacturing", "electronic components", "telecommunications equipment")),
-    ("바이오·제약", ("biotechnology", "pharmaceutical", "medicinal chemicals")),
-    ("의료기기·서비스", ("medical specialities", "medical/dental instruments", "hospital", "managed health care", "health care services")),
-    ("은행", ("major banks", "commercial banks", "savings institutions", "banks", "banking")),
-    ("보험", ("insurance",)),
-    ("금융서비스", ("investment managers", "finance companies", "investment bankers", "brokerage", "asset management")),
-    ("리츠", ("real estate investment trusts", "reit")),
-    ("부동산", ("real estate",)),
-    ("석유·가스", ("oil", "gas", "coal", "integrated oil")),
-    ("전력·유틸리티", ("electric utilities", "water supply", "power generation", "natural gas distribution")),
-    ("금속·광업", ("metal mining", "precious metals", "aluminum", "steel", "mining", "gold", "silver")),
-    ("종이·목재", ("forest products", "paper")),
-    ("화학", ("chemicals",)),
-    ("자동차", ("auto manufacturing", "auto parts", "automotive", "motor vehicles", "auto manufacturers")),
-    ("운송", ("air freight", "marine transportation", "railroads", "trucking", "transportation services")),
-    ("항공·방산", ("aerospace", "military/government/technical")),
-    ("기계·산업장비", ("industrial machinery", "industrial specialties", "construction/ag equipment", "building products")),
-    ("건설·엔지니어링", ("homebuilding", "engineering", "construction")),
-    ("소매", ("retail", "catalog/specialty distribution")),
-    ("의류·소비재", ("apparel", "footwear", "household & personal products")),
-    ("가구·가전", ("furnishings", "fixtures", "appliances")),
-    ("포장재", ("packaging", "containers")),
-    ("레저·여행", ("leisure", "travel services", "recreational vehicles")),
-    ("음식료·외식", ("restaurants", "food", "beverages", "meat/poultry/fish")),
-    ("미디어·엔터", ("broadcasting", "movies/entertainment", "advertising", "publishing")),
-    ("인터넷·플랫폼", ("internet content", "information")),
-    ("통신서비스", ("telecommunications", "cable", "wireless")),
-    ("교육서비스", ("educational services",)),
-    ("농업", ("farming", "agricultural")),
-)
-
 
 class FinvizGroupTableParser(HTMLParser):
     def __init__(self) -> None:
@@ -141,9 +106,39 @@ def parse_finviz_group_rows(html: str) -> list[dict[str, Any]]:
     if not parser.rows:
         return []
 
-    headers = [normalize_header(value) for value in parser.rows[0]]
+    header_index = next(
+        (
+            index
+            for index, values in enumerate(parser.rows)
+            if "name" in [normalize_header(value) for value in values]
+            and any(normalize_header(value) == "pe" for value in values)
+        ),
+        None,
+    )
+    if header_index is None:
+        headers = [
+            "no",
+            "name",
+            "market_cap",
+            "pe",
+            "fwd_pe",
+            "peg",
+            "ps",
+            "pb",
+            "pc",
+            "pfcf",
+            "eps_past_5y",
+            "eps_next_5y",
+            "sales_past_5y",
+            "change",
+            "volume",
+        ]
+        data_rows = parser.rows
+    else:
+        headers = [normalize_header(value) for value in parser.rows[header_index]]
+        data_rows = parser.rows[header_index + 1 :]
     rows: list[dict[str, Any]] = []
-    for cells in parser.rows[1:]:
+    for cells in data_rows:
         if len(cells) < 5:
             continue
         row = row_by_headers(headers, cells)
@@ -209,6 +204,39 @@ def build_finviz_benchmark_rows(
     return rows
 
 
+def finviz_rows_from_existing_benchmarks(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    latest_as_of_date = max((clean_text(row.get("as_of_date")) for row in rows if clean_text(row.get("as_of_date"))), default="")
+    if latest_as_of_date:
+        rows = [row for row in rows if clean_text(row.get("as_of_date")) == latest_as_of_date]
+
+    by_name: dict[str, dict[str, Any]] = {}
+    metric_keys = {
+        "per": "pe",
+        "forward_per": "forward_per",
+        "psr": "psr",
+        "pbr": "pbr",
+    }
+    for row in rows:
+        item = finviz_industry_by_name(row.get("provider_group_name"))
+        if not item:
+            continue
+        group = by_name.setdefault(
+            item.name,
+            {
+                "name": item.name,
+                "sector": item.sector,
+                "market_cap": "",
+                "sample_count": int(row.get("sample_count") or 8),
+                "source_url": "supabase:stock_industry_benchmarks",
+            },
+        )
+        metric = clean_text(row.get("metric")).lower()
+        key = metric_keys.get(metric)
+        if key:
+            group[key] = number_value(row.get("median"))
+    return [by_name[item.name] for item in FINVIZ_INDUSTRIES if item.name in by_name]
+
+
 def benchmark_expires_at(market: str, generated_at: datetime | None = None, grace_hours: int = BENCHMARK_EXPIRY_GRACE_HOURS) -> str:
     now_ts = generated_at or datetime.now(timezone.utc)
     if now_ts.tzinfo is None:
@@ -231,8 +259,39 @@ def benchmark_expires_at(market: str, generated_at: datetime | None = None, grac
 
 
 def fetch_finviz_industry_rows(timeout_seconds: int, pause_seconds: float = 1.0, sectors: list[str] | None = None) -> list[dict[str, Any]]:
+    return fetch_finviz_industry_rows_with_cache(
+        timeout_seconds=timeout_seconds,
+        pause_seconds=pause_seconds,
+        sectors=sectors,
+        cache_path=DEFAULT_FINVIZ_CACHE_PATH,
+        cache_max_age_hours=DEFAULT_FINVIZ_CACHE_MAX_AGE_HOURS,
+        refresh_cache=False,
+    )
+
+
+def fetch_finviz_industry_rows_with_cache(
+    timeout_seconds: int,
+    pause_seconds: float = 1.0,
+    sectors: list[str] | None = None,
+    cache_path: Path | None = DEFAULT_FINVIZ_CACHE_PATH,
+    cache_max_age_hours: float = DEFAULT_FINVIZ_CACHE_MAX_AGE_HOURS,
+    refresh_cache: bool = False,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    selected = sectors or list(FINVIZ_SECTORS.keys())
+    if not sectors:
+        params = parse.urlencode({"g": "industry", "v": "120", "o": "name", "st": "d1"})
+        source_url = f"{FINVIZ_BASE_URL}?{params}"
+        html = fetch_text_with_cache(source_url, timeout_seconds, cache_path, cache_max_age_hours, refresh_cache)
+        for row in parse_finviz_group_rows(html):
+            item = finviz_industry_by_name(row.get("name"))
+            row["sector"] = item.sector if item else ""
+            row["source_url"] = source_url
+            rows.append(row)
+        if len(rows) != len(FINVIZ_INDUSTRIES):
+            raise RuntimeError(f"Expected {len(FINVIZ_INDUSTRIES)} Finviz industry rows, got {len(rows)}.")
+        return rows
+
+    selected = sectors
     for index, sector_key in enumerate(selected):
         sector_name = FINVIZ_SECTORS[sector_key]
         params = parse.urlencode({"g": "industry", "sg": sector_key, "v": "120", "o": "name", "st": "d1"})
@@ -254,36 +313,49 @@ def upsert_rows(rows: list[dict[str, Any]], batch_size: int, dry_run: bool) -> i
         return len(rows)
 
     url, key = supabase_write_config()
+    import requests
+
     total = 0
     for batch in chunks(rows, batch_size):
-        body = json.dumps(batch, ensure_ascii=False).encode("utf-8")
-        endpoint = f"{url}/rest/v1/{BENCHMARK_TABLE}?on_conflict=scope,sector,industry,metric,period,as_of_date"
-        req = request.Request(
-            endpoint,
-            data=body,
-            method="POST",
+        response = requests.post(
+            f"{url}/rest/v1/{BENCHMARK_TABLE}",
+            params={"on_conflict": "scope,sector,industry,metric,period,as_of_date"},
+            json=batch,
+            timeout=30,
             headers={
                 **supabase_headers(key),
                 "Prefer": "resolution=merge-duplicates,return=minimal",
             },
         )
-        try:
-            with request.urlopen(req, timeout=30) as response:
-                if response.status >= 400:
-                    raise RuntimeError(response.read().decode("utf-8", errors="replace")[:1000])
-        except Exception as exc:
-            raise RuntimeError(f"Supabase benchmark upsert failed: {exc}") from exc
+        if response.status_code >= 400:
+            raise RuntimeError(f"Supabase benchmark upsert failed: HTTP {response.status_code} {response.text[:1000]}")
         total += len(batch)
     return total
 
 
+def fetch_existing_finviz_benchmark_rows(timeout_seconds: int = 30) -> list[dict[str, Any]]:
+    url, key = supabase_write_config()
+    import requests
+
+    response = requests.get(
+        f"{url}/rest/v1/{BENCHMARK_TABLE}",
+        params={
+            "select": "provider_group_name,metric,median,sample_count,as_of_date",
+            "source": f"eq.{FINVIZ_SOURCE}",
+            "order": "as_of_date.desc,updated_at.desc",
+            "limit": "1000",
+        },
+        headers=supabase_headers(key),
+        timeout=timeout_seconds,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Supabase benchmark fallback query failed: HTTP {response.status_code} {response.text[:1000]}")
+    rows = response.json()
+    return rows if isinstance(rows, list) else []
+
+
 def canonical_names(provider_sector: str, provider_group: str) -> tuple[str, str, float]:
-    canonical_sector = SECTOR_KO.get(provider_sector, provider_sector or "기타")
-    lowered = provider_group.lower()
-    for canonical_industry, needles in US_INDUSTRY_RULES:
-        if any(needle in lowered for needle in needles):
-            return canonical_sector, canonical_industry, 0.86
-    return canonical_sector, provider_group, 0.68
+    return canonical_names_for_provider("US", provider_sector, provider_group)
 
 
 def fetch_text(url: str, timeout_seconds: int) -> str:
@@ -297,9 +369,53 @@ def fetch_text(url: str, timeout_seconds: int) -> str:
         return fetch_text_with_curl(url, timeout_seconds)
 
 
+def fetch_text_with_cache(
+    url: str,
+    timeout_seconds: int,
+    cache_path: Path | str | None,
+    cache_max_age_hours: float = DEFAULT_FINVIZ_CACHE_MAX_AGE_HOURS,
+    refresh_cache: bool = False,
+    fetcher=None,
+    allow_stale_on_error: bool = True,
+) -> str:
+    path = Path(cache_path) if cache_path else None
+    if path and not refresh_cache:
+        cached = read_cached_text(path, cache_max_age_hours)
+        if cached is not None:
+            return cached
+
+    fetch = fetcher or fetch_text
+    try:
+        text = fetch(url, timeout_seconds)
+    except Exception:
+        if path and allow_stale_on_error:
+            stale = read_cached_text(path, None)
+            if stale is not None:
+                return stale
+        raise
+
+    if path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return text
+
+
+def read_cached_text(path: Path, max_age_hours: float | None) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    if max_age_hours is not None and max_age_hours >= 0:
+        age_seconds = max(0.0, time.time() - path.stat().st_mtime)
+        if age_seconds > max_age_hours * 3600:
+            return None
+    text = path.read_text(encoding="utf-8")
+    return text if text.strip() else None
+
+
 def fetch_text_with_curl(url: str, timeout_seconds: int) -> str:
     last_error = ""
-    for attempt in range(3):
+    retries = int_env("FINVIZ_CURL_RETRIES", 3)
+    rate_limit_wait_seconds = float_env("FINVIZ_RATE_LIMIT_WAIT_SECONDS", 60.0)
+    for attempt in range(max(1, retries)):
         result = subprocess.run(
             ["curl", "-fsSL", "--max-time", str(timeout_seconds), "-A", "Mozilla/5.0", url],
             text=True,
@@ -313,7 +429,8 @@ def fetch_text_with_curl(url: str, timeout_seconds: int) -> str:
         last_error = (result.stderr or result.stdout).strip()
         if "429" not in last_error:
             break
-        time.sleep(2 * (attempt + 1))
+        if attempt < retries - 1:
+            time.sleep(rate_limit_wait_seconds * (attempt + 1))
     raise RuntimeError(last_error[:1000])
 
 
@@ -332,6 +449,20 @@ def env_value(name: str) -> str | None:
             if key.strip() == name:
                 return raw_value.strip().strip('"').strip("'")
     return None
+
+
+def int_env(name: str, default: int) -> int:
+    try:
+        return int(env_value(name) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def float_env(name: str, default: float) -> float:
+    try:
+        return float(env_value(name) or default)
+    except (TypeError, ValueError):
+        return default
 
 
 def supabase_write_config() -> tuple[str, str]:
@@ -381,6 +512,13 @@ def parse_number(value: Any) -> float | None:
     return parsed if parsed > 0 else None
 
 
+def number_value(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        parsed = float(value)
+        return parsed if parsed > 0 else None
+    return parse_number(value)
+
+
 def clean_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
@@ -401,20 +539,44 @@ def main() -> int:
     parser.add_argument("--finviz-timeout-seconds", type=int, default=20)
     parser.add_argument("--finviz-pause-seconds", type=float, default=1.0)
     parser.add_argument("--finviz-sector", action="append", choices=sorted(FINVIZ_SECTORS.keys()))
+    parser.add_argument("--finviz-cache-path", type=Path, default=DEFAULT_FINVIZ_CACHE_PATH)
+    parser.add_argument("--finviz-cache-max-age-hours", type=float, default=DEFAULT_FINVIZ_CACHE_MAX_AGE_HOURS)
+    parser.add_argument("--finviz-refresh-cache", action="store_true")
+    parser.add_argument("--finviz-existing-benchmark-fallback-only", action="store_true")
+    parser.add_argument("--no-finviz-existing-benchmark-fallback", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    finviz_rows = fetch_finviz_industry_rows(
-        args.finviz_timeout_seconds,
-        args.finviz_pause_seconds,
-        args.finviz_sector,
-    )
+    if args.finviz_existing_benchmark_fallback_only:
+        finviz_rows = finviz_rows_from_existing_benchmarks(fetch_existing_finviz_benchmark_rows(args.finviz_timeout_seconds))
+        if len(finviz_rows) != len(FINVIZ_INDUSTRIES):
+            raise RuntimeError(f"Expected {len(FINVIZ_INDUSTRIES)} fallback Finviz industry rows, got {len(finviz_rows)}.")
+        raw_source = "existing_finviz_benchmark_fallback"
+    else:
+        raw_source = "finviz_live_or_cache"
+        try:
+            finviz_rows = fetch_finviz_industry_rows_with_cache(
+                timeout_seconds=args.finviz_timeout_seconds,
+                pause_seconds=args.finviz_pause_seconds,
+                sectors=args.finviz_sector,
+                cache_path=args.finviz_cache_path,
+                cache_max_age_hours=args.finviz_cache_max_age_hours,
+                refresh_cache=args.finviz_refresh_cache,
+            )
+        except Exception:
+            if args.finviz_sector or args.no_finviz_existing_benchmark_fallback:
+                raise
+            finviz_rows = finviz_rows_from_existing_benchmarks(fetch_existing_finviz_benchmark_rows(args.finviz_timeout_seconds))
+            if len(finviz_rows) != len(FINVIZ_INDUSTRIES):
+                raise RuntimeError(f"Expected {len(FINVIZ_INDUSTRIES)} fallback Finviz industry rows, got {len(finviz_rows)}.")
+            raw_source = "existing_finviz_benchmark_fallback"
     benchmark_rows = build_finviz_benchmark_rows(finviz_rows, args.as_of_date)
     upserted = upsert_rows(benchmark_rows, args.batch_size, args.dry_run)
     print(
         json.dumps(
             {
                 "source": FINVIZ_SOURCE,
+                "raw_source": raw_source,
                 "as_of_date": args.as_of_date,
                 "raw_groups": len(finviz_rows),
                 "benchmark_rows": len(benchmark_rows),

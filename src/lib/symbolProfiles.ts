@@ -162,7 +162,7 @@ export function mergeSymbolProfileIntoPayload<T extends Record<string, unknown>>
     canonical_sector_name: mapping?.canonicalSectorName,
     canonical_industry_key: mapping?.canonicalIndustryKey,
     canonical_industry_name: mapping?.canonicalIndustryName,
-    taxonomy_source_key: sourceKeyForProfile(profile),
+    taxonomy_source_key: mapping?.sourceKey || sourceKeyForProfile(profile),
     taxonomy_confidence: mapping?.confidence,
     classification_status: profile.classificationStatus,
     listing_status: profile.listingStatus,

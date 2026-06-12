@@ -47,9 +47,9 @@ test("rule judgment flags expensive PER against industry benchmark", () => {
   assert.equal(judgment.headline, "수익성은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
-    "점수는 72.4점으로 괜찮지만 확인이 필요해요. 이익성은 강점이고 PER이 해외 Beverages 업종 기준 18.0배보다 높은 30.0배라 가격 부담은 함께 봐야 해요."
+    "점수는 72.4점으로 괜찮지만 확인이 필요해요. 이익성은 강점이고 PER이 해외 Beverages 업종 평균 18.0배보다 높은 30.0배라 가격 부담은 함께 봐야 해요."
   );
-  assert.equal(judgment.watch, "PER이 해외 Beverages 업종 상위권 기준 24.0배보다 높은지 먼저 확인해요.");
+  assert.equal(judgment.watch, "PER이 해외 Beverages 업종 상위권 평균 24.0배보다 높은지 먼저 확인해요.");
   assert.equal(judgment.tone, "cautious");
   assert.equal(judgment.cacheBucketStart, "2026-06-05T00:00:00.000Z");
   assert.doesNotMatch(`${judgment.headline} ${judgment.body} ${judgment.watch}`, /매수|매도|추천|목표가/);
@@ -106,8 +106,8 @@ test("rule judgment prefers Forward PER benchmark before trailing PER", () => {
   });
 
   assert.equal(judgment.headline, "이익성과 가격이 좋아요");
-  assert.match(judgment.body, /Forward PER이 해외 Semiconductors 업종 기준 24\.0배/);
-  assert.doesNotMatch(judgment.body, /PER이 해외 Semiconductors 업종 기준 22\.0배/);
+  assert.match(judgment.body, /Forward PER이 해외 Semiconductors 업종 평균 24\.0배/);
+  assert.doesNotMatch(judgment.body, /PER이 해외 Semiconductors 업종 평균 22\.0배/);
   assert.equal(judgment.tone, "positive");
 });
 
@@ -128,7 +128,7 @@ test("rule judgment stays useful without industry benchmark", () => {
   assert.equal(judgment.headline, "균형 있게 봐야 해요");
   assert.equal(
     judgment.body,
-    "점수는 68.7점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 업종 기준 PER/PBR이 들어오면 가격 부담을 더 정확히 볼 수 있어요."
+    "점수는 68.7점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 업종 평균 PER/PBR이 들어오면 가격 부담을 더 정확히 볼 수 있어요."
   );
   assert.equal(judgment.watch, "모멘텀 점수와 가격 부담 지표를 함께 확인해요.");
   assert.equal(judgment.tone, "neutral");
@@ -164,9 +164,9 @@ test("rule judgment can use PBR industry benchmark when PER is missing", () => {
   assert.equal(judgment.headline, "모멘텀은 좋고 가격은 봐야 해요");
   assert.equal(
     judgment.body,
-    "점수는 67.0점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 PBR이 국내 반도체 업종 기준 1.4배보다 높은 2.4배라 가격 부담은 함께 봐야 해요."
+    "점수는 67.0점으로 괜찮지만 확인이 필요해요. 모멘텀은 강점이고 PBR이 국내 반도체 업종 평균 1.4배보다 높은 2.4배라 가격 부담은 함께 봐야 해요."
   );
-  assert.equal(judgment.watch, "PBR이 국내 반도체 업종 상위권 기준 2.0배보다 높은지 먼저 확인해요.");
+  assert.equal(judgment.watch, "PBR이 국내 반도체 업종 상위권 평균 2.0배보다 높은지 먼저 확인해요.");
   assert.equal(judgment.tone, "cautious");
 });
 
@@ -205,7 +205,7 @@ test("rule judgment ignores zero valuation placeholders", () => {
   });
 
   assert.doesNotMatch(judgment.body, /PBR이 .*0\.0배/);
-  assert.match(judgment.body, /업종 기준 PER\/PBR이 들어오면/);
+  assert.match(judgment.body, /업종 평균 PER\/PBR이 들어오면/);
   assert.equal(judgment.watch, "거래 안정성 점수와 가격 부담 지표를 함께 확인해요.");
 });
 

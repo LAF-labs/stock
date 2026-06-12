@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clearSymbolProfileCacheForTests,
+  enrichStockPayloadWithSymbolProfile,
   getSymbolIndustryProfile,
   mergeSymbolProfileIntoPayload,
   payloadHasUsableIndustryProfile,
@@ -83,6 +84,85 @@ test("symbol industry profile lookup is cached per process", async () => {
   assert.equal(first?.primarySector, "Technology");
   assert.equal(first?.primaryIndustry, "Semiconductors");
   assert.deepEqual(second, first);
+});
+
+test("symbol profile enrichment prefers symbol-level canonical industry tags", async () => {
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const requestedUrl = String(input);
+    if (requestedUrl.includes("/stock_symbol_profiles")) {
+      return new Response(
+        JSON.stringify([
+          {
+            market: "KR",
+            symbol: "023770",
+            name: "플레이위드",
+            exchange: "KOSDAQ",
+            asset_class: "stock",
+            primary_sector: "정보기술",
+            primary_industry: "소프트웨어 개발 및 공급업",
+            primary_sector_key: "정보기술",
+            primary_industry_key: "정보기술_소프트웨어_개발_및_공급업",
+            classification_status: "verified",
+            source: "kind_krx_corp_list",
+            source_priority: 15,
+            metadata: { kind_main_products: "게임소프트웨어" },
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+    if (requestedUrl.includes("/stock_symbol_industry_tags")) {
+      return new Response(
+        JSON.stringify([
+          {
+            taxonomy: "finviz_canonical",
+            code: "커뮤니케이션",
+            name: "커뮤니케이션",
+            level: 1,
+            confidence: 0.84,
+            source: "kr_product_keyword_review",
+          },
+          {
+            taxonomy: "finviz_canonical",
+            code: "커뮤니케이션_electronic_gaming_multimedia",
+            name: "게임·멀티미디어",
+            level: 2,
+            confidence: 0.84,
+            source: "kr_product_keyword_review",
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+    if (requestedUrl.includes("/industry_taxonomy_map")) {
+      return new Response(
+        JSON.stringify([
+          {
+            taxonomy: "profile_primary",
+            source_key: "KR:정보기술:정보기술_소프트웨어_개발_및_공급업",
+            canonical_sector_key: "정보기술",
+            canonical_sector_name: "정보기술",
+            canonical_industry_key: "정보기술_software_application",
+            canonical_industry_name: "응용 소프트웨어",
+            confidence: 0.78,
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+
+  const enriched = await enrichStockPayloadWithSymbolProfile({ market: "KR", symbol: "023770" });
+  const industryProfile = enriched.industry_profile as Record<string, unknown>;
+
+  assert.equal(enriched.sector, "커뮤니케이션");
+  assert.equal(enriched.industry, "게임·멀티미디어");
+  assert.equal(industryProfile.canonical_industry_name, "게임·멀티미디어");
+  assert.equal(industryProfile.taxonomy_source_key, "KR:023770");
 });
 
 test("symbol industry profile enriches top-level and display profile fields", () => {
