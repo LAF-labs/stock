@@ -5,6 +5,7 @@ node_modules
 services/market-data/target
 .venv
 .stock_fundamentals_cache
+tmp
 __pycache__
 tests/__pycache__
 *.pyc

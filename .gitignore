@@ -5,6 +5,7 @@ node_modules/
 out/
 dist/
 coverage/
+tmp/
 .playwright-cli/
 output/playwright/
 *.log
