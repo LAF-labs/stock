@@ -617,6 +617,10 @@ function stockProfileRows(
 
 function valuationRows(signals: PriceSignals, currency: string): LabeledValue[] {
   return [
+    { label: "PER", value: "-", note: "이익 자료가 확인되면 보여줄게요." },
+    { label: "Forward PER", value: "-", note: "예상 이익 자료가 확인되면 보여줄게요." },
+    { label: "PBR", value: "-", note: "자산 자료가 확인되면 보여줄게요." },
+    { label: "P/S", value: "-", note: "매출 자료가 확인되면 보여줄게요." },
     { label: "현재가", value: formatCurrencyAmount(signals.latestPrice, currency) },
     { label: "20일선", value: formatCurrencyAmount(signals.ma20, currency) },
     { label: "50일선", value: formatCurrencyAmount(signals.ma50, currency) },

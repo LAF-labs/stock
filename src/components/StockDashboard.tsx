@@ -21,7 +21,9 @@ import {
   formatSecondaryPrice,
   hasDisplayableScoreComponents,
   hasDisplayableStockPartialData,
+  PARTIAL_SECTION_SKELETON_DEADLINE_MS,
   partialStockDataFromTicker,
+  partialSectionDisplayState,
   partialStockStatusSummary,
   priceVolatilitySummaryItems,
   scoreDataWithQuote,
@@ -70,6 +72,12 @@ type StockDashboardProps = {
   initialDisplayPayload?: StockDisplayPayload;
 };
 
+type PartialLoadingWindow = {
+  ticker: string;
+  startedAtMs: number;
+  nowMs: number;
+};
+
 export default function StockDashboard({ initialDisplayPayload }: StockDashboardProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -102,12 +110,14 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
   const hasDisplayablePartialData = hasDisplayableStockPartialData(displayPartialData);
   const showStockSkeleton = Boolean(tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData, hasDetailViewResponse));
+  const isPartialFeedVisible = Boolean(tickerParam && !showStockSkeleton && displayPartialData && (hasDisplayablePartialData || hasDetailViewResponse) && !displayData);
   const skeletonTickerLabel =
     displayPartialData || quoteData
       ? stockHeaderIdentity(displayPartialData || scoreDataWithQuote(partialStockDataFromTicker(tickerParam || ""), quoteData), quoteData).primary
       : tickerParam
         ? dashboardInputValue(tickerParam)
         : undefined;
+  const [partialLoadingWindow, setPartialLoadingWindow] = useState<PartialLoadingWindow | undefined>(undefined);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const [isSearchExpanding, setIsSearchExpanding] = useState(false);
@@ -115,6 +125,29 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   const isSearchCollapsedRef = useRef(false);
   const searchExpandTimerRef = useRef<number | undefined>(undefined);
   const previousTickerParamRef = useRef(tickerParam);
+
+  useEffect(() => {
+    if (!tickerParam || !isPartialFeedVisible) {
+      setPartialLoadingWindow(undefined);
+      return;
+    }
+    const nowMs = Date.now();
+    setPartialLoadingWindow((previous) => (
+      previous?.ticker === tickerParam
+        ? { ...previous, nowMs }
+        : { ticker: tickerParam, startedAtMs: nowMs, nowMs }
+    ));
+  }, [isPartialFeedVisible, tickerParam]);
+
+  useEffect(() => {
+    if (!partialLoadingWindow || !isPartialFeedVisible) return undefined;
+    const remainingMs = partialLoadingWindow.startedAtMs + PARTIAL_SECTION_SKELETON_DEADLINE_MS - Date.now();
+    if (remainingMs <= 0) return undefined;
+    const timer = window.setTimeout(() => {
+      setPartialLoadingWindow((previous) => previous ? { ...previous, nowMs: Date.now() } : previous);
+    }, Math.min(remainingMs, 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [isPartialFeedVisible, partialLoadingWindow]);
 
   function setSearchCollapsed(nextCollapsed: boolean) {
     const wasCollapsed = isSearchCollapsedRef.current;
@@ -270,8 +303,14 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
 
-      {!showStockSkeleton && displayPartialData && (hasDisplayablePartialData || hasDetailViewResponse) && !displayData ? (
-        <PartialStockFeed data={displayPartialData} quote={quoteData} pending={state.status === "partial" ? state.pending : undefined} onRetry={retryLoad} />
+      {isPartialFeedVisible && displayPartialData ? (
+        <PartialStockFeed
+          data={displayPartialData}
+          quote={quoteData}
+          pending={state.status === "partial" ? state.pending : undefined}
+          loadingWindow={partialLoadingWindow?.ticker === tickerParam ? partialLoadingWindow : undefined}
+          onRetry={retryLoad}
+        />
       ) : null}
 
       {displayData && (
@@ -330,11 +369,13 @@ function PartialStockFeed({
   data,
   quote,
   pending,
+  loadingWindow,
   onRetry,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
   pending: SnapshotPendingState | undefined;
+  loadingWindow: PartialLoadingWindow | undefined;
   onRetry: () => void;
 }) {
   const hasChart = usableChartPoints(data.chart_series).length >= 1;
@@ -346,31 +387,54 @@ function PartialStockFeed({
   const recoveringParts = stockRecoveringParts(data);
   const chartRecovering = !hasChart && recoveringParts.includes("chart");
   const scoreRecovering = !hasFactors && (recoveringParts.includes("score") || recoveringParts.includes("technical"));
+  const valuationRecovering = !hasValuation && recoveringParts.some((part) => part === "fundamentals" || part === "industryBenchmark" || part === "financials" || part === "score");
   const fundamentalsRecovering = !hasFinancials && recoveringParts.some((part) => part === "fundamentals" || part === "industryBenchmark" || part === "financials");
+  const startedAtMs = loadingWindow?.startedAtMs ?? 0;
+  const nowMs = loadingWindow?.nowMs ?? startedAtMs;
+  const chartState = partialSectionDisplayState({ hasContent: hasChart, isRecovering: chartRecovering, startedAtMs, nowMs });
+  const factorState = partialSectionDisplayState({ hasContent: hasFactors, isRecovering: scoreRecovering, startedAtMs, nowMs });
+  const valuationState = partialSectionDisplayState({ hasContent: hasValuation, isRecovering: valuationRecovering, startedAtMs, nowMs });
+  const financialState = partialSectionDisplayState({ hasContent: hasFinancials, isRecovering: fundamentalsRecovering, startedAtMs, nowMs });
 
   return (
     <div className="stock-feed partial-stock-feed" role="status" aria-live="polite">
       <DetailSection id="detail-summary">
         <PartialStockSummary data={data} quote={quote} pending={pending} onRetry={onRetry} />
       </DetailSection>
-      {hasChart ? (
+      {chartState === "content" ? (
         <DetailSection id="detail-chart">
           <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
           <SimpleList title="가격·변동성 요약" description="가격 흐름을 볼 때 함께 참고하는 숫자예요." items={priceVolatilitySummaryItems(data)} stock={data} desktopOpen />
         </DetailSection>
-      ) : chartRecovering ? (
+      ) : chartState === "loading" ? (
         <DetailSection id="detail-chart">
           <PartialSectionSkeleton title="가격 흐름" />
         </DetailSection>
+      ) : chartState === "unavailable" ? (
+        <DetailSection id="detail-chart">
+          <PartialUnavailableSection
+            title="가격 흐름"
+            heading="가격 기록이 아직 부족해요"
+            body="현재가처럼 확인된 정보는 먼저 보여드리고, 가격 기록이 더 확인되면 차트로 이어서 보여드릴게요."
+          />
+        </DetailSection>
       ) : null}
-      {hasFactors ? (
+      {factorState === "content" ? (
         <DetailSection id="detail-factors">
           {data.components?.length ? <FactorStory components={data.components} stock={data} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" /> : null}
           {data.opportunity_components?.length ? <FactorStory components={data.opportunity_components} stock={data} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" /> : null}
         </DetailSection>
-      ) : scoreRecovering ? (
+      ) : factorState === "loading" ? (
         <DetailSection id="detail-factors">
           <PartialSectionSkeleton title="점수 이유" />
+        </DetailSection>
+      ) : factorState === "unavailable" ? (
+        <DetailSection id="detail-factors">
+          <PartialUnavailableSection
+            title="점수 이유"
+            heading="아직 점수로 판단할 자료가 부족해요"
+            body="가격만으로 점수를 단정하지 않고, 실적과 거래 기록이 충분할 때 세부 점수를 보여드려요."
+          />
         </DetailSection>
       ) : null}
       {hasMetrics ? (
@@ -383,18 +447,38 @@ function PartialStockFeed({
           <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={data.stock_profile} stock={data} desktopOpen />
         </DetailSection>
       ) : null}
-      {hasValuation ? (
+      {valuationState === "content" ? (
         <DetailSection id="detail-valuation">
           <SimpleList title="가격 부담" description="좋은 회사라도 너무 비싸면 부담이 될 수 있어요." items={data.valuation_rows} stock={data} desktopOpen />
         </DetailSection>
+      ) : valuationState === "loading" ? (
+        <DetailSection id="detail-valuation">
+          <PartialSectionSkeleton title="가격 부담" />
+        </DetailSection>
+      ) : valuationState === "unavailable" ? (
+        <DetailSection id="detail-valuation">
+          <PartialUnavailableSection
+            title="가격 부담"
+            heading="아직 실적 기준 가격 부담은 판단하기 어려워요"
+            body="PER, PBR, P/S처럼 실적이나 자산이 필요한 값이 확인되면 여기에 표시해요."
+          />
+        </DetailSection>
       ) : null}
-      {hasFinancials ? (
+      {financialState === "content" ? (
         <DetailSection id="detail-financials">
           <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} stock={data} desktopOpen />
         </DetailSection>
-      ) : fundamentalsRecovering ? (
+      ) : financialState === "loading" ? (
         <DetailSection id="detail-financials">
           <PartialSectionSkeleton title="재무 요약" />
+        </DetailSection>
+      ) : financialState === "unavailable" ? (
+        <DetailSection id="detail-financials">
+          <PartialUnavailableSection
+            title="재무 요약"
+            heading="아직 실적 자료가 부족해요"
+            body="매출, 이익, 현금흐름처럼 확인된 재무 숫자가 들어오면 바로 표시해요."
+          />
         </DetailSection>
       ) : null}
     </div>
@@ -407,6 +491,18 @@ function PartialSectionSkeleton({ title }: { title: string }) {
       <SkeletonSectionTitle />
       <SkeletonBlock className="wide" />
       <SkeletonBlock className="medium" />
+    </section>
+  );
+}
+
+function PartialUnavailableSection({ title, heading, body }: { title: string; heading: string; body: string }) {
+  return (
+    <section className="partial-pending-section" role="status" aria-label={`${title} 자료 부족`}>
+      <div className="section-title">
+        <span>{title}</span>
+        <h2>{heading}</h2>
+      </div>
+      <p>{body}</p>
     </section>
   );
 }

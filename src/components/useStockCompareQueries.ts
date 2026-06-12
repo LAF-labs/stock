@@ -124,12 +124,14 @@ export function compareChartItemsFromStates(states: readonly CompareLoadState[])
   });
 }
 
-export function shouldShowCompareOverviewSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[]): boolean {
+export function shouldShowCompareOverviewSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[], loadingExpired = false): boolean {
+  if (loadingExpired) return false;
   if (items.length > 0) return false;
   return !states.some((state) => state.status === "partial" && hasDisplayableStockPartialData(state.data));
 }
 
-export function shouldShowCompareChartSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[], hasCompareChart: boolean): boolean {
+export function shouldShowCompareChartSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[], hasCompareChart: boolean, loadingExpired = false): boolean {
+  if (loadingExpired) return false;
   if (items.length < 2 || hasCompareChart) return false;
   return states.some((state) => {
     if (state.status === "loading" || state.status === "pending") return true;

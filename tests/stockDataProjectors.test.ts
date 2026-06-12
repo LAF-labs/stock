@@ -7,7 +7,7 @@ import type { StockDataEnvelope } from "../src/lib/stockDataEnvelopeTypes";
 
 const generatedAt = "2026-06-12T00:00:00.000Z";
 
-test("display projector shows degraded score without enrichment-only skeletons", () => {
+test("display projector shows degraded score while continuing financial enrichment", () => {
   const payload = stockDisplayPayloadFromEnvelope(envelope({
     price: readyPart({ latest_price: 24.97 }, "market-data", generatedAt),
     chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 25.1 }, { date: "2026-06-12", close: 24.97 }] }, "market-data", generatedAt),
@@ -26,11 +26,12 @@ test("display projector shows degraded score without enrichment-only skeletons",
 
   assert.equal(payload.score?.value.quality_score, 47);
   assert.equal(payload.score?.freshness, "fallback");
-  assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
+  assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
   assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
-  assert.deepEqual(payload.completion.missingParts, []);
-  assert.deepEqual(payload.completion.recoveringParts, []);
-  assert.equal(payload.refresh.active, false);
+  assert.deepEqual(payload.completion.missingParts, ["fundamentals", "industryBenchmark"]);
+  assert.deepEqual(payload.completion.recoveringParts, ["fundamentals", "industryBenchmark"]);
+  assert.equal(payload.refresh.active, true);
+  assert.equal(payload.refresh.nextPollMs, 1500);
 });
 
 test("display projector keeps stale visible parts on screen while marking refresh active", () => {

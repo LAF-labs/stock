@@ -30,7 +30,7 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
   const fundamentals = partValue(envelope.parts.fundamentals) ?? fundamentalsFromScore(score);
   const industryBenchmark = partValue(envelope.parts.industryBenchmark) ?? industryBenchmarkFromScore(score);
   const news = partValue(envelope.parts.news) ?? newsFromScore(score);
-  const requiredParts = requiredDisplayParts(envelope.view);
+  const requiredParts = requiredDisplayPartsForScore(envelope.view, score);
   const presentParts = presentDisplayParts({ price, chart, score, technical, fundamentals, industryBenchmark, news }, envelope.view);
   const unavailableParts = unavailablePartsFromEnvelope(envelope, requiredParts).filter((item) => !presentParts.includes(item.part));
   const completion = planStockDisplayCompletion({
@@ -78,6 +78,12 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
       technicalHref: `/technical?ticker=${encodeURIComponent(envelope.ticker)}`,
     },
   };
+}
+
+function requiredDisplayPartsForScore(view: StockDisplayView, score: StockScoreView | undefined): StockDisplayPartName[] {
+  const parts = requiredDisplayParts(view);
+  if (view === "technical" || !stockScorePayloadNeedsEnrichment(score)) return parts;
+  return [...parts, "fundamentals", "industryBenchmark"];
 }
 
 function displayPartFromState<T>(

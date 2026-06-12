@@ -88,7 +88,9 @@ test("compare overview skeleton hides once priced partial cards are available", 
   assert.equal(compareItemsFromStates([pricedWithoutScore]).length, 0);
   assert.equal(shouldShowCompareOverviewSkeleton([pricedWithoutScore], []), false);
   assert.equal(shouldShowCompareOverviewSkeleton([identityOnly], []), true);
+  assert.equal(shouldShowCompareOverviewSkeleton([identityOnly], [], true), false);
   assert.equal(shouldShowCompareOverviewSkeleton([{ status: "pending", ticker: "US:GTLS", message: "확인 중" }], []), true);
+  assert.equal(shouldShowCompareOverviewSkeleton([{ status: "pending", ticker: "US:GTLS", message: "확인 중" }], [], true), false);
 });
 
 test("compare chart skeleton shows only while comparable chart data is still pending", () => {
@@ -124,6 +126,7 @@ test("compare chart skeleton shows only while comparable chart data is still pen
 
   assert.equal(items.length, 2);
   assert.equal(shouldShowCompareChartSkeleton([first, second], items, false), true);
+  assert.equal(shouldShowCompareChartSkeleton([first, second], items, false, true), false);
   assert.equal(shouldShowCompareChartSkeleton([first, second], items, true), false);
   assert.equal(shouldShowCompareChartSkeleton([{ status: "success", ticker: "US:FRSH", data: first.data }, { status: "success", ticker: "US:BOX", data: second.data }], items, false), false);
 });

@@ -66,6 +66,9 @@ test("compare helpers build stable compare item fields", () => {
     valuation_rows: [
       { label: "PER", value: "1,234.5" },
       { label: "Forward PER", value: 31.2 },
+      { label: "PBR", value: "4.2" },
+      { label: "EV/Revenue", value: "8.9" },
+      { label: "P/S", value: "7.1" },
     ],
     price_metrics: { latest_change: 0.012, return_52w: 0.42 },
     financials: { profitMargins: 0.22, revenueGrowth: 0.18, beta: 1.23 },
@@ -78,6 +81,9 @@ test("compare helpers build stable compare item fields", () => {
   assert.equal(item.opportunityScore, 91.5);
   assert.equal(item.per, 1234.5);
   assert.equal(item.forwardPer, 31.2);
+  assert.equal(item.priceToBook, 4.2);
+  assert.equal(item.evToRevenue, 8.9);
+  assert.equal(item.priceToSales, 7.1);
   assert.equal(item.beta, 1.23);
   assert.equal(item.marketCap, "91조원 ($65B)");
   assert.equal(item.strongest?.key, "profitability");

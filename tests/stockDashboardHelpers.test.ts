@@ -26,9 +26,11 @@ import {
   formatSecondaryPrice,
   hasDisplayableStockPartialData,
   opportunityExtremes,
+  PARTIAL_SECTION_SKELETON_DEADLINE_MS,
   partialStockDataFromQuote,
   partialStockDataFromTicker,
   partialStockDataFromPayload,
+  partialSectionDisplayState,
   priceVolatilitySummaryItems,
   riskLevelLabel,
   scoreConfidenceChips,
@@ -336,6 +338,46 @@ test("dashboard keeps skeleton priority while non-displayable data is still load
   assert.equal(shouldShowStockSkeleton("loading", false), true);
   assert.equal(shouldShowStockSkeleton("pending", false), true);
   assert.equal(shouldShowStockSkeleton("partial", false), true);
+});
+
+test("partial section skeletons are bounded and never hide available content", () => {
+  const startedAtMs = 1_000;
+  assert.equal(
+    partialSectionDisplayState({
+      hasContent: true,
+      isRecovering: true,
+      startedAtMs,
+      nowMs: startedAtMs + PARTIAL_SECTION_SKELETON_DEADLINE_MS + 1,
+    }),
+    "content",
+  );
+  assert.equal(
+    partialSectionDisplayState({
+      hasContent: false,
+      isRecovering: true,
+      startedAtMs,
+      nowMs: startedAtMs + PARTIAL_SECTION_SKELETON_DEADLINE_MS - 1,
+    }),
+    "loading",
+  );
+  assert.equal(
+    partialSectionDisplayState({
+      hasContent: false,
+      isRecovering: true,
+      startedAtMs,
+      nowMs: startedAtMs + PARTIAL_SECTION_SKELETON_DEADLINE_MS,
+    }),
+    "unavailable",
+  );
+  assert.equal(
+    partialSectionDisplayState({
+      hasContent: false,
+      isRecovering: false,
+      startedAtMs,
+      nowMs: startedAtMs + 100,
+    }),
+    "hidden",
+  );
 });
 
 test("dashboard can leave full skeleton for identity-only detail view after first response", () => {
@@ -943,6 +985,31 @@ test("dashboard marks neutral fallback components without usable evidence as sco
       { label: "3개월 수익률", value: "+20.4%" },
     ],
   };
+  const scoredPriceSalesValuation = {
+    key: "valuation",
+    label: "밸류에이션",
+    score: 61.2,
+    metrics: [
+      { label: "P/S", value: "7.10" },
+    ],
+  };
+  const scoredLiquidity = {
+    key: "opportunity_liquidity",
+    label: "유동성",
+    score: 77.4,
+    metrics: [
+      { label: "20일 평균", value: "1,250,000" },
+      { label: "60일 평균", value: "1,120,000" },
+    ],
+  };
+  const scoredRisk = {
+    key: "opportunity_risk",
+    label: "리스크",
+    score: 64.8,
+    metrics: [
+      { label: "고점 대비", value: "-18.4%" },
+    ],
+  };
 
   assert.equal(componentHasDisplayableScore?.(missingAnalyst), false);
   assert.equal(componentScoreText?.(missingAnalyst), "점수 없음");
@@ -950,6 +1017,12 @@ test("dashboard marks neutral fallback components without usable evidence as sco
   assert.equal(componentScoreText?.(missingValuation), "점수 없음");
   assert.equal(componentHasDisplayableScore?.(scoredMomentum), true);
   assert.equal(componentScoreText?.(scoredMomentum), "72.2 · 무난");
+  assert.equal(componentHasDisplayableScore?.(scoredPriceSalesValuation), true);
+  assert.equal(componentScoreText?.(scoredPriceSalesValuation), "61.2 · 무난");
+  assert.equal(componentHasDisplayableScore?.(scoredLiquidity), true);
+  assert.equal(componentScoreText?.(scoredLiquidity), "77.4 · 무난");
+  assert.equal(componentHasDisplayableScore?.(scoredRisk), true);
+  assert.equal(componentScoreText?.(scoredRisk), "64.8 · 무난");
 });
 
 test("dashboard keeps internal fast-path placeholders out of investor-facing score cards", () => {

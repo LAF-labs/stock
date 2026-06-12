@@ -49,6 +49,9 @@ export type CompareItem = {
   beta?: number;
   per?: number;
   forwardPer?: number;
+  priceToBook?: number;
+  evToRevenue?: number;
+  priceToSales?: number;
   marketCap: string;
   strongest?: ScoreComponent;
   weakest?: ScoreComponent;
@@ -120,11 +123,18 @@ export function metricByLabel(data: StockScoreResponse, label: string): string {
 }
 
 export function valuationByLabel(data: StockScoreResponse, label: string): number | undefined {
-  const raw = data.valuation_rows?.find((item) => item.label === label)?.value;
-  if (typeof raw === "number") return raw;
-  if (typeof raw !== "string") return undefined;
-  const parsed = Number(raw.replaceAll(",", ""));
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return valuationByLabels(data, [label]);
+}
+
+export function valuationByLabels(data: StockScoreResponse, labels: string[]): number | undefined {
+  const normalizedLabels = new Set(labels.map((label) => label.trim().toLowerCase()));
+  for (const item of data.valuation_rows || []) {
+    const label = item.label?.trim().toLowerCase();
+    if (!label || !normalizedLabels.has(label)) continue;
+    const parsed = numberFromMetricValue(item.value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
 }
 
 function metricNumberByLabel(data: StockScoreResponse, labels: string[]): number | undefined {
@@ -259,6 +269,9 @@ export function toCompareItem(data: StockScoreResponse, requestedTicker: string,
     beta: betaForCompare(data),
     per: valuationByLabel(data, "PER"),
     forwardPer: valuationByLabel(data, "Forward PER"),
+    priceToBook: valuationByLabels(data, ["PBR", "Price/Book", "P/B"]),
+    evToRevenue: valuationByLabels(data, ["EV/Revenue", "EV/Sales"]),
+    priceToSales: valuationByLabels(data, ["P/S", "Price/Sales", "Price to Sales", "PSR"]),
     marketCap: [marketCap.primary, marketCap.secondary].filter(Boolean).join(" "),
     strongest,
     weakest,

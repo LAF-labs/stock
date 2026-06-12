@@ -156,6 +156,7 @@ const LABEL_REPLACEMENTS: Record<string, string> = {
   PER: "PER (주가수익비율)",
   "Forward PER": "Forward PER (예상 PER)",
   PBR: "PBR (주가순자산비율)",
+  "P/S": "P/S (시가총액/매출)",
   EPS: "EPS (주당순이익)",
   BPS: "BPS (주당순자산)",
   "EV/Revenue": "EV/Revenue (기업가치/매출)",
@@ -178,15 +179,15 @@ const STABILITY_COMPONENT_KEYS = new Set(["health", "stability", "trading_stabil
 const MOMENTUM_COMPONENT_KEYS = new Set(["momentum", "opportunity_momentum"]);
 const LIQUIDITY_COMPONENT_KEYS = new Set(["liquidity", "opportunity_liquidity"]);
 const NON_EVIDENCE_METRIC_LABEL_RE = /^(?:시가총액|근거 충분도|보강 상태)$/;
-const VALUATION_EVIDENCE_LABEL_RE = /^(?:Forward PER|PER|PBR|EV\/Revenue|Price\/Sales|EPS|BPS)(?:\s*\(.+\))?$/;
+const VALUATION_EVIDENCE_LABEL_RE = /^(?:Forward PER|PER|PBR|P\/S|PSR|EV\/Revenue|EV\/Sales|Price\/Sales|Price to Sales|Price\/Book|P\/B|EPS|BPS)(?:\s*\(.+\))?$/i;
 const ANALYST_COUNT_LABEL_RE = /^(?:애널리스트 수|커버리지 수)$/;
 const RECOMMENDATION_MEAN_LABEL_RE = /^투자의견 평균$/;
 const TARGET_PRICE_LABEL_RE = /^평균 목표가$/;
 const PROFITABILITY_EVIDENCE_LABEL_RE = /(?:순이익률|영업이익률|ROE|현금흐름|OCF|FCF|EBITDA|마진|profit|margin|cash\s*flow)/i;
 const FINANCIAL_GROWTH_EVIDENCE_LABEL_RE = /(?:매출|이익|EPS|revenue|earnings|sales).*(?:성장|growth)|(?:성장|growth).*(?:매출|이익|EPS|revenue|earnings|sales)/i;
 const PRICE_TREND_EVIDENCE_LABEL_RE = /^(?:1개월|3개월|6개월|52주|20일선|50일선|200일선|20일 평균|50일 평균|200일 평균|RSI14|ATR14|베타|beta)/i;
-const STABILITY_EVIDENCE_LABEL_RE = /(?:60일 변동성|변동성|ATR14|베타|beta|부채|유동비율|현금|debt|current ratio|cash)/i;
-const LIQUIDITY_EVIDENCE_LABEL_RE = /(?:거래량|평균 거래|volume|유동성)/i;
+const STABILITY_EVIDENCE_LABEL_RE = /(?:60일 변동성|변동성|ATR14|베타|beta|고점 대비|52주 고점|부채|유동비율|현금|debt|current ratio|cash)/i;
+const LIQUIDITY_EVIDENCE_LABEL_RE = /(?:거래량|평균 거래|20일 평균|60일 평균|volume|유동성)/i;
 
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const NOTE_COPY: Record<string, string> = {
@@ -201,7 +202,7 @@ const NOTE_COPY: Record<string, string> = {
 const TERM_TIPS = [
   { term: "Forward PER", keys: ["forward per"], body: "앞으로 예상되는 이익으로 계산한 PER예요." },
   { term: "EV/Revenue", keys: ["ev/revenue"], body: "기업 전체 가치가 매출에 비해 얼마나 큰지 보여줘요." },
-  { term: "Price/Sales", keys: ["price/sales"], body: "시가총액을 매출과 비교한 숫자예요." },
+  { term: "P/S", keys: ["p/s", "psr", "price/sales"], body: "시가총액을 매출과 비교한 숫자예요." },
   { term: "ATR14", keys: ["atr14", "atr"], body: "최근 14일 기준 하루 가격 흔들림을 보여줘요." },
   { term: "RSI14", keys: ["rsi14", "rsi"], body: "최근 상승과 하락의 힘을 비교해 과열 여부를 봐요." },
   { term: "ROE", keys: ["roe"], body: "자본을 얼마나 효율적으로 이익으로 바꾸는지 보여줘요." },
@@ -347,6 +348,28 @@ export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = f
   void hasDetailViewResponse;
   if (status === "partial") return !hasUsefulPartialData;
   return status === "loading" || status === "pending";
+}
+
+export const PARTIAL_SECTION_SKELETON_DEADLINE_MS = 8_000;
+
+export type PartialSectionDisplayState = "content" | "loading" | "unavailable" | "hidden";
+
+export function partialSectionDisplayState({
+  hasContent,
+  isRecovering,
+  startedAtMs,
+  nowMs,
+  deadlineMs = PARTIAL_SECTION_SKELETON_DEADLINE_MS,
+}: {
+  hasContent: boolean;
+  isRecovering: boolean;
+  startedAtMs: number;
+  nowMs: number;
+  deadlineMs?: number;
+}): PartialSectionDisplayState {
+  if (hasContent) return "content";
+  if (!isRecovering) return "hidden";
+  return Math.max(0, nowMs - startedAtMs) < deadlineMs ? "loading" : "unavailable";
 }
 
 export function dashboardStateFromDetailView(result: StockDetailViewResponse | undefined): { status: "partial" | "success" | "error"; data?: StockScoreResponse; error?: string } | undefined {

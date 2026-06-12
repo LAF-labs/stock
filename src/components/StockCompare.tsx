@@ -27,7 +27,7 @@ import {
   symbolRef,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
+import { PARTIAL_SECTION_SKELETON_DEADLINE_MS, formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import { shouldShowCompareChartSkeleton, shouldShowCompareOverviewSkeleton, useStockCompareQueries, type CompareChartItem, type CompareLoadState } from "@/components/useStockCompareQueries";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -78,14 +78,49 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const hasCompareChart = useMemo(() => compareDateAlignedSeries(chartItems).series.some((entry) => entry.points.length >= 1), [chartItems]);
   const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
+  const [compareLoadingWindow, setCompareLoadingWindow] = useState<{ key: string; startedAtMs: number; nowMs: number } | undefined>(undefined);
   const lastScrollYRef = useRef(0);
   const isSearchCollapsedRef = useRef(false);
+  const tickersKey = tickers.join("|");
+  const hasRecoveringCompareWork = selectedCount > 0 && states.some((state) => state.status === "loading" || state.status === "pending" || state.status === "partial");
+  const compareLoadingExpired = Boolean(compareLoadingWindow && compareLoadingWindow.nowMs - compareLoadingWindow.startedAtMs >= PARTIAL_SECTION_SKELETON_DEADLINE_MS);
+  const showCompareOverviewSkeleton = shouldShowCompareOverviewSkeleton(states, items, compareLoadingExpired);
+  const showCompareChartSkeleton = shouldShowCompareChartSkeleton(states, items, hasCompareChart, compareLoadingExpired);
+  const showCompareChartUnavailable =
+    !showCompareChartSkeleton &&
+    compareLoadingExpired &&
+    items.length >= 2 &&
+    !hasCompareChart &&
+    states.some((state) => state.status === "partial" || state.status === "pending" || state.status === "loading");
 
   function setCompareSearchCollapsed(nextCollapsed: boolean) {
     if (isSearchCollapsedRef.current === nextCollapsed) return;
     isSearchCollapsedRef.current = nextCollapsed;
     setIsSearchCollapsed(nextCollapsed);
   }
+
+  useEffect(() => {
+    if (!hasRecoveringCompareWork || !tickersKey) {
+      setCompareLoadingWindow(undefined);
+      return;
+    }
+    const nowMs = Date.now();
+    setCompareLoadingWindow((previous) => (
+      previous?.key === tickersKey
+        ? { ...previous, nowMs }
+        : { key: tickersKey, startedAtMs: nowMs, nowMs }
+    ));
+  }, [hasRecoveringCompareWork, tickersKey]);
+
+  useEffect(() => {
+    if (!compareLoadingWindow || !hasRecoveringCompareWork) return undefined;
+    const remainingMs = compareLoadingWindow.startedAtMs + PARTIAL_SECTION_SKELETON_DEADLINE_MS - Date.now();
+    if (remainingMs <= 0) return undefined;
+    const timer = window.setTimeout(() => {
+      setCompareLoadingWindow((previous) => previous ? { ...previous, nowMs: Date.now() } : previous);
+    }, Math.min(remainingMs, 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [compareLoadingWindow, hasRecoveringCompareWork]);
 
   useEffect(() => {
     let ticking = false;
@@ -213,10 +248,11 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 
       {states.length ? (
         <div className="compare-feed">
-          {shouldShowCompareOverviewSkeleton(states, items) ? <ComparePendingOverviewSkeleton /> : null}
+          {showCompareOverviewSkeleton ? <ComparePendingOverviewSkeleton /> : null}
           <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
           {chartItems.length ? <CompareChart items={chartItems} /> : null}
-          {shouldShowCompareChartSkeleton(states, items, hasCompareChart) ? <CompareChartPendingSkeleton /> : null}
+          {showCompareChartSkeleton ? <CompareChartPendingSkeleton /> : null}
+          {showCompareChartUnavailable ? <CompareChartUnavailable /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
@@ -395,6 +431,16 @@ function CompareChartPendingSkeleton() {
   );
 }
 
+function CompareChartUnavailable() {
+  return (
+    <section className="compare-section compare-chart-section" role="status">
+      <span>가격 흐름</span>
+      <h2>비교할 가격 기록이 아직 부족해요</h2>
+      <p>현재가처럼 확인된 정보는 먼저 보여드리고, 같은 날짜의 가격 기록이 더 확인되면 차트로 비교해드릴게요.</p>
+    </section>
+  );
+}
+
 function CompareChart({ items }: { items: CompareChartItem[] }) {
   const aligned = compareDateAlignedSeries(items);
   const series = aligned.series
@@ -526,6 +572,9 @@ const METRIC_ROWS: MetricRow[] = [
   { group: "risk", label: "베타", description: "낮을수록 시장 대비 가격 흔들림이 작아요", value: (item) => item.beta, display: ratioText, best: "low" },
   { group: "valuation", label: "PER", description: "낮을수록 현재 이익 대비 부담이 덜해요", value: (item) => item.per, display: ratioText, best: "low" },
   { group: "valuation", label: "Forward PER", description: "낮을수록 예상 이익 대비 부담이 덜해요", value: (item) => item.forwardPer, display: ratioText, best: "low" },
+  { group: "valuation", label: "PBR", description: "낮을수록 장부가치 대비 가격 부담이 덜해요", value: (item) => item.priceToBook, display: ratioText, best: "low" },
+  { group: "valuation", label: "EV/Revenue", description: "낮을수록 매출 대비 기업가치 부담이 덜해요", value: (item) => item.evToRevenue, display: ratioText, best: "low" },
+  { group: "valuation", label: "P/S", description: "낮을수록 매출 대비 시가총액 부담이 덜해요", value: (item) => item.priceToSales, display: ratioText, best: "low" },
 ];
 
 function prepareMetricRow(items: CompareItem[], row: MetricRow): PreparedMetricRow {

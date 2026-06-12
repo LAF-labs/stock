@@ -139,7 +139,7 @@ test("display model marks chart and technical present independently", async () =
   assert.equal(payload.refresh.active, false);
 });
 
-test("display model keeps current-provider fast-path score visible without enrichment-only skeletons", async () => {
+test("display model keeps current-provider fast-path score visible while recovering enrichment parts", async () => {
   for (const view of ["detail", "compare"] as const) {
     const payload = await buildStockDisplayPayload({
       ticker: "US:GMAB",
@@ -163,11 +163,12 @@ test("display model keeps current-provider fast-path score visible without enric
     });
 
     assert.equal(payload.score?.value.quality_score, 47);
-    assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
+    assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
     assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
-    assert.deepEqual(payload.completion.missingParts, []);
-    assert.deepEqual(payload.completion.recoveringParts, []);
-    assert.equal(payload.refresh.active, false);
+    assert.deepEqual(payload.completion.missingParts, ["fundamentals", "industryBenchmark"]);
+    assert.deepEqual(payload.completion.recoveringParts, ["fundamentals", "industryBenchmark"]);
+    assert.equal(payload.refresh.active, true);
+    assert.equal(payload.refresh.nextPollMs, 1500);
   }
 });
 
