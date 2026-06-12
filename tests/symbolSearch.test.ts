@@ -84,6 +84,32 @@ test("curated newly listed SPCX symbol is searchable by Korean names and nicknam
   }
 });
 
+test("local symbol search tolerates a single-character typo in names", () => {
+  const index = buildSymbolSearchIndex([
+    {
+      market: "US",
+      ticker: "RKLB",
+      exchange: "NASDAQ",
+      exchangeName: "나스닥",
+      koreanName: "로켓 랩",
+      englishName: "Rocket Lab Corporation",
+      instrumentType: "STOCK",
+    },
+    {
+      market: "US",
+      ticker: "RKT",
+      exchange: "NYSE",
+      exchangeName: "뉴욕",
+      koreanName: "로켓 컴퍼니스",
+      englishName: "Rocket Companies",
+      instrumentType: "STOCK",
+    },
+  ]);
+
+  assert.deepEqual(searchSymbolIndex(index, { query: "로캣랩", limit: 5 }).map((item) => item.key), ["US:RKLB"]);
+  assert.equal(searchSymbolIndex(index, { query: "Roket Lab", limit: 5 })[0]?.key, "US:RKLB");
+});
+
 test("curated SPCX search result is served before an empty Supabase response", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "anon-key";

@@ -7,8 +7,6 @@ import type {
   ApiPending,
   ApiReady,
   ApiUnsupported,
-  CompareQueryResult,
-  CompareScoreItemResult,
   DisplayQueryResult,
   JudgmentQueryResult,
   QuoteQueryResult,
@@ -109,12 +107,6 @@ export async function refreshQuote(ticker: string, signal?: AbortSignal): Promis
   };
 }
 
-export async function fetchCompareScores(tickers: readonly string[], signal?: AbortSignal): Promise<CompareQueryResult> {
-  const query = new URLSearchParams({ tickers: tickers.join(","), partial: "1" });
-  const { payload, response } = await apiJson(`/api/score/batch?${query.toString()}`, noStoreInit(signal));
-  return classifyComparePayload(payload, response.status, tickers);
-}
-
 export async function fetchSymbols({
   query,
   market,
@@ -184,36 +176,6 @@ export function classifyQuotePayload(payload: ClientApiPayload, status: number):
   if (pending) return pending;
   if (status >= 400 || payload.ok === false) throwStockQueryError(payload, status, "quote_failed");
   return readyResult(payload as StockQuoteResponse, payload, status);
-}
-
-export function classifyComparePayload(payload: ClientApiPayload, status: number, tickers: readonly string[]): CompareQueryResult {
-  const rawResults = Array.isArray(payload.results) ? payload.results : [];
-  if (status >= 400 && !rawResults.length) throwStockQueryError(payload, status, "compare_failed");
-
-  const results: CompareScoreItemResult[] = tickers.map((ticker, index) => {
-    const itemPayload = objectFromUnknown(rawResults[index]);
-    if (!itemPayload) {
-      return { ticker, result: errorResult(undefined, status, "missing_compare_result", "비교 결과를 찾지 못했어요.") };
-    }
-    try {
-      return { ticker, result: classifyScorePayload(itemPayload, itemStatus(itemPayload, status)) };
-    } catch (error) {
-      if (error instanceof StockQueryError) {
-        return { ticker, result: errorResult(error.payload, error.status, error.code, error.message) };
-      }
-      throw error;
-    }
-  });
-
-  const hasPending = results.some(({ result }) => result.state === "pending");
-  const hasPartial = results.some(({ result }) => result.state === "partial");
-  const hasReady = results.some(({ result }) => result.state === "ready");
-  return {
-    state: hasPending ? "pending" : hasPartial || !hasReady ? "partial" : "ready",
-    status,
-    payload,
-    results,
-  };
 }
 
 function noStoreInit(signal?: AbortSignal): ApiJsonInit {
@@ -328,11 +290,6 @@ function errorResult(payload: ClientApiPayload | undefined, status: number, erro
 
 function itemsFromPayload(payload: ClientApiPayload): SymbolSearchItem[] {
   return Array.isArray(payload.items) ? payload.items as SymbolSearchItem[] : [];
-}
-
-function itemStatus(payload: ClientApiPayload, fallbackStatus: number): number {
-  const status = numberFromUnknown(payload.status);
-  return status === undefined ? fallbackStatus : status;
 }
 
 function objectFromUnknown(value: unknown): ClientApiPayload | undefined {

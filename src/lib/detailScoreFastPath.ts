@@ -49,20 +49,16 @@ export function detailRequestFastPathEnabled(env: Record<string, string | undefi
 }
 
 export async function buildDetailScoreFastPathPayload(ticker: string, view: ScoreView = "detail"): Promise<StockPayload> {
-  if (view === "compare") {
-    try {
-      const quote = await fetchLiveQuote(ticker);
-      return buildQuoteOnlyDetailScorePayload(quote, view);
-    } catch {
-      return buildCompareIdentityScorePayload(ticker, view);
-    }
-  }
-
   const dailyPromise = fetchLiveDailyChart(ticker);
   const daily = await withTimeout(dailyPromise, detailDailyFastPathTimeoutMs()).catch(() => undefined);
   if (!daily) {
-    const quote = await fetchLiveQuote(ticker);
-    return buildQuoteOnlyDetailScorePayload(quote, view);
+    try {
+      const quote = await fetchLiveQuote(ticker);
+      return buildQuoteOnlyDetailScorePayload(quote, view);
+    } catch (error) {
+      if (view !== "compare") throw error;
+      return buildCompareIdentityScorePayload(ticker, view);
+    }
   }
 
   const identity = await fastPathIdentity(daily.requestedTicker, daily.name, daily.symbol);

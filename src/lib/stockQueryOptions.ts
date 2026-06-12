@@ -2,13 +2,12 @@ import { queryOptions } from "@tanstack/react-query";
 import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "@/components/QueryProvider";
 import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
-import { fetchCompareScores, fetchStockDetailView, fetchStockDisplay, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
+import { fetchStockDetailView, fetchStockDisplay, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
 import type {
   ApiPartial,
   ApiPending,
-  CompareQueryResult,
   DisplayQueryResult,
   JudgmentQueryResult,
   QuoteQueryResult,
@@ -97,19 +96,6 @@ export function quoteQueryOptions(ticker: string) {
   });
 }
 
-export function compareQueryOptions(tickers: readonly string[]) {
-  return queryOptions({
-    queryKey: stockQueryKeys.compare(tickers),
-    queryFn: ({ signal }) => fetchCompareScores(tickers, signal),
-    staleTime: stockQueryStaleTimesMs.score,
-    gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
-    enabled: tickers.length > 0,
-    refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as CompareQueryResult | undefined),
-    refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as CompareQueryResult | undefined, query.state.dataUpdateCount, "compare"),
-    meta: { feature: "stock-compare", view: "compare", maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
-  });
-}
-
 export function symbolSearchQueryOptions(query: string, market?: string) {
   const trimmed = query.trim();
   return queryOptions({
@@ -160,7 +146,7 @@ export function stockDetailViewRefetchIntervalMs(result: StockDetailViewResponse
 }
 
 export function stockQueryRefetchIntervalMs(
-  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
   attempt = 0,
   view: StockScoreView = "detail",
 ): number | false {
@@ -173,17 +159,10 @@ export function stockQueryRefetchIntervalMs(
 }
 
 export function stockQueryShouldPoll(
-  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean {
   if (!result) return false;
   if (isDisplayQueryResult(result)) return result.data.refresh.active || result.data.completion.recoveringParts.length > 0;
-  if ("results" in result) {
-    return result.results.some(({ result: itemResult }) => {
-      if (itemResult.state === "pending" || itemResult.state === "partial") return true;
-      if (itemResult.state === "ready") return stockScorePayloadNeedsEnrichment(itemResult.data) || stockScorePayloadNeedsEnrichment(itemResult.payload);
-      return false;
-    });
-  }
   if (result.state === "pending") return isPollablePending(result);
   if (result.state === "partial") return isPollablePending(result.pending);
   if (result.state === "ready") return stockScorePayloadNeedsEnrichment(result.data) || stockScorePayloadNeedsEnrichment(result.payload);
@@ -192,7 +171,7 @@ export function stockQueryShouldPoll(
 }
 
 export function stockQueryRefetchOnMount(
-  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | CompareQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
+  result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean | "always" {
   if (!result) return true;
   if (isDisplayQueryResult(result)) return true;

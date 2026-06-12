@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 
 import { compareDateAlignedSeries } from "../src/components/stockCompareHelpers";
 import {
+  compareStateFromDisplayPayload,
   compareChartItemsFromStates,
   compareItemsFromStates,
-  compareStockDataWithDisplayFallback,
   shouldPromotePartialCompareData,
   shouldShowCompareChartSkeleton,
   shouldShowCompareOverviewSkeleton,
   type CompareLoadState,
 } from "../src/components/useStockCompareQueries";
+import type { StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 import type { StockScoreResponse } from "../src/lib/types";
 
 test("compare query promotes priced fast-path partials into provisional compare items", () => {
@@ -190,37 +191,22 @@ test("compare chart uses one-bar partial price data even when score cards stay p
   assert.deepEqual(compareDateAlignedSeries(chartItems).series[0]?.points.map((point) => point.value), [100]);
 });
 
-test("compare data merges display chart and metrics into lean ready score results", () => {
-  const leanReadyScore = {
-    ok: true,
-    requested_ticker: "US:LANE",
-    symbol: "LANE",
-    market: "US",
-    name: "Lane Test",
-    quality_score: 62.5,
-    opportunity_score: 58.1,
-    components: [{ key: "growth", label: "성장성", score: 70 }],
-  } as unknown as StockScoreResponse;
-  const displayFallback = {
-    requested_ticker: "US:LANE",
-    symbol: "LANE",
-    market: "US",
-    name: "Lane Test",
-    latest_price: 11,
-    market_cap: 5_000_000_000,
-    market_cap_label: "$5B",
-    chart_series: [
-      { date: "2026-06-09", close: 10 },
-      { date: "2026-06-10", close: 11 },
-    ],
-    price_metrics: { latest_change: 0.03, return_1m: 0.12 },
-    financials: { profitMargins: 0.18, revenueGrowth: 0.24 },
-    valuation_rows: [{ label: "Forward PER", value: 21.4 }],
-  } as unknown as StockScoreResponse;
+test("compare state is projected from the display pipeline payload", () => {
+  const payload = displayPayload({
+    completion: {
+      requiredParts: ["identity", "price", "chart", "score"],
+      presentParts: ["identity", "price", "chart", "score", "fundamentals"],
+      missingParts: [],
+      recoveringParts: [],
+      unavailableParts: [],
+    },
+    refresh: { active: false, staleParts: [], recoveringParts: [] },
+  });
 
-  const merged = compareStockDataWithDisplayFallback(leanReadyScore, displayFallback);
-  const items = compareItemsFromStates([{ status: "success", ticker: "US:LANE", data: merged }]);
+  const state = compareStateFromDisplayPayload(payload);
+  const items = compareItemsFromStates([state]);
 
+  assert.equal(state.status, "success");
   assert.equal(items.length, 1);
   assert.equal(items[0]?.score, 62.5);
   assert.equal(items[0]?.daily, 0.03);
@@ -230,3 +216,101 @@ test("compare data merges display chart and metrics into lean ready score result
   assert.equal(items[0]?.forwardPer, 21.4);
   assert.equal(compareDateAlignedSeries(items).series[0]?.points.length, 2);
 });
+
+test("compare display payload stays partial while display lanes are recovering", () => {
+  const payload = displayPayload({
+    completion: {
+      requiredParts: ["identity", "price", "chart", "score", "fundamentals"],
+      presentParts: ["identity", "price", "chart", "score"],
+      missingParts: ["fundamentals"],
+      recoveringParts: ["fundamentals"],
+      unavailableParts: [],
+    },
+    refresh: { active: true, staleParts: [], recoveringParts: ["fundamentals"], nextPollMs: 1500 },
+  });
+
+  const state = compareStateFromDisplayPayload(payload);
+  const items = compareItemsFromStates([state]);
+
+  assert.equal(state.status, "partial");
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.provisional, true);
+  assert.equal(compareChartItemsFromStates([state]).length, 1);
+});
+
+function displayPayload(overrides: Pick<StockDisplayPayload, "completion" | "refresh">): StockDisplayPayload {
+  return {
+    ok: true,
+    ticker: "US:LANE",
+    requestedTicker: "US:LANE",
+    view: "compare",
+    generatedAt: "2026-06-12T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    hotnessTier: "active",
+    identity: {
+      freshness: "fresh",
+      source: "symbol-master",
+      value: {
+        ticker: "US:LANE",
+        market: "US",
+        symbol: "LANE",
+        name: "Lane Test",
+        exchange: "NASDAQ",
+        instrumentType: "STOCK",
+      },
+    },
+    price: {
+      freshness: "fresh",
+      source: "market-data",
+      value: {
+        requested_ticker: "US:LANE",
+        market: "US",
+        symbol: "LANE",
+        latest_price: 11,
+        market_cap: 5_000_000_000,
+        market_cap_label: "$5B",
+        price_metrics: { latest_change: 0.03 },
+      },
+    },
+    chart: {
+      freshness: "fresh",
+      source: "market-data",
+      value: {
+        requested_ticker: "US:LANE",
+        market: "US",
+        symbol: "LANE",
+        chart_series: [
+          { date: "2026-06-09", close: 10 },
+          { date: "2026-06-10", close: 11 },
+        ],
+        price_metrics: { return_1m: 0.12 },
+      },
+    },
+    score: {
+      freshness: "fresh",
+      source: "derived",
+      value: {
+        ok: true,
+        requested_ticker: "US:LANE",
+        symbol: "LANE",
+        market: "US",
+        name: "Lane Test",
+        quality_score: 62.5,
+        opportunity_score: 58.1,
+        components: [{ key: "growth", label: "성장성", score: 70, metrics: [{ label: "매출 성장률", value: "+24.0%" }] }],
+      },
+    },
+    fundamentals: {
+      freshness: "fresh",
+      source: "derived",
+      value: {
+        key_metrics: [],
+        financials: { profitMargins: 0.18, revenueGrowth: 0.24 },
+        valuation_rows: [{ label: "Forward PER", value: 21.4 }],
+      },
+    },
+    capabilities: { canCompare: true, canTechnical: true },
+    completion: overrides.completion,
+    refresh: overrides.refresh,
+  };
+}

@@ -4,9 +4,7 @@ import assert from "node:assert/strict";
 import { readClientApiPayload } from "../src/lib/clientApi";
 import {
   StockQueryError,
-  classifyComparePayload,
   classifyScorePayload,
-  fetchCompareScores,
   fetchStockDetailView,
   fetchStockDisplay,
   fetchStockQuote,
@@ -144,57 +142,6 @@ test("score classifier throws typed terminal errors", () => {
   );
 });
 
-test("compare classifier keeps result order aligned to input tickers", () => {
-  const result = classifyComparePayload(
-    {
-      ok: true,
-      results: [
-        { ok: true, requested_ticker: "KR:004020", symbol: "004020" },
-        {
-          ok: true,
-          type: "partial_stock_snapshot",
-          requested_ticker: "US:KO",
-          symbol: "KO",
-          pending_snapshot: { error: "snapshot_pending", refresh_request: { queued: true } },
-        },
-      ],
-    },
-    200,
-    ["KR:004020", "US:KO"],
-  );
-
-  assert.equal(result.state, "partial");
-  assert.equal(result.results[0].ticker, "KR:004020");
-  assert.equal(result.results[0].result.state, "ready");
-  assert.equal(result.results[1].ticker, "US:KO");
-  assert.equal(result.results[1].result.state, "partial");
-});
-
-test("compare classifier treats quote-only fast path members as partial work", () => {
-  const result = classifyComparePayload(
-    {
-      ok: true,
-      results: [
-        {
-          ok: true,
-          requested_ticker: "KR:064350",
-          symbol: "064350",
-          chart_series: [],
-          data_quality: "quote_fast_path",
-          fetch: { quote_only_fast_path: true, pending_enrichment: true },
-        },
-        { ok: true, requested_ticker: "US:MDB", symbol: "MDB", chart_series: [{ date: "2026-06-10", close: 10 }, { date: "2026-06-11", close: 11 }] },
-      ],
-    },
-    200,
-    ["KR:064350", "US:MDB"],
-  );
-
-  assert.equal(result.state, "partial");
-  assert.equal(result.results[0].result.state, "partial");
-  assert.equal(result.results[1].result.state, "ready");
-});
-
 test("stock query functions build the expected API requests", async () => {
   const calls = mockJsonFetch({ ok: true, requested_ticker: "KR:004020", symbol: "004020" });
   assert.equal((await fetchStockScore({ ticker: "KR:004020" })).state, "ready");
@@ -267,11 +214,7 @@ test("quote fetch and refresh model ready pending and cooldown states", async ()
   assert.equal(cooldown.nextAllowedAt, "2026-06-10T00:00:00.000Z");
 });
 
-test("compare and symbol fetchers return typed ready payloads", async () => {
-  const compareCalls = mockJsonFetch({ ok: true, results: [{ ok: true, requested_ticker: "US:KO", symbol: "KO" }] });
-  assert.equal((await fetchCompareScores(["US:KO"])).state, "ready");
-  assert.equal(compareCalls[0], "/api/score/batch?tickers=US%3AKO&partial=1");
-
+test("symbol fetcher returns typed ready payloads", async () => {
   mockJsonFetch({ ok: true, query: "ko", total: 1, items: [{ key: "US:KO", market: "US", ticker: "KO" }] });
   const symbols = await fetchSymbols({ query: "ko", market: "US" });
   assert.equal(symbols.state, "ready");

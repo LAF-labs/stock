@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "../src/components/QueryProvider";
 import {
   STOCK_QUERY_MAX_PENDING_POLLS,
-  compareQueryOptions,
   detailViewQueryOptions,
   displayQueryResultFromPayload,
   displayQueryOptions,
@@ -25,7 +24,7 @@ import {
   symbolSearchQueryOptions,
   technicalScoreQueryOptions,
 } from "../src/lib/stockQueryOptions";
-import type { CompareQueryResult, DisplayQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
+import type { DisplayQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
 import type { StockDetailViewResponse } from "../src/lib/stockDetailViewTypes";
 import type { StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 import type { StockScoreResponse } from "../src/lib/types";
@@ -35,13 +34,11 @@ test("stock query option factories use canonical keys and cache windows", () => 
   const display = displayQueryOptions("KR:004020", "detail");
   const technical = technicalScoreQueryOptions("KR:004020");
   const quote = quoteQueryOptions("KR:004020");
-  const compare = compareQueryOptions(["KR:004020", "US:KO"]);
 
   assert.deepEqual(display.queryKey, ["stock", "display", "detail", "KR:004020"]);
   assert.deepEqual(score.queryKey, ["stock", "score", "detail", "KR:004020"]);
   assert.deepEqual(technical.queryKey, ["stock", "score", "technical", "KR:004020"]);
   assert.deepEqual(quote.queryKey, ["stock", "quote", "KR:004020"]);
-  assert.deepEqual(compare.queryKey, ["stock", "compare", "KR:004020,US:KO"]);
   assert.equal(score.gcTime, STOCK_QUERY_CACHE_MAX_AGE_MS);
   assert.equal(quote.staleTime, stockQueryStaleTimesMs.quote);
   assert.equal(score.staleTime, stockQueryStaleTimesMs.score);
@@ -153,12 +150,6 @@ test("detail-view query options poll from nextPollMs while recovering", () => {
   assert.equal(stockDetailViewRefetchIntervalMs(partial), 1500);
   assert.equal(stockDetailViewRefetchIntervalMs({ ...partial, mode: "ready", nextPollMs: undefined }), false);
   assert.equal(stockDetailViewRefetchIntervalMs({ ok: false, mode: "failed_irreversible", error: "invalid_ticker", message: "bad" }), false);
-});
-
-test("compare query option keeps order and disables empty batches", () => {
-  assert.notDeepEqual(compareQueryOptions(["KR:004020", "US:KO"]).queryKey, compareQueryOptions(["US:KO", "KR:004020"]).queryKey);
-  assert.equal(compareQueryOptions([]).enabled, false);
-  assert.equal(compareQueryOptions(["US:KO"]).enabled, true);
 });
 
 test("symbol search query option uses long-lived cache and short query guard", () => {
@@ -411,7 +402,7 @@ test("partial polling only continues when nested pending work is queued", () => 
   assert.equal(stockQueryShouldPoll(partial), true);
 });
 
-test("compare polling retries any pending member so stale active batches self-heal", () => {
+test("client-only partial polling stays idle without queued server work", () => {
   const clientOnlyPending: ScoreQueryResult = {
     state: "pending",
     status: 202,
@@ -428,29 +419,7 @@ test("compare polling retries any pending member so stale active batches self-he
     data: { requested_ticker: "US:APLT" },
     pending: clientOnlyPending,
   };
-  const compareWithPending: CompareQueryResult = {
-    state: "partial",
-    status: 200,
-    payload: {},
-    results: [
-      {
-        ticker: "US:APLT",
-        result: clientOnlyPartial,
-      },
-      {
-        ticker: "US:APOG",
-        result: {
-          state: "ready",
-          status: 200,
-          payload: {},
-          data: { requested_ticker: "US:APOG", symbol: "APOG" },
-        },
-      },
-    ],
-  };
 
   assert.equal(stockQueryShouldPoll(clientOnlyPending), false);
   assert.equal(stockQueryShouldPoll(clientOnlyPartial), false);
-  assert.equal(stockQueryShouldPoll(compareWithPending), true);
-  assert.equal(stockQueryRefetchIntervalMs(compareWithPending, 1, "compare"), 2_000);
 });

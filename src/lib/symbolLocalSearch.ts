@@ -142,6 +142,8 @@ function rankSymbolEntry(entry: SymbolSearchIndexEntry, normalizedQuery: string)
   if (entry.tickerSearch.startsWith(normalizedQuery)) return 10 + entry.tickerSearch.length;
   if (entry.koreanSearch.startsWith(normalizedQuery) || entry.displaySearch.startsWith(normalizedQuery) || entry.aliasSearch.some((value) => value.startsWith(normalizedQuery))) return 30 + entry.displaySearch.length;
   if (entry.englishSearch.startsWith(normalizedQuery)) return 45 + entry.englishSearch.length;
+  const nearNameScore = fuzzyNameScore(entry, normalizedQuery);
+  if (nearNameScore < 999) return nearNameScore;
   if (entry.tickerSearch.includes(normalizedQuery)) return 60 + entry.tickerSearch.indexOf(normalizedQuery);
   if (entry.koreanSearch.includes(normalizedQuery) || entry.displaySearch.includes(normalizedQuery) || entry.aliasSearch.some((value) => value.includes(normalizedQuery))) {
     const positions = [entry.koreanSearch, entry.displaySearch, ...entry.aliasSearch]
@@ -151,6 +153,56 @@ function rankSymbolEntry(entry: SymbolSearchIndexEntry, normalizedQuery: string)
   }
   if (entry.englishSearch.includes(normalizedQuery)) return 100 + entry.englishSearch.indexOf(normalizedQuery);
   return 999;
+}
+
+function fuzzyNameScore(entry: SymbolSearchIndexEntry, normalizedQuery: string): number {
+  if (Array.from(normalizedQuery).length < 3) return 999;
+  const localNames = [entry.koreanSearch, entry.displaySearch, ...entry.aliasSearch].filter(Boolean);
+  if (localNames.some((value) => hasNearPrefix(value, normalizedQuery))) return 55 + entry.displaySearch.length;
+  if (entry.englishSearch && hasNearPrefix(entry.englishSearch, normalizedQuery)) return 70 + entry.englishSearch.length;
+  return 999;
+}
+
+function hasNearPrefix(candidate: string, query: string): boolean {
+  if (!candidate || !query) return false;
+  const candidateChars = Array.from(candidate);
+  const queryChars = Array.from(query);
+  for (const lengthDelta of [-1, 0, 1]) {
+    const length = queryChars.length + lengthDelta;
+    if (length <= 0 || length > candidateChars.length) continue;
+    if (hasEditDistanceAtMostOne(queryChars, candidateChars.slice(0, length))) return true;
+  }
+  return candidateChars.length < queryChars.length && hasEditDistanceAtMostOne(queryChars, candidateChars);
+}
+
+function hasEditDistanceAtMostOne(leftChars: string[], rightChars: string[]): boolean {
+  const lengthDelta = leftChars.length - rightChars.length;
+  if (Math.abs(lengthDelta) > 1) return false;
+  let leftIndex = 0;
+  let rightIndex = 0;
+  let edits = 0;
+
+  while (leftIndex < leftChars.length && rightIndex < rightChars.length) {
+    if (leftChars[leftIndex] === rightChars[rightIndex]) {
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+
+    edits += 1;
+    if (edits > 1) return false;
+    if (lengthDelta === 0) {
+      leftIndex += 1;
+      rightIndex += 1;
+    } else if (lengthDelta < 0) {
+      rightIndex += 1;
+    } else {
+      leftIndex += 1;
+    }
+  }
+
+  if (leftIndex < leftChars.length || rightIndex < rightChars.length) edits += 1;
+  return edits <= 1;
 }
 
 function mergeCuratedSymbols(items: readonly SymbolMasterItem[]): SymbolMasterItem[] {

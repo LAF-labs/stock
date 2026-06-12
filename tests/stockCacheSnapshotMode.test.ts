@@ -344,7 +344,7 @@ test("detail quote-only fast path is not stored as a durable score snapshot", as
   assert.deepEqual(writes, []);
 });
 
-test("compare score cache skips daily rows and uses the quote-only fast path immediately", async () => {
+test("compare score cache uses daily rows for chart-backed fast path data", async () => {
   useSnapshotOnlyRuntime();
   process.env.STOCK_API_APP_KEY = "app-key";
   process.env.STOCK_API_APP_SECRET = "app-secret";
@@ -361,7 +361,10 @@ test("compare score cache skips daily rows and uses the quote-only fast path imm
       dailyCalls += 1;
       return Response.json({
         rt_cd: "0",
-        output2: [{ xymd: "20260605", open: "10", high: "11", low: "9", clos: "10.5", tvol: "1000" }],
+        output2: [
+          { xymd: "20260604", open: "10", high: "11", low: "9", clos: "10", tvol: "1000" },
+          { xymd: "20260605", open: "10", high: "11", low: "9", clos: "10.5", tvol: "1000" },
+        ],
       });
     }
     if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
@@ -391,12 +394,13 @@ test("compare score cache skips daily rows and uses the quote-only fast path imm
 
   const result = await getStockScore("US:ANIX", "compare");
 
-  assert.equal(dailyCalls, 0);
+  assert.equal(dailyCalls, 1);
   assert.equal(result.payload.ok, true);
   assert.equal(result.payload.requested_ticker, "US:ANIX");
-  assert.equal(result.payload.data_quality, "quote_fast_path");
-  assert.equal((result.payload.fetch as Record<string, unknown>).provider_mode, "detail_quote_fast_path");
-  assert.equal((result.payload.chart_series as unknown[]).length, 0);
+  assert.equal(result.payload.data_quality, "price_fast_path");
+  assert.equal((result.payload.fetch as Record<string, unknown>).provider_mode, "detail_request_fast_path");
+  assert.equal((result.payload.chart_series as unknown[]).length, 2);
+  assert.equal(typeof result.payload.quality_score, "number");
   assert.equal(result.cache.source, "market-data");
   assert.equal(result.cache.state, "miss");
 });

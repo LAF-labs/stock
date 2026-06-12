@@ -63,16 +63,6 @@ export type TechnicalScoreQueryResult = ScoreQueryResult;
 export type QuoteQueryResult = ApiReady<StockQuoteResponse> | ApiPartial<StockQuoteResponse> | ApiPending;
 export type QuoteRefreshMutationResult = ApiReady<StockQuoteResponse> | ApiPending | ApiCooldown<StockQuoteResponse>;
 
-export type CompareScoreItemResult =
-  | { ticker: string; result: ApiReady<StockScoreResponse> | ApiPartial<StockScoreResponse> | ApiPending | ApiUnsupported | ApiError };
-
-export type CompareQueryResult = {
-  state: "ready" | "partial" | "pending";
-  status: number;
-  payload: ClientApiPayload;
-  results: CompareScoreItemResult[];
-};
-
 export type SymbolSearchQueryResult = ApiReady<{
   query: string;
   items: SymbolSearchItem[];
