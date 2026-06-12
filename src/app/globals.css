@@ -5097,8 +5097,8 @@ body {
   .stock-detail-app .stock-search.search-collapsed {
     position: sticky;
     top: 0;
-    min-height: 0;
-    height: 0;
+    min-height: 80px;
+    height: 80px;
     padding: 0;
     display: block;
     overflow: visible;

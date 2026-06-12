@@ -117,6 +117,10 @@ test("home search is a floating pill that collapses to an icon-only circle", () 
   assert.match(autocompleteSource, /variant === "floating"/);
   assert.match(dashboardSource, /formAction="\/"/);
   assert.match(dashboardSource, /inputName="ticker"/);
+  assert.match(dashboardSource, /delta > 0/);
+  assert.match(dashboardSource, /delta < 0/);
+  assert.doesNotMatch(dashboardSource, /delta > 8/);
+  assert.doesNotMatch(dashboardSource, /delta < -24/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?border-radius:\s*999px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed\s*\{[\s\S]*?width:\s*56px;/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\.is-collapsed input\s*\{[\s\S]*?opacity:\s*0;/);
@@ -277,7 +281,7 @@ test("mobile route headers keep first content flush and compact", () => {
   assert.match(css, /\/\* Mobile route header polish \*\//);
   assert.match(autocompleteSource, /function collapsedContentWidth/);
   assert.match(autocompleteSource, /"--symbol-search-content-width"/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-collapsed\s*\{[\s\S]*?height:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?border-bottom:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-collapsed\s*\{[\s\S]*?min-height:\s*80px;[\s\S]*?height:\s*80px;[\s\S]*?background:\s*transparent;[\s\S]*?border-bottom:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;[\s\S]*?width:\s*clamp\(104px,\s*calc\(var\(--symbol-search-content-width,\s*8ch\) \+ 54px\),\s*calc\(100vw - 32px\)\);[\s\S]*?margin-inline:\s*auto;[\s\S]*?transform:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-box\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) 24px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating input\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?color:\s*var\(--muted\);[\s\S]*?font-size:\s*13px;/);

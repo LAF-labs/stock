@@ -130,9 +130,9 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
 
       if (scrollY <= 16) {
         setSearchCollapsed(false);
-      } else if (delta > 8 && scrollY > 92) {
+      } else if (delta > 0) {
         setSearchCollapsed(true);
-      } else if (delta < -24) {
+      } else if (delta < 0) {
         setSearchCollapsed(false);
       }
 
