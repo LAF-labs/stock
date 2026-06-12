@@ -154,6 +154,25 @@ test("TypeScript operations report summarizes quotes and industry benchmarks", (
   assert.equal(benchmarks.newest_as_of_date, "2026-06-05");
 });
 
+test("TypeScript operations report separates short quote freshness from serviceable stale windows", () => {
+  const now = new Date("2026-06-06T00:00:00+00:00");
+  const quotes = summarizeQuoteSnapshots(
+    [
+      quoteRow("US:FRESH", 120.0, "2026-06-05T23:59:00+00:00", "2026-06-06T00:04:00+00:00", "2026-06-06T02:00:00+00:00"),
+      quoteRow("US:SERVICEABLE", 121.0, "2026-06-05T23:00:00+00:00", "2026-06-05T23:05:00+00:00", "2026-06-06T02:00:00+00:00"),
+      quoteRow("US:EXPIRED", 122.0, "2026-06-05T20:00:00+00:00", "2026-06-05T20:05:00+00:00", "2026-06-05T22:00:00+00:00"),
+    ],
+    now,
+    2
+  );
+
+  assert.equal(quotes.total_snapshots, 3);
+  assert.equal(quotes.stale_snapshots, 2);
+  assert.equal(quotes.serviceable_stale_snapshots, 1);
+  assert.equal(quotes.expired_snapshots, 1);
+  assert.equal(quotes.expired_rate, 0.333);
+});
+
 test("TypeScript operations report summarizes refresh target coverage", () => {
   const summary = summarizeRefreshTargets([
     { market: "US", tier: "cold_stock", instrument_type: "STOCK", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: 604800 },
@@ -207,7 +226,7 @@ test("TypeScript operations report separates freshness risks from threshold pass
   const risks = freshnessRiskSummary({
     refresh_queue: { oldest_due_age_minutes: 75, queued_jobs: 3 },
     score_calibration: { stale_snapshots: 4 },
-    quote_freshness: { stale_rate: 1, stale_snapshots: 13, total_snapshots: 13 },
+    quote_freshness: { expired_rate: 1, expired_snapshots: 13, total_snapshots: 13 },
     thresholds: { ok: true, violations: [] },
   });
 
@@ -215,8 +234,27 @@ test("TypeScript operations report separates freshness risks from threshold pass
   assert.equal(risks.thresholds_ok, true);
   assert.deepEqual(
     risks.warnings.map((warning) => warning.key),
-    ["quote_stale_rate", "refresh_queue_due_age"]
+    ["quote_expired_rate", "refresh_queue_due_age"]
   );
+});
+
+test("TypeScript operations report does not warn when quote snapshots are stale but still serviceable", () => {
+  const risks = freshnessRiskSummary({
+    score_calibration: { stale_technical_snapshots: 0 },
+    quote_freshness: {
+      total_snapshots: 500,
+      stale_snapshots: 470,
+      stale_rate: 0.94,
+      serviceable_stale_snapshots: 470,
+      expired_snapshots: 0,
+      expired_rate: 0,
+    },
+    refresh_queue: { oldest_due_age_minutes: 10 },
+    thresholds: { ok: true, violations: [] },
+  });
+
+  assert.equal(risks.ok, true);
+  assert.deepEqual(risks.warnings, []);
 });
 
 test("TypeScript operations report warns on stale technical snapshots without failing score calibration", () => {
@@ -444,11 +482,12 @@ function technicalRow(ticker: string, hasPayload: boolean, fetchedAt: string, ex
   };
 }
 
-function quoteRow(ticker: string, latestPrice: number | null, fetchedAt: string, expiresAt: string) {
+function quoteRow(ticker: string, latestPrice: number | null, fetchedAt: string, expiresAt: string, staleExpiresAt?: string) {
   return {
     ticker,
     fetched_at: fetchedAt,
     expires_at: expiresAt,
+    stale_expires_at: staleExpiresAt,
     payload: {
       market: ticker.startsWith("KR:") ? "KR" : "US",
       latest_price: latestPrice,

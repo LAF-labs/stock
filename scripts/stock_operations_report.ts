@@ -226,6 +226,8 @@ export function summarizeScoreSnapshots(
 
 export function summarizeQuoteSnapshots(rows: JsonRecord[], now = new Date(), staleAfterHours = 2) {
   let stale = 0;
+  let serviceableStale = 0;
+  let expired = 0;
   let missingPrice = 0;
   const byMarket: Record<string, number> = {};
   const byCacheState: Record<string, number> = {};
@@ -238,13 +240,21 @@ export function summarizeQuoteSnapshots(rows: JsonRecord[], now = new Date(), st
     const state = stringValue(serverCache.state) || "unknown";
     byCacheState[state] = (byCacheState[state] || 0) + 1;
     if (finiteNumber(payload.latest_price) === undefined) missingPrice += 1;
-    if (isStaleSnapshot(row, now, staleAfterHours)) stale += 1;
+    if (isStaleSnapshot(row, now, staleAfterHours)) {
+      stale += 1;
+      const staleExpiresAt = parseDateTime(stringValue(row.stale_expires_at));
+      if (staleExpiresAt && staleExpiresAt.getTime() > now.getTime()) serviceableStale += 1;
+      else expired += 1;
+    }
   }
 
   return {
     total_snapshots: rows.length,
     stale_snapshots: stale,
     stale_rate: rows.length ? rounded(stale / rows.length, 3) : 0.0,
+    serviceable_stale_snapshots: serviceableStale,
+    expired_snapshots: expired,
+    expired_rate: rows.length ? rounded(expired / rows.length, 3) : 0.0,
     missing_price_count: missingPrice,
     by_market: byMarket,
     by_cache_state: byCacheState,
@@ -511,13 +521,13 @@ export function freshnessRiskSummary(payload: JsonRecord) {
     });
   }
 
-  const quoteStaleRate = finiteNumber(quoteFreshness.stale_rate);
+  const quoteExpiredRate = finiteNumber(quoteFreshness.expired_rate);
   const quoteTotal = finiteNumber(quoteFreshness.total_snapshots) || 0;
-  if (quoteTotal > 0 && quoteStaleRate !== undefined && quoteStaleRate >= 0.75) {
+  if (quoteTotal > 0 && quoteExpiredRate !== undefined && quoteExpiredRate >= 0.25) {
     warnings.push({
-      key: "quote_stale_rate",
-      severity: quoteStaleRate >= 0.95 ? "high" : "medium",
-      message: `quote stale rate is ${quoteStaleRate}`,
+      key: "quote_expired_rate",
+      severity: quoteExpiredRate >= 0.5 ? "high" : "medium",
+      message: `quote expired rate is ${quoteExpiredRate}`,
     });
   }
 
@@ -547,7 +557,7 @@ export async function fetchScoreSnapshotRows(config: SupabaseReportConfig, sampl
 
 export async function fetchQuoteSnapshotRows(config: SupabaseReportConfig, sampleLimit: number) {
   return fetchRows(config, "stock_quote_snapshots", {
-    select: "ticker,payload,fetched_at,expires_at",
+    select: "ticker,payload,fetched_at,expires_at,stale_expires_at",
     order: "fetched_at.desc",
     limit: boundedLimit(sampleLimit),
   });
