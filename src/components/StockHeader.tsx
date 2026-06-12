@@ -6,6 +6,7 @@ import {
   dailyToneClass,
   formatPrimaryPrice,
   formatSecondaryPrice,
+  hasDisplayableScoreComponents,
   opportunityExtremes,
   riskLevelLabel,
   scoreConfidenceChips,
@@ -56,8 +57,10 @@ export default function StockHeader({
 }) {
   const displayData = scoreDataWithQuote(data, quote);
   const rawQualityScore = displayData.quality_score ?? displayData.score;
-  const qualityScore = typeof rawQualityScore === "number" && Number.isFinite(rawQualityScore) ? clampScore(rawQualityScore) : undefined;
-  const opportunityScore = typeof displayData.opportunity_score === "number" ? clampScore(displayData.opportunity_score) : undefined;
+  const hasQualityScoreEvidence = hasDisplayableScoreComponents(displayData.components);
+  const hasOpportunityScoreEvidence = hasDisplayableScoreComponents(displayData.opportunity_components);
+  const qualityScore = hasQualityScoreEvidence && typeof rawQualityScore === "number" && Number.isFinite(rawQualityScore) ? clampScore(rawQualityScore) : undefined;
+  const opportunityScore = hasOpportunityScoreEvidence && typeof displayData.opportunity_score === "number" ? clampScore(displayData.opportunity_score) : undefined;
   const symbol = quote?.symbol || data.symbol || data.requested_ticker || "KO";
   const identity = stockHeaderIdentity(data, quote);
   const primaryPrice = formatPrimaryPrice(displayData);
@@ -84,6 +87,7 @@ export default function StockHeader({
   const opportunityConfidence = confidenceChips.find((chip) => chip.label === "기회 근거");
   const qualityScoreStyle = { "--score-angle": `${(qualityScore ?? 0) * 3.6}deg` } as CSSProperties;
   const opportunityScoreStyle = { "--score-angle": `${(opportunityScore ?? 0) * 3.6}deg` } as CSSProperties;
+  const scoreEvidenceMissing = qualityScore === undefined && opportunityScore === undefined;
 
   return (
     <section className="stock-title-card">
@@ -125,11 +129,11 @@ export default function StockHeader({
       <div className="quick-read">
         <article className="quick-metric-card">
           <span>강점</span>
-          <strong>{strongest?.label || "-"}</strong>
+          <strong>{strongest?.label || (scoreEvidenceMissing ? "판단 보류" : "-")}</strong>
         </article>
         <article className="quick-metric-card">
           <span>먼저 볼 것</span>
-          <strong>{weakest?.label || "-"}</strong>
+          <strong>{weakest?.label || (scoreEvidenceMissing ? "자료 부족" : "-")}</strong>
         </article>
         <article className="quick-metric-card">
           <span>시가총액</span>
@@ -197,7 +201,7 @@ export default function StockHeader({
             (judgmentState.status === "error"
               ? "잠시 후 다시 검색해보세요."
               : qualityScore === undefined
-                ? "현재가, 시가총액, 가격 흐름처럼 확보된 항목을 먼저 보여드립니다."
+                ? "현재가처럼 확인된 항목을 먼저 보여드립니다."
                 : "가격, 점수, 재무 지표를 묶어서 보여드립니다.")}
         </p>
         {compareHref ? (

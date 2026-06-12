@@ -10,7 +10,7 @@ import {
   toCompareItem,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { hasDisplayableStockPartialData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
+import { hasDisplayableScoreComponents, hasDisplayableStockPartialData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
 import { compareQueryOptions, displayQueryOptions, displayQueryResultFromPayload } from "@/lib/stockQueryOptions";
 import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult, DisplayQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
@@ -101,7 +101,7 @@ export function compareItemsFromStates(states: readonly CompareLoadState[]): Com
   return states.flatMap((state) => {
     if (state.status === "success") return [toCompareItem(state.data, state.ticker)];
     if (state.status === "partial" && shouldPromotePartialCompareData(state.data)) {
-      return [toCompareItem(state.data, state.ticker, { provisional: true, provisionalLabel: "빠른 점수" })];
+      return [toCompareItem(state.data, state.ticker, { provisional: true, provisionalLabel: "가격 기준 참고값" })];
     }
     return [];
   });
@@ -123,7 +123,7 @@ export function shouldShowCompareChartSkeleton(states: readonly CompareLoadState
 
 export function shouldPromotePartialCompareData(data: StockScoreResponse): boolean {
   if (isIdentityOnlyFastPath(data)) return false;
-  return hasFiniteNumber(data.quality_score ?? data.score) && hasPriceSignal(data);
+  return hasDisplayableScoreComponents(data.components) && hasFiniteNumber(data.quality_score ?? data.score) && hasPriceSignal(data);
 }
 
 function hasPriceSignal(data: StockScoreResponse): boolean {

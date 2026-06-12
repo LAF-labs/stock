@@ -5,6 +5,8 @@ import {
   chartSummary,
   chartPointPriceLabel,
   chooseRicherStockData,
+  componentHasDisplayableScore,
+  componentScoreText,
   dashboardInputValue,
   dashboardStateFromDetailView,
   dashboardSearchInputValue,
@@ -41,6 +43,7 @@ import {
   snapshotPendingFromPayload,
   stockDataUsefulness,
   stockHeaderIdentity,
+  strongestAndWeakest,
   stockJudgmentRequestPayload,
   stockMarketCapDisplay,
   stockRecoveringParts,
@@ -808,7 +811,9 @@ test("factorSummary avoids trading-status wording in quality reasons", () => {
     factorSummary({
       key: "health",
       label: "거래 안정성",
+      score: 66,
       summary: "거래 상태, 유동성, 규모, 부채와 현금흐름 체력을 봐요.",
+      metrics: [{ label: "60일 변동성", value: "12.0%" }],
     }),
     "거래량, 시가총액, 부채 부담, 현금흐름처럼 거래 체력을 봐요.",
   );
@@ -945,6 +950,61 @@ test("dashboard marks neutral fallback components without usable evidence as sco
   assert.equal(componentScoreText?.(missingValuation), "점수 없음");
   assert.equal(componentHasDisplayableScore?.(scoredMomentum), true);
   assert.equal(componentScoreText?.(scoredMomentum), "72.2 · 무난");
+});
+
+test("dashboard keeps internal fast-path placeholders out of investor-facing score cards", () => {
+  const pendingProfitability = {
+    key: "profitability",
+    label: "수익성",
+    score: 50,
+    summary: "정식 재무 데이터가 도착하기 전까지 중립으로 둡니다.",
+    metrics: [
+      { label: "보강 상태", value: "대기" },
+      { label: "근거", value: "가격 데이터 우선" },
+    ],
+  };
+  const pendingHealth = {
+    key: "health",
+    label: "안정성",
+    score: 66,
+    summary: "재무 안정성 보강 전이라 변동성과 고점 대비 위치로 방어력을 추정합니다.",
+    metrics: [
+      { label: "60일 변동성", value: "-" },
+      { label: "고점 대비", value: "-" },
+    ],
+  };
+  const pendingValuation = {
+    key: "valuation",
+    label: "밸류에이션",
+    score: 68,
+    summary: "PER/PBR 보강 전에는 52주 가격 위치만 보수적으로 반영합니다.",
+    metrics: [{ label: "52주 고점 대비", value: "-" }],
+  };
+  const pricedMomentum = {
+    key: "momentum",
+    label: "모멘텀",
+    score: 72.2,
+    metrics: [
+      { label: "1개월", value: "+4.3%" },
+      { label: "20일선", value: "$132.10" },
+    ],
+  };
+
+  assert.equal(componentHasDisplayableScore(pendingProfitability), false);
+  assert.equal(componentScoreText(pendingProfitability), "점수 없음");
+  assert.equal(componentHasDisplayableScore(pendingHealth), false);
+  assert.equal(componentHasDisplayableScore(pendingValuation), false);
+  assert.equal(componentHasDisplayableScore(pricedMomentum), true);
+
+  assert.deepEqual(visibleLabeledItems(pendingProfitability.metrics), []);
+  assert.doesNotMatch(factorSummary(pendingProfitability), /보강|백그라운드|대기|정식/);
+  assert.match(factorSummary(pendingProfitability), /자료|판단/);
+
+  const extremes = strongestAndWeakest({
+    components: [pendingProfitability, pendingHealth, pendingValuation, pricedMomentum],
+  } as StockScoreResponse);
+  assert.equal(extremes.strongest?.key, "momentum");
+  assert.equal(extremes.weakest, undefined);
 });
 
 test("dashboard metric display suppresses impossible cashflow margin percentages", () => {

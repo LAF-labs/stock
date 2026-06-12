@@ -124,14 +124,14 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
     opportunity_grade: gradeForScore(opportunityScore),
     opportunity_confidence: confidence,
     grade: gradeForScore(score),
-    summary: `${displayName}의 가격과 거래량으로 먼저 계산한 빠른 점수입니다. 재무제표와 애널리스트 보강 점수는 백그라운드에서 갱신됩니다.`,
+    summary: `${displayName}은 현재 확인 가능한 가격과 거래량을 먼저 보여줍니다. 실적과 목표가 자료가 충분해지면 판단 범위를 넓힐 수 있어요.`,
     period: periodLabel(daily.chartSeries),
     benchmark: daily.market === "KR" ? "KRX" : "US",
     benchmark_label: daily.market === "KR" ? "국내 상장 종목" : "미국 상장 종목",
     latest_price: signals.latestPrice ?? daily.latestPrice,
     latest_price_label: formatCurrencyAmount(signals.latestPrice ?? daily.latestPrice, daily.currency),
     latest_bar_date: daily.latestDate,
-    evaluation_label: "가격 기반 빠른 점수",
+    evaluation_label: "가격 기준 참고값",
     evaluation_ts: Math.floor(Date.now() / 1000),
     data_quality: "price_fast_path",
     components,
@@ -149,7 +149,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
     financials: {
       source: "pending_enrichment",
       detail_fast_path: true,
-      message: "정식 재무 데이터는 백그라운드에서 보강됩니다.",
+      message: "실적 자료가 확인되면 재무 판단을 더해 보여드립니다.",
     },
     sia_snapshot: {
       symbol: daily.symbol,
@@ -252,13 +252,13 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
     opportunity_grade: gradeForScore(opportunityScore),
     opportunity_confidence: confidence,
     grade: gradeForScore(score),
-    summary: `${displayName}의 현재가로 먼저 계산한 빠른 점수입니다. 차트와 재무제표 보강 점수는 백그라운드에서 갱신됩니다.`,
+    summary: `${displayName}은 현재가를 먼저 확인했습니다. 가격 흐름과 실적 자료가 더 쌓이면 판단 범위를 넓힐 수 있어요.`,
     benchmark: market === "KR" ? "KRX" : "US",
     benchmark_label: market === "KR" ? "국내 상장 종목" : "미국 상장 종목",
     latest_price: signals.latestPrice,
     latest_price_label: stringValue(quote.latest_price_label) || formatCurrencyAmount(signals.latestPrice, currency),
     latest_bar_date: stringValue(quote.latest_bar_date),
-    evaluation_label: "현재가 기반 빠른 점수",
+    evaluation_label: "현재가 기준 참고값",
     evaluation_ts: Math.floor(Date.now() / 1000),
     data_quality: "quote_fast_path",
     components,
@@ -282,7 +282,7 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
     financials: {
       source: "pending_enrichment",
       quote_only_fast_path: true,
-      message: "차트와 정식 재무 데이터는 백그라운드에서 보강됩니다.",
+      message: "가격 흐름과 실적 자료가 확인되면 판단을 더해 보여드립니다.",
     },
     sia_snapshot: {
       symbol,
@@ -352,11 +352,11 @@ async function buildCompareIdentityScorePayload(ticker: string, view: ScoreView)
   return {
     ...payload,
     data_quality: "identity_fast_path",
-    summary: `${displayName}의 현재가가 아직 들어오지 않아 종목 정보로 먼저 만든 빠른 비교 카드입니다. 현재가와 차트 보강 점수는 백그라운드에서 갱신됩니다.`,
+    summary: `${displayName}은 현재가가 아직 확인되지 않아 종목 정보만 먼저 보여줍니다. 가격과 거래 기록이 확인되면 비교 판단을 더할 수 있어요.`,
     financials: {
       ...(isRecord(payload.financials) ? payload.financials : {}),
       identity_only_fast_path: true,
-      message: "현재가, 차트, 정식 재무 데이터는 백그라운드에서 보강됩니다.",
+      message: "현재가, 가격 흐름, 실적 자료가 확인되면 비교 판단을 더해 보여드립니다.",
     },
     fetch: {
       ...(isRecord(payload.fetch) ? payload.fetch : {}),
@@ -385,12 +385,12 @@ function priceSignalsFromBars(rows: KisDailyChartBar[]): PriceSignals {
   const volumes = bars.map((row) => row.volume).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const latest = bars.at(-1);
   const previous = bars.at(-2);
-  const year = bars.slice(-252);
+  const year = bars.length >= 60 ? bars.slice(-252) : [];
   const yearHigh = year.length ? Math.max(...year.map((row) => row.high)) : undefined;
   const yearLow = year.length ? Math.min(...year.map((row) => row.low)) : undefined;
-  const ma20 = average(closes.slice(-20));
-  const ma50 = average(closes.slice(-50));
-  const ma200 = average(closes.slice(-200));
+  const ma20 = averageWhenEnough(closes, 20);
+  const ma50 = averageWhenEnough(closes, 50);
+  const ma200 = averageWhenEnough(closes, 200);
   const return1m = trailingReturn(bars, 21);
   const return3m = trailingReturn(bars, 63);
   const return6m = trailingReturn(bars, 126);
@@ -398,8 +398,8 @@ function priceSignalsFromBars(rows: KisDailyChartBar[]): PriceSignals {
   const latestPrice = latest?.close;
   const distanceFromYearHigh = latestPrice && yearHigh ? latestPrice / yearHigh - 1 : undefined;
   const distanceFromYearLow = latestPrice && yearLow ? latestPrice / yearLow - 1 : undefined;
-  const avgVolume20 = average(volumes.slice(-20));
-  const avgVolume60 = average(volumes.slice(-60));
+  const avgVolume20 = averageWhenEnough(volumes, 20);
+  const avgVolume60 = averageWhenEnough(volumes, 60);
   const volatility60 = realizedVolatility(closes.slice(-61));
   const returnScore = weightedAverage(
     [
@@ -487,17 +487,16 @@ function scoreComponents(signals: PriceSignals, currency: string): ScoreComponen
       key: "profitability",
       label: "수익성",
       score: NEUTRAL_SCORE,
-      summary: "정식 재무 데이터가 도착하기 전까지 중립으로 둡니다.",
+      summary: "이익률과 현금흐름 자료가 부족해 아직 판단을 보류합니다.",
       metrics: [
-        { label: "보강 상태", value: "대기" },
-        { label: "근거", value: "가격 데이터 우선" },
+        { label: "자료 상태", value: "실적 자료 부족" },
       ],
     },
     {
       key: "growth",
       label: "성장성",
       score: signals.growthProxyScore,
-      summary: "재무 성장률 대신 최근 가격 추세를 낮은 비중으로 반영했습니다.",
+      summary: "매출과 이익 성장 자료가 부족하면 가격 흐름은 참고만 합니다.",
       metrics: [
         { label: "3개월", value: percentLabel(signals.return3m) },
         { label: "6개월", value: percentLabel(signals.return6m) },
@@ -507,7 +506,7 @@ function scoreComponents(signals: PriceSignals, currency: string): ScoreComponen
       key: "health",
       label: "안정성",
       score: roundScore(NEUTRAL_SCORE * 0.68 + signals.riskScore * 0.32),
-      summary: "재무 안정성 보강 전이라 변동성과 고점 대비 위치로 방어력을 추정합니다.",
+      summary: "변동성과 재무 체력 자료가 충분할 때 안정성을 판단합니다.",
       metrics: [
         { label: "60일 변동성", value: percentLabel(signals.volatility60) },
         { label: "고점 대비", value: percentLabel(signals.distanceFromYearHigh) },
@@ -528,7 +527,7 @@ function scoreComponents(signals: PriceSignals, currency: string): ScoreComponen
       key: "valuation",
       label: "밸류에이션",
       score: signals.valuationProxyScore,
-      summary: "PER/PBR 보강 전에는 52주 가격 위치만 보수적으로 반영합니다.",
+      summary: "PER, PBR 같은 가격 부담 자료가 부족하면 판단을 보류합니다.",
       metrics: [
         { label: "52주 고점 대비", value: percentLabel(signals.distanceFromYearHigh) },
         { label: "52주 저점 대비", value: percentLabel(signals.distanceFromYearLow) },
@@ -553,15 +552,15 @@ function opportunityScoreComponents(signals: PriceSignals): ScoreComponent[] {
       key: "opportunity_growth",
       label: "성장 기대",
       score: signals.growthProxyScore,
-      summary: "정식 성장 지표 보강 전까지 가격 추세를 보수적으로 씁니다.",
+      summary: "성장 자료가 부족하면 가격 흐름은 참고만 합니다.",
       metrics: [{ label: "6개월", value: percentLabel(signals.return6m) }],
     },
     {
       key: "opportunity_analyst",
-      label: "분석 보강",
+      label: "목표가 판단",
       score: NEUTRAL_SCORE,
-      summary: "애널리스트 데이터는 백그라운드에서 보강됩니다.",
-      metrics: [{ label: "보강 상태", value: "대기" }],
+      summary: "목표가와 투자의견 자료가 부족해 아직 판단을 보류합니다.",
+      metrics: [{ label: "자료 상태", value: "목표가 자료 부족" }],
     },
     {
       key: "opportunity_liquidity",
@@ -642,9 +641,10 @@ function weightedAverage(items: Array<[number | undefined, number]>, fallback: n
 }
 
 function trailingReturn(bars: KisDailyChartBar[], periods: number): number | undefined {
+  if (bars.length <= periods) return undefined;
   const latest = bars.at(-1);
   if (!latest) return undefined;
-  const anchorIndex = Math.max(0, bars.length - 1 - periods);
+  const anchorIndex = bars.length - 1 - periods;
   const anchor = bars[anchorIndex];
   if (!anchor || anchor === latest || !anchor.close) return undefined;
   return roundRatio(latest.close / anchor.close - 1);
@@ -690,6 +690,11 @@ function average(values: Array<number | undefined>): number | undefined {
   const usable = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   if (!usable.length) return undefined;
   return Math.round((usable.reduce((sum, value) => sum + value, 0) / usable.length) * 1_000_000) / 1_000_000;
+}
+
+function averageWhenEnough(values: Array<number | undefined>, minimumCount: number): number | undefined {
+  if (values.length < minimumCount) return undefined;
+  return average(values.slice(-minimumCount));
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

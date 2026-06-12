@@ -167,6 +167,18 @@ export function FactorStory({
   title?: string;
 }) {
   if (!components?.length) return null;
+  const displayComponents = components.filter(componentHasDisplayableScore);
+  if (!displayComponents.length) {
+    return (
+      <section className="factor-card factor-empty-card" role="status">
+        <div className="section-title">
+          <span>{eyebrow}</span>
+          <h2>아직 점수로 판단할 자료가 부족해요</h2>
+        </div>
+        <p className="factor-empty-note">현재가처럼 확인 가능한 정보는 먼저 보여주고, 실적과 거래 기록이 충분해지면 세부 점수를 표시할게요.</p>
+      </section>
+    );
+  }
   return (
     <section className="factor-card">
       <div className="section-title">
@@ -174,7 +186,7 @@ export function FactorStory({
         <h2>{title}</h2>
       </div>
       <div className="factor-list">
-        {components.map((component) => {
+        {displayComponents.map((component) => {
           const score = clampScore(component.score);
           const hasDisplayableScore = componentHasDisplayableScore(component);
           const visibleMetrics = visibleLabeledItems(component.metrics);

@@ -59,8 +59,8 @@ test("compare helpers build stable compare item fields", () => {
     usd_krw_rate: 1400,
     name: "Marvell Technology",
     components: [
-      { key: "profitability", label: "수익성", score: 88 },
-      { key: "valuation", label: "가격 부담", score: 42 },
+      { key: "profitability", label: "수익성", score: 88, metrics: [{ label: "순이익률", value: "+22.0%" }] },
+      { key: "valuation", label: "가격 부담", score: 42, metrics: [{ label: "PER", value: "1,234.5" }] },
     ],
     key_metrics: [{ label: "시가총액", value: 65000000000 }],
     valuation_rows: [
@@ -171,8 +171,8 @@ test("opportunityComponentScore reads opportunity breakdown scores separately fr
     data: {
       components: [{ key: "momentum", score: 80 }],
       opportunity_components: [
-        { key: "opportunity_momentum", score: 72.4 },
-        { key: "opportunity_risk", score: 41.6 },
+        { key: "opportunity_momentum", score: 72.4, metrics: [{ label: "1개월", value: "+4.1%" }] },
+        { key: "opportunity_risk", score: 41.6, metrics: [{ label: "60일 변동성", value: "32.0%" }] },
       ],
     },
   } as any;

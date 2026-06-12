@@ -27,7 +27,7 @@ test("compare query promotes priced fast-path partials into provisional compare 
       latest_price: 187400,
       data_quality: "quote_fast_path",
       fetch: { quote_only_fast_path: true, pending_enrichment: true },
-      components: [{ key: "momentum", label: "모멘텀", score: 72 }],
+      components: [{ key: "momentum", label: "모멘텀", score: 72, metrics: [{ label: "1개월", value: "+3.8%" }] }],
       price_metrics: { latest_change: 0.018 },
     } as unknown as StockScoreResponse,
     message: "선택한 종목을 같은 기준으로 비교합니다.",
@@ -101,6 +101,7 @@ test("compare chart skeleton shows only while comparable chart data is still pen
       name: "Freshworks",
       latest_price: 9.22,
       quality_score: 50,
+      components: [{ key: "momentum", label: "모멘텀", score: 50, metrics: [{ label: "1개월", value: "+2.1%" }] }],
     } as unknown as StockScoreResponse,
     message: "차트 확인 중",
   } satisfies Extract<CompareLoadState, { status: "partial" }>;
@@ -114,6 +115,7 @@ test("compare chart skeleton shows only while comparable chart data is still pen
       name: "Box",
       latest_price: 25.49,
       quality_score: 48,
+      components: [{ key: "momentum", label: "모멘텀", score: 48, metrics: [{ label: "1개월", value: "-1.3%" }] }],
     } as unknown as StockScoreResponse,
     message: "차트 확인 중",
   } satisfies Extract<CompareLoadState, { status: "partial" }>;
@@ -156,7 +158,7 @@ test("compare chart skeleton stops for newly listed one-bar chart partials", () 
   } satisfies Extract<CompareLoadState, { status: "partial" }>;
   const items = compareItemsFromStates([first, second]);
 
-  assert.equal(items.length, 2);
+  assert.equal(items.length, 0);
   assert.equal(shouldShowCompareChartSkeleton([first, second], items, false), false);
 });
 

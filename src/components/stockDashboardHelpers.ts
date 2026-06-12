@@ -171,11 +171,22 @@ const MAX_REASONABLE_MARGIN_PERCENT = 500;
 const NEUTRAL_FALLBACK_SCORE = 50;
 const ANALYST_COMPONENT_KEYS = new Set(["opportunity_analyst", "analyst"]);
 const VALUATION_COMPONENT_KEYS = new Set(["valuation", "opportunity_valuation"]);
+const PROFITABILITY_COMPONENT_KEYS = new Set(["profitability"]);
+const QUALITY_GROWTH_COMPONENT_KEYS = new Set(["growth"]);
+const PRICE_GROWTH_COMPONENT_KEYS = new Set(["opportunity_growth"]);
+const STABILITY_COMPONENT_KEYS = new Set(["health", "stability", "trading_stability", "opportunity_risk"]);
+const MOMENTUM_COMPONENT_KEYS = new Set(["momentum", "opportunity_momentum"]);
+const LIQUIDITY_COMPONENT_KEYS = new Set(["liquidity", "opportunity_liquidity"]);
 const NON_EVIDENCE_METRIC_LABEL_RE = /^(?:시가총액|근거 충분도|보강 상태)$/;
 const VALUATION_EVIDENCE_LABEL_RE = /^(?:Forward PER|PER|PBR|EV\/Revenue|Price\/Sales|EPS|BPS)(?:\s*\(.+\))?$/;
 const ANALYST_COUNT_LABEL_RE = /^(?:애널리스트 수|커버리지 수)$/;
 const RECOMMENDATION_MEAN_LABEL_RE = /^투자의견 평균$/;
 const TARGET_PRICE_LABEL_RE = /^평균 목표가$/;
+const PROFITABILITY_EVIDENCE_LABEL_RE = /(?:순이익률|영업이익률|ROE|현금흐름|OCF|FCF|EBITDA|마진|profit|margin|cash\s*flow)/i;
+const FINANCIAL_GROWTH_EVIDENCE_LABEL_RE = /(?:매출|이익|EPS|revenue|earnings|sales).*(?:성장|growth)|(?:성장|growth).*(?:매출|이익|EPS|revenue|earnings|sales)/i;
+const PRICE_TREND_EVIDENCE_LABEL_RE = /^(?:1개월|3개월|6개월|52주|20일선|50일선|200일선|20일 평균|50일 평균|200일 평균|RSI14|ATR14|베타|beta)/i;
+const STABILITY_EVIDENCE_LABEL_RE = /(?:60일 변동성|변동성|ATR14|베타|beta|부채|유동비율|현금|debt|current ratio|cash)/i;
+const LIQUIDITY_EVIDENCE_LABEL_RE = /(?:거래량|평균 거래|volume|유동성)/i;
 
 const KO_KR_CHART_FORMATTER = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const NOTE_COPY: Record<string, string> = {
@@ -756,7 +767,7 @@ export function snapshotPendingFromPayload(payload: unknown, fallbackTicker: str
 export function partialStockStatusSummary(defaultSummary: string, pending: SnapshotPendingState | undefined): string {
   if (!pending) return defaultSummary;
   if (pending.message) return pending.message;
-  if (pending.queued) return "정식 데이터 생성 작업이 대기열에서 처리 중입니다.";
+  if (pending.queued) return "자료가 준비되는 대로 화면에 반영합니다.";
   return defaultSummary;
 }
 
@@ -1138,18 +1149,35 @@ export function componentWord(score: number): string {
 export function componentHasDisplayableScore(component: ScoreComponent): boolean {
   const score = numberFromUnknown(component.score);
   if (score === undefined) return false;
-  if (Math.abs(score - NEUTRAL_FALLBACK_SCORE) > 0.05) return true;
 
   const key = component.key?.trim() || "";
-  if (ANALYST_COMPONENT_KEYS.has(key)) return component.metrics?.some(isAnalystEvidenceMetric) || false;
-  if (VALUATION_COMPONENT_KEYS.has(key)) return component.metrics?.some(isValuationEvidenceMetric) || false;
-  return true;
+  const evidenceRule = componentEvidenceRule(key);
+  if (evidenceRule) return component.metrics?.some(evidenceRule) || false;
+  if (component.metrics?.length && !component.metrics.some(hasUsableMetricValue)) return false;
+  if (Math.abs(score - NEUTRAL_FALLBACK_SCORE) > 0.05) return true;
+  return component.metrics?.some(hasUsableMetricValue) || false;
 }
 
 export function componentScoreText(component: ScoreComponent): string {
   if (!componentHasDisplayableScore(component)) return "점수 없음";
   const score = clampScore(component.score);
   return `${score.toFixed(1)} · ${componentWord(score)}`;
+}
+
+export function hasDisplayableScoreComponents(components: ScoreComponent[] | undefined): boolean {
+  return (components || []).some(componentHasDisplayableScore);
+}
+
+function componentEvidenceRule(key: string): ((metric: LabeledValue) => boolean) | undefined {
+  if (ANALYST_COMPONENT_KEYS.has(key)) return isAnalystEvidenceMetric;
+  if (VALUATION_COMPONENT_KEYS.has(key)) return isValuationEvidenceMetric;
+  if (PROFITABILITY_COMPONENT_KEYS.has(key)) return isProfitabilityEvidenceMetric;
+  if (QUALITY_GROWTH_COMPONENT_KEYS.has(key)) return isFinancialGrowthEvidenceMetric;
+  if (PRICE_GROWTH_COMPONENT_KEYS.has(key)) return isPriceTrendEvidenceMetric;
+  if (STABILITY_COMPONENT_KEYS.has(key)) return isStabilityEvidenceMetric;
+  if (MOMENTUM_COMPONENT_KEYS.has(key)) return isPriceTrendEvidenceMetric;
+  if (LIQUIDITY_COMPONENT_KEYS.has(key)) return isLiquidityEvidenceMetric;
+  return undefined;
 }
 
 function isAnalystEvidenceMetric(metric: LabeledValue): boolean {
@@ -1171,6 +1199,31 @@ function isValuationEvidenceMetric(metric: LabeledValue): boolean {
   return parsed !== undefined && parsed > 0;
 }
 
+function isProfitabilityEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  return PROFITABILITY_EVIDENCE_LABEL_RE.test(label) && hasUsableMetricValue(metric);
+}
+
+function isFinancialGrowthEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  return FINANCIAL_GROWTH_EVIDENCE_LABEL_RE.test(label) && hasUsableMetricValue(metric);
+}
+
+function isPriceTrendEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  return PRICE_TREND_EVIDENCE_LABEL_RE.test(label) && hasUsableMetricValue(metric);
+}
+
+function isStabilityEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  return STABILITY_EVIDENCE_LABEL_RE.test(label) && hasUsableMetricValue(metric);
+}
+
+function isLiquidityEvidenceMetric(metric: LabeledValue): boolean {
+  const label = metric.label?.trim() || "";
+  return LIQUIDITY_EVIDENCE_LABEL_RE.test(label) && hasUsableMetricValue(metric);
+}
+
 function hasUsableMetricValue(metric: LabeledValue): boolean {
   const label = metric.label?.trim() || "";
   if (NON_EVIDENCE_METRIC_LABEL_RE.test(label)) return false;
@@ -1187,7 +1240,10 @@ export function strongestAndWeakest(data: StockScoreResponse) {
   let weakest: ScoreComponent | undefined;
   let strongestScore = -1;
   let weakestScore = 101;
+  let count = 0;
   for (const component of data.components || []) {
+    if (!componentHasDisplayableScore(component)) continue;
+    count += 1;
     const strongScore = component.score ?? -1;
     const weakScore = component.score ?? 101;
     if (!strongest || strongScore > strongestScore) {
@@ -1199,7 +1255,7 @@ export function strongestAndWeakest(data: StockScoreResponse) {
       weakestScore = weakScore;
     }
   }
-  return { strongest, weakest };
+  return { strongest, weakest: count > 1 ? weakest : undefined };
 }
 
 export function stockHeaderIdentity(data: StockScoreResponse, quote?: StockQuoteResponse): StockHeaderIdentity {
@@ -1259,7 +1315,15 @@ export function visibleLabeledItems(items: LabeledValue[] | undefined): LabeledV
 
 function isHiddenLabeledItem(item: LabeledValue): boolean {
   const label = item.label?.trim();
-  return !!label && (isSourceOnlyLabel(label) || HIDDEN_LABELED_ITEM_LABELS.has(label));
+  return !!label && (isSourceOnlyLabel(label) || HIDDEN_LABELED_ITEM_LABELS.has(label) || isInternalPipelineMetric(item));
+}
+
+function isInternalPipelineMetric(item: LabeledValue): boolean {
+  const label = item.label?.trim() || "";
+  const value = formatValue(item.value as JsonValue | undefined).trim();
+  if (label === "보강 상태") return true;
+  if (label === "근거" && /^(?:가격 데이터 우선|대기|보강|pending)$/i.test(value)) return true;
+  return false;
 }
 
 function displayLabeledItemLabel(label: string | undefined): string | undefined {
@@ -1323,6 +1387,7 @@ export function formatNote(note: unknown): string | undefined {
 
 export function factorSummary(component: ScoreComponent): string {
   const label = component.label || component.key || "";
+  if (!componentHasDisplayableScore(component)) return scorelessFactorSummary(label);
   if (label.includes("수익성")) return "순이익률, ROE, 현금흐름처럼 실제로 돈을 잘 버는지 봐요.";
   if (label.includes("성장성")) return "매출과 이익이 커지는 속도, 최근 가격 흐름을 같이 봐요.";
   if (label.includes("재무건전성")) return "부채 부담과 단기 현금 여력을 봐요. 버틸 체력이 중요해요.";
@@ -1330,6 +1395,16 @@ export function factorSummary(component: ScoreComponent): string {
   if (label.includes("모멘텀")) return "최근 가격이 올라가는 힘이 있는지, 고점에서 얼마나 떨어져 있는지 봐요.";
   if (label.includes("밸류에이션")) return "좋은 회사라도 가격이 너무 비싸면 점수가 낮아질 수 있어요.";
   return easySentence(component.summary) || "관련 숫자를 묶어서 점수로 바꿔요.";
+}
+
+function scorelessFactorSummary(label: string): string {
+  if (label.includes("수익성")) return "이익률과 현금흐름 자료가 부족해 아직 판단을 보류해요.";
+  if (label.includes("성장성") || label.includes("성장 기대")) return "매출과 이익 성장 자료가 부족해 아직 판단을 보류해요.";
+  if (label.includes("재무건전성") || label.includes("거래 안정성") || label.includes("안정성")) return "변동성이나 재무 체력 자료가 더 쌓이면 판단할 수 있어요.";
+  if (label.includes("모멘텀") || label.includes("최근 흐름")) return "가격 흐름 자료가 더 쌓이면 추세를 판단할 수 있어요.";
+  if (label.includes("밸류에이션") || label.includes("가격 부담")) return "PER, PBR 같은 가격 부담 자료가 부족해 아직 판단하기 어려워요.";
+  if (label.includes("분석") || label.includes("목표가") || label.includes("애널리스트")) return "목표가와 투자의견 자료가 부족해 아직 판단하기 어려워요.";
+  return "아직 판단할 자료가 부족해요.";
 }
 
 export function formatMonthLabel(date: string | undefined): string {

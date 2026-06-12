@@ -19,6 +19,7 @@ import {
   dailyToneClass,
   formatPrimaryPrice,
   formatSecondaryPrice,
+  hasDisplayableScoreComponents,
   hasDisplayableStockPartialData,
   partialStockDataFromTicker,
   partialStockStatusSummary,
@@ -318,7 +319,7 @@ function PartialStockFeed({
   onRetry: () => void;
 }) {
   const hasChart = usableChartPoints(data.chart_series).length >= 2;
-  const hasFactors = Boolean(data.components?.length || data.opportunity_components?.length);
+  const hasFactors = hasDisplayableScoreComponents(data.components) || hasDisplayableScoreComponents(data.opportunity_components);
   const hasMetrics = Boolean(data.key_metrics?.length);
   const hasProfile = Boolean(data.stock_profile?.length);
   const hasValuation = Boolean(data.valuation_rows?.length);
@@ -408,10 +409,10 @@ function PartialStockSummary({
   const latestBarDate = quote?.latest_bar_date || displayData.latest_bar_date || "최근 가격";
   const hasPrice = typeof displayData.latest_price === "number" && Number.isFinite(displayData.latest_price);
   const rawScore = displayData.quality_score ?? displayData.score;
-  const qualityScore = typeof rawScore === "number" && Number.isFinite(rawScore) ? clampScore(rawScore) : undefined;
+  const qualityScore = hasDisplayableScoreComponents(displayData.components) && typeof rawScore === "number" && Number.isFinite(rawScore) ? clampScore(rawScore) : undefined;
   const { strongest, weakest } = strongestAndWeakest(displayData);
   const marketCap = stockMarketCapDisplay(displayData);
-  const defaultSummary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "가격과 빠른 점수를 먼저 반영했어요.");
+  const defaultSummary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "현재가와 참고 지표를 먼저 반영했어요.");
   const summary = partialStockStatusSummary(defaultSummary, pending);
 
   return (
@@ -424,7 +425,7 @@ function PartialStockSummary({
             {identity.secondary ? <p>{identity.secondary}</p> : null}
           </div>
         </div>
-        <span className="score-time-chip">{qualityScore === undefined ? (hasPrice ? "현재가 확인" : "종목 확인") : "빠른 점수"}</span>
+        <span className="score-time-chip">{qualityScore === undefined ? (hasPrice ? "현재가 확인" : "종목 확인") : "가격 기준 참고값"}</span>
       </div>
       <div className="price-strip">
         <div className="price-block">

@@ -1,5 +1,6 @@
 import { clampScore, formatPercent, formatValue } from "@/lib/format";
 import {
+  componentHasDisplayableScore,
   isPartialStockSnapshotPayload,
   partialStockDataFromPayload,
   stockHeaderIdentity,
@@ -207,7 +208,10 @@ export function strongestAndWeakest(data: StockScoreResponse) {
   let weakest: ScoreComponent | undefined;
   let strongestScore = -1;
   let weakestScore = 101;
+  let count = 0;
   for (const component of data.components || []) {
+    if (!componentHasDisplayableScore(component)) continue;
+    count += 1;
     const strongScore = component.score ?? -1;
     const weakScore = component.score ?? 101;
     if (!strongest || strongScore > strongestScore) {
@@ -221,7 +225,7 @@ export function strongestAndWeakest(data: StockScoreResponse) {
   }
   return {
     strongest,
-    weakest,
+    weakest: count > 1 ? weakest : undefined,
   };
 }
 
@@ -270,12 +274,16 @@ export function bestBy(items: CompareItem[], value: (item: CompareItem) => numbe
 }
 
 export function componentScore(item: CompareItem, key: string): number | undefined {
-  const score = componentByKey(item.data, key)?.score;
+  const component = componentByKey(item.data, key);
+  if (!component || !componentHasDisplayableScore(component)) return undefined;
+  const score = component.score;
   return typeof score === "number" ? clampScore(score) : undefined;
 }
 
 export function opportunityComponentScore(item: CompareItem, key: string): number | undefined {
-  const score = item.data.opportunity_components?.find((component) => component.key === key)?.score;
+  const component = item.data.opportunity_components?.find((itemComponent) => itemComponent.key === key);
+  if (!component || !componentHasDisplayableScore(component)) return undefined;
+  const score = component.score;
   return typeof score === "number" ? clampScore(score) : undefined;
 }
 
