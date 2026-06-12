@@ -275,7 +275,12 @@ test("mobile compare navigation is a compact horizontal action rail", () => {
 
 test("mobile route headers keep first content flush and compact", () => {
   assert.match(css, /\/\* Mobile route header polish \*\//);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.96\);/);
+  assert.match(autocompleteSource, /function collapsedContentWidth/);
+  assert.match(autocompleteSource, /"--symbol-search-content-width"/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-collapsed\s*\{[\s\S]*?height:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?border-bottom:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;[\s\S]*?width:\s*clamp\(104px,\s*calc\(var\(--symbol-search-content-width,\s*8ch\) \+ 54px\),\s*calc\(100vw - 32px\)\);[\s\S]*?margin-inline:\s*auto;[\s\S]*?transform:\s*none;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-box\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) 24px;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating input\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?color:\s*var\(--muted\);[\s\S]*?font-size:\s*13px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?min-height:\s*52px;[\s\S]*?margin:\s*0;[\s\S]*?border-bottom:\s*1px solid var\(--line\);/);

@@ -161,6 +161,7 @@ a:focus-visible {
   transform-origin: right center;
   transition:
     width 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 360ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
     filter 240ms ease;
 }
@@ -178,6 +179,9 @@ a:focus-visible {
   backdrop-filter: blur(22px);
   transition:
     grid-template-columns 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 360ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 240ms ease,
     background-color 240ms ease,
     border-color 240ms ease;
@@ -191,7 +195,10 @@ a:focus-visible {
   font-size: 18px;
   transition:
     opacity 180ms ease,
-    padding 300ms cubic-bezier(0.22, 1, 0.36, 1);
+    padding 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms ease,
+    font-size 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .stock-search-form.symbol-autocomplete-floating input::placeholder {
@@ -216,6 +223,9 @@ a:focus-visible {
   transition:
     background-color 180ms ease,
     color 180ms ease,
+    width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 300ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 180ms ease;
 }
 
@@ -5084,12 +5094,70 @@ body {
 
 /* Mobile route header polish */
 @media (max-width: 640px) {
-  .stock-search.search-collapsed {
+  .stock-detail-app .stock-search.search-collapsed {
     position: sticky;
+    top: 0;
+    min-height: 0;
+    height: 0;
+    padding: 0;
+    display: block;
+    overflow: visible;
+    background: transparent;
+    border-bottom: 0;
+    backdrop-filter: none;
+  }
+
+  .stock-detail-app .stock-search.search-collapsed .stock-search-form.symbol-autocomplete-floating {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: 0;
+    left: 0;
+    width: clamp(104px, calc(var(--symbol-search-content-width, 8ch) + 54px), calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    margin-inline: auto;
+    justify-self: auto;
+    transform: none;
+    transform-origin: center top;
+  }
+
+  .stock-detail-app .stock-search.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-box {
     width: 100%;
+    min-height: 28px;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    gap: 2px;
+    padding: 2px 3px 2px 10px;
     background: rgba(255, 255, 255, 0.96);
-    border-bottom: 1px solid var(--line);
-    backdrop-filter: blur(18px);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(16px);
+  }
+
+  .stock-detail-app .stock-search.search-collapsed .stock-search-form.symbol-autocomplete-floating input {
+    width: 100%;
+    min-width: 0;
+    min-height: 24px;
+    height: 24px;
+    padding: 0 2px 0 0;
+    opacity: 1;
+    pointer-events: none;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .stock-detail-app .stock-search.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-action {
+    width: 24px;
+    height: 24px;
+    min-height: 24px;
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .stock-detail-app .stock-search.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-action svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2.2;
   }
 
   .stock-detail-app .stock-feed {

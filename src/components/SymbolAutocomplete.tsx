@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent, KeyboardEvent } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { activeSymbolItemForQuery } from "@/components/symbolAutocompleteHelpers";
 import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
@@ -32,6 +32,18 @@ function displayInputValue(item: SymbolSearchItem): string {
 
 function displaySubtitle(item: SymbolSearchItem): string {
   return [item.market === "US" ? "미장" : "국장", item.exchangeName || item.exchange].filter(Boolean).join(" · ");
+}
+
+function collapsedContentWidth(value: string, placeholder: string): string {
+  const text = value.trim() || placeholder.trim();
+  const units = Array.from(text).reduce((total, char) => {
+    if (/\s/.test(char)) return total + 0.4;
+    if (/[가-힣ㄱ-ㅎㅏ-ㅣ一-龥ぁ-んァ-ン]/u.test(char)) return total + 1.65;
+    if (/[A-Z0-9]/.test(char)) return total + 0.85;
+    if (/[a-z]/.test(char)) return total + 0.72;
+    return total + 0.6;
+  }, 0);
+  return `${Math.max(4, Math.min(units, 22)).toFixed(2)}ch`;
 }
 
 function SearchIcon() {
@@ -103,6 +115,9 @@ export default function SymbolAutocomplete({
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
   const isFloating = variant === "floating";
   const formClassName = [className, isFloating ? "symbol-autocomplete-floating" : "", isFloating && isCollapsed ? "is-collapsed" : ""].filter(Boolean).join(" ");
+  const floatingStyle = isFloating
+    ? ({ "--symbol-search-content-width": collapsedContentWidth(value, placeholder) } as CSSProperties)
+    : undefined;
   const actionLabel = isCollapsed ? "검색창 펼치기" : query ? "종목 조회" : "종목 검색";
   const searchStatus = symbolSearch.isLoading
     ? "종목을 검색하고 있어요."
@@ -157,6 +172,12 @@ export default function SymbolAutocomplete({
     }
   }
 
+  function onCollapsedBoxClick(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!isFloating || !isCollapsed) return;
+    if ((event.target as HTMLElement).closest("button")) return;
+    onFloatingAction();
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (!isOpen && (event.key === "ArrowDown" || event.key === "ArrowUp") && visibleItems.length) {
       event.preventDefault();
@@ -186,11 +207,11 @@ export default function SymbolAutocomplete({
   }
 
   return (
-    <form onSubmit={submit} className={formClassName} action={formAction} method={formMethod}>
+    <form onSubmit={submit} className={formClassName} action={formAction} method={formMethod} style={floatingStyle}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
-      <div className="symbol-search-box" ref={wrapperRef}>
+      <div className="symbol-search-box" ref={wrapperRef} onClick={onCollapsedBoxClick}>
         <input
           id={id}
           name={inputName}
