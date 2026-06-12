@@ -125,7 +125,8 @@ class SyncCanonicalIndustryTagsTests(unittest.TestCase):
 
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["level"], 1)
-        self.assertFalse(rows[0]["is_primary"])
+        self.assertTrue(rows[0]["is_primary"])
+        self.assertEqual(rows[0]["name"], "산업재")
         self.assertEqual(rows[1]["level"], 2)
         self.assertTrue(rows[1]["is_primary"])
         self.assertEqual(rows[1]["name"], "전기장비·부품")

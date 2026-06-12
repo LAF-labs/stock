@@ -228,7 +228,7 @@ def canonical_tag_rows_for_profile(profile: dict[str, Any]) -> list[dict[str, An
             "level": 1,
             "source": source,
             "confidence": confidence,
-            "is_primary": False,
+            "is_primary": True,
             "raw": raw,
         },
         {
