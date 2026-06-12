@@ -47,6 +47,32 @@ test("display projector keeps stale visible parts on screen while marking refres
   assert.equal(payload.refresh.active, true);
 });
 
+test("display projector normalizes stale quote change fields from usable chart rows", () => {
+  const payload = stockDisplayPayloadFromEnvelope(envelope({
+    price: readyPart({
+      currency: "USD",
+      latest_price: 103.03,
+      latest_price_label: "$103.03",
+      previous_close: 11.64,
+      latest_change: 7.851375,
+      latest_change_label: "+785.1%",
+      price_metrics: { price: 103.03, previous_close: 11.64, latest_change: 7.851375 },
+    }, "supabase", generatedAt),
+    chart: readyPart({
+      chart_series: [
+        { date: "2026-06-10", close: 93.32 },
+        { date: "2026-06-11", close: 103.03 },
+      ],
+    }, "market-data", generatedAt),
+    score: readyPart({ score: 61, quality_score: 61 }, "derived", generatedAt),
+  }));
+
+  assert.equal(payload.price?.value.previous_close, 93.32);
+  assert.equal(payload.price?.value.latest_change, 0.104051);
+  assert.equal(payload.price?.value.latest_change_label, "+10.4%");
+  assert.deepEqual(payload.price?.value.price_metrics, { price: 103.03, previous_close: 93.32, latest_change: 0.104051 });
+});
+
 test("display projector marks provider-empty required parts unavailable instead of recovering", () => {
   const payload = stockDisplayPayloadFromEnvelope(envelope({
     price: unavailablePart("provider_confirmed_empty", generatedAt),

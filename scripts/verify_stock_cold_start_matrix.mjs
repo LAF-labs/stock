@@ -144,6 +144,10 @@ function validateDisplayPayload(record, request, errors) {
   }
   const recoveringParts = stringArray(completion.recoveringParts);
   const requiredParts = stringArray(completion.requiredParts);
+  const recoveringRequiredParts = recoveringParts.filter((part) => requiredParts.includes(part));
+  if (recoveringRequiredParts.length > 0) {
+    errors.push(`required display part is still recovering: ${recoveringRequiredParts.join(",")}`);
+  }
   if (request.feature === "technical_display" && !arrayEquals(requiredParts, ["identity", "price", "chart", "technical"])) {
     errors.push(`unexpected technical requiredParts: ${requiredParts.join(",")}`);
   }

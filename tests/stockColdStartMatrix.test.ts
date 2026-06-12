@@ -83,6 +83,28 @@ test("cold start matrix accepts visible fast-path display payloads without finan
   assert.deepEqual(errors, []);
 });
 
+test("cold start matrix rejects recovering required display parts", () => {
+  const errors = validateColdStartMatrixPayload(
+    {
+      ok: true,
+      ticker: "US:AEHR",
+      identity: { value: { ticker: "US:AEHR", market: "US", symbol: "AEHR", name: "Aehr Test Systems" } },
+      completion: {
+        requiredParts: ["identity", "price", "chart", "score"],
+        presentParts: ["identity", "price", "score"],
+        missingParts: ["chart"],
+        recoveringParts: ["chart"],
+        unavailableParts: [],
+      },
+      refresh: { active: true, staleParts: [], recoveringParts: ["chart"] },
+      score: { value: { score: 55, quality_score: 55 } },
+    },
+    { feature: "compare_display", ticker: "US:AEHR", url: "https://stock.example/api/stock/display" },
+  );
+
+  assert.equal(errors.some((error: string) => error.includes("required display part")), true);
+});
+
 test("cold start matrix accepts explicit technical unsupported responses for ETFs only", () => {
   assert.deepEqual(
     validateColdStartMatrixPayload(

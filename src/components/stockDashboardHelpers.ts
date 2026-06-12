@@ -979,13 +979,24 @@ function cacheTimestamp(cache: Record<string, unknown> | undefined, key: string)
 }
 
 export function dailyChangeText(data: StockScoreResponse, quote: StockQuoteResponse | undefined): string {
-  const quoteLabel = stringFromUnknown(quote?.latest_change_label);
-  if (quoteLabel) return quoteLabel;
-  const quoteChange = numberFromUnknown(quote?.latest_change);
-  if (quoteChange !== undefined) return formatPercent(quoteChange);
   const cachedChange = numberFromJsonRecord(data.price_metrics, "latest_change");
+  const quoteChange = numberFromUnknown(quote?.latest_change);
+  if (quoteChange !== undefined && shouldTrustQuoteChange(quoteChange, cachedChange)) {
+    return stringFromUnknown(quote?.latest_change_label) || formatPercent(quoteChange);
+  }
+  const quoteLabel = stringFromUnknown(quote?.latest_change_label);
+  if (quoteLabel && quoteChange === undefined) return quoteLabel;
   if (cachedChange !== undefined) return formatPercent(cachedChange);
+  if (quoteChange !== undefined) return formatPercent(quoteChange);
+  if (quoteLabel) return quoteLabel;
   return "-";
+}
+
+function shouldTrustQuoteChange(quoteChange: number, cachedChange: number | undefined): boolean {
+  if (!Number.isFinite(quoteChange)) return false;
+  if (cachedChange === undefined || !Number.isFinite(cachedChange)) return true;
+  if (Math.abs(quoteChange) <= 2) return true;
+  return Math.abs(cachedChange) > 0.5;
 }
 
 export function dailyToneClass(text: string): "price-up" | "price-down" | "price-neutral" {

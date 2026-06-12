@@ -127,7 +127,9 @@ async function fetchYahooDailyChartForSymbol(
   const currency = stringValue(result.meta?.currency) || (market === "KR" ? "KRW" : "USD");
   const exchange = stringValue(result.meta?.fullExchangeName) || stringValue(result.meta?.exchangeName) || (market === "KR" ? "KRX" : "US");
   const exchangeCode = stringValue(result.meta?.exchangeName);
-  const previousClose = numberValue(result.meta?.chartPreviousClose) ?? chartSeries.at(-2)?.close;
+  const latestClose = latest?.close;
+  const previousClose = chartSeries.at(-2)?.close ?? numberValue(result.meta?.chartPreviousClose);
+  const latestPrice = trustedYahooLatestPrice(numberValue(result.meta?.regularMarketPrice), latestClose, previousClose);
 
   return {
     requestedTicker,
@@ -137,11 +139,11 @@ async function fetchYahooDailyChartForSymbol(
     exchange,
     exchangeCode,
     currency,
-    latestPrice: numberValue(result.meta?.regularMarketPrice) ?? latest?.close,
+    latestPrice,
     latestDate: latest?.date,
     chartSeries,
     priceMetrics: {
-      price: numberValue(result.meta?.regularMarketPrice) ?? latest?.close,
+      price: latestPrice,
       previous_close: previousClose,
       market_cap: numberValue(result.meta?.marketCap),
     },
@@ -156,6 +158,30 @@ async function fetchYahooDailyChartForSymbol(
       cache: "no-store",
     },
   };
+}
+
+function trustedYahooLatestPrice(
+  regularMarketPrice: number | undefined,
+  latestClose: number | undefined,
+  previousClose: number | undefined
+): number | undefined {
+  if (!positiveNumber(regularMarketPrice)) return latestClose;
+  if (!positiveNumber(latestClose)) return regularMarketPrice;
+
+  const closeRatio = regularMarketPrice / latestClose;
+  if (closeRatio > 2 || closeRatio < 0.5) return latestClose;
+
+  if (positiveNumber(previousClose)) {
+    const regularMove = regularMarketPrice / previousClose - 1;
+    const chartMove = latestClose / previousClose - 1;
+    if (Math.abs(regularMove) > 2 && Math.abs(chartMove) < 0.5) return latestClose;
+  }
+
+  return regularMarketPrice;
+}
+
+function positiveNumber(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function yahooSymbolCandidates(market: "US" | "KR", symbol: string): string[] {

@@ -198,6 +198,38 @@ test("display score source uses request fast path when score snapshot is missing
   assert.deepEqual(payload?.industry_benchmarks, [{ metric: "per", value: 20 }]);
 });
 
+test("compare display score source reuses detail-grade score data for chart fallback", async () => {
+  const views: string[] = [];
+  const payload = await readStockDisplayScoreSource("US:COLD", "compare", {
+    readSnapshot: async (_ticker, view) => {
+      views.push(`snapshot:${view}`);
+      return undefined;
+    },
+    detailFastPathEnabled: () => true,
+    technicalFastPathEnabled: () => false,
+    buildDetailFastPathPayload: async (_ticker, view) => {
+      views.push(`fast:${view}`);
+      return {
+        ok: true,
+        score: 54,
+        quality_score: 54,
+        latest_price: 12.3,
+        chart_series: [{ date: "2026-06-09", close: 12 }, { date: "2026-06-10", close: 12.3 }],
+        financials: { detail_fast_path: true },
+      };
+    },
+    buildTechnicalScoreFastPathPayload: async () => {
+      throw new Error("unexpected technical fast path");
+    },
+    enrichStockPayloadWithSymbolProfile: async (score) => score,
+    enrichStockPayloadWithIndustryBenchmarks: async (score) => score,
+  });
+
+  assert.deepEqual(views, ["snapshot:detail", "fast:detail"]);
+  assert.equal(payload?.quality_score, 54);
+  assert.equal(Array.isArray(payload?.chart_series), true);
+});
+
 test("technical display score source uses technical request fast path when snapshot is missing", async () => {
   const payload = await readStockDisplayScoreSource("US:TECH", "technical", {
     readSnapshot: async () => undefined,
@@ -218,6 +250,23 @@ test("technical display score source uses technical request fast path when snaps
 
   assert.equal(payload?.latest_price, 22);
   assert.deepEqual(payload?.technical_analysis, { type: "technical_analysis", summary: { headline: "우호" } });
+});
+
+test("display model does not materialize empty score chart arrays as chart parts", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:EMPTYCHART",
+    view: "compare",
+    sources: {
+      identity: async () => ({ ticker: "US:EMPTYCHART", market: "US", symbol: "EMPTYCHART", name: "Empty Chart" }),
+      price: async () => ({ latest_price: 10 }),
+      chart: async () => undefined,
+      score: async () => ({ ok: true, score: 50, quality_score: 50, chart_series: [] }),
+    },
+  });
+
+  assert.equal(payload.chart, undefined);
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "score"]);
+  assert.deepEqual(payload.completion.recoveringParts, ["chart"]);
 });
 
 test("display model materializes enriched score fields as first-class display parts", async () => {

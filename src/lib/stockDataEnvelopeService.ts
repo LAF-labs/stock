@@ -134,7 +134,7 @@ function priceFromScore(score: StockScoreView | undefined): StockPriceView | und
 }
 
 function chartFromScore(score: StockScoreView | undefined): StockChartView | undefined {
-  if (!score || !Array.isArray(score.chart_series)) return undefined;
+  if (!score || !hasUsableChartSeries(score.chart_series)) return undefined;
   return {
     requested_ticker: score.requested_ticker,
     market: score.market,
@@ -145,6 +145,10 @@ function chartFromScore(score: StockScoreView | undefined): StockChartView | und
     latest_bar_date: score.latest_bar_date,
     price_metrics: score.price_metrics,
   };
+}
+
+function hasUsableChartSeries(value: unknown): value is StockChartView["chart_series"] {
+  return Array.isArray(value) && value.length >= 2;
 }
 
 function fulfilledValue<T>(result: PromiseSettledResult<T>): T | undefined {

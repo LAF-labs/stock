@@ -1,4 +1,5 @@
 import { planStockDisplayCompletion, requiredDisplayParts } from "@/lib/stockCompletionPlanner";
+import { formatCurrencyAmount, formatPercent } from "@/lib/format";
 import { partValue, type PartState, type PartUnavailableReason } from "@/lib/stockPartState";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
@@ -22,8 +23,8 @@ import type {
 
 export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): StockDisplayPayload {
   const score = normalizeDisplayScore(partValue(envelope.parts.score));
-  const price = partValue(envelope.parts.price);
   const chart = partValue(envelope.parts.chart);
+  const price = normalizePriceWithChart(partValue(envelope.parts.price), chart, score);
   const technical = partValue(envelope.parts.technical) ?? technicalFromScore(score);
   const fundamentals = partValue(envelope.parts.fundamentals) ?? fundamentalsFromScore(score);
   const industryBenchmark = partValue(envelope.parts.industryBenchmark) ?? industryBenchmarkFromScore(score);
@@ -50,7 +51,7 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
     snapshotVersion: "display-v1",
     hotnessTier: envelope.hotnessTier,
     identity: displayPartFromState(envelope.parts.identity, "symbol-master")!,
-    ...(price ? { price: displayPartFromState(envelope.parts.price, "market-data")! } : {}),
+    ...(price ? { price: displayPartFromState(envelope.parts.price, "market-data", price)! } : {}),
     ...(chart ? { chart: displayPartFromState(envelope.parts.chart, "market-data")! } : {}),
     ...(score ? { score: displayPartFromState(envelope.parts.score, "derived", score)! } : {}),
     ...(technical ? { technical: displayPartFromState(envelope.parts.technical, "derived", technical, envelope.parts.score) } : {}),
@@ -102,6 +103,51 @@ function displayPartFromState<T>(
 
 function normalizeDisplayScore(score: StockScoreView | undefined): StockScoreView | undefined {
   return score ? { ...score, app: STOCKSTALKER_SERVICE_NAME } : undefined;
+}
+
+function normalizePriceWithChart(
+  price: StockPriceView | undefined,
+  chart: StockChartView | undefined,
+  score: StockScoreView | undefined,
+): StockPriceView | undefined {
+  if (!price) return price;
+  const rows = usableChartRows(chart?.chart_series) || usableChartRows(score?.chart_series);
+  if (!rows) return price;
+
+  const latestRow = rows.at(-1);
+  const previousRow = rows.at(-2);
+  const chartLatest = numberValue(recordValue(latestRow)?.close);
+  const chartPrevious = numberValue(recordValue(previousRow)?.close);
+  if (!positiveNumber(chartLatest) || !positiveNumber(chartPrevious)) return price;
+
+  const quotedPrice = numberValue(price.latest_price);
+  const nextPrice = shouldPreferChartPrice(quotedPrice, chartLatest, chartPrevious) ? chartLatest : quotedPrice ?? chartLatest;
+  const quotedPrevious = numberValue(price.previous_close);
+  const chartChange = roundRatio(nextPrice / chartPrevious - 1);
+  const quotedChange = numberValue(price.latest_change);
+  const shouldNormalizeChange =
+    !positiveNumber(quotedPrevious) ||
+    Math.abs(quotedPrevious / chartPrevious - 1) > 0.5 ||
+    (quotedChange !== undefined && Math.abs(quotedChange) > 2 && Math.abs(chartChange) < 0.5);
+
+  if (!shouldNormalizeChange && nextPrice === quotedPrice) return price;
+
+  const currency = stringValue(price.currency) || stringValue(score?.currency);
+  const priceMetrics = recordValue(price.price_metrics);
+  return {
+    ...price,
+    latest_price: nextPrice,
+    latest_price_label: nextPrice === quotedPrice ? price.latest_price_label : formatCurrencyAmount(nextPrice, currency),
+    previous_close: shouldNormalizeChange ? chartPrevious : price.previous_close,
+    latest_change: shouldNormalizeChange ? chartChange : price.latest_change,
+    latest_change_label: shouldNormalizeChange ? formatPercent(chartChange) : price.latest_change_label,
+    price_metrics: {
+      ...priceMetrics,
+      price: nextPrice,
+      previous_close: shouldNormalizeChange ? chartPrevious : priceMetrics?.previous_close,
+      latest_change: shouldNormalizeChange ? chartChange : priceMetrics?.latest_change,
+    },
+  };
 }
 
 function presentDisplayParts(
@@ -208,6 +254,27 @@ function newsFromScore(score: StockScoreView | undefined): StockNewsView | undef
 
 function hasUsableChart(chart: StockChartView | undefined): chart is StockChartView {
   return !!chart && Array.isArray(chart.chart_series) && chart.chart_series.length >= 2;
+}
+
+function usableChartRows(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) && value.length >= 2 ? value : undefined;
+}
+
+function shouldPreferChartPrice(price: number | undefined, chartLatest: number, chartPrevious: number): boolean {
+  if (!positiveNumber(price)) return true;
+  const priceToLatest = price / chartLatest;
+  if (priceToLatest > 2 || priceToLatest < 0.5) return true;
+  const priceMove = price / chartPrevious - 1;
+  const chartMove = chartLatest / chartPrevious - 1;
+  return Math.abs(priceMove) > 2 && Math.abs(chartMove) < 0.5;
+}
+
+function positiveNumber(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function roundRatio(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function compactRecord<T extends Record<string, unknown>>(record: T): T | undefined {

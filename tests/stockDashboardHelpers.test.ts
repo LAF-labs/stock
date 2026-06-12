@@ -962,6 +962,12 @@ test("dailyChangeText prefers quote label, then quote value, then cached score v
   assert.equal(dailyChangeText(score, undefined), "-1.2%");
 });
 
+test("dailyChangeText ignores implausible quote changes when cached chart change is sane", () => {
+  const score = { price_metrics: { latest_change: 0.104051 } } satisfies StockScoreResponse;
+
+  assert.equal(dailyChangeText(score, { latest_change: 7.851375, latest_change_label: "+785.1%" }), "+10.4%");
+});
+
 test("dailyToneClass separates neutral missing and flat price states", () => {
   assert.equal(dailyToneClass("-"), "price-neutral");
   assert.equal(dailyToneClass("0.0%"), "price-neutral");

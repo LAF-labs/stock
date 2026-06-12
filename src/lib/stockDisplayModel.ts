@@ -103,7 +103,7 @@ function defaultDisplaySources(): StockDisplaySources {
 }
 
 function displayScoreView(view: StockDisplayView): ScoreView {
-  return view === "technical" ? "technical" : view === "compare" ? "compare" : "detail";
+  return view === "technical" ? "technical" : "detail";
 }
 
 async function requestFastPathDisplayScore(
