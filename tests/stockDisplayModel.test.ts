@@ -139,33 +139,36 @@ test("display model marks chart and technical present independently", async () =
   assert.equal(payload.refresh.active, false);
 });
 
-test("display model keeps fast-path score visible while recovering fundamentals and industry benchmarks", async () => {
-  const payload = await buildStockDisplayPayload({
-    ticker: "US:GMAB",
-    view: "detail",
-    sources: {
-      identity: async () => ({ ticker: "US:GMAB", market: "US", symbol: "GMAB", name: "젠맵(ADR)" }),
-      price: async () => ({ latest_price: 24.97, market_cap: 16_600_000_000, currency: "USD" }),
-      chart: async () => ({ chart_series: [{ date: "2026-06-09", close: 25.1 }, { date: "2026-06-10", close: 24.97 }] }),
-      score: async () => ({
-        ok: true,
-        score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
-        score: 47,
-        quality_score: 47,
-        chart_series: [{ date: "2026-06-09", close: 25.1 }, { date: "2026-06-10", close: 24.97 }],
-        key_metrics: [{ label: "현재가", value: "$24.97" }],
-        valuation_rows: [{ label: "현재가", value: "$24.97" }],
-        fetch: { pending_enrichment: true, detail_fast_path: true },
-        financials: { source: "pending_enrichment", detail_fast_path: true },
-      }),
-    },
-  });
+test("display model keeps current-provider fast-path score visible without enrichment-only skeletons", async () => {
+  for (const view of ["detail", "compare"] as const) {
+    const payload = await buildStockDisplayPayload({
+      ticker: "US:GMAB",
+      view,
+      sources: {
+        identity: async () => ({ ticker: "US:GMAB", market: "US", symbol: "GMAB", name: "젠맵(ADR)" }),
+        price: async () => ({ latest_price: 24.97, market_cap: 16_600_000_000, currency: "USD" }),
+        chart: async () => ({ chart_series: [{ date: "2026-06-09", close: 25.1 }, { date: "2026-06-10", close: 24.97 }] }),
+        score: async () => ({
+          ok: true,
+          score_model_version: "score-v5-dual-quality-opportunity-2026-06-05",
+          score: 47,
+          quality_score: 47,
+          chart_series: [{ date: "2026-06-09", close: 25.1 }, { date: "2026-06-10", close: 24.97 }],
+          key_metrics: [{ label: "현재가", value: "$24.97" }],
+          valuation_rows: [{ label: "현재가", value: "$24.97" }],
+          fetch: { pending_enrichment: true, detail_fast_path: true },
+          financials: { source: "pending_enrichment", detail_fast_path: true },
+        }),
+      },
+    });
 
-  assert.equal(payload.score?.value.quality_score, 47);
-  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
-  assert.deepEqual(payload.completion.missingParts, ["fundamentals", "industryBenchmark"]);
-  assert.deepEqual(payload.completion.recoveringParts, ["fundamentals", "industryBenchmark"]);
-  assert.equal(payload.refresh.active, true);
+    assert.equal(payload.score?.value.quality_score, 47);
+    assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
+    assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
+    assert.deepEqual(payload.completion.missingParts, []);
+    assert.deepEqual(payload.completion.recoveringParts, []);
+    assert.equal(payload.refresh.active, false);
+  }
 });
 
 test("display score source uses request fast path when score snapshot is missing", async () => {

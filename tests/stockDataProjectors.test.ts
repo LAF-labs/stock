@@ -1,0 +1,75 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { stockDisplayPayloadFromEnvelope } from "../src/lib/stockDataProjectors";
+import { degradedPart, readyPart, staleReadyPart, unavailablePart } from "../src/lib/stockPartState";
+import type { StockDataEnvelope } from "../src/lib/stockDataEnvelopeTypes";
+
+const generatedAt = "2026-06-12T00:00:00.000Z";
+
+test("display projector shows degraded score without enrichment-only skeletons", () => {
+  const payload = stockDisplayPayloadFromEnvelope(envelope({
+    price: readyPart({ latest_price: 24.97 }, "market-data", generatedAt),
+    chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 25.1 }, { date: "2026-06-12", close: 24.97 }] }, "market-data", generatedAt),
+    score: degradedPart(
+      {
+        score: 47,
+        quality_score: 47,
+        fetch: { pending_enrichment: true },
+        financials: { source: "pending_enrichment" },
+      },
+      "fast-path",
+      "price_fast_path",
+      generatedAt,
+    ),
+  }));
+
+  assert.equal(payload.score?.value.quality_score, 47);
+  assert.equal(payload.score?.freshness, "fallback");
+  assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.equal(payload.refresh.active, false);
+});
+
+test("display projector keeps stale visible parts on screen while marking refresh active", () => {
+  const payload = stockDisplayPayloadFromEnvelope(envelope({
+    price: staleReadyPart({ latest_price: 21 }, "supabase", "2026-06-11T00:00:00.000Z"),
+    chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 20 }, { date: "2026-06-12", close: 21 }] }, "supabase", generatedAt),
+    score: readyPart({ score: 61, quality_score: 61 }, "derived", generatedAt),
+  }));
+
+  assert.equal(payload.price?.value.latest_price, 21);
+  assert.equal(payload.price?.freshness, "stale");
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.deepEqual(payload.refresh.staleParts, ["price"]);
+  assert.equal(payload.refresh.active, true);
+});
+
+test("display projector marks provider-empty required parts unavailable instead of recovering", () => {
+  const payload = stockDisplayPayloadFromEnvelope(envelope({
+    price: unavailablePart("provider_confirmed_empty", generatedAt),
+    chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 20 }, { date: "2026-06-12", close: 21 }] }, "supabase", generatedAt),
+    score: readyPart({ score: 61, quality_score: 61 }, "derived", generatedAt),
+  }));
+
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.deepEqual(payload.completion.unavailableParts, [{ part: "price", reason: "provider_confirmed_empty" }]);
+  assert.equal(payload.refresh.active, false);
+});
+
+function envelope(parts: Partial<StockDataEnvelope["parts"]>): StockDataEnvelope {
+  return {
+    ticker: "US:FLNC",
+    requestedTicker: "US:FLNC",
+    view: "detail",
+    generatedAt,
+    hotnessTier: "active",
+    parts: {
+      identity: readyPart({ ticker: "US:FLNC", market: "US", symbol: "FLNC", name: "Fluence Energy" }, "symbol-master", generatedAt),
+      ...parts,
+    },
+  };
+}
