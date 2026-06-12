@@ -21,6 +21,18 @@ test("stock share metadata names the stock, latest change, current price, and ma
   assert.equal(metadata.imageUrl, "https://stock.example/api/og/stock?ticker=KR%3A005930");
 });
 
+test("stock share metadata normalizes compact Korean market cap labels", () => {
+  const payload = sharePayload();
+  delete (payload.price?.value as Record<string, unknown>).market_cap;
+  payload.score = part({
+    key_metrics: [{ label: "시가총액", value: "₩1497.39T" }],
+  }, payload.generatedAt);
+
+  const metadata = stockShareMetadataFromPayload(payload, { origin: "https://stock.example" });
+
+  assert.equal(metadata.description, "현재가 187,400원 · 시가총액 1497조 3900억원");
+});
+
 test("technical analysis shares the same stock title and description format as detail", () => {
   const detail = stockShareMetadataFromPayload(sharePayload(), { origin: "https://stock.example" });
   const technical = stockShareMetadataFromPayload(sharePayload(), { origin: "https://stock.example", pathname: "/technical" });

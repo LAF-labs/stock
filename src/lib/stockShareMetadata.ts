@@ -246,7 +246,9 @@ function marketCapText(payload: StockDisplayPayload): string {
   const marketCap = numberFromUnknown(price?.market_cap)
     ?? numberFromUnknown(score?.market_cap)
     ?? numberFromUnknown(priceMetrics?.market_cap)
-    ?? numberFromUnknown(rawMetric);
+    ?? marketCapNumberFromUnknown(rawMetric)
+    ?? marketCapNumberFromUnknown(price?.market_cap_label)
+    ?? marketCapNumberFromUnknown(score?.market_cap_label);
   const label = stringFromUnknown(price?.market_cap_label)
     || stringFromUnknown(score?.market_cap_label)
     || stringFromUnknown(rawMetric);
@@ -260,6 +262,19 @@ function marketCapText(payload: StockDisplayPayload): string {
   }
 
   return label || "-";
+}
+
+function marketCapNumberFromUnknown(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const compact = value.trim().replaceAll(",", "");
+  const match = compact.match(/([-+]?\d+(?:\.\d+)?)\s*([TtBbMm])?/);
+  if (!match) return undefined;
+  const base = Number(match[1]);
+  if (!Number.isFinite(base)) return undefined;
+  const unit = match[2]?.toUpperCase();
+  const multiplier = unit === "T" ? 1_000_000_000_000 : unit === "B" ? 1_000_000_000 : unit === "M" ? 1_000_000 : 1;
+  return base * multiplier;
 }
 
 function shareDescription(price: string, marketCap: string): string {

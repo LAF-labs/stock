@@ -4,6 +4,7 @@ import { cache } from "react";
 import TechnicalAnalysisPage from "@/components/TechnicalAnalysisPage";
 import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
+import { buildStockShareDisplayPayload } from "@/lib/stockSharePayload";
 import { stockShareMetadataFromPayload, stockShareMetadataToNextMetadata, stockShareOriginFromEnv } from "@/lib/stockShareMetadata";
 import { detailPathForTicker, technicalEligibilityForTicker } from "@/lib/technicalAnalysisEligibility";
 
@@ -40,7 +41,7 @@ export async function generateMetadata({ searchParams }: TechnicalRouteProps): P
     }));
   }
   const eligibility = await technicalEligibilityForTicker(rawTicker);
-  const payload = eligibility.eligible ? await buildInitialTechnicalPayload(eligibility.ticker) : undefined;
+  const payload = eligibility.eligible ? await buildShareMetadataPayload(eligibility.ticker) : undefined;
   return stockShareMetadataToNextMetadata(stockShareMetadataFromPayload(payload, {
     origin: stockShareOriginFromEnv(),
     pathname: "/technical",
@@ -52,6 +53,14 @@ const buildInitialTechnicalPayload = cache(async function buildInitialTechnicalP
     const payload = await buildStockDisplayPayload({ ticker, view: "technical" });
     scheduleStockDisplayPayloadCompletion(payload);
     return payload;
+  } catch {
+    return undefined;
+  }
+});
+
+const buildShareMetadataPayload = cache(async function buildShareMetadataPayload(ticker: string) {
+  try {
+    return await buildStockShareDisplayPayload(ticker, "detail");
   } catch {
     return undefined;
   }

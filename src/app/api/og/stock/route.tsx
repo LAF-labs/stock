@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { stockShareImageResponse } from "@/app/api/og/shareImage";
-import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
+import { buildStockShareDisplayPayload } from "@/lib/stockSharePayload";
 import { stockShareImageModelFromPayload } from "@/lib/stockShareMetadata";
 
 export async function GET(request: NextRequest) {
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
 async function safeStockDisplayPayload(ticker: string) {
   try {
-    return await buildStockDisplayPayload({ ticker, view: "detail" });
+    return await buildStockShareDisplayPayload(ticker, "detail");
   } catch {
     return undefined;
   }

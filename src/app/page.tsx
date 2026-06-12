@@ -4,6 +4,7 @@ import StockDashboard from "@/components/StockDashboard";
 import { dashboardTickerFromSearchParam } from "@/components/stockDashboardHelpers";
 import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
+import { buildStockShareDisplayPayload } from "@/lib/stockSharePayload";
 import { stockShareMetadataFromPayload, stockShareMetadataToNextMetadata, stockShareOriginFromEnv } from "@/lib/stockShareMetadata";
 
 type DashboardRouteSearchParams = Record<string, string | string[] | undefined>;
@@ -23,7 +24,7 @@ export default async function Page({ searchParams }: DashboardRouteProps) {
 export async function generateMetadata({ searchParams }: DashboardRouteProps): Promise<Metadata> {
   const params = await searchParams;
   const ticker = dashboardTickerFromSearchParam(firstParam(params?.ticker) || null);
-  const payload = ticker ? await buildInitialDisplayPayload(ticker) : undefined;
+  const payload = ticker ? await buildShareMetadataPayload(ticker) : undefined;
   return stockShareMetadataToNextMetadata(stockShareMetadataFromPayload(payload, { origin: stockShareOriginFromEnv() }));
 }
 
@@ -32,6 +33,14 @@ const buildInitialDisplayPayload = cache(async function buildInitialDisplayPaylo
     const payload = await buildStockDisplayPayload({ ticker, view: "detail" });
     scheduleStockDisplayPayloadCompletion(payload);
     return payload;
+  } catch {
+    return undefined;
+  }
+});
+
+const buildShareMetadataPayload = cache(async function buildShareMetadataPayload(ticker: string) {
+  try {
+    return await buildStockShareDisplayPayload(ticker, "detail");
   } catch {
     return undefined;
   }
