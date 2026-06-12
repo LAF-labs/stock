@@ -11,14 +11,14 @@ const DETAIL_PART_TO_DISPLAY_PARTS: Record<StockDetailPartName, StockDisplayPart
 
 export function stockDetailViewFromDisplayPayload(payload: StockDisplayPayload): StockDetailViewModel {
   const parts = detailPartStatuses(payload);
+  const financials = financialSectionFromDisplayPayload(payload);
+  const analyst = analystSectionFromDisplayPayload(payload);
   const hasVisibleNonIdentitySection = Boolean(
     payload.price ||
     payload.chart ||
     payload.score ||
-    payload.fundamentals ||
-    payload.industryBenchmark ||
-    payload.judgment ||
-    payload.news
+    financials ||
+    analyst
   );
   const mode = payload.refresh.active || payload.completion.missingParts.length > 0 || payload.completion.recoveringParts.length > 0 ? "partial" : "ready";
 
@@ -37,12 +37,22 @@ export function stockDetailViewFromDisplayPayload(payload: StockDisplayPayload):
       ...(payload.price ? { price: payload.price.value } : {}),
       ...(payload.chart ? { chart: payload.chart.value } : {}),
       ...(payload.score ? { score: payload.score.value } : {}),
-      ...(payload.fundamentals ? { financials: payload.fundamentals.value } : {}),
-      ...(payload.judgment ? { analyst: payload.judgment.value } : {}),
+      ...(financials ? { financials } : {}),
+      ...(analyst ? { analyst } : {}),
     },
     parts,
     jobs: jobsFromParts(parts),
   };
+}
+
+function financialSectionFromDisplayPayload(payload: StockDisplayPayload): Record<string, unknown> | undefined {
+  return mergeRecords(payload.fundamentals?.value, payload.industryBenchmark?.value);
+}
+
+function analystSectionFromDisplayPayload(payload: StockDisplayPayload): Record<string, unknown> | undefined {
+  const news = payload.news?.value;
+  const normalizedNews = news && Array.isArray(news.items) ? { news: news.items } : news;
+  return mergeRecords(payload.judgment?.value, normalizedNews);
 }
 
 function detailPartStatuses(payload: StockDisplayPayload): Record<StockDetailPartName, StockDetailPartStatus> {
@@ -93,6 +103,41 @@ function displayPart(payload: StockDisplayPayload, part: StockDisplayPartName): 
   if (part === "industryBenchmark") return payload.industryBenchmark;
   if (part === "judgment") return payload.judgment;
   return undefined;
+}
+
+function mergeRecords(...values: Array<unknown>): Record<string, unknown> | undefined {
+  const merged: Record<string, unknown> = {};
+  for (const value of values) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    for (const [key, nextValue] of Object.entries(value)) {
+      if (nextValue === undefined || nextValue === null) continue;
+      const previousValue = merged[key];
+      if (Array.isArray(previousValue) && Array.isArray(nextValue)) {
+        merged[key] = dedupeArrayValues([...previousValue, ...nextValue]);
+      } else {
+        merged[key] = nextValue;
+      }
+    }
+  }
+  return Object.keys(merged).length ? merged : undefined;
+}
+
+function dedupeArrayValues(values: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  const deduped: unknown[] = [];
+  for (const value of values) {
+    const key = stableArrayValueKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(value);
+  }
+  return deduped;
+}
+
+function stableArrayValueKey(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return JSON.stringify(value);
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify(Object.fromEntries(entries));
 }
 
 function jobsFromParts(parts: Record<StockDetailPartName, StockDetailPartStatus>): StockDetailViewModel["jobs"] {

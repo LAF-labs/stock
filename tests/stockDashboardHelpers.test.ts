@@ -37,6 +37,7 @@ import {
   isPartialStockSnapshotPayload,
   shouldUseCompactMetricGrid,
   snapshotPendingFromPayload,
+  stockDataUsefulness,
   stockHeaderIdentity,
   stockJudgmentRequestPayload,
   stockMarketCapDisplay,
@@ -357,6 +358,58 @@ test("dashboard can leave full skeleton for identity-only detail view after firs
   assert.equal(state?.status, "partial");
   assert.equal(state?.data?.symbol, "VLD");
   assert.equal(shouldShowStockSkeleton("partial", false, true), false);
+});
+
+test("dashboard promotes detail-view financial and analyst sections into visible stock data", () => {
+  const detailView = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:KO",
+    requestedTicker: "US:KO",
+    view: "detail",
+    generatedAt: "2026-06-12T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    nextPollMs: 1500,
+    identity: { ticker: "US:KO", market: "US", symbol: "KO", name: "Coca-Cola" },
+    sections: {
+      price: { latest_price: 61.25, latest_price_label: "$61.25" },
+      score: { score: 72, quality_score: 72 },
+      financials: {
+        key_metrics: [{ label: "시가총액", value: "$263B" }],
+        stock_profile: [{ label: "섹터", value: "Consumer Defensive" }],
+        valuation_rows: [
+          { label: "Forward PER", value: "21.4" },
+          { label: "업종 기준 PER", value: "24.0" },
+        ],
+        financials: { profitMargins: 0.22, revenueGrowth: 0.04 },
+        financial_statement: { period: "TTM" },
+        industry_benchmarks: [{ metric: "per", value: 24 }],
+      },
+      analyst: {
+        news: [{ title: "실적 발표", link: "https://example.com/news" }],
+      },
+    },
+    parts: {
+      price: { state: "ready" },
+      chart: { state: "refreshing" },
+      score: { state: "ready" },
+      financials: { state: "ready" },
+      analyst: { state: "ready" },
+    },
+    jobs: [{ part: "chart", state: "queued" }],
+  } satisfies StockDetailViewResponse;
+
+  const state = dashboardStateFromDetailView(detailView);
+
+  assert.equal(state?.status, "partial");
+  assert.equal(state?.data?.key_metrics?.[0]?.label, "시가총액");
+  assert.equal(state?.data?.stock_profile?.[0]?.label, "섹터");
+  assert.equal(state?.data?.valuation_rows?.length, 2);
+  assert.equal(state?.data?.financials?.profitMargins, 0.22);
+  assert.equal(state?.data?.financial_statement?.period, "TTM");
+  assert.equal((state?.data?.industry_benchmarks as unknown[] | undefined)?.length, 1);
+  assert.equal(state?.data?.news?.[0]?.title, "실적 발표");
+  assert.ok(stockDataUsefulness(state?.data) >= 12);
 });
 
 test("dashboard only keeps full skeleton for detail-view before the first response", () => {

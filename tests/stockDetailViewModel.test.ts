@@ -122,3 +122,57 @@ test("detail view returns ready when no display parts are missing or recovering"
   assert.equal(view.parts.score.state, "ready");
   assert.equal(view.sections.score?.quality_score, 69);
 });
+
+test("detail view preserves enriched financial and analyst display parts", () => {
+  const view = stockDetailViewFromDisplayPayload(baseDisplayPayload({
+    score: {
+      value: { quality_score: 74, score: 74 },
+      freshness: "fresh",
+      source: "derived",
+    },
+    fundamentals: {
+      value: {
+        key_metrics: [{ label: "시가총액", value: "$263B" }],
+        stock_profile: [{ label: "섹터", value: "Consumer Defensive" }],
+        valuation_rows: [{ label: "Forward PER", value: "21.4" }],
+        financials: { profitMargins: 0.22 },
+      },
+      freshness: "fresh",
+      source: "derived",
+    },
+    industryBenchmark: {
+      value: {
+        industry_benchmarks: [{ metric: "per", value: 24 }],
+        valuation_rows: [{ label: "업종 기준 PER", value: "24.0" }],
+      },
+      freshness: "fresh",
+      source: "derived",
+    },
+    news: {
+      value: { items: [{ title: "실적 발표", link: "https://example.com/news" }] },
+      freshness: "fresh",
+      source: "derived",
+    },
+    completion: {
+      requiredParts: ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"],
+      presentParts: ["identity", "score", "fundamentals", "industryBenchmark", "news"],
+      missingParts: ["price", "chart"],
+      recoveringParts: ["price", "chart"],
+      unavailableParts: [],
+    },
+    refresh: {
+      active: true,
+      staleParts: [],
+      recoveringParts: ["price", "chart"],
+      nextPollMs: 1500,
+    },
+  }));
+
+  assert.equal(view.sections.score?.quality_score, 74);
+  assert.equal(Array.isArray(view.sections.financials?.key_metrics), true);
+  assert.equal(Array.isArray(view.sections.financials?.industry_benchmarks), true);
+  assert.deepEqual((view.sections.financials?.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["Forward PER", "업종 기준 PER"]);
+  assert.equal(Array.isArray(view.sections.analyst?.news), true);
+  assert.equal(view.parts.financials.state, "ready");
+  assert.equal(view.parts.analyst.state, "ready");
+});

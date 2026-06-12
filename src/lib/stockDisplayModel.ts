@@ -10,7 +10,10 @@ import type {
   StockDisplayPayload,
   StockDisplayPartName,
   StockDisplayView,
+  StockFundamentalsView,
   StockIdentityView,
+  StockIndustryBenchmarkView,
+  StockNewsView,
   StockPriceView,
   StockScoreView,
   StockTechnicalView,
@@ -53,7 +56,10 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
   const price = fulfilledValue(priceResult) ?? priceFromScore(score);
   const chart = fulfilledValue(chartResult) ?? chartFromScore(score);
   const technical = technicalFromScore(score);
-  const presentParts = presentDisplayParts({ price, chart, score, technical }, input.view);
+  const fundamentals = fundamentalsFromScore(score);
+  const industryBenchmark = industryBenchmarkFromScore(score);
+  const news = newsFromScore(score);
+  const presentParts = presentDisplayParts({ price, chart, score, technical, fundamentals, industryBenchmark, news }, input.view);
   const requiredParts = displayRequiredParts(input.view, score);
   const completion = planStockDisplayCompletion({
     ticker,
@@ -77,6 +83,9 @@ export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadIn
     ...(chart ? { chart: part(chart, "market-data", now) } : {}),
     ...(score ? { score: part(score, "derived", now) } : {}),
     ...(technical ? { technical: part(technical, "derived", now) } : {}),
+    ...(fundamentals ? { fundamentals: part(fundamentals, "derived", now) } : {}),
+    ...(industryBenchmark ? { industryBenchmark: part(industryBenchmark, "derived", now) } : {}),
+    ...(news ? { news: part(news, "derived", now) } : {}),
     completion: publicCompletion(completion),
     refresh: {
       active: refreshActive,
@@ -112,6 +121,9 @@ function presentDisplayParts(
     chart?: StockChartView;
     score?: StockScoreView;
     technical?: StockTechnicalView;
+    fundamentals?: StockFundamentalsView;
+    industryBenchmark?: StockIndustryBenchmarkView;
+    news?: StockNewsView;
   },
   view: StockDisplayView,
 ): StockDisplayPartName[] {
@@ -122,8 +134,9 @@ function presentDisplayParts(
     if (values.technical) parts.push("technical");
   } else if (values.score) {
     parts.push("score");
-    if (hasFundamentals(values.score)) parts.push("fundamentals");
-    if (hasIndustryBenchmark(values.score)) parts.push("industryBenchmark");
+    if (values.fundamentals) parts.push("fundamentals");
+    if (values.industryBenchmark) parts.push("industryBenchmark");
+    if (values.news) parts.push("news");
   }
   return parts;
 }
@@ -175,6 +188,34 @@ function technicalFromScore(score: StockScoreView | undefined): StockTechnicalVi
   return undefined;
 }
 
+function fundamentalsFromScore(score: StockScoreView | undefined): StockFundamentalsView | undefined {
+  if (!score || stockScorePayloadNeedsEnrichment(score)) return undefined;
+  return compactRecord({
+    key_metrics: arrayValue(score.key_metrics),
+    stock_profile: arrayValue(score.stock_profile),
+    valuation_rows: fundamentalValuationRows(score.valuation_rows),
+    financials: recordValue(score.financials),
+    financial_statement: recordValue(score.financial_statement),
+    market_cap: numberValue(score.market_cap),
+    market_cap_label: stringValue(score.market_cap_label),
+  });
+}
+
+function industryBenchmarkFromScore(score: StockScoreView | undefined): StockIndustryBenchmarkView | undefined {
+  if (!score || stockScorePayloadNeedsEnrichment(score)) return undefined;
+  return compactRecord({
+    industry_benchmarks: arrayValue(score.industry_benchmarks),
+    valuation_rows: industryBenchmarkRows(score.valuation_rows),
+    benchmark: stringValue(score.benchmark),
+    benchmark_label: stringValue(score.benchmark_label),
+  });
+}
+
+function newsFromScore(score: StockScoreView | undefined): StockNewsView | undefined {
+  const items = arrayValue(score?.news);
+  return items?.length ? { items } : undefined;
+}
+
 function priceFromScore(score: StockScoreView | undefined): StockPriceView | undefined {
   if (!score || score.latest_price === undefined) return undefined;
   return {
@@ -204,6 +245,44 @@ function chartFromScore(score: StockScoreView | undefined): StockChartView | und
     latest_bar_date: score.latest_bar_date,
     price_metrics: score.price_metrics,
   };
+}
+
+function compactRecord<T extends Record<string, unknown>>(record: T): T | undefined {
+  const entries = Object.entries(record).filter(([, value]) => {
+    if (value === undefined || value === null) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+    return true;
+  });
+  return entries.length ? Object.fromEntries(entries) as T : undefined;
+}
+
+function arrayValue(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function industryBenchmarkRows(value: unknown): unknown[] | undefined {
+  const rows = arrayValue(value)?.filter(isIndustryBenchmarkRow);
+  return rows?.length ? rows : undefined;
+}
+
+function fundamentalValuationRows(value: unknown): unknown[] | undefined {
+  const rows = arrayValue(value)?.filter((item) => !isIndustryBenchmarkRow(item));
+  return rows?.length ? rows : undefined;
+}
+
+function isIndustryBenchmarkRow(item: unknown): boolean {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+  const label = stringValue((item as Record<string, unknown>).label);
+  return Boolean(label && label.includes("업종 기준"));
 }
 
 function fulfilledValue<T>(result: PromiseSettledResult<T>): T | undefined {

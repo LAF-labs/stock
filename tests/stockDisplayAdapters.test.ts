@@ -32,6 +32,26 @@ test("display payload adapter keeps identity usable when other parts are still r
   assert.equal(stockDisplayPayloadIsComplete(payload), false);
 });
 
+test("display payload adapter merges financial sections without duplicate valuation rows", () => {
+  const adapted = stockScoreDataFromDisplayPayload(displayPayload({
+    score: { score: 72, quality_score: 72 },
+    fundamentals: {
+      key_metrics: [{ label: "시가총액", value: "1조원" }],
+      valuation_rows: [
+        { label: "Forward PER", value: "21.4" },
+        { label: "업종 기준 PER", value: "24.0" },
+      ],
+    },
+    industryBenchmark: {
+      industry_benchmarks: [{ metric: "per", value: 24 }],
+      valuation_rows: [{ label: "업종 기준 PER", value: "24.0" }],
+    },
+  }));
+
+  assert.deepEqual(adapted.valuation_rows?.map((row) => row.label), ["Forward PER", "업종 기준 PER"]);
+  assert.equal((adapted.industry_benchmarks as unknown[] | undefined)?.length, 1);
+});
+
 test("display payload completeness separates full data from recoverable partials", () => {
   assert.equal(stockDisplayPayloadIsComplete(displayPayload({
     price: { latest_price: 187400 },
@@ -45,6 +65,9 @@ function displayPayload(parts: {
   price?: Record<string, unknown>;
   chart?: Record<string, unknown>;
   score?: Record<string, unknown>;
+  fundamentals?: Record<string, unknown>;
+  industryBenchmark?: Record<string, unknown>;
+  news?: Record<string, unknown>;
 }): StockDisplayPayload {
   return {
     ok: true,
@@ -62,6 +85,9 @@ function displayPayload(parts: {
     ...(parts.price ? { price: { value: parts.price, freshness: "fresh", source: "market-data" as const } } : {}),
     ...(parts.chart ? { chart: { value: parts.chart, freshness: "fresh", source: "market-data" as const } } : {}),
     ...(parts.score ? { score: { value: parts.score, freshness: "fresh", source: "derived" as const } } : {}),
+    ...(parts.fundamentals ? { fundamentals: { value: parts.fundamentals, freshness: "fresh", source: "derived" as const } } : {}),
+    ...(parts.industryBenchmark ? { industryBenchmark: { value: parts.industryBenchmark, freshness: "fresh", source: "derived" as const } } : {}),
+    ...(parts.news ? { news: { value: parts.news, freshness: "fresh", source: "derived" as const } } : {}),
     completion: {
       requiredParts: ["identity", "price", "chart", "score"],
       presentParts: ["identity", ...Object.keys(parts)] as StockDisplayPayload["completion"]["presentParts"],

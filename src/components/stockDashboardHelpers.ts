@@ -1,4 +1,5 @@
 import { formatApproxKrwAmount, formatCompactUsd, formatCurrencyAmount, formatKoreanWonLarge, formatPercent, formatValue, recordEntries } from "@/lib/format";
+import { stockScoreDataFromDetailView } from "@/components/stockDisplayAdapters";
 import { displayTicker, isUsDerivativeSymbol } from "@/lib/symbolDisplay";
 import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -331,52 +332,7 @@ export function dashboardStateFromDetailView(result: StockDetailViewResponse | u
   if (!result) return undefined;
   if (result.ok === false) return { status: "error", error: result.message };
 
-  const price = result.sections.price || {};
-  const chart = result.sections.chart || {};
-  const score = result.sections.score || {};
-  const chartSeries = arrayFromUnknown(chart.chart_series) || arrayFromUnknown(score.chart_series);
-  const recoveringParts = Object.entries(result.parts)
-    .filter(([, value]) => value.state === "refreshing" || value.state === "failed_retrying")
-    .map(([key]) => key);
-  const data: StockScoreResponse = {
-    ...score,
-    requested_ticker: result.ticker,
-    market: result.identity.market,
-    symbol: result.identity.symbol,
-    name: stringFromUnknown(score.name) || stringFromUnknown(price.name) || result.identity.name,
-    display_name: stringFromUnknown(score.display_name) || result.identity.name,
-    korean_name: result.identity.koreanName,
-    english_name: result.identity.englishName,
-    exchange: stringFromUnknown(score.exchange) || stringFromUnknown(price.exchange) || result.identity.exchange,
-    instrument_type: result.identity.instrumentType,
-    currency: stringFromUnknown(score.currency) || stringFromUnknown(price.currency) || (result.identity.market === "KR" ? "KRW" : "USD"),
-    latest_price: numberFromUnknown(price.latest_price) ?? numberFromUnknown(score.latest_price),
-    latest_price_label: stringFromUnknown(price.latest_price_label) || stringFromUnknown(score.latest_price_label),
-    latest_bar_date: stringFromUnknown(price.latest_bar_date) || stringFromUnknown(chart.latest_bar_date) || stringFromUnknown(score.latest_bar_date),
-    usd_krw_rate: numberFromUnknown(price.usd_krw_rate) ?? numberFromUnknown(score.usd_krw_rate),
-    usd_krw_label: stringFromUnknown(price.usd_krw_label) || stringFromUnknown(score.usd_krw_label),
-    market_cap: numberFromUnknown(price.market_cap) ?? numberFromUnknown(score.market_cap),
-    market_cap_label: stringFromUnknown(price.market_cap_label) || stringFromUnknown(score.market_cap_label),
-    chart_series: chartSeries as ChartSeriesPoint[] | undefined,
-    chart_patterns: arrayFromUnknown(score.chart_patterns) as StockScoreResponse["chart_patterns"],
-    components: arrayFromUnknown(score.components) as StockScoreResponse["components"],
-    opportunity_components: arrayFromUnknown(score.opportunity_components) as StockScoreResponse["opportunity_components"],
-    key_metrics: arrayFromUnknown(score.key_metrics) as StockScoreResponse["key_metrics"],
-    stock_profile: arrayFromUnknown(score.stock_profile) as StockScoreResponse["stock_profile"],
-    valuation_rows: arrayFromUnknown(score.valuation_rows) as StockScoreResponse["valuation_rows"],
-    news: arrayFromUnknown(score.news) as StockScoreResponse["news"],
-    price_metrics: (recordFromUnknown(price.price_metrics) || recordFromUnknown(chart.price_metrics) || recordFromUnknown(score.price_metrics)) as StockScoreResponse["price_metrics"],
-    financials: (recordFromUnknown(result.sections.financials) || recordFromUnknown(score.financials)) as StockScoreResponse["financials"],
-    financial_statement: recordFromUnknown(score.financial_statement) as StockScoreResponse["financial_statement"],
-    technical_analysis: recordFromUnknown(score.technical_analysis) as StockScoreResponse["technical_analysis"],
-    server_cache: {
-      state: result.mode === "ready" ? "ready" : "recovering",
-      source: "detail-view",
-      fetched_at: result.generatedAt,
-      refresh_started: result.mode === "partial",
-      recovering_parts: recoveringParts,
-    },
-  };
+  const data = stockScoreDataFromDetailView(result);
 
   return { status: result.mode === "ready" ? "success" : "partial", data };
 }

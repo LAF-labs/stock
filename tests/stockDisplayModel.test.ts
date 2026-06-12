@@ -110,6 +110,44 @@ test("display model keeps fast-path score visible while recovering fundamentals 
   assert.equal(payload.refresh.active, true);
 });
 
+test("display model materializes enriched score fields as first-class display parts", async () => {
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:KO",
+    view: "detail",
+    sources: {
+      identity: async () => ({ ticker: "US:KO", market: "US", symbol: "KO", name: "Coca-Cola" }),
+      price: async () => ({ latest_price: 61.25, market_cap: 263_000_000_000, currency: "USD" }),
+      chart: async () => ({ chart_series: [{ date: "2026-06-09", close: 60.5 }, { date: "2026-06-10", close: 61.25 }] }),
+      score: async () => ({
+        ok: true,
+        score: 72,
+        quality_score: 72,
+        key_metrics: [{ label: "시가총액", value: "$263B" }],
+        stock_profile: [{ label: "섹터", value: "Consumer Defensive" }],
+        valuation_rows: [
+          { label: "Forward PER", value: "21.4" },
+          { label: "업종 기준 PER", value: "24.0" },
+        ],
+        financials: { profitMargins: 0.22, revenueGrowth: 0.04 },
+        financial_statement: { period: "TTM" },
+        industry_benchmarks: [{ metric: "per", value: 24.0 }],
+        news: [{ title: "실적 발표", link: "https://example.com/news" }],
+      }),
+    },
+  });
+
+  assert.ok(payload.fundamentals);
+  assert.ok(payload.industryBenchmark);
+  assert.ok(payload.news);
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark", "news"]);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.equal((payload.fundamentals.value.key_metrics as unknown[]).length, 1);
+  assert.deepEqual((payload.fundamentals.value.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["Forward PER"]);
+  assert.equal((payload.industryBenchmark.value.industry_benchmarks as unknown[]).length, 1);
+  assert.deepEqual((payload.industryBenchmark.value.valuation_rows as Array<{ label: string }>).map((row) => row.label), ["업종 기준 PER"]);
+  assert.equal((payload.news.value.items as unknown[]).length, 1);
+});
+
 test("display model starts price chart and score lanes without waiting for slow identity", async () => {
   const started: string[] = [];
   let releaseIdentity: (() => void) | undefined;
