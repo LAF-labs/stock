@@ -137,7 +137,7 @@ npm run load:test:stock-latency -- --base-url http://localhost:3002 --iterations
 
 The latency gate hits hot detail, cold detail, hot technical, cold technical, and mixed compare API paths with `partial=1`. It fails on non-2xx responses and on explicit request-path provider execution markers. Use the p95 and per-scenario rows to decide whether the always-on worker is draining quickly enough; cold technical pending responses above a few seconds usually mean eligibility/profile lookup, Supabase readiness, or chart/technical queue creation is still too slow.
 
-Technical analysis snapshots use `view_mode='technical'` in the same score snapshot table. They are counted separately in `score_calibration.technical_snapshots`, `score_calibration.stale_technical_snapshots`, and `score_calibration.missing_technical_payload_count` because the compact technical payload may not contain the root quality/opportunity score fields used by score calibration. Score distribution and duplicate-score rates use `score_calibration.score_snapshot_count`, so technical rows cannot dilute calibration drift. After the technical-analysis release flag is enabled, add `--max-missing-technical-payloads 0` to the release gate or scheduled ops check. Before that flag is enabled, keep it as an observation metric only.
+Technical analysis snapshots use `view_mode='technical'` in the same score snapshot table. They are counted separately in `score_calibration.technical_snapshots`, `score_calibration.stale_technical_snapshots`, and `score_calibration.missing_technical_payload_count` because the compact technical payload may not contain the root quality/opportunity score fields used by score calibration. Score distribution, duplicate-score rates, and the `score_calibration.stale_snapshots` release gate use core score payloads only, so technical rows cannot dilute or block score calibration drift. Technical freshness remains visible as a freshness warning. After the technical-analysis release flag is enabled, add `--max-missing-technical-payloads 0` to the release gate or scheduled ops check. Before that flag is enabled, keep it as an observation metric only.
 
 The package `ops:check` script includes `--max-market-data-service-failures 0`, so release checks require `MARKET_DATA_SERVICE_URL` and `MARKET_DATA_INTERNAL_TOKEN`. Use `npm run ops:report` for Supabase-only observation, or run the market-data Docker target locally before `ops:check`.
 
@@ -162,6 +162,7 @@ Freshness warning cutoffs:
 
 | Warning key | Medium | High | First response |
 | --- | ---: | ---: | --- |
+| `technical_stale_snapshots` | `> 100` | `> 250` | Check technical score queue cadence, chart sidecar freshness, and provider eligibility/profile lookup |
 | `quote_stale_rate` | `>= 0.75` | `>= 0.95` | Check quote provider errors, queue drain cadence, and hot ticker coverage |
 | `refresh_queue_due_age` | `> 60m` | `> 240m` | Check scheduled workflow, worker preflight, and Supabase RPC/table readiness |
 

@@ -170,9 +170,9 @@ export function summarizeScoreSnapshots(
     if (model === undefined) missingModel += 1;
     else if (model === expectedModelVersion) currentModel += 1;
     if (rowIsStale) {
-      stale += 1;
       staleByView[view] = (staleByView[view] || 0) + 1;
       if (view === "technical") staleTechnical += 1;
+      else stale += 1;
     }
     if (view === "technical" && !isTechnicalPayload(payload)) missingTechnicalPayload += 1;
 
@@ -497,9 +497,19 @@ export async function fetchMarketDataServiceStatus(config: MarketDataServiceConf
 
 export function freshnessRiskSummary(payload: JsonRecord) {
   const warnings: Array<Record<string, unknown>> = [];
+  const calibration = isRecord(payload.score_calibration) ? payload.score_calibration : {};
   const quoteFreshness = isRecord(payload.quote_freshness) ? payload.quote_freshness : {};
   const queue = isRecord(payload.refresh_queue) ? payload.refresh_queue : {};
   const thresholds = isRecord(payload.thresholds) ? payload.thresholds : {};
+
+  const staleTechnicalSnapshots = finiteNumber(calibration.stale_technical_snapshots);
+  if (staleTechnicalSnapshots !== undefined && staleTechnicalSnapshots > 100) {
+    warnings.push({
+      key: "technical_stale_snapshots",
+      severity: staleTechnicalSnapshots > 250 ? "high" : "medium",
+      message: `technical stale snapshots are ${staleTechnicalSnapshots}`,
+    });
+  }
 
   const quoteStaleRate = finiteNumber(quoteFreshness.stale_rate);
   const quoteTotal = finiteNumber(quoteFreshness.total_snapshots) || 0;

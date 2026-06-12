@@ -117,6 +117,7 @@ test("TypeScript operations report summarizes technical snapshots separately", (
   assert.equal(summary.by_view.detail, 1);
   assert.equal(summary.by_view.technical, 2);
   assert.equal(summary.technical_snapshots, 2);
+  assert.equal(summary.stale_snapshots, 0);
   assert.equal(summary.stale_technical_snapshots, 1);
   assert.equal(summary.missing_technical_payload_count, 1);
   assert.equal(summary.missing_technical_payload_rate, 0.5);
@@ -215,6 +216,22 @@ test("TypeScript operations report separates freshness risks from threshold pass
   assert.deepEqual(
     risks.warnings.map((warning) => warning.key),
     ["quote_stale_rate", "refresh_queue_due_age"]
+  );
+});
+
+test("TypeScript operations report warns on stale technical snapshots without failing score calibration", () => {
+  const risks = freshnessRiskSummary({
+    score_calibration: { stale_snapshots: 12, stale_technical_snapshots: 125 },
+    quote_freshness: { stale_rate: 0.1, total_snapshots: 20 },
+    refresh_queue: { oldest_due_age_minutes: 10 },
+    thresholds: { ok: true, violations: [] },
+  });
+
+  assert.equal(risks.ok, false);
+  assert.equal(risks.thresholds_ok, true);
+  assert.deepEqual(
+    risks.warnings.map((warning) => warning.key),
+    ["technical_stale_snapshots"]
   );
 });
 
