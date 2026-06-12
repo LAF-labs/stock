@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildStockDisplayPayload, displayLaneTimeoutMs } from "../src/lib/stockDisplayModel";
+import { buildStockDisplayPayload, displayLaneTimeoutMs, readStockDisplayScoreSource } from "../src/lib/stockDisplayModel";
 
 test("display model default lane deadlines stay under the first-paint budget", () => {
   assert.equal(displayLaneTimeoutMs("price"), 900);
@@ -108,6 +108,55 @@ test("display model keeps fast-path score visible while recovering fundamentals 
   assert.deepEqual(payload.completion.missingParts, ["fundamentals", "industryBenchmark"]);
   assert.deepEqual(payload.completion.recoveringParts, ["fundamentals", "industryBenchmark"]);
   assert.equal(payload.refresh.active, true);
+});
+
+test("display score source uses request fast path when score snapshot is missing", async () => {
+  const payload = await readStockDisplayScoreSource("US:COLD", "detail", {
+    readSnapshot: async () => undefined,
+    detailFastPathEnabled: () => true,
+    technicalFastPathEnabled: () => false,
+    buildDetailFastPathPayload: async () => ({
+      ok: true,
+      score: 54,
+      quality_score: 54,
+      latest_price: 12.3,
+      chart_series: [{ date: "2026-06-09", close: 12 }, { date: "2026-06-10", close: 12.3 }],
+      financials: { detail_fast_path: true },
+    }),
+    buildTechnicalScoreFastPathPayload: async () => {
+      throw new Error("unexpected technical fast path");
+    },
+    enrichStockPayloadWithSymbolProfile: async (score) => ({ ...score, stock_profile: [{ label: "티커", value: "COLD" }] }),
+    enrichStockPayloadWithIndustryBenchmarks: async (score) => ({ ...score, industry_benchmarks: [{ metric: "per", value: 20 }] }),
+  });
+
+  assert.equal(payload?.quality_score, 54);
+  assert.equal(payload?.latest_price, 12.3);
+  assert.equal(Array.isArray(payload?.chart_series), true);
+  assert.deepEqual(payload?.stock_profile, [{ label: "티커", value: "COLD" }]);
+  assert.deepEqual(payload?.industry_benchmarks, [{ metric: "per", value: 20 }]);
+});
+
+test("technical display score source uses technical request fast path when snapshot is missing", async () => {
+  const payload = await readStockDisplayScoreSource("US:TECH", "technical", {
+    readSnapshot: async () => undefined,
+    detailFastPathEnabled: () => false,
+    technicalFastPathEnabled: () => true,
+    buildDetailFastPathPayload: async () => {
+      throw new Error("unexpected detail fast path");
+    },
+    buildTechnicalScoreFastPathPayload: async () => ({
+      ok: true,
+      latest_price: 22,
+      chart_series: [{ date: "2026-06-09", close: 21 }, { date: "2026-06-10", close: 22 }],
+      technical_analysis: { type: "technical_analysis", summary: { headline: "우호" } },
+    }),
+    enrichStockPayloadWithSymbolProfile: async (score) => score,
+    enrichStockPayloadWithIndustryBenchmarks: async (score) => score,
+  });
+
+  assert.equal(payload?.latest_price, 22);
+  assert.deepEqual(payload?.technical_analysis, { type: "technical_analysis", summary: { headline: "우호" } });
 });
 
 test("display model materializes enriched score fields as first-class display parts", async () => {

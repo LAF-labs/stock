@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
 import StockHeader from "@/components/StockHeader";
-import { StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
+import { SkeletonSectionTitle, StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { stockDisplayPayloadIsComplete, stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
@@ -28,6 +29,7 @@ import {
   strongestAndWeakest,
   stringFromUnknown,
   stockHeaderIdentity,
+  stockRecoveringParts,
   symbolRef,
   usableChartPoints,
   visibleRecordEntries,
@@ -321,6 +323,10 @@ function PartialStockFeed({
   const hasProfile = Boolean(data.stock_profile?.length);
   const hasValuation = Boolean(data.valuation_rows?.length);
   const hasFinancials = Boolean(data.financials && visibleRecordEntries(data.financials).length);
+  const recoveringParts = stockRecoveringParts(data);
+  const chartRecovering = !hasChart && recoveringParts.includes("chart");
+  const scoreRecovering = !hasFactors && (recoveringParts.includes("score") || recoveringParts.includes("technical"));
+  const fundamentalsRecovering = !hasFinancials && recoveringParts.some((part) => part === "fundamentals" || part === "industryBenchmark" || part === "financials");
 
   return (
     <div className="stock-feed partial-stock-feed" role="status" aria-live="polite">
@@ -332,11 +338,19 @@ function PartialStockFeed({
           <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
           <SimpleList title="가격·변동성 요약" description="가격 흐름을 볼 때 함께 참고하는 숫자예요." items={priceVolatilitySummaryItems(data)} stock={data} desktopOpen />
         </DetailSection>
+      ) : chartRecovering ? (
+        <DetailSection id="detail-chart">
+          <PartialSectionSkeleton title="가격 흐름" />
+        </DetailSection>
       ) : null}
       {hasFactors ? (
         <DetailSection id="detail-factors">
           {data.components?.length ? <FactorStory components={data.components} stock={data} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" /> : null}
           {data.opportunity_components?.length ? <FactorStory components={data.opportunity_components} stock={data} eyebrow="기회 점수 이유" title="지금 볼 만한 근거" /> : null}
+        </DetailSection>
+      ) : scoreRecovering ? (
+        <DetailSection id="detail-factors">
+          <PartialSectionSkeleton title="점수 이유" />
         </DetailSection>
       ) : null}
       {hasMetrics ? (
@@ -358,8 +372,22 @@ function PartialStockFeed({
         <DetailSection id="detail-financials">
           <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={data.financials} stock={data} desktopOpen />
         </DetailSection>
+      ) : fundamentalsRecovering ? (
+        <DetailSection id="detail-financials">
+          <PartialSectionSkeleton title="재무 요약" />
+        </DetailSection>
       ) : null}
     </div>
+  );
+}
+
+function PartialSectionSkeleton({ title }: { title: string }) {
+  return (
+    <section className="partial-pending-section" aria-label={`${title} 준비 중`}>
+      <SkeletonSectionTitle />
+      <SkeletonBlock className="wide" />
+      <SkeletonBlock className="medium" />
+    </section>
   );
 }
 

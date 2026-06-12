@@ -11,7 +11,8 @@ import {
   technicalWarnings,
 } from "@/components/technicalAnalysisHelpers";
 import TechnicalOverlayChart from "@/components/TechnicalOverlayChart";
-import { TechnicalAnalysisLoadingSkeleton } from "@/components/StockLoadingSkeletons";
+import { SkeletonSectionTitle, TechnicalAnalysisLoadingSkeleton } from "@/components/StockLoadingSkeletons";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import type { TechnicalAnalysisPayload } from "@/lib/technicalAnalysisTypes";
 import {
   formatPrimaryPrice,
@@ -146,8 +147,17 @@ export function TechnicalAnalysisPendingFeed({
         </div>
       </section>
       {limitedWarnings.length ? <TechnicalWarnings warnings={limitedWarnings} /> : null}
-      {chartPointCount >= 2 ? <TechnicalOverlayChart points={data.chart_series} /> : null}
+      {chartPointCount >= 2 ? <TechnicalOverlayChart points={data.chart_series} /> : <TechnicalChartPendingSkeleton />}
     </div>
+  );
+}
+
+function TechnicalChartPendingSkeleton() {
+  return (
+    <section className="technical-chart-panel technical-pending-card" aria-label="가격 캔들 준비 중">
+      <SkeletonSectionTitle />
+      <SkeletonBlock className="chart-area" />
+    </section>
   );
 }
 

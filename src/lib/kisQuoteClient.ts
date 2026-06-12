@@ -28,6 +28,10 @@ type KisUsDiscoveryCacheEntry = {
   search: KisPayload;
   expiresAtMs: number;
 };
+type KisDailyChartCacheEntry = {
+  payload: KisDailyChartPayload;
+  expiresAtMs: number;
+};
 type DomesticChartRow = {
   date: string;
   open: number;
@@ -73,10 +77,14 @@ export type KisDailyChartPayload = {
 declare global {
   var __kisQuoteTokenCache: Map<string, KisTokenCacheEntry> | undefined;
   var __kisQuoteDiscoveryCache: Map<string, KisUsDiscoveryCacheEntry> | undefined;
+  var __kisDailyChartMemoryCache: Map<string, KisDailyChartCacheEntry> | undefined;
+  var __kisDailyChartInflight: Map<string, Promise<KisDailyChartPayload>> | undefined;
 }
 
 const tokenCache = (globalThis.__kisQuoteTokenCache ??= new Map<string, KisTokenCacheEntry>());
 const discoveryCache = (globalThis.__kisQuoteDiscoveryCache ??= new Map<string, KisUsDiscoveryCacheEntry>());
+const dailyChartCache = (globalThis.__kisDailyChartMemoryCache ??= new Map<string, KisDailyChartCacheEntry>());
+const dailyChartInflight = (globalThis.__kisDailyChartInflight ??= new Map<string, Promise<KisDailyChartPayload>>());
 const KIS_US_DISCOVERY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 class KisQuoteError extends Error {
@@ -93,9 +101,26 @@ export async function fetchKisQuote(tickerRef: string): Promise<StockPayload> {
 }
 
 export async function fetchKisDailyChart(tickerRef: string): Promise<KisDailyChartPayload> {
-  await acquireKisQuoteSlot();
   const { market, symbol } = parseTicker(tickerRef);
-  return market === "KR" ? fetchDomesticDailyChart(symbol) : fetchUsDailyChart(symbol);
+  const cacheKey = `${market}:${symbol}`;
+  const cached = readDailyChartCache(cacheKey);
+  if (cached) return cached.payload;
+
+  const existing = dailyChartInflight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    await acquireKisQuoteSlot();
+    return market === "KR" ? fetchDomesticDailyChart(symbol) : fetchUsDailyChart(symbol);
+  })();
+  dailyChartInflight.set(cacheKey, promise);
+  try {
+    const payload = await promise;
+    rememberDailyChart(cacheKey, payload);
+    return payload;
+  } finally {
+    dailyChartInflight.delete(cacheKey);
+  }
 }
 
 export function kisQuoteConfigured(): boolean {
@@ -289,6 +314,32 @@ function readUsDiscoveryCache(cacheKey: string): KisUsDiscoveryCacheEntry | unde
     return undefined;
   }
   return cached;
+}
+
+function readDailyChartCache(cacheKey: string): KisDailyChartCacheEntry | undefined {
+  const cached = dailyChartCache.get(cacheKey);
+  if (!cached) return undefined;
+  if (cached.expiresAtMs <= Date.now()) {
+    dailyChartCache.delete(cacheKey);
+    return undefined;
+  }
+  return cached;
+}
+
+function rememberDailyChart(cacheKey: string, payload: KisDailyChartPayload) {
+  const ttlMs = kisDailyChartMemoryTtlMs();
+  if (ttlMs <= 0) return;
+  dailyChartCache.set(cacheKey, {
+    payload: {
+      ...payload,
+      fetch: {
+        ...payload.fetch,
+        memory_cache: "store",
+      },
+    },
+    expiresAtMs: Date.now() + ttlMs,
+  });
+  pruneDailyChartCache();
 }
 
 async function fetchDomesticDailyChart(symbol: string): Promise<KisDailyChartPayload> {
@@ -751,6 +802,27 @@ function dateOffset(date: Date, days: number, timeZone: string): string {
 function numericEnvForKis(name: string, fallback: number): number {
   const parsed = Number(envValue(name));
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function kisDailyChartMemoryTtlMs(): number {
+  return numericEnvForKis("STOCK_KIS_DAILY_MEMORY_TTL_MS", 60_000);
+}
+
+function kisDailyChartMemoryMaxEntries(): number {
+  return numericEnvForKis("STOCK_KIS_DAILY_MEMORY_MAX_ENTRIES", 1_000);
+}
+
+function pruneDailyChartCache() {
+  const now = Date.now();
+  for (const [key, entry] of dailyChartCache) {
+    if (entry.expiresAtMs <= now) dailyChartCache.delete(key);
+  }
+  const maxEntries = kisDailyChartMemoryMaxEntries();
+  if (dailyChartCache.size <= maxEntries) return;
+  const oldest = [...dailyChartCache.entries()].sort((left, right) => left[1].expiresAtMs - right[1].expiresAtMs);
+  for (const [key] of oldest.slice(0, dailyChartCache.size - maxEntries)) {
+    dailyChartCache.delete(key);
+  }
 }
 
 function technicalKisTimeoutMs(): number {

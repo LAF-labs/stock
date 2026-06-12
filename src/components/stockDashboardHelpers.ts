@@ -333,9 +333,9 @@ export function dashboardSearchSyncDecision(input: {
 }
 
 export function shouldShowStockSkeleton(status: string, hasUsefulPartialData = false, hasDetailViewResponse = false): boolean {
-  void hasUsefulPartialData;
   void hasDetailViewResponse;
-  return status === "loading" || status === "pending" || status === "partial";
+  if (status === "partial") return !hasUsefulPartialData;
+  return status === "loading" || status === "pending";
 }
 
 export function dashboardStateFromDetailView(result: StockDetailViewResponse | undefined): { status: "partial" | "success" | "error"; data?: StockScoreResponse; error?: string } | undefined {
@@ -357,6 +357,12 @@ export function hasDisplayableStockPartialData(data: StockScoreResponse | undefi
     numberFromUnknown(record.quality_score) !== undefined ||
     numberFromUnknown(record.score) !== undefined
   );
+}
+
+export function stockRecoveringParts(data: StockScoreResponse | undefined): string[] {
+  const record = data as Record<string, unknown> | undefined;
+  const serverCache = recordFromUnknown(record?.server_cache);
+  return (arrayFromUnknown(serverCache?.recovering_parts) || []).filter((part): part is string => typeof part === "string" && part.trim().length > 0);
 }
 
 export function chooseRicherStockData(

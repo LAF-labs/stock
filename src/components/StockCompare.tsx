@@ -4,7 +4,8 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
-import { ComparePendingOverviewSkeleton } from "@/components/StockLoadingSkeletons";
+import { ComparePendingOverviewSkeleton, SkeletonSectionTitle } from "@/components/StockLoadingSkeletons";
+import SkeletonBlock from "@/components/SkeletonBlock";
 import {
   MAX_COMPARE,
   averageAnchoredFill,
@@ -27,7 +28,7 @@ import {
   type CompareItem,
 } from "@/components/stockCompareHelpers";
 import { formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
-import { useStockCompareQueries, type CompareLoadState } from "@/components/useStockCompareQueries";
+import { shouldShowCompareChartSkeleton, shouldShowCompareOverviewSkeleton, useStockCompareQueries, type CompareLoadState } from "@/components/useStockCompareQueries";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
@@ -212,9 +213,10 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 
       {states.length ? (
         <div className="compare-feed">
-          {!items.length ? <ComparePendingOverviewSkeleton /> : null}
+          {shouldShowCompareOverviewSkeleton(states, items) ? <ComparePendingOverviewSkeleton /> : null}
           <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
           {items.length >= 2 && hasCompareChart ? <CompareChart items={items} /> : null}
+          {shouldShowCompareChartSkeleton(states, items, hasCompareChart) ? <CompareChartPendingSkeleton /> : null}
           {items.length >= 2 ? <CompareMatrix items={items} /> : null}
           {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}
           {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
@@ -381,6 +383,15 @@ function EmptyCompareCard() {
         <p>아래 검색창에서 국내·미국 종목을 추가하면 같은 기준으로 나란히 볼 수 있어요.</p>
       </div>
     </article>
+  );
+}
+
+function CompareChartPendingSkeleton() {
+  return (
+    <section className="compare-section compare-pending">
+      <SkeletonSectionTitle />
+      <SkeletonBlock className="chart-area" />
+    </section>
   );
 }
 

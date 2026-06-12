@@ -4,6 +4,7 @@ import { STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import { numericEnv } from "@/lib/supabaseRest";
 import { normalizeTickerRef, parseTickerRef } from "@/lib/tickerRef";
+import type { ScoreView, StockPayload, StockScoreResult } from "@/lib/stockScoreContract";
 import type {
   DisplayPart,
   StockChartView,
@@ -28,12 +29,42 @@ export type StockDisplaySources = {
   score?: (ticker: string, view: StockDisplayView) => Promise<StockDisplaySourceResult<StockScoreView>>;
 };
 
+export type StockDisplayScoreSourceDeps = {
+  readSnapshot: (ticker: string, view: ScoreView) => Promise<StockScoreResult | undefined>;
+  detailFastPathEnabled: () => boolean | Promise<boolean>;
+  technicalFastPathEnabled: () => boolean | Promise<boolean>;
+  buildDetailFastPathPayload: (ticker: string, view: ScoreView) => Promise<StockPayload>;
+  buildTechnicalScoreFastPathPayload: (ticker: string) => Promise<StockPayload>;
+  enrichStockPayloadWithSymbolProfile: (payload: StockPayload) => Promise<StockPayload>;
+  enrichStockPayloadWithIndustryBenchmarks: (payload: StockPayload) => Promise<StockPayload>;
+};
+
 export type BuildStockDisplayPayloadInput = {
   ticker: string;
   view: StockDisplayView;
   sources?: StockDisplaySources;
   now?: Date;
 };
+
+export async function readStockDisplayScoreSource(
+  ticker: string,
+  view: StockDisplayView,
+  deps: StockDisplayScoreSourceDeps = defaultDisplayScoreSourceDeps()
+): Promise<StockDisplaySourceResult<StockScoreView>> {
+  const scoreView = displayScoreView(view);
+  const snapshot = await deps.readSnapshot(ticker, scoreView).catch(() => undefined);
+  let payload = snapshot?.payload;
+
+  if (!payload || payload.ok === false) {
+    payload = await requestFastPathDisplayScore(ticker, scoreView, deps);
+  }
+
+  if (!payload || payload.ok === false) return undefined;
+  if (scoreView === "technical") return payload;
+
+  const withProfile = await deps.enrichStockPayloadWithSymbolProfile(payload).catch(() => payload);
+  return deps.enrichStockPayloadWithIndustryBenchmarks(withProfile).catch(() => withProfile);
+}
 
 export async function buildStockDisplayPayload(input: BuildStockDisplayPayloadInput): Promise<StockDisplayPayload> {
   const ticker = normalizeTickerRef(input.ticker);
@@ -341,14 +372,61 @@ function defaultDisplaySources(): StockDisplaySources {
       return result.payload.ok === false ? undefined : result.payload;
     },
     score: async (ticker, view) => {
+      return readStockDisplayScoreSource(ticker, view);
+    },
+  };
+}
+
+function displayScoreView(view: StockDisplayView): ScoreView {
+  return view === "technical" ? "technical" : view === "compare" ? "compare" : "detail";
+}
+
+async function requestFastPathDisplayScore(
+  ticker: string,
+  view: ScoreView,
+  deps: StockDisplayScoreSourceDeps
+): Promise<StockPayload | undefined> {
+  try {
+    if (view === "technical") {
+      if (!(await deps.technicalFastPathEnabled())) return undefined;
+      return await deps.buildTechnicalScoreFastPathPayload(ticker);
+    }
+    if (!(await deps.detailFastPathEnabled())) return undefined;
+    return await deps.buildDetailFastPathPayload(ticker, view);
+  } catch {
+    return undefined;
+  }
+}
+
+function defaultDisplayScoreSourceDeps(): StockDisplayScoreSourceDeps {
+  return {
+    readSnapshot: async (ticker, view) => {
       const { readStockScoreSnapshotForDisplay } = await import("@/lib/stockScoreSnapshotReader");
-      const scoreView = view === "technical" ? "technical" : view === "compare" ? "compare" : "detail";
-      const result = await readStockScoreSnapshotForDisplay(ticker, scoreView);
-      if (!result || result.payload.ok === false) return undefined;
-      if (scoreView === "technical") return result.payload;
+      return readStockScoreSnapshotForDisplay(ticker, view);
+    },
+    detailFastPathEnabled: async () => {
+      const { detailRequestFastPathEnabled } = await import("@/lib/detailScoreFastPath");
+      return detailRequestFastPathEnabled();
+    },
+    technicalFastPathEnabled: async () => {
+      const { technicalRequestFastPathEnabled } = await import("@/lib/technicalScoreFastPath");
+      return technicalRequestFastPathEnabled();
+    },
+    buildDetailFastPathPayload: async (ticker, view) => {
+      const { buildDetailScoreFastPathPayload } = await import("@/lib/detailScoreFastPath");
+      return buildDetailScoreFastPathPayload(ticker, view);
+    },
+    buildTechnicalScoreFastPathPayload: async (ticker) => {
+      const { buildTechnicalScoreFastPathPayload } = await import("@/lib/technicalScoreFastPath");
+      return buildTechnicalScoreFastPathPayload(ticker);
+    },
+    enrichStockPayloadWithSymbolProfile: async (payload) => {
       const { enrichStockPayloadWithSymbolProfile } = await import("@/lib/symbolProfiles");
+      return enrichStockPayloadWithSymbolProfile(payload);
+    },
+    enrichStockPayloadWithIndustryBenchmarks: async (payload) => {
       const { enrichStockPayloadWithIndustryBenchmarks } = await import("@/lib/stockIndustryBenchmarkEnrichment");
-      return enrichStockPayloadWithIndustryBenchmarks(await enrichStockPayloadWithSymbolProfile(result.payload));
+      return enrichStockPayloadWithIndustryBenchmarks(payload);
     },
   };
 }

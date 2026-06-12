@@ -21,6 +21,8 @@ const originalFetch = globalThis.fetch;
 const globalWithKisCache = globalThis as typeof globalThis & {
   __kisQuoteTokenCache?: Map<string, { accessToken: string; expiresAtMs: number }>;
   __kisQuoteDiscoveryCache?: Map<string, unknown>;
+  __kisDailyChartMemoryCache?: Map<string, unknown>;
+  __kisDailyChartInflight?: Map<string, unknown>;
 };
 
 function setupEnv() {
@@ -36,6 +38,8 @@ function setupEnv() {
   delete process.env.STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES;
   globalWithKisCache.__kisQuoteTokenCache?.clear();
   globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
+  globalWithKisCache.__kisDailyChartMemoryCache?.clear();
+  globalWithKisCache.__kisDailyChartInflight?.clear();
 }
 
 function restore() {
@@ -50,6 +54,8 @@ function restore() {
   globalThis.fetch = originalFetch;
   globalWithKisCache.__kisQuoteTokenCache?.clear();
   globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
+  globalWithKisCache.__kisDailyChartMemoryCache?.clear();
+  globalWithKisCache.__kisDailyChartInflight?.clear();
 }
 
 test.afterEach(restore);
@@ -227,6 +233,38 @@ test("fetchKisDailyChart uses one US daily page by default", async () => {
   assert.equal(dailyCalls, 1);
   assert.equal(payload.chartSeries.length, 1);
   assert.equal(payload.fetch.history_rows, 1);
+});
+
+test("fetchKisDailyChart reuses in-flight daily requests inside the server instance", async () => {
+  setupEnv();
+
+  let dailyCalls = 0;
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-daily-dedupe", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      dailyCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output2: [
+          { xymd: "20260605", open: "70", high: "72", low: "69", clos: "71", tvol: "1000" },
+          { xymd: "20260604", open: "69", high: "71", low: "68", clos: "70", tvol: "900" },
+        ],
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const [first, second] = await Promise.all([
+    fetchKisDailyChart("US:FAST"),
+    fetchKisDailyChart("US:FAST"),
+  ]);
+
+  assert.equal(dailyCalls, 1);
+  assert.equal(first.chartSeries.length, 2);
+  assert.equal(second.chartSeries.length, 2);
 });
 
 test("fetchKisDailyChart falls back to domestic stock market div and sorts rows oldest first", async () => {

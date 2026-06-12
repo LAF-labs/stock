@@ -43,6 +43,7 @@ import {
   stockHeaderIdentity,
   stockJudgmentRequestPayload,
   stockMarketCapDisplay,
+  stockRecoveringParts,
   termTipFor,
   usableChartPoints,
   visibleLabeledItems,
@@ -288,7 +289,7 @@ test("dashboard can render a useful partial view from quote before score is read
   assert.equal(stockMarketCapDisplay(partial || {}).primary, "25조 2320억원");
   assert.equal(partial?.server_cache?.source, "quote_partial");
   assert.equal(hasDisplayableStockPartialData(partial), true);
-  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), true);
+  assert.equal(shouldShowStockSkeleton("partial", hasDisplayableStockPartialData(partial)), false);
 });
 
 test("dashboard keeps deadline identity placeholders behind the skeleton", () => {
@@ -323,6 +324,7 @@ test("dashboard uses full skeleton only when no useful partial data is present",
   assert.equal(shouldShowStockSkeleton("loading"), true);
   assert.equal(shouldShowStockSkeleton("pending"), true);
   assert.equal(shouldShowStockSkeleton("pending", true), true);
+  assert.equal(shouldShowStockSkeleton("partial", true), false);
   assert.equal(shouldShowStockSkeleton("success"), false);
   assert.equal(shouldShowStockSkeleton("error"), false);
 });
@@ -414,12 +416,23 @@ test("dashboard promotes detail-view financial and analyst sections into visible
   assert.ok(stockDataUsefulness(state?.data) >= 12);
 });
 
-test("dashboard keeps skeleton for detail-view until the ready response", () => {
+test("dashboard keeps skeleton for empty partials and shows useful detail-view partials", () => {
   assert.equal(shouldShowStockSkeleton("loading", false, false), true);
   assert.equal(shouldShowStockSkeleton("partial", false, false), true);
   assert.equal(shouldShowStockSkeleton("partial", false, true), true);
-  assert.equal(shouldShowStockSkeleton("partial", true, true), true);
+  assert.equal(shouldShowStockSkeleton("partial", true, true), false);
   assert.equal(shouldShowStockSkeleton("success", false, true), false);
+});
+
+test("dashboard extracts recovering display parts from server cache", () => {
+  const data = {
+    requested_ticker: "US:FAST",
+    server_cache: {
+      recovering_parts: ["chart", "score", 123, "fundamentals"],
+    },
+  } as unknown as StockScoreResponse;
+
+  assert.deepEqual(stockRecoveringParts(data), ["chart", "score", "fundamentals"]);
 });
 
 test("scoreDataWithQuote overlays fresh quote fields without losing score fields", () => {

@@ -10,11 +10,11 @@ import {
   toCompareItem,
   type CompareItem,
 } from "@/components/stockCompareHelpers";
-import { chooseRicherStockData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
+import { hasDisplayableStockPartialData, partialStockDataFromTicker, usableChartPoints } from "@/components/stockDashboardHelpers";
 import { compareQueryOptions, displayQueryOptions, displayQueryResultFromPayload } from "@/lib/stockQueryOptions";
 import type { ApiError, ApiPartial, ApiPending, CompareQueryResult, CompareScoreItemResult, DisplayQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
-import type { StockScoreResponse } from "@/lib/types";
+import type { JsonValue, StockScoreResponse } from "@/lib/types";
 
 export type CompareLoadState =
   | { status: "loading"; ticker: string; data?: undefined; error?: undefined }
@@ -107,6 +107,16 @@ export function compareItemsFromStates(states: readonly CompareLoadState[]): Com
   });
 }
 
+export function shouldShowCompareOverviewSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[]): boolean {
+  if (items.length > 0) return false;
+  return !states.some((state) => state.status === "partial" && hasDisplayableStockPartialData(state.data));
+}
+
+export function shouldShowCompareChartSkeleton(states: readonly CompareLoadState[], items: readonly CompareItem[], hasCompareChart: boolean): boolean {
+  if (items.length < 2 || hasCompareChart) return false;
+  return states.some((state) => state.status === "loading" || state.status === "pending" || state.status === "partial");
+}
+
 export function shouldPromotePartialCompareData(data: StockScoreResponse): boolean {
   if (isIdentityOnlyFastPath(data)) return false;
   return hasFiniteNumber(data.quality_score ?? data.score) && hasPriceSignal(data);
@@ -124,6 +134,82 @@ function isIdentityOnlyFastPath(data: StockScoreResponse): boolean {
 
 function hasFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+export function compareStockDataWithDisplayFallback(
+  primary: StockScoreResponse,
+  displayFallback: StockScoreResponse | undefined,
+): StockScoreResponse {
+  if (!displayFallback) return primary;
+  const primaryChartPoints = usableChartPoints(primary.chart_series).length;
+  const fallbackChartPoints = usableChartPoints(displayFallback.chart_series).length;
+  const chartSeries = fallbackChartPoints > primaryChartPoints ? displayFallback.chart_series : primary.chart_series || displayFallback.chart_series;
+
+  return {
+    ...displayFallback,
+    ...primary,
+    requested_ticker: stringOrFallback(primary.requested_ticker, displayFallback.requested_ticker),
+    market: primary.market || displayFallback.market,
+    symbol: stringOrFallback(primary.symbol, displayFallback.symbol),
+    name: stringOrFallback(primary.name, displayFallback.name),
+    display_name: stringOrFallback(primary.display_name, displayFallback.display_name),
+    korean_name: stringOrFallback(primary.korean_name, displayFallback.korean_name),
+    english_name: stringOrFallback(primary.english_name, displayFallback.english_name),
+    instrument_type: stringOrFallback(primary.instrument_type, displayFallback.instrument_type),
+    exchange: stringOrFallback(primary.exchange, displayFallback.exchange),
+    currency: stringOrFallback(primary.currency, displayFallback.currency),
+    latest_price: finiteOrFallback(primary.latest_price, displayFallback.latest_price),
+    latest_price_label: stringOrFallback(primary.latest_price_label, displayFallback.latest_price_label),
+    latest_bar_date: stringOrFallback(primary.latest_bar_date, displayFallback.latest_bar_date),
+    usd_krw_rate: finiteOrFallback(primary.usd_krw_rate, displayFallback.usd_krw_rate),
+    usd_krw_label: stringOrFallback(primary.usd_krw_label, displayFallback.usd_krw_label),
+    market_cap: finiteOrFallback(numberFromUnknown(primary.market_cap), numberFromUnknown(displayFallback.market_cap)),
+    market_cap_label: stringOrFallback(stringFromUnknown(primary.market_cap_label), stringFromUnknown(displayFallback.market_cap_label)),
+    score: finiteOrFallback(primary.score, displayFallback.score),
+    quality_score: finiteOrFallback(primary.quality_score, displayFallback.quality_score),
+    opportunity_score: finiteOrFallback(primary.opportunity_score, displayFallback.opportunity_score),
+    components: nonEmptyArray(primary.components) || nonEmptyArray(displayFallback.components),
+    opportunity_components: nonEmptyArray(primary.opportunity_components) || nonEmptyArray(displayFallback.opportunity_components),
+    key_metrics: nonEmptyArray(primary.key_metrics) || nonEmptyArray(displayFallback.key_metrics),
+    stock_profile: nonEmptyArray(primary.stock_profile) || nonEmptyArray(displayFallback.stock_profile),
+    valuation_rows: nonEmptyArray(primary.valuation_rows) || nonEmptyArray(displayFallback.valuation_rows),
+    chart_patterns: nonEmptyArray(primary.chart_patterns) || nonEmptyArray(displayFallback.chart_patterns),
+    chart_series: chartSeries,
+    price_metrics: mergeJsonRecords(displayFallback.price_metrics, primary.price_metrics),
+    financials: mergeJsonRecords(displayFallback.financials, primary.financials),
+    financial_statement: mergeJsonRecords(displayFallback.financial_statement, primary.financial_statement),
+    technical_analysis: primary.technical_analysis || displayFallback.technical_analysis,
+    news: nonEmptyArray(primary.news) || nonEmptyArray(displayFallback.news),
+  };
+}
+
+function stringOrFallback(value: string | undefined, fallback: string | undefined): string | undefined {
+  return value && value.trim() ? value : fallback;
+}
+
+function finiteOrFallback(value: number | undefined, fallback: number | undefined): number | undefined {
+  return hasFiniteNumber(value) ? value : hasFiniteNumber(fallback) ? fallback : undefined;
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function nonEmptyArray<T>(value: T[] | undefined): T[] | undefined {
+  return Array.isArray(value) && value.length ? value : undefined;
+}
+
+function mergeJsonRecords(
+  fallback: Record<string, JsonValue> | undefined,
+  primary: Record<string, JsonValue> | undefined,
+): Record<string, JsonValue> | undefined {
+  if (!fallback) return primary;
+  if (!primary) return fallback;
+  return { ...fallback, ...primary };
 }
 
 function compareStatesFromQuery(
@@ -155,7 +241,7 @@ function stateFromCompareItem(ticker: string, item: CompareScoreItemResult | und
   if (!result) return displayFallback ? displayCompareState(ticker, displayFallback) : optimisticComparePendingState(ticker);
 
   if (result.state === "ready") {
-    return { status: "success", ticker, data: result.data };
+    return { status: "success", ticker, data: compareStockDataWithDisplayFallback(result.data, displayFallback) };
   }
 
   if (result.state === "partial") {
@@ -196,7 +282,7 @@ function partialStateFromResult(
   displayFallback: StockScoreResponse | undefined,
 ): Extract<CompareLoadState, { status: "partial" }> {
   const partial = comparePartialData(result.payload as StockScoreResponse, ticker) || result.data || partialStockDataFromTicker(ticker);
-  const data = chooseRicherStockData(displayFallback, partial) || partial;
+  const data = compareStockDataWithDisplayFallback(partial, displayFallback);
   return {
     status: "partial",
     ticker,
