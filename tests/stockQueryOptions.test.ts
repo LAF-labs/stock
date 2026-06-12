@@ -5,6 +5,7 @@ import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "../src/components/QueryProvider";
 import {
   STOCK_QUERY_MAX_PENDING_POLLS,
   compareQueryOptions,
+  detailViewQueryOptions,
   displayQueryResultFromPayload,
   displayQueryOptions,
   judgmentQueryOptions,
@@ -15,6 +16,7 @@ import {
   quoteQueryUpdatedAtFromDisplayPayload,
   scoreQueryOptions,
   shouldEnableSymbolSearch,
+  stockDetailViewRefetchIntervalMs,
   stockPendingRetryDelayMs,
   stockQueryRefetchIntervalMs,
   stockQueryRefetchOnMount,
@@ -24,6 +26,7 @@ import {
   technicalScoreQueryOptions,
 } from "../src/lib/stockQueryOptions";
 import type { CompareQueryResult, DisplayQueryResult, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "../src/lib/stockQueryTypes";
+import type { StockDetailViewResponse } from "../src/lib/stockDetailViewTypes";
 import type { StockDisplayPayload } from "../src/lib/stockDisplayTypes";
 import type { StockScoreResponse } from "../src/lib/types";
 
@@ -119,6 +122,36 @@ test("display query result can be seeded from server-rendered payload", () => {
   assert.equal(stockQueryShouldPoll(result), true);
   assert.equal(stockQueryRefetchOnMount(result), true);
   assert.equal(stockQueryRefetchIntervalMs(result, 0), 1500);
+});
+
+test("detail-view query options poll from nextPollMs while recovering", () => {
+  const option = detailViewQueryOptions("US:VLD", "detail");
+  assert.deepEqual(option.queryKey, ["stock", "detail-view", "detail", "US:VLD"]);
+
+  const partial: StockDetailViewResponse = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:VLD",
+    requestedTicker: "US:VLD",
+    view: "detail",
+    generatedAt: "2026-06-12T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    nextPollMs: 1500,
+    identity: { ticker: "US:VLD", market: "US", symbol: "VLD", name: "Velo3D" },
+    sections: {},
+    parts: {
+      price: { state: "refreshing" },
+      chart: { state: "refreshing" },
+      score: { state: "refreshing" },
+      financials: { state: "missing" },
+      analyst: { state: "missing" },
+    },
+    jobs: [],
+  };
+
+  assert.equal(stockDetailViewRefetchIntervalMs(partial), 1500);
+  assert.equal(stockDetailViewRefetchIntervalMs({ ...partial, mode: "ready", nextPollMs: undefined }), false);
+  assert.equal(stockDetailViewRefetchIntervalMs({ ok: false, mode: "failed_irreversible", error: "invalid_ticker", message: "bad" }), false);
 });
 
 test("compare query option keeps order and disables empty batches", () => {

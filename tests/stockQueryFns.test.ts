@@ -7,6 +7,7 @@ import {
   classifyComparePayload,
   classifyScorePayload,
   fetchCompareScores,
+  fetchStockDetailView,
   fetchStockDisplay,
   fetchStockQuote,
   fetchStockScore,
@@ -200,6 +201,36 @@ test("display query function calls the display endpoint and treats ok payloads a
   assert.equal(result.state, "ready");
   assert.equal(result.data.ticker, "KR:005930");
   assert.equal(calls[0], "/api/stock/display?ticker=KR%3A005930&view=detail");
+});
+
+test("detail-view fetcher calls the detail-view endpoint and returns the product model", async () => {
+  const calls = mockJsonFetch({
+    ok: true,
+    mode: "partial",
+    ticker: "US:VLD",
+    requestedTicker: "US:VLD",
+    view: "detail",
+    generatedAt: "2026-06-12T00:00:00.000Z",
+    snapshotVersion: "display-v1",
+    nextPollMs: 1500,
+    identity: { ticker: "US:VLD", market: "US", symbol: "VLD", name: "Velo3D" },
+    sections: {},
+    parts: {
+      price: { state: "refreshing", displayPart: "price" },
+      chart: { state: "refreshing", displayPart: "chart" },
+      score: { state: "refreshing", displayPart: "score" },
+      financials: { state: "missing", displayPart: "fundamentals" },
+      analyst: { state: "missing", displayPart: "judgment" },
+    },
+    jobs: [{ part: "price", state: "queued" }],
+  });
+
+  const result = await fetchStockDetailView({ ticker: "US:VLD" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, "partial");
+  assert.equal(result.ticker, "US:VLD");
+  assert.equal(calls[0], "/api/stock/detail-view?ticker=US%3AVLD&view=detail");
 });
 
 test("quote fetch and refresh model ready pending and cooldown states", async () => {

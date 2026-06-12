@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "@/components/QueryProvider";
 import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
-import { fetchCompareScores, fetchStockDisplay, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
+import { fetchCompareScores, fetchStockDetailView, fetchStockDisplay, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
 import type {
@@ -20,6 +20,7 @@ import type {
 } from "@/lib/stockQueryTypes";
 import type { ClientApiPayload } from "@/lib/clientApi";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
+import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
 import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 
 export const STOCK_QUERY_MAX_PENDING_POLLS = 24;
@@ -56,6 +57,18 @@ export function displayQueryOptions(ticker: string, view: StockScoreView = "deta
     refetchOnMount: (query) => stockQueryRefetchOnMount(query.state.data as DisplayQueryResult | undefined),
     refetchInterval: (query) => stockQueryRefetchIntervalMs(query.state.data as DisplayQueryResult | undefined, query.state.dataUpdateCount, view),
     meta: { feature: "stock-display", view, maxPendingPolls: STOCK_QUERY_MAX_PENDING_POLLS },
+  });
+}
+
+export function detailViewQueryOptions(ticker: string, view: StockScoreView = "detail") {
+  return queryOptions({
+    queryKey: stockQueryKeys.detailView(ticker, view),
+    queryFn: ({ signal }) => fetchStockDetailView({ ticker, view, signal }),
+    staleTime: 0,
+    gcTime: STOCK_QUERY_CACHE_MAX_AGE_MS,
+    refetchOnMount: (query) => stockDetailViewRefetchIntervalMs(query.state.data as StockDetailViewResponse | undefined) ? "always" : true,
+    refetchInterval: (query) => stockDetailViewRefetchIntervalMs(query.state.data as StockDetailViewResponse | undefined),
+    meta: { feature: "stock-detail-view", view },
   });
 }
 
@@ -137,6 +150,12 @@ export function stockPendingRetryDelayMs(attempt = 0): number {
   const safeAttempt = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
   const seconds = STOCK_QUERY_PENDING_BACKOFF_SECONDS[Math.min(safeAttempt, STOCK_QUERY_PENDING_BACKOFF_SECONDS.length - 1)] ?? 60;
   return seconds * 1000;
+}
+
+export function stockDetailViewRefetchIntervalMs(result: StockDetailViewResponse | undefined): number | false {
+  if (!result || result.ok === false) return false;
+  if (result.mode === "ready") return false;
+  return typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : 1_500;
 }
 
 export function stockQueryRefetchIntervalMs(

@@ -21,6 +21,7 @@ import type {
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import type { StockDisplayPayload, StockDisplayView } from "@/lib/stockDisplayTypes";
+import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
 
 type ApiJsonInit = RequestInit & { signal?: AbortSignal };
 
@@ -66,6 +67,20 @@ export async function fetchStockDisplay({
   const { payload, response } = await apiJson(`/api/stock/display?${query.toString()}`, noStoreInit(signal));
   if (!response.ok || payload.ok === false) throwStockQueryError(payload, response.status, "display_failed");
   return readyResult(payload as StockDisplayPayload, payload, response.status);
+}
+
+export async function fetchStockDetailView({
+  ticker,
+  view = "detail",
+  signal,
+}: {
+  ticker: string;
+  view?: StockDisplayView;
+  signal?: AbortSignal;
+}): Promise<StockDetailViewResponse> {
+  const query = new URLSearchParams({ ticker, view });
+  const { payload } = await apiJson(`/api/stock/detail-view?${query.toString()}`, noStoreInit(signal));
+  return payload as StockDetailViewResponse;
 }
 
 export async function fetchTechnicalScore(ticker: string, signal?: AbortSignal): Promise<TechnicalScoreQueryResult> {
