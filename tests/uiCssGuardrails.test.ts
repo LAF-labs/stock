@@ -12,6 +12,13 @@ const stockDetailSectionsSource = readFileSync(join(process.cwd(), "src/componen
 const loadingSkeletonSource = readFileSync(join(process.cwd(), "src/components/StockLoadingSkeletons.tsx"), "utf8");
 const compareRouteSource = readFileSync(join(process.cwd(), "src/app/compare/page.tsx"), "utf8");
 const technicalRouteSource = readFileSync(join(process.cwd(), "src/app/technical/page.tsx"), "utf8");
+const marketCapSource = readFileSync(join(process.cwd(), "src/components/MarketCapDashboard.tsx"), "utf8");
+const marketCapHookSource = readFileSync(join(process.cwd(), "src/components/useMarketCapDashboardQuery.ts"), "utf8");
+const marketCapHelperSource = readFileSync(join(process.cwd(), "src/components/marketCapDashboardHelpers.ts"), "utf8");
+const appNavigationSource = readFileSync(join(process.cwd(), "src/components/AppNavigationMenu.tsx"), "utf8");
+const appNavigationLinksSource = readFileSync(join(process.cwd(), "src/components/AppNavigationLinks.tsx"), "utf8");
+const searchChromeSource = readFileSync(join(process.cwd(), "src/components/SearchChromeWithNavigation.tsx"), "utf8");
+const collapsibleSearchChromeSource = readFileSync(join(process.cwd(), "src/components/useCollapsibleSearchChrome.ts"), "utf8");
 
 test("visited link color is scoped to news links", () => {
   assert.doesNotMatch(css, /(^|})\s*a:visited\s*\{/);
@@ -23,7 +30,7 @@ test("desktop index layouts use centered grid containers", () => {
     css,
     /--detail-index-left|--detail-content-left|--compare-side-left|--compare-content-left|calc\(50vw - 600px\)/,
   );
-  assert.match(css, /\.stock-detail-app:has\(> \.stock-detail-index\)\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
+  assert.match(css, /\.stock-detail-app\.has-detail-context\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
   assert.match(css, /\.compare-app\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
 });
 
@@ -106,22 +113,25 @@ test("landing hero has four scrollable headline sections and a seamless stock lo
 });
 
 test("home search is a floating pill that collapses to a compact text pill", () => {
-  assert.match(dashboardSource, /isSearchCollapsed/);
-  assert.match(dashboardSource, /isSearchExpanding/);
-  assert.match(dashboardSource, /searchExpandTimerRef/);
-  assert.match(dashboardSource, /search-expanding/);
+  assert.match(dashboardSource, /SearchChromeWithNavigation/);
+  assert.match(dashboardSource, /useCollapsibleSearchChrome/);
+  assert.match(collapsibleSearchChromeSource, /isCollapsed/);
+  assert.match(collapsibleSearchChromeSource, /isExpanding/);
+  assert.match(collapsibleSearchChromeSource, /searchExpandTimerRef/);
+  assert.match(collapsibleSearchChromeSource, /search-expanding/);
   assert.match(dashboardSource, /variant="floating"/);
   assert.match(dashboardSource, /onExpandRequest/);
-  assert.match(dashboardSource, /scrollY/);
+  assert.match(collapsibleSearchChromeSource, /scrollY/);
   assert.match(autocompleteSource, /function SearchIcon/);
   assert.match(autocompleteSource, /type=\{isCollapsed \? "button" : "submit"\}/);
+  assert.match(autocompleteSource, /onPointerDown=\{isCollapsed \? onFloatingPointerDown : undefined\}/);
   assert.match(autocompleteSource, /formAction/);
   assert.match(autocompleteSource, /inputName/);
   assert.match(autocompleteSource, /variant === "floating"/);
   assert.match(dashboardSource, /formAction="\/"/);
   assert.match(dashboardSource, /inputName="ticker"/);
-  assert.match(dashboardSource, /delta > 0/);
-  assert.match(dashboardSource, /delta < 0/);
+  assert.match(collapsibleSearchChromeSource, /delta > 0/);
+  assert.match(collapsibleSearchChromeSource, /delta < 0/);
   assert.doesNotMatch(dashboardSource, /delta > 8/);
   assert.doesNotMatch(dashboardSource, /delta < -24/);
   assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?border-radius:\s*999px;/);
@@ -153,6 +163,103 @@ test("symbol autocomplete shows local suggestions before debounced server search
   assert.match(symbolSearchHookSource, /localItems/);
   assert.match(symbolSearchHookSource, /mergeSymbolItems/);
   assert.doesNotMatch(symbolSearchHookSource, /const visibleItems = canFetchCurrentQuery && resultQuery === query \? items : \[\];/);
+});
+
+test("market-cap dashboard renders tabs, a compact sector filter, and detail row links", () => {
+  assert.match(marketCapSource, /market-cap-tabs/);
+  assert.match(marketCapSource, /market-cap-sector-filter/);
+  assert.match(marketCapSource, /detailHrefForMarketCapRow/);
+  assert.match(marketCapHookSource, /\/api\/market-cap/);
+  assert.match(marketCapSource, /marketCapScopeLabel/);
+  assert.match(marketCapHelperSource, /전체/);
+  assert.match(marketCapHelperSource, /국내/);
+  assert.match(marketCapHelperSource, /해외/);
+  assert.match(css, /\.market-cap-app\s*\{/);
+  assert.match(css, /\.market-cap-toolbar\s*\{[\s\S]*?justify-content:\s*space-between;/);
+  assert.match(css, /\.market-cap-table-row\s*\{[\s\S]*?grid-template-columns:\s*72px minmax\(180px,\s*1\.4fr\) minmax\(86px,\s*0\.5fr\) minmax\(130px,\s*0\.8fr\) minmax\(110px,\s*0\.6fr\) minmax\(96px,\s*0\.5fr\);/);
+});
+
+test("shared hamburger navigation aligns with desktop index and mobile search animation", () => {
+  assert.match(appNavigationSource, /navigationItemsForContext/);
+  assert.match(appNavigationSource, /AppNavigationLinks/);
+  assert.match(appNavigationSource, /onCollapsedExpandRequest/);
+  assert.match(appNavigationSource, /handlePointerDown/);
+  assert.match(appNavigationSource, /handleMouseDown/);
+  assert.match(appNavigationSource, /handleMenuMouseEnter/);
+  assert.match(appNavigationSource, /collapsedPointerDownRef/);
+  assert.match(appNavigationSource, /collapsedPointerResetTimerRef/);
+  assert.match(appNavigationSource, /isOpenSuppressed/);
+  assert.match(appNavigationSource, /const isMenuVisible = isOpen && !isOpenSuppressed && !isHoverOpenSuppressed/);
+  assert.match(appNavigationSource, /closest\("\.search-collapsed"\)/);
+  assert.match(appNavigationSource, /collapsedExpandAtRef/);
+  assert.match(appNavigationSource, /Date\.now\(\) - collapsedExpandAtRef\.current < 450/);
+  assert.match(appNavigationSource, /suppressHoverOpenBriefly/);
+  assert.match(appNavigationSource, /closeMenuSoon/);
+  assert.match(appNavigationSource, /cancelCloseMenu/);
+  assert.match(appNavigationSource, /if \(!canHoverOpen\(\)\) return;/);
+  assert.match(appNavigationSource, /\(isHoverOpenSuppressed \|\| isOpenSuppressed\) && isOpen/);
+  assert.match(appNavigationSource, /canHoverOpen\(\) && !isSearchCollapsed && !isHoverOpenSuppressed/);
+  assert.match(appNavigationSource, /min-width: 641px/);
+  assert.match(appNavigationSource, /aria-label="페이지 이동 메뉴"/);
+  assert.match(appNavigationLinksSource, /type AppNavigationLinksVariant = "popover" \| "index"/);
+  assert.match(appNavigationLinksSource, /role=\{variant === "popover" \? "menuitem" : undefined\}/);
+  assert.match(searchChromeSource, /AppNavigationMenu/);
+  assert.match(searchChromeSource, /useCollapsibleSearchChrome/);
+  assert.match(searchChromeSource, /searchChrome\.anchorRef/);
+  assert.match(searchChromeSource, /search-chrome-scroll-anchor/);
+  assert.match(searchChromeSource, /searchChrome\.className/);
+  assert.match(collapsibleSearchChromeSource, /detailSearchScrollDecision/);
+  assert.match(collapsibleSearchChromeSource, /compareSearchScrollDecision/);
+  assert.match(collapsibleSearchChromeSource, /expandFromNavigation/);
+  assert.match(collapsibleSearchChromeSource, /navigationResetKey/);
+  assert.match(collapsibleSearchChromeSource, /anchorElementRef/);
+  assert.match(collapsibleSearchChromeSource, /anchor\.getBoundingClientRect\(\)\.top/);
+  assert.match(collapsibleSearchChromeSource, /const isRenderedCollapsed = collapsedRef\.current \|\| renderedCollapsedRef\.current/);
+  assert.match(collapsibleSearchChromeSource, /!\s*isRenderedCollapsed \|\| scrollY <= 16/);
+  assert.match(css, /\.search-chrome-scroll-anchor\s*\{[\s\S]*?height:\s*0;/);
+  assert.match(appNavigationSource, /import \{ Menu \} from "lucide-react"/);
+  assert.match(appNavigationSource, /<Menu aria-hidden="true"/);
+  assert.doesNotMatch(appNavigationSource, /<span \/>/);
+  assert.match(dashboardSource, /SearchChromeWithNavigation/);
+  assert.match(dashboardSource, /useCollapsibleSearchChrome/);
+  assert.match(dashboardSource, /detailAppClassName/);
+  assert.match(dashboardSource, /has-detail-context/);
+  assert.match(dashboardSource, /const indexSections = displayData \|\| isPartialFeedVisible \? visibleDetailSections : \[\]/);
+  assert.match(dashboardSource, /\{tickerParam \? <DetailIndex/);
+  assert.match(dashboardSource, /navigationItemsForContext/);
+  assert.match(dashboardSource, /AppNavigationLinks/);
+  assert.match(dashboardSource, /stock-detail-index-menu/);
+  assert.doesNotMatch(dashboardSource, /const wasCollapsed = isSearchCollapsedRef\.current \|\| isSearchCollapsed/);
+  assert.doesNotMatch(compareSource, /const wasCollapsed = isSearchCollapsedRef\.current \|\| isSearchCollapsed/);
+  assert.doesNotMatch(dashboardSource, /navigationResetKey/);
+  assert.doesNotMatch(dashboardSource, /isNavigationOpenSuppressed/);
+  assert.doesNotMatch(dashboardSource, /expandSearchFromNavigation/);
+  assert.match(dashboardSource, /detailFirstSectionHeightRef/);
+  assert.match(dashboardSource, /ResizeObserver/);
+  assert.match(dashboardSource, /--detail-first-section-height/);
+  assert.match(compareSource, /SearchChromeWithNavigation/);
+  assert.match(compareSource, /useCollapsibleSearchChrome/);
+  assert.doesNotMatch(compareSource, /expandCompareSearchFromNavigation/);
+  assert.match(css, /\.app-navigation-trigger\s*\{[\s\S]*?background:\s*linear-gradient\(135deg,[\s\S]*?box-shadow:\s*0 16px 34px/);
+  assert.match(css, /\.app-navigation-trigger svg\s*\{[\s\S]*?width:\s*22px;[\s\S]*?stroke-width:\s*2\.4;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-app\.has-detail-context\s*\{[\s\S]*?--stock-shell-width:\s*min\(1180px,\s*calc\(100vw - 96px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-app\.has-detail-context \.stock-search:has\(> \.app-navigation-menu\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-app\.has-detail-context \.stock-search > \.app-navigation-menu\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-index-menu\s*\{[\s\S]*?display:\s*grid;[\s\S]*?margin-bottom:\s*14px;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-index-menu a\s*\{[\s\S]*?min-height:\s*34px;[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--subtext\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-index-menu a:hover\s*\{[\s\S]*?background:\s*var\(--surface-accent\);[\s\S]*?color:\s*var\(--accent-strong\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-index\s*\{[\s\S]*?height:\s*var\(--detail-first-section-height,\s*auto\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed:has\(> \.app-navigation-menu\)[\s\S]*?\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed > \.app-navigation-menu\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /@media \(min-width: 641px\)[\s\S]*?\.stock-search:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\.is-collapsed,[\s\S]*?\.compare-toolbar:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\.is-collapsed\s*\{[\s\S]*?width:\s*56px;[\s\S]*?justify-self:\s*end;[\s\S]*?margin-left:\s*auto;[\s\S]*?margin-right:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-collapsed:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?--mobile-search-collapsed-width:\s*clamp\(96px,\s*calc\(var\(--symbol-search-content-width,\s*8ch\) \+ 32px\),\s*calc\(100vw - 32px\)\);[\s\S]*?right:\s*auto;[\s\S]*?left:\s*calc\(\(100vw - var\(--mobile-search-collapsed-width\)\) \/ 2\);[\s\S]*?width:\s*var\(--mobile-search-collapsed-width\);[\s\S]*?margin-inline:\s*0;/);
+  assert.doesNotMatch(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-collapsed:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?justify-self:\s*end;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-search\.search-expanding:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?left:\s*82px;[\s\S]*?width:\s*calc\(100vw - 98px\);/);
+  assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?left 360ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(css, /\.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?top 360ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search:not\(\.search-collapsed\) > \.app-navigation-menu\s*\{[\s\S]*?animation:\s*app-navigation-drop-in/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-expanding > \.app-navigation-menu\s*\{[\s\S]*?animation:\s*app-navigation-drop-in/);
+  assert.match(css, /@keyframes app-navigation-drop-in/);
 });
 
 test("detail search keeps user draft edits separate from server identity sync", () => {
@@ -209,16 +316,40 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /홈으로 돌아가기/);
   assert.match(compareSource, /tickers\.length <= 1/);
   assert.match(compareSource, /disabled=\{removeDisabled\}/);
-  assert.match(compareSource, /const \[isSearchCollapsed, setIsSearchCollapsed\] = useState\(false\);/);
+  assert.match(compareSource, /SearchChromeWithNavigation/);
+  assert.match(compareSource, /useCollapsibleSearchChrome/);
   assert.match(compareSource, /className="stock-search-form compare-add-form"/);
   assert.match(compareSource, /variant="floating"/);
-  assert.match(compareSource, /isCollapsed=\{isSearchCollapsed\}/);
+  assert.match(compareSource, /isCollapsed=\{searchChrome\.isCollapsed\}/);
+  assert.match(compareSource, /const compareCollapsedLabel = useMemo/);
+  assert.match(compareSource, /collapsedDisplayValue=\{compareCollapsedLabel\}/);
+  assert.match(compareSource, /focusOnCollapsedExpand=\{false\}/);
+  assert.match(compareSource, /onExpandRequest=\{scrollCompareSearchToTop\}/);
+  assert.match(compareSource, /function compareCollapsedSearchLabel/);
+  assert.match(compareSource, /getClientSymbolSearchIndex/);
+  assert.match(compareSource, /SymbolSearchIndexEntry/);
+  assert.match(compareSource, /ticker\.startsWith\("US:"\)/);
+  assert.match(compareSource, /join\(" · "\)/);
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
   assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
   assert.match(css, /\.compare-landing,[\s\S]*?\.compare-picks,[\s\S]*?\.compare-toolbar\s*\{[\s\S]*?border:\s*1px solid var\(--line\);[\s\S]*?border-radius:\s*8px;/);
   assert.match(css, /\.compare-toolbar\.search-collapsed\s*\{[\s\S]*?justify-items:\s*end;/);
   assert.match(css, /\.compare-card-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
   assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?minmax\(88px,\s*88px\)[\s\S]*?repeat\(var\(--compare-cols\), minmax\(104px, 1fr\)\)/);
+});
+
+test("mobile compare collapsed search is a compact selected-symbol text pill", () => {
+  assert.match(autocompleteSource, /collapsedDisplayValue/);
+  assert.match(autocompleteSource, /focusOnCollapsedExpand/);
+  assert.match(autocompleteSource, /displayedInputValue/);
+  assert.match(autocompleteSource, /const isFloatingActionDisabled = disabled && !isCollapsed/);
+  assert.match(autocompleteSource, /disabled=\{isFloatingActionDisabled\}/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\.search-collapsed\s*\{[\s\S]*?min-height:\s*80px;[\s\S]*?height:\s*80px;[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\.search-collapsed:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?--compare-search-collapsed-width:\s*clamp\(96px,[\s\S]*?calc\(100vw - 32px\)\);[\s\S]*?position:\s*fixed;[\s\S]*?left:\s*calc\(\(100vw - var\(--compare-search-collapsed-width\)\) \/ 2\);[\s\S]*?width:\s*var\(--compare-search-collapsed-width\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-box\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating input\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?font-size:\s*13px;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?opacity:\s*0;/);
+  assert.doesNotMatch(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\.search-collapsed:has\(> \.app-navigation-menu\) \.stock-search-form\.symbol-autocomplete-floating\s*\{[\s\S]*?width:\s*56px;/);
 });
 
 test("compare cards give quality and opportunity matching mobile-safe score hierarchy", () => {

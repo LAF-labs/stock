@@ -1,8 +1,9 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import SearchChromeWithNavigation from "@/components/SearchChromeWithNavigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { ComparePendingOverviewSkeleton, SkeletonSectionTitle } from "@/components/StockLoadingSkeletons";
 import SkeletonBlock from "@/components/SkeletonBlock";
@@ -29,6 +30,9 @@ import {
 } from "@/components/stockCompareHelpers";
 import { PARTIAL_SECTION_SKELETON_DEADLINE_MS, formatPrimaryPrice, stockHeaderIdentity } from "@/components/stockDashboardHelpers";
 import { shouldShowCompareChartSkeleton, shouldShowCompareOverviewSkeleton, useStockCompareQueries, type CompareChartItem, type CompareLoadState } from "@/components/useStockCompareQueries";
+import { compareSearchScrollDecision, useCollapsibleSearchChrome } from "@/components/useCollapsibleSearchChrome";
+import { getClientSymbolSearchIndex } from "@/lib/clientSymbolSearch";
+import type { SymbolSearchIndexEntry } from "@/lib/symbolLocalSearch";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
@@ -59,6 +63,24 @@ function subjectParticle(value: string): string {
   return (code - 0xac00) % 28 === 0 ? "가" : "이";
 }
 
+function compareCollapsedSearchLabel(
+  tickers: readonly string[],
+  items: readonly CompareItem[],
+  partialStates: ReadonlyArray<Extract<CompareLoadState, { status: "partial" }>>,
+  symbolIndex: readonly SymbolSearchIndexEntry[] | undefined,
+): string {
+  const labels = tickers.map((ticker) => {
+    const displayTicker = displayTickerRef(ticker);
+    if (ticker.startsWith("US:")) return displayTicker;
+    const loaded = items.find((item) => item.ticker === displayTicker);
+    const partial = partialStates.find((state) => state.ticker === ticker);
+    const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
+    const indexedName = symbolIndex?.find((entry) => entry.item.market === "KR" && entry.item.ticker === displayTicker)?.displayName;
+    return loaded ? compareItemTitle(loaded) : partialIdentity?.primary || indexedName || displayTicker;
+  });
+  return labels.join(" · ") || "비교할 종목 검색";
+}
+
 type StockCompareProps = {
   initialDisplayPayloads?: StockDisplayPayload[];
 };
@@ -71,16 +93,15 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const firstTickerLabel = firstTicker ? displayTickerRef(firstTicker) : "";
   const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
   const [input, setInput] = useState("");
+  const [symbolIndex, setSymbolIndex] = useState<SymbolSearchIndexEntry[] | undefined>();
   const { states, items, chartItems, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
   const compareLimitReached = tickers.length >= MAX_COMPARE;
   const firstItem = useMemo(() => (firstTicker ? items.find((item) => item.ticker === firstTickerLabel) : undefined), [firstTicker, items, firstTickerLabel]);
   const hasCompareChart = useMemo(() => compareDateAlignedSeries(chartItems).series.some((entry) => entry.points.length >= 1), [chartItems]);
   const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
-  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
+  const searchChrome = useCollapsibleSearchChrome({ scrollDecision: compareSearchScrollDecision });
   const [compareLoadingWindow, setCompareLoadingWindow] = useState<{ key: string; startedAtMs: number; nowMs: number } | undefined>(undefined);
-  const lastScrollYRef = useRef(0);
-  const isSearchCollapsedRef = useRef(false);
   const tickersKey = tickers.join("|");
   const hasRecoveringCompareWork = selectedCount > 0 && states.some((state) => state.status === "loading" || state.status === "pending" || state.status === "partial");
   const compareLoadingExpired = Boolean(compareLoadingWindow && compareLoadingWindow.nowMs - compareLoadingWindow.startedAtMs >= PARTIAL_SECTION_SKELETON_DEADLINE_MS);
@@ -92,12 +113,20 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     items.length >= 2 &&
     !hasCompareChart &&
     states.some((state) => state.status === "partial" || state.status === "pending" || state.status === "loading");
+  const compareCollapsedLabel = useMemo(
+    () => compareCollapsedSearchLabel(tickers, items, partialStates, symbolIndex),
+    [items, partialStates, symbolIndex, tickers],
+  );
 
-  function setCompareSearchCollapsed(nextCollapsed: boolean) {
-    if (isSearchCollapsedRef.current === nextCollapsed) return;
-    isSearchCollapsedRef.current = nextCollapsed;
-    setIsSearchCollapsed(nextCollapsed);
-  }
+  useEffect(() => {
+    let isActive = true;
+    void getClientSymbolSearchIndex().then((index) => {
+      if (isActive) setSymbolIndex(index);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasRecoveringCompareWork || !tickersKey) {
@@ -122,36 +151,6 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     return () => window.clearTimeout(timer);
   }, [compareLoadingWindow, hasRecoveringCompareWork]);
 
-  useEffect(() => {
-    let ticking = false;
-    lastScrollYRef.current = window.scrollY;
-
-    function updateSearchChrome() {
-      const scrollY = window.scrollY;
-      const delta = scrollY - lastScrollYRef.current;
-
-      if (scrollY <= 16) {
-        setCompareSearchCollapsed(false);
-      } else if (delta > 8 && scrollY > 92) {
-        setCompareSearchCollapsed(true);
-      } else if (delta < -24) {
-        setCompareSearchCollapsed(false);
-      }
-
-      lastScrollYRef.current = scrollY;
-      ticking = false;
-    }
-
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(updateSearchChrome);
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
     if (!ticker || tickers.includes(ticker) || compareLimitReached) return;
@@ -167,6 +166,10 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     if (tickers.length <= 1) return;
     const next = removeCompareTicker(tickers, ticker);
     if (next.length !== tickers.length) pushTickers(router, next, originTicker);
+  }
+
+  function scrollCompareSearchToTop() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
@@ -216,7 +219,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         }) : <span>비교할 종목을 추가해주세요</span>}
       </section>
 
-      <section className={["compare-toolbar", isSearchCollapsed ? "search-collapsed" : ""].filter(Boolean).join(" ")}>
+      <SearchChromeWithNavigation className="compare-toolbar" context={{ page: "compare", originTicker, detailHref }} searchChrome={searchChrome}>
         <SymbolAutocomplete
           id="compare-ticker"
           value={input}
@@ -228,10 +231,12 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           disabled={compareLimitReached}
           className="stock-search-form compare-add-form"
           variant="floating"
-          isCollapsed={isSearchCollapsed}
-          onExpandRequest={() => setCompareSearchCollapsed(false)}
+          isCollapsed={searchChrome.isCollapsed}
+          collapsedDisplayValue={compareCollapsedLabel}
+          focusOnCollapsedExpand={false}
+          onExpandRequest={scrollCompareSearchToTop}
         />
-      </section>
+      </SearchChromeWithNavigation>
 
       {errorStates.length ? (
         <section className="compare-errors" role="alert" aria-live="assertive">

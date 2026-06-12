@@ -4,6 +4,9 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
+import AppNavigationLinks from "@/components/AppNavigationLinks";
+import SearchChromeWithNavigation from "@/components/SearchChromeWithNavigation";
+import { navigationItemsForContext, type AppNavigationItem } from "@/components/appNavigationMenuHelpers";
 import StockHeader from "@/components/StockHeader";
 import { SkeletonSectionTitle, StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
 import SkeletonBlock from "@/components/SkeletonBlock";
@@ -39,6 +42,7 @@ import {
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
 import { useStockDashboardQueries } from "@/components/useStockDashboardQueries";
+import { detailSearchScrollDecision, useCollapsibleSearchChrome } from "@/components/useCollapsibleSearchChrome";
 import { clampScore } from "@/lib/format";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -119,11 +123,9 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         : undefined;
   const [partialLoadingWindow, setPartialLoadingWindow] = useState<PartialLoadingWindow | undefined>(undefined);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("detail-summary");
-  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
-  const [isSearchExpanding, setIsSearchExpanding] = useState(false);
-  const lastScrollYRef = useRef(0);
-  const isSearchCollapsedRef = useRef(false);
-  const searchExpandTimerRef = useRef<number | undefined>(undefined);
+  const searchChrome = useCollapsibleSearchChrome({ scrollDecision: detailSearchScrollDecision });
+  const detailAppRef = useRef<HTMLElement | null>(null);
+  const detailFirstSectionHeightRef = useRef(0);
   const previousTickerParamRef = useRef(tickerParam);
 
   useEffect(() => {
@@ -148,59 +150,6 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     }, Math.min(remainingMs, 2_147_483_647));
     return () => window.clearTimeout(timer);
   }, [isPartialFeedVisible, partialLoadingWindow]);
-
-  function setSearchCollapsed(nextCollapsed: boolean) {
-    const wasCollapsed = isSearchCollapsedRef.current;
-    if (isSearchCollapsedRef.current === nextCollapsed) return;
-    isSearchCollapsedRef.current = nextCollapsed;
-    if (wasCollapsed && !nextCollapsed) {
-      setIsSearchExpanding(true);
-      if (searchExpandTimerRef.current !== undefined) window.clearTimeout(searchExpandTimerRef.current);
-      searchExpandTimerRef.current = window.setTimeout(() => {
-        setIsSearchExpanding(false);
-        searchExpandTimerRef.current = undefined;
-      }, 380);
-    } else if (nextCollapsed) {
-      if (searchExpandTimerRef.current !== undefined) window.clearTimeout(searchExpandTimerRef.current);
-      searchExpandTimerRef.current = undefined;
-      setIsSearchExpanding(false);
-    }
-    setIsSearchCollapsed(nextCollapsed);
-  }
-
-  useEffect(() => () => {
-    if (searchExpandTimerRef.current !== undefined) window.clearTimeout(searchExpandTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    let ticking = false;
-    lastScrollYRef.current = window.scrollY;
-
-    function updateSearchChrome() {
-      const scrollY = window.scrollY;
-      const delta = scrollY - lastScrollYRef.current;
-
-      if (scrollY <= 16) {
-        setSearchCollapsed(false);
-      } else if (delta > 0) {
-        setSearchCollapsed(true);
-      } else if (delta < 0) {
-        setSearchCollapsed(false);
-      }
-
-      lastScrollYRef.current = scrollY;
-      ticking = false;
-    }
-
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(updateSearchChrome);
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   useEffect(() => {
     const stockData = data || partialData || initialDisplayData;
@@ -231,6 +180,10 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
 
   const visibleDetailSections = DETAIL_SECTIONS;
   const compareHref = displayData && tickerParam ? compareHrefForStock(displayData, quoteData, tickerParam) : "";
+  const detailNavigationItems = useMemo(
+    () => tickerParam ? navigationItemsForContext({ page: "detail", ticker: tickerParam, compareHref: compareHref || undefined }) : [],
+    [compareHref, tickerParam],
+  );
   const pageIdentity = displayData ? stockHeaderIdentity(displayData, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
 
@@ -271,16 +224,58 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     };
   }, [displayData, visibleDetailSections]);
 
+  useEffect(() => {
+    const root = detailAppRef.current;
+    if (!root) return;
+
+    if (!displayData) {
+      detailFirstSectionHeightRef.current = 0;
+      root.style.removeProperty("--detail-first-section-height");
+      return;
+    }
+
+    const firstSection = root.querySelector<HTMLElement>("#detail-summary");
+    if (!firstSection) return;
+
+    let frame = 0;
+    const updateFirstSectionHeight = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const nextHeight = Math.ceil(firstSection.getBoundingClientRect().height);
+        if (nextHeight <= 0 || nextHeight === detailFirstSectionHeightRef.current) return;
+        detailFirstSectionHeightRef.current = nextHeight;
+        root.style.setProperty("--detail-first-section-height", `${nextHeight}px`);
+      });
+    };
+
+    updateFirstSectionHeight();
+    const observer = new ResizeObserver(updateFirstSectionHeight);
+    observer.observe(firstSection);
+    window.addEventListener("resize", updateFirstSectionHeight);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", updateFirstSectionHeight);
+    };
+  }, [displayData]);
+
   function scrollToDetailSection(id: DetailSectionId) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const searchSectionClassName = ["stock-search", isSearchCollapsed ? "search-collapsed" : "", isSearchExpanding ? "search-expanding" : ""].filter(Boolean).join(" ");
+  const detailAppClassName = ["stock-app", "stock-detail-app", tickerParam ? "has-detail-context" : ""].filter(Boolean).join(" ");
+  const indexSections = displayData || isPartialFeedVisible ? visibleDetailSections : [];
 
   return (
-    <main className="stock-app stock-detail-app">
+    <main ref={detailAppRef} className={detailAppClassName}>
       <h1 className="sr-only">{pageTitle}</h1>
-      <section className={searchSectionClassName}>
+      <SearchChromeWithNavigation
+        className="stock-search"
+        context={tickerParam ? { page: "detail", ticker: tickerParam, compareHref: compareHref || undefined } : { page: "home" }}
+        searchChrome={searchChrome}
+      >
         <SymbolAutocomplete
           id="ticker"
           value={tickerInput}
@@ -292,16 +287,17 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
           variant="floating"
           formAction="/"
           inputName="ticker"
-          isCollapsed={isSearchCollapsed}
-          onExpandRequest={() => setSearchCollapsed(false)}
+          isCollapsed={searchChrome.isCollapsed}
+          onExpandRequest={searchChrome.expandSearch}
         />
-      </section>
+      </SearchChromeWithNavigation>
 
       {showStockSkeleton && (
         <StockDetailLoadingSkeleton tickerLabel={skeletonTickerLabel} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
+      {tickerParam ? <DetailIndex sections={indexSections} activeSection={activeSection} onSelect={scrollToDetailSection} navigationItems={detailNavigationItems} /> : null}
 
       {isPartialFeedVisible && displayPartialData ? (
         <PartialStockFeed
@@ -314,14 +310,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
       ) : null}
 
       {displayData && (
-        <>
-          <DetailIndex
-            sections={visibleDetailSections}
-            activeSection={activeSection}
-            onSelect={scrollToDetailSection}
-            compareHref={compareHref}
-          />
-          <div className="stock-feed">
+        <div className="stock-feed">
             <DetailSection id="detail-summary">
               <StockHeader
                 data={displayData}
@@ -359,7 +348,6 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
               <RecordCard title="재무 요약" description="회사의 체력을 볼 때 참고하는 숫자예요." record={displayData.financials} stock={displayData} desktopOpen />
             </DetailSection>
           </div>
-        </>
       )}
     </main>
   );
@@ -762,15 +750,16 @@ function DetailIndex({
   sections,
   activeSection,
   onSelect,
-  compareHref,
+  navigationItems,
 }: {
   sections: ReadonlyArray<{ id: DetailSectionId; label: string }>;
   activeSection: DetailSectionId;
   onSelect: (id: DetailSectionId) => void;
-  compareHref: string;
+  navigationItems: ReadonlyArray<AppNavigationItem>;
 }) {
   return (
     <nav className="stock-detail-index" aria-label="상세 화면 목차">
+      <AppNavigationLinks items={navigationItems} variant="index" className="stock-detail-index-menu" ariaLabel="페이지 이동" />
       <span>목차</span>
       <div>
         {sections.map((section) => (
@@ -785,9 +774,6 @@ function DetailIndex({
           </button>
         ))}
       </div>
-      <a className="stock-detail-index-action" href={compareHref}>
-        다른 종목과 비교하기
-      </a>
     </nav>
   );
 }

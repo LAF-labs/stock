@@ -160,6 +160,8 @@ a:focus-visible {
   justify-self: end;
   transform-origin: right center;
   transition:
+    top 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 360ms cubic-bezier(0.22, 1, 0.36, 1),
     width 360ms cubic-bezier(0.22, 1, 0.36, 1),
     max-width 360ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -3287,7 +3289,7 @@ a:focus-visible {
     border-inline: 0;
   }
 
-  .stock-detail-app:has(> .stock-detail-index) {
+  .stock-detail-app.has-detail-context {
     display: grid;
     grid-template-columns: 184px minmax(0, 1fr);
     gap: 0 28px;
@@ -5122,7 +5124,7 @@ body {
 
   .stock-detail-app .stock-search.search-expanding .stock-search-form.symbol-autocomplete-floating {
     position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
     right: 16px;
     left: 16px;
     width: calc(100vw - 32px);
@@ -5131,6 +5133,16 @@ body {
     justify-self: auto;
     transform: none;
     transform-origin: center top;
+  }
+
+  .stock-detail-app .stock-search.search-expanding:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating {
+    left: 82px;
+    right: auto;
+    width: calc(100vw - 98px);
+    max-width: calc(100vw - 98px);
+    margin-inline: 0;
+    justify-self: auto;
+    transform-origin: right top;
   }
 
   .stock-detail-app .stock-search.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-box {
@@ -5273,7 +5285,7 @@ body {
     overflow: visible;
   }
 
-  .stock-detail-app:has(> .stock-detail-index),
+  .stock-detail-app.has-detail-context,
   .compare-app {
     width: min(1180px, calc(100% - 96px));
   }
@@ -5365,6 +5377,629 @@ body {
   .compare-stock-card dl div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+}
+
+.app-navigation-menu {
+  position: fixed;
+  z-index: 90;
+  top: 18px;
+  left: 24px;
+  pointer-events: auto;
+}
+
+.app-navigation-trigger {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.94));
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  color: var(--text);
+  transition: border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.app-navigation-trigger:hover {
+  border-color: rgba(49, 130, 246, 0.22);
+  color: var(--accent-strong);
+  box-shadow: 0 18px 38px rgba(49, 130, 246, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.app-navigation-trigger svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.4;
+  transition: transform 160ms ease;
+}
+
+.app-navigation-trigger:hover svg {
+  transform: scale(1.04);
+}
+
+.app-navigation-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  min-width: 188px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.app-navigation-popover::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  right: 0;
+  left: 0;
+  height: 10px;
+}
+
+.app-navigation-popover a {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-navigation-popover a:hover {
+  background: var(--surface-soft);
+}
+
+.app-navigation-backdrop {
+  display: none;
+}
+
+.search-chrome-scroll-anchor {
+  display: block;
+  height: 0;
+  overflow: hidden;
+}
+
+@keyframes app-navigation-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-100% - 24px)) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.stock-search:has(> .app-navigation-menu) {
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.compare-toolbar:has(> .app-navigation-menu) {
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.stock-search > .app-navigation-menu {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 58px;
+  height: 58px;
+  z-index: 65;
+}
+
+.compare-toolbar > .app-navigation-menu {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 58px;
+  height: 58px;
+  z-index: 65;
+}
+
+.stock-search > .app-navigation-menu .app-navigation-trigger {
+  width: 58px;
+  height: 58px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.12);
+}
+
+.compare-toolbar > .app-navigation-menu .app-navigation-trigger {
+  width: 58px;
+  height: 58px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.12);
+}
+
+.stock-search:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating,
+.compare-toolbar:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating {
+  width: 100%;
+  justify-self: stretch;
+}
+
+@media (min-width: 641px) {
+  .stock-search:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating.is-collapsed,
+  .compare-toolbar:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating.is-collapsed {
+    width: 56px;
+    justify-self: end;
+    margin-left: auto;
+    margin-right: 0;
+  }
+}
+
+@media (min-width: 900px) {
+  .stock-detail-app.has-detail-context {
+    --stock-shell-width: min(1180px, calc(100vw - 96px));
+  }
+
+  .stock-detail-app.has-detail-context .stock-search:has(> .app-navigation-menu) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .stock-detail-app.has-detail-context .stock-search > .app-navigation-menu {
+    display: none;
+  }
+
+  .stock-detail-index-menu {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .stock-detail-index-menu a {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--subtext);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+
+  .stock-detail-index-menu a:hover {
+    background: var(--surface-accent);
+    color: var(--accent-strong);
+  }
+
+  .stock-detail-index {
+    height: var(--detail-first-section-height, auto);
+  }
+}
+
+.market-cap-app {
+  width: min(1180px, calc(100% - 96px));
+  padding: 86px 0 56px;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+}
+
+.market-cap-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.market-cap-header span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.market-cap-header h1 {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 30px;
+  line-height: 1.15;
+  font-weight: 600;
+}
+
+.market-cap-header p {
+  margin: 0;
+  color: var(--subtext);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.market-cap-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+}
+
+.market-cap-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.market-cap-tabs a {
+  min-width: 68px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--subtext);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.market-cap-tabs a.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.market-cap-sector-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--subtext);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.market-cap-sector-filter select {
+  height: 34px;
+  min-width: 148px;
+  padding: 0 32px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+.market-cap-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.market-cap-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.market-cap-table {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.market-cap-table-head,
+.market-cap-table-row {
+  display: grid;
+  grid-template-columns: 72px minmax(180px, 1.4fr) minmax(86px, 0.5fr) minmax(130px, 0.8fr) minmax(110px, 0.6fr) minmax(96px, 0.5fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+}
+
+.market-cap-table-head {
+  min-height: 42px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.market-cap-table-row {
+  grid-template-columns: 72px minmax(180px, 1.4fr) minmax(86px, 0.5fr) minmax(130px, 0.8fr) minmax(110px, 0.6fr) minmax(96px, 0.5fr);
+  min-height: 62px;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.market-cap-table-row:hover {
+  background: #f9fbfd;
+}
+
+.market-cap-table-row strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-cap-table-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-cap-change {
+  color: var(--muted);
+}
+
+.market-cap-change.up {
+  color: var(--red);
+}
+
+.market-cap-change.down {
+  color: var(--down);
+}
+
+.market-cap-status {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.market-cap-status strong {
+  font-size: 15px;
+}
+
+.market-cap-status p {
+  margin: 0;
+  color: var(--subtext);
+  font-size: 14px;
+}
+
+.market-cap-status.error {
+  border-color: rgba(240, 68, 82, 0.22);
+  background: var(--red-soft);
+}
+
+@media (max-width: 900px) {
+  .market-cap-app {
+    width: min(100%, 760px);
+    padding: 72px 16px 40px;
+  }
+
+  .market-cap-header {
+    align-items: start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .market-cap-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .market-cap-tabs {
+    width: 100%;
+  }
+
+  .market-cap-tabs a {
+    flex: 1;
+  }
+
+  .market-cap-sector-filter {
+    justify-content: space-between;
+  }
+
+  .market-cap-sector-filter select {
+    min-width: 180px;
+  }
+
+  .market-cap-table {
+    overflow-x: auto;
+  }
+
+  .market-cap-table-head,
+  .market-cap-table-row {
+    min-width: 760px;
+  }
+}
+
+@media (max-width: 640px) {
+  .compare-toolbar:has(> .app-navigation-menu),
+  .stock-search:has(> .app-navigation-menu) {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+  }
+
+  .compare-toolbar > .app-navigation-menu,
+  .stock-search > .app-navigation-menu {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 58px;
+    height: 58px;
+    z-index: 65;
+  }
+
+  .compare-toolbar > .app-navigation-menu .app-navigation-trigger,
+  .stock-search > .app-navigation-menu .app-navigation-trigger {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+  }
+
+  .compare-toolbar.search-collapsed:has(> .app-navigation-menu),
+  .stock-search.search-collapsed:has(> .app-navigation-menu) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compare-toolbar.search-collapsed {
+    min-height: 80px;
+    height: 80px;
+    margin: 0;
+    padding: 0;
+    display: block;
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    backdrop-filter: none;
+    justify-items: center;
+  }
+
+  .compare-toolbar.search-collapsed > .app-navigation-menu,
+  .stock-search.search-collapsed > .app-navigation-menu {
+    display: none;
+  }
+
+  .compare-toolbar:not(.search-collapsed) > .app-navigation-menu,
+  .stock-search:not(.search-collapsed) > .app-navigation-menu {
+    animation: app-navigation-drop-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .compare-toolbar.search-expanding > .app-navigation-menu,
+  .stock-search.search-expanding > .app-navigation-menu {
+    animation: app-navigation-drop-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .compare-toolbar .app-navigation-backdrop,
+  .stock-search .app-navigation-backdrop {
+    position: fixed;
+    inset: 0;
+    display: block;
+    background: rgba(15, 23, 42, 0.24);
+  }
+
+  .stock-search .app-navigation-popover,
+  .app-navigation-popover {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 58px);
+    right: 16px;
+    left: 16px;
+    width: auto;
+    min-width: 0;
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .stock-search:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating {
+    justify-self: stretch;
+  }
+
+  .compare-toolbar:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating {
+    justify-self: stretch;
+  }
+
+  .stock-detail-app .stock-search.search-collapsed:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating {
+    --mobile-search-collapsed-width: clamp(96px, calc(var(--symbol-search-content-width, 8ch) + 32px), calc(100vw - 32px));
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: auto;
+    left: calc((100vw - var(--mobile-search-collapsed-width)) / 2);
+    width: var(--mobile-search-collapsed-width);
+    max-width: var(--mobile-search-collapsed-width);
+    margin-inline: 0;
+    justify-self: auto;
+    transform: none;
+    transform-origin: center top;
+  }
+
+  .compare-toolbar.search-collapsed:has(> .app-navigation-menu) .stock-search-form.symbol-autocomplete-floating {
+    --compare-search-collapsed-width: clamp(96px, calc(var(--symbol-search-content-width, 8ch) + 32px), calc(100vw - 32px));
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: auto;
+    left: calc((100vw - var(--compare-search-collapsed-width)) / 2);
+    width: var(--compare-search-collapsed-width);
+    max-width: var(--compare-search-collapsed-width);
+    margin-inline: 0;
+    justify-self: auto;
+    transform: none;
+    transform-origin: center top;
+  }
+
+  .compare-toolbar.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-box {
+    width: 100%;
+    min-height: 28px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 2px 14px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(16px);
+  }
+
+  .compare-toolbar.search-collapsed .stock-search-form.symbol-autocomplete-floating input {
+    width: 100%;
+    min-width: 0;
+    min-height: 24px;
+    height: 24px;
+    overflow: hidden;
+    padding: 0 2px;
+    opacity: 1;
+    pointer-events: none;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 600;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compare-toolbar.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-action {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border-radius: 999px;
+    opacity: 0;
+    transform: none;
+  }
+
+  .compare-toolbar.search-collapsed .stock-search-form.symbol-autocomplete-floating .symbol-search-action svg {
+    display: none;
+  }
+
+  .market-cap-app {
+    padding: 68px 12px 36px;
+  }
+
+  .market-cap-header h1 {
+    font-size: 26px;
   }
 }
 
