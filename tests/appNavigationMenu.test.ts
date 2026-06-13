@@ -52,6 +52,19 @@ test("compare navigation includes market-cap dashboard, detail, and home", () =>
   ]);
 });
 
+test("neutral compare navigation omits detail return links without an origin stock", () => {
+  assert.deepEqual(navigationItemsForContext({ page: "compare" }).map((item) => item.label), [
+    "시가총액 대시보드",
+    "메인으로 돌아가기",
+  ]);
+
+  assert.deepEqual(globalNavigationItemsForContext({ page: "compare" }).map((item) => item.label), [
+    "검색",
+    "종목 비교",
+    "시가총액",
+  ]);
+});
+
 test("global navigation exposes core destinations with active state", () => {
   const items = globalNavigationItemsForContext({ page: "marketCap" });
   assert.deepEqual(items.map((item) => item.label), ["검색", "종목 비교", "시가총액"]);

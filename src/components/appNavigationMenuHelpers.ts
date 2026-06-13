@@ -58,11 +58,14 @@ export function navigationItemsForContext(context: AppNavigationContext): AppNav
     ];
   }
 
-  return [
+  const compareItems: AppNavigationItem[] = [
     { label: "시가총액 대시보드", href: "/market-cap" },
-    { label: "종목 상세로 돌아가기", href: context.detailHref || detailHref(context.originTicker) },
-    { label: "메인으로 돌아가기", href: "/" },
   ];
+  if (context.detailHref || context.originTicker) {
+    compareItems.push({ label: "종목 상세로 돌아가기", href: context.detailHref || detailHref(context.originTicker) });
+  }
+  compareItems.push({ label: "메인으로 돌아가기", href: "/" });
+  return compareItems;
 }
 
 export function globalNavigationItemsForContext(context: AppNavigationContext): AppNavigationItem[] {

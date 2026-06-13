@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, FileText, GitCompareArrows, Menu, Plus, Search } from "lucide-react";
+import { BarChart3, FileText, GitCompareArrows, Menu, PencilLine, Plus, Search } from "lucide-react";
 import AppNavigationLinks from "@/components/AppNavigationLinks";
 import {
   globalNavigationItemsForContext,
@@ -17,6 +17,7 @@ type MobileContextAction = {
   label: string;
   ariaLabel?: string;
   disabled?: boolean;
+  icon?: "plus" | "edit";
   onClick: () => void;
 };
 
@@ -35,6 +36,7 @@ export default function AppNavigationMenu({
 }: AppNavigationMenuProps) {
   const items = useMemo(() => globalNavigationItemsForContext(context), [context]);
   const mobileNavigation = useMobileFloatingNavigation();
+  const MobileContextIcon = mobileContextAction?.icon === "edit" ? PencilLine : Plus;
 
   return (
     <div className={["app-navigation-chrome", className].filter(Boolean).join(" ")}>
@@ -91,7 +93,7 @@ export default function AppNavigationMenu({
             mobileContextAction.onClick();
           }}
         >
-          <Plus aria-hidden="true" />
+          <MobileContextIcon aria-hidden="true" />
           <span>{mobileContextAction.label}</span>
         </button>
       ) : null}
