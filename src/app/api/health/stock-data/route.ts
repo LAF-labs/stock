@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { stockDataRuntimeMode } from "@/lib/stockDataRuntime";
 import { envValue, supabaseAdminConfig, supabaseReadConfig } from "@/lib/supabaseRest";
@@ -82,5 +83,10 @@ function isVerboseHealthAuthorized(request: Request): boolean {
   if (!expected) return false;
   const header = request.headers.get("authorization") || "";
   const token = header.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  return token === expected;
+  if (!token) return false;
+  return timingSafeEqual(sha256(token), sha256(expected));
+}
+
+function sha256(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
 }

@@ -61,6 +61,10 @@ export type StockDashboardQueryView = {
 export function useStockDashboardQueries(ticker: string | undefined, initialDisplayPayload?: StockDisplayPayload): StockDashboardQueryView {
   const queryClient = useQueryClient();
   const enabled = Boolean(ticker);
+  const queryEnablement = stockDashboardQueryEnablement({
+    enabled,
+    detailViewPrimary: stockDetailViewPrimaryEnabled(),
+  });
   const tickerKey = ticker || "__stock-dashboard-disabled__";
   const initialDisplayResult = useMemo(
     () => initialDisplayPayload && initialDisplayPayload.ticker === ticker ? displayQueryResultFromPayload(initialDisplayPayload) : undefined,
@@ -76,32 +80,37 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
   );
   const scoreQuery = useQuery({
     ...scoreQueryOptions(tickerKey, "detail"),
-    enabled,
-    placeholderData: enabled ? scorePlaceholder(tickerKey) : undefined,
+    enabled: queryEnablement.score,
+    placeholderData: queryEnablement.score ? scorePlaceholder(tickerKey) : undefined,
   });
   const displayQuery = useQuery({
     ...displayQueryOptions(tickerKey, "detail"),
     initialData: initialDisplayResult,
-    enabled,
+    enabled: queryEnablement.display,
     placeholderData: (previous) => previous,
   });
   const detailViewQuery = useQuery({
     ...detailViewQueryOptions(tickerKey, "detail"),
-    enabled,
+    enabled: queryEnablement.detailView,
   });
   const quoteQuery = useQuery({
     ...quoteQueryOptions(tickerKey),
     initialData: initialQuoteResult,
     initialDataUpdatedAt: initialQuoteUpdatedAt,
-    enabled,
+    enabled: queryEnablement.quote,
   });
 
-  const quoteData = quoteDataFromQueryResult(quoteQuery.data);
+  const detailViewAdapterState = dashboardStateFromDetailView(detailViewQuery.data);
+  const detailViewScoreData = detailViewAdapterState?.data;
+  const detailViewQuoteResult = ticker && detailViewScoreData ? quoteQueryDataFromScore(detailViewScoreData, ticker) : undefined;
+  const quoteStateResult = quoteResultForHeader(quoteQuery.data, detailViewQuoteResult);
+  const quoteData = quoteDataFromQueryResult(quoteQuery.data) || quoteDataFromQueryResult(detailViewQuoteResult);
   const displayData = displayQuery.data?.state === "ready" ? stockScoreDataFromDisplayPayload(displayQuery.data.data) : undefined;
   const rawScoreData = scoreQuery.data?.state === "ready" ? scoreQuery.data.data : undefined;
-  const judgmentPayload = useMemo(() => (rawScoreData ? stockJudgmentRequestPayload(rawScoreData) : undefined), [rawScoreData]);
+  const judgmentData = judgmentSourceData(detailViewScoreData, rawScoreData);
+  const judgmentPayload = useMemo(() => (judgmentData ? stockJudgmentRequestPayload(judgmentData) : undefined), [judgmentData]);
   const judgmentInputHash = useMemo(() => (judgmentPayload ? stablePayloadHash(judgmentPayload) : ""), [judgmentPayload]);
-  const scoreVersion = stringFromUnknown(rawScoreData?.score_model_version) || stringFromUnknown(rawScoreData?.server_cache?.fetched_at) || "score";
+  const scoreVersion = stringFromUnknown(judgmentData?.score_model_version) || stringFromUnknown(judgmentData?.server_cache?.fetched_at) || "score";
   const judgmentQuery = useQuery(
     judgmentQueryOptions({
       ticker: tickerKey,
@@ -115,6 +124,7 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     mutationFn: (requestedTicker: string) => refreshQuoteRequest(requestedTicker),
     onSuccess: (result, requestedTicker) => {
       queryClient.setQueryData(stockQueryKeys.quote(requestedTicker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromRefreshResult(result, previous));
+      void queryClient.invalidateQueries({ queryKey: stockQueryKeys.detailView(requestedTicker, "detail") });
     },
   });
 
@@ -140,14 +150,14 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     ticker,
     scoreResult: scoreQuery.data,
     scoreError: scoreQuery.error,
-    isScoreLoading: scoreQuery.isLoading,
+    isScoreLoading: queryEnablement.score && scoreQuery.isLoading,
     quoteData,
     displayData,
   });
-  const detailViewState = dashboardLoadStateFromDetailView(dashboardStateFromDetailView(detailViewQuery.data), ticker);
+  const detailViewState = dashboardLoadStateFromDetailView(detailViewAdapterState, ticker);
   const state = chooseDashboardLoadState(detailViewState, legacyState);
-  const quoteState = quoteStateFromQuery(ticker, quoteQuery.data, quoteQuery.error, quoteQuery.isLoading);
-  const judgmentState = judgmentStateFromQuery(rawScoreData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(rawScoreData));
+  const quoteState = quoteStateFromQuery(ticker, quoteStateResult, quoteQuery.error, queryEnablement.quote && quoteQuery.isLoading);
+  const judgmentState = judgmentStateFromQuery(judgmentData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(judgmentData));
   const data = ticker && state.status === "success" ? state.data : undefined;
   const partialData = ticker && state.status === "partial" ? scoreDataWithQuote(state.data, quoteData) : undefined;
   const scorePending = ticker && (state.status === "pending" || state.status === "partial") ? state.pending : undefined;
@@ -159,18 +169,19 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
         : undefined;
 
   useEffect(() => {
-    if (!ticker || !rawScoreData) return;
-    queryClient.setQueryData(stockQueryKeys.quote(ticker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromScore(rawScoreData, ticker, previous));
-  }, [queryClient, rawScoreData, ticker]);
+    const scoreData = rawScoreData || detailViewScoreData;
+    if (!ticker || !scoreData) return;
+    queryClient.setQueryData(stockQueryKeys.quote(ticker), (previous: QuoteQueryResult | undefined) => quoteQueryDataFromScore(scoreData, ticker, previous));
+  }, [detailViewScoreData, queryClient, rawScoreData, ticker]);
 
   const retryLoad = useCallback(() => {
     if (!ticker) return;
     void detailViewQuery.refetch();
-    void displayQuery.refetch();
-    void scoreQuery.refetch();
-    void quoteQuery.refetch();
-    if (rawScoreData) void judgmentQuery.refetch();
-  }, [detailViewQuery, displayQuery, judgmentQuery, quoteQuery, rawScoreData, scoreQuery, ticker]);
+    if (queryEnablement.display) void displayQuery.refetch();
+    if (queryEnablement.score) void scoreQuery.refetch();
+    if (queryEnablement.quote) void quoteQuery.refetch();
+    if (judgmentData) void judgmentQuery.refetch();
+  }, [detailViewQuery, displayQuery, judgmentData, judgmentQuery, queryEnablement.display, queryEnablement.quote, queryEnablement.score, quoteQuery, scoreQuery, ticker]);
 
   const refreshPrice = useCallback(() => {
     if (!ticker) return;
@@ -194,6 +205,28 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
   };
 }
 
+export function stockDetailViewPrimaryEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const raw = env.NEXT_PUBLIC_STOCK_DETAIL_VIEW_PRIMARY?.trim().toLowerCase();
+  if (raw === "0" || raw === "false" || raw === "off") return false;
+  if (raw === "1" || raw === "true" || raw === "on") return true;
+  return true;
+}
+
+export function stockDashboardQueryEnablement({
+  enabled,
+  detailViewPrimary,
+}: {
+  enabled: boolean;
+  detailViewPrimary: boolean;
+}): { detailView: boolean; score: boolean; display: boolean; quote: boolean } {
+  return {
+    detailView: enabled,
+    score: enabled && !detailViewPrimary,
+    display: enabled && !detailViewPrimary,
+    quote: enabled && !detailViewPrimary,
+  };
+}
+
 export function chooseDashboardLoadState(
   detailViewState: DashboardLoadState | undefined,
   legacyState: DashboardLoadState,
@@ -202,6 +235,33 @@ export function chooseDashboardLoadState(
   if (detailViewState.status === "success") return detailViewState;
   if (legacyState.status === "success") return legacyState;
   return detailViewState;
+}
+
+function quoteResultForHeader(
+  quoteResult: QuoteQueryResult | undefined,
+  detailViewQuoteResult: QuoteQueryResult | undefined,
+): QuoteQueryResult | undefined {
+  if (quoteResult?.state === "ready" || quoteResult?.state === "partial") return quoteResult;
+  return detailViewQuoteResult || quoteResult;
+}
+
+function judgmentSourceData(
+  detailViewData: StockScoreResponse | undefined,
+  scoreData: StockScoreResponse | undefined,
+): StockScoreResponse | undefined {
+  if (detailViewData && stockDataHasJudgmentInputs(detailViewData)) return detailViewData;
+  if (scoreData && stockDataHasJudgmentInputs(scoreData)) return scoreData;
+  return undefined;
+}
+
+function stockDataHasJudgmentInputs(data: StockScoreResponse): boolean {
+  return (
+    typeof data.score === "number" ||
+    typeof data.quality_score === "number" ||
+    typeof data.opportunity_score === "number" ||
+    Boolean(data.components?.length) ||
+    Boolean(data.key_metrics?.length)
+  );
 }
 
 function dashboardLoadStateFromDetailView(
