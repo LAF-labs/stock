@@ -162,8 +162,8 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     previousTickerParamRef.current = decision.previousTickerParam;
     if (decision.action === "none") return;
 
-    setIsSearchEditing(decision.isSearchEditing);
-    setTickerInput(decision.value);
+    setIsSearchEditing((current) => (current === decision.isSearchEditing ? current : decision.isSearchEditing));
+    setTickerInput((current) => (current === decision.value ? current : decision.value));
   }, [data, initialDisplayData, isSearchEditing, partialData, quoteData, tickerParam]);
 
   function handleTickerInputChange(value: string) {
@@ -203,7 +203,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         if (!sectionPositions.length) return;
 
         const current = sectionPositions.reduce((candidate, section) => (section.top <= anchorTop ? section : candidate), sectionPositions[0]);
-        setActiveSection(current.id);
+        setActiveSection((previous) => (previous === current.id ? previous : current.id));
       });
     };
 
