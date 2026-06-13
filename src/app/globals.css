@@ -5347,14 +5347,122 @@ body {
   }
 }
 
-@media (min-width: 900px) and (max-width: 1120px) {
+/* Compare content should use page width, not cards nested inside section cards. */
+.compare-app .compare-feed {
+  gap: 18px;
+}
+
+.compare-app .compare-section {
+  padding: 28px 20px;
+  border: 0;
+  border-top: 1px solid rgba(49, 130, 246, 0.12);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.compare-feed > .compare-section:first-child {
+  border-top: 0;
+}
+
+.compare-section > span {
+  margin-bottom: 8px;
+}
+
+.compare-section h2 {
+  max-width: 760px;
+}
+
+.compare-card-grid,
+.compare-chart,
+.compare-group-list,
+.component-compare-list {
+  margin-top: 18px;
+}
+
+.compare-stock-card,
+.compare-metric-row header,
+.compare-metric-cell,
+.component-compare-list article {
+  border-color: rgba(49, 130, 246, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.compare-metric-group {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.compare-metric-group + .compare-metric-group {
+  padding-top: 26px;
+  border-top: 1px solid rgba(49, 130, 246, 0.12);
+}
+
+.compare-group-heading {
+  padding-bottom: 12px;
+}
+
+.compare-metric-table {
+  gap: 8px;
+  margin-top: 14px;
+  padding-bottom: 8px;
+}
+
+.compare-metric-column-head,
+.compare-metric-row {
+  grid-template-columns: minmax(112px, 112px) repeat(var(--compare-cols), minmax(128px, 1fr));
+  gap: 8px;
+  min-width: calc(112px + var(--compare-cols) * 128px + var(--compare-cols) * 8px);
+}
+
+.compare-metric-row header {
+  aspect-ratio: auto;
+  min-height: 104px;
+  align-items: start;
+  padding: 12px;
+}
+
+.compare-metric-cell {
+  min-height: 104px;
+  padding: 14px;
+}
+
+.compare-chart svg {
+  border: 1px solid rgba(49, 130, 246, 0.1);
+}
+
+@media (min-width: 900px) {
+  .compare-app {
+    grid-template-columns: 176px minmax(0, 1fr);
+    gap: 0 32px;
+    width: min(1400px, calc(100% - 64px));
+  }
+
+  .compare-app .compare-feed {
+    gap: 28px;
+  }
+
+  .compare-app .compare-section {
+    padding: 38px 0;
+  }
+
+  .compare-feed > .compare-section:first-child {
+    padding-top: 18px;
+  }
+
+  .compare-card-grid {
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 14px;
+  }
+
   .compare-stock-card {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "top"
       "scores"
       "metrics";
-    align-items: stretch;
   }
 
   .compare-stock-card dl {
@@ -5365,6 +5473,76 @@ body {
   .compare-stock-card dl div {
     grid-template-columns: 1fr;
     gap: 4px;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(247, 251, 255, 0.84);
+  }
+
+  .compare-metric-column-head,
+  .compare-metric-row {
+    grid-template-columns: minmax(150px, 150px) repeat(var(--compare-cols), minmax(158px, 1fr));
+    min-width: calc(150px + var(--compare-cols) * 158px + var(--compare-cols) * 8px);
+  }
+
+  .compare-metric-row header,
+  .compare-metric-cell {
+    min-height: 112px;
+    padding: 16px;
+  }
+
+  .component-compare-list article {
+    grid-template-columns: minmax(180px, 0.24fr) minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .component-compare-list article > div > span {
+    grid-template-columns: minmax(120px, 0.28fr) minmax(0, 1fr) 56px 54px;
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .compare-app .compare-feed {
+    gap: 0;
+    margin-top: 6px;
+  }
+
+  .compare-app .compare-section {
+    padding: 28px 12px;
+  }
+
+  .compare-feed > .compare-section:first-child {
+    padding-top: 20px;
+  }
+
+  .compare-card-grid {
+    gap: 10px;
+  }
+
+  .compare-metric-table {
+    margin-right: -12px;
+    padding-right: 12px;
+  }
+
+  .compare-metric-column-head,
+  .compare-metric-row {
+    grid-template-columns: minmax(96px, 96px) repeat(var(--compare-cols), minmax(112px, 1fr));
+    min-width: calc(96px + var(--compare-cols) * 112px + var(--compare-cols) * 8px);
+  }
+
+  .compare-metric-row header,
+  .compare-metric-cell {
+    min-height: 100px;
+    padding: 11px;
+  }
+
+  .compare-metric-help summary {
+    width: 32px;
+    height: 32px;
+  }
+
+  .compare-chart svg {
+    min-height: 260px;
   }
 }
 
