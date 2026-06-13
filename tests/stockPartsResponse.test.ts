@@ -83,7 +83,7 @@ test("attachChartPartToPayload merges durable chart candles into technical score
   assert.equal(parts.chart.last_bar_date, "2026-06-08");
 });
 
-test("pendingPartialStockPayload returns ready quote and chart parts while score is pending", async () => {
+test("pendingPartialStockPayload can return ready quote and chart parts when requested", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
 
@@ -135,7 +135,12 @@ test("pendingPartialStockPayload returns ready quote and chart parts while score
     refresh_request: { queued: true, job_id: "job-score", status: "queued" },
   } satisfies StockPendingPayload;
 
-  const payload = await pendingPartialStockPayload({ pending, ticker: "US:KO", view: "technical" });
+  const payload = await pendingPartialStockPayload({
+    pending,
+    ticker: "US:KO",
+    view: "technical",
+    includeParts: ["identity", "quote", "chart"],
+  });
   assert.ok(payload);
   assert.equal(payload?.ok, true);
   assert.equal(payload?.type, "partial_stock_snapshot");
@@ -185,7 +190,7 @@ test("pendingPartialStockPayload prefers symbol master names over numeric quote 
         },
       ]);
     }
-    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_chart_snapshots")) throw new Error("score pending should not read chart snapshots by default");
     throw new Error(`unexpected fetch ${url}`);
   };
 
@@ -212,7 +217,7 @@ test("pendingPartialStockPayload prefers symbol master names over numeric quote 
   assert.equal((payload?.parts as Record<string, Record<string, unknown>>).score.state, "pending");
 });
 
-test("pendingPartialStockPayload reads quote and chart snapshots concurrently", async () => {
+test("pendingPartialStockPayload reads requested quote and chart snapshots concurrently", async () => {
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
 
@@ -271,7 +276,12 @@ test("pendingPartialStockPayload reads quote and chart snapshots concurrently", 
     refresh_request: { queued: true, job_id: "job-score", status: "queued" },
   } satisfies StockPendingPayload;
 
-  const payload = await pendingPartialStockPayload({ pending, ticker: "US:FASTPART", view: "technical" });
+  const payload = await pendingPartialStockPayload({
+    pending,
+    ticker: "US:FASTPART",
+    view: "technical",
+    includeParts: ["identity", "quote", "chart"],
+  });
 
   assert.equal(payload?.type, "partial_stock_snapshot");
   assert.ok(events.indexOf("chart:start") > -1);
@@ -284,6 +294,7 @@ test("pendingPartialStockPayload does not enqueue a separate chart job while sco
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
 
   let chartEnqueued = false;
+  let chartRead = false;
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.includes("/rest/v1/stock_quote_snapshots")) {
@@ -297,7 +308,10 @@ test("pendingPartialStockPayload does not enqueue a separate chart job while sco
         },
       ]);
     }
-    if (url.includes("/rest/v1/stock_chart_snapshots")) return Response.json([]);
+    if (url.includes("/rest/v1/stock_chart_snapshots")) {
+      chartRead = true;
+      return Response.json([]);
+    }
     if (url.includes("/rest/v1/rpc/enqueue_stock_refresh_job")) {
       chartEnqueued = true;
       return Response.json({ id: "job-chart", status: "queued" });
@@ -321,6 +335,7 @@ test("pendingPartialStockPayload does not enqueue a separate chart job while sco
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   assert.equal(payload?.type, "partial_stock_snapshot");
+  assert.equal(chartRead, false);
   assert.equal(chartEnqueued, false);
 });
 

@@ -27,6 +27,7 @@ function baseDisplayPayload(overrides: Partial<StockDisplayPayload> = {}): Stock
     },
     refresh: {
       active: true,
+      pollable: true,
       staleParts: [],
       recoveringParts: ["price", "chart", "score"],
       nextPollMs: 1500,
@@ -71,6 +72,7 @@ test("detail view returns partial with visible price and chart sections", () => 
     },
     refresh: {
       active: true,
+      pollable: true,
       staleParts: [],
       recoveringParts: ["score"],
       nextPollMs: 1500,
@@ -112,6 +114,7 @@ test("detail view returns ready when no display parts are missing or recovering"
     },
     refresh: {
       active: false,
+      pollable: false,
       staleParts: [],
       recoveringParts: [],
     },
@@ -162,6 +165,7 @@ test("detail view preserves enriched financial and analyst display parts", () =>
     },
     refresh: {
       active: true,
+      pollable: true,
       staleParts: [],
       recoveringParts: ["price", "chart"],
       nextPollMs: 1500,

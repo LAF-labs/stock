@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { fetchYahooDailyChart, fetchYahooQuote } from "../src/lib/yahooFinanceClient";
+import { fetchYahooDailyChart, fetchYahooQuote, yahooFinanceFallbackEnabled } from "../src/lib/yahooFinanceClient";
+
+test("Yahoo fallback is production opt-in instead of Vercel default-on", () => {
+  assert.equal(yahooFinanceFallbackEnabled({ VERCEL: "1", VERCEL_ENV: "production" }), false);
+  assert.equal(yahooFinanceFallbackEnabled({ VERCEL_ENV: "preview" }), false);
+  assert.equal(yahooFinanceFallbackEnabled({ STOCK_YAHOO_FALLBACK: "1", VERCEL_ENV: "production" }), true);
+});
 
 test("Yahoo daily fallback ignores split-skewed regularMarketPrice and uses chart closes", async () => {
   const originalFetch = global.fetch;

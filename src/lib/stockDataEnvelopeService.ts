@@ -16,13 +16,14 @@ import type {
 } from "@/lib/stockDisplayTypes";
 
 export type StockDataEnvelopeSourceResult<T extends Record<string, unknown>> = T | undefined;
+export type StockDataEnvelopeSourceContext = { signal: AbortSignal };
 
 export type StockDataEnvelopeSources = {
   identity?: (ticker: string) => Promise<StockIdentityView | undefined>;
-  price?: (ticker: string) => Promise<StockDataEnvelopeSourceResult<StockPriceView>>;
-  chart?: (ticker: string) => Promise<StockDataEnvelopeSourceResult<StockChartView>>;
-  score?: (ticker: string, view: StockDisplayView) => Promise<StockDataEnvelopeSourceResult<StockScoreView>>;
-  terminalFailures?: (ticker: string, view: StockDisplayView) => Promise<StockDisplayUnavailablePart[]>;
+  price?: (ticker: string, ctx: StockDataEnvelopeSourceContext) => Promise<StockDataEnvelopeSourceResult<StockPriceView>>;
+  chart?: (ticker: string, ctx: StockDataEnvelopeSourceContext) => Promise<StockDataEnvelopeSourceResult<StockChartView>>;
+  score?: (ticker: string, view: StockDisplayView, ctx: StockDataEnvelopeSourceContext) => Promise<StockDataEnvelopeSourceResult<StockScoreView>>;
+  terminalFailures?: (ticker: string, view: StockDisplayView, ctx: StockDataEnvelopeSourceContext) => Promise<StockDisplayUnavailablePart[]>;
 };
 
 export type BuildStockDataEnvelopeInput = {
@@ -30,6 +31,7 @@ export type BuildStockDataEnvelopeInput = {
   view: StockDisplayView;
   sources: StockDataEnvelopeSources;
   now?: Date;
+  signal?: AbortSignal;
 };
 
 export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput): Promise<StockDataEnvelope> {
@@ -37,11 +39,12 @@ export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput)
   const now = input.now ?? new Date();
   const generatedAt = now.toISOString();
   const identityPromise = loadIdentity(ticker, input.sources);
-  const pricePromise = withLaneDeadline("price", startDisplayLane(() => input.sources.price?.(ticker)));
-  const chartPromise = withLaneDeadline("chart", startDisplayLane(() => input.sources.chart?.(ticker)));
-  const scorePromise = withLaneDeadline("score", startDisplayLane(() => input.sources.score?.(ticker, input.view)));
-  const terminalFailuresPromise = withDeadline(
-    startDisplayLane(() => input.sources.terminalFailures?.(ticker, input.view)),
+  const pricePromise = withLaneDeadline("price", input.signal, (signal) => input.sources.price?.(ticker, { signal }));
+  const chartPromise = withLaneDeadline("chart", input.signal, (signal) => input.sources.chart?.(ticker, { signal }));
+  const scorePromise = withLaneDeadline("score", input.signal, (signal) => input.sources.score?.(ticker, input.view, { signal }));
+  const terminalFailuresPromise = withAbortDeadline(
+    input.signal,
+    (signal) => input.sources.terminalFailures?.(ticker, input.view, { signal }),
     terminalFailureLaneTimeoutMs(),
   );
 
@@ -246,22 +249,44 @@ function uniqueUnavailableParts(parts: StockDisplayUnavailablePart[]): StockDisp
   });
 }
 
-async function withLaneDeadline<T>(lane: "price" | "chart" | "score", promise: Promise<T | undefined> | undefined): Promise<T | undefined> {
-  return withDeadline(promise, displayLaneTimeoutMs(lane));
+async function withLaneDeadline<T>(
+  lane: "price" | "chart" | "score",
+  parentSignal: AbortSignal | undefined,
+  source: (signal: AbortSignal) => Promise<T | undefined> | undefined,
+): Promise<T | undefined> {
+  return withAbortDeadline(parentSignal, source, displayLaneTimeoutMs(lane));
 }
 
-async function withDeadline<T>(promise: Promise<T | undefined> | undefined, timeoutMs: number): Promise<T | undefined> {
+async function withAbortDeadline<T>(
+  parentSignal: AbortSignal | undefined,
+  source: (signal: AbortSignal) => Promise<T | undefined> | undefined,
+  timeoutMs: number,
+): Promise<T | undefined> {
+  const controller = new AbortController();
+  if (parentSignal?.aborted) {
+    controller.abort();
+    return undefined;
+  }
+  const promise = startDisplayLane(() => source(controller.signal));
   if (!promise) return undefined;
   let timer: NodeJS.Timeout | undefined;
+  let parentAbort: (() => void) | undefined;
   try {
     return await Promise.race([
       promise,
       new Promise<undefined>((resolve) => {
-        timer = setTimeout(() => resolve(undefined), timeoutMs);
+        const abort = () => {
+          controller.abort();
+          resolve(undefined);
+        };
+        parentAbort = abort;
+        timer = setTimeout(abort, timeoutMs);
+        parentSignal?.addEventListener("abort", abort, { once: true });
       }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    if (parentAbort) parentSignal?.removeEventListener("abort", parentAbort);
   }
 }
 

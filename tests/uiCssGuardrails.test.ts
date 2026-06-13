@@ -209,16 +209,18 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /홈으로 돌아가기/);
   assert.match(compareSource, /tickers\.length <= 1/);
   assert.match(compareSource, /disabled=\{removeDisabled\}/);
-  assert.match(compareSource, /const \[isSearchCollapsed, setIsSearchCollapsed\] = useState\(false\);/);
   assert.match(compareSource, /className="stock-search-form compare-add-form"/);
-  assert.match(compareSource, /variant="floating"/);
-  assert.match(compareSource, /isCollapsed=\{isSearchCollapsed\}/);
+  assert.match(compareSource, /const \[isMobileSearchOpen, setIsMobileSearchOpen\] = useState\(false\);/);
+  assert.match(compareSource, /function CompareSearchSheet/);
+  assert.match(compareSource, /compare-add-button/);
+  assert.doesNotMatch(compareSource, /isSearchCollapsed|setCompareSearchCollapsed|lastScrollYRef|isSearchCollapsedRef|variant="floating"|isCollapsed=\{/);
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
   assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
-  assert.match(css, /\.compare-landing,[\s\S]*?\.compare-picks,[\s\S]*?\.compare-toolbar\s*\{[\s\S]*?border:\s*1px solid var\(--line\);[\s\S]*?border-radius:\s*8px;/);
-  assert.match(css, /\.compare-toolbar\.search-collapsed\s*\{[\s\S]*?justify-items:\s*end;/);
-  assert.match(css, /\.compare-card-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
-  assert.match(css, /\.compare-metric-column-head,[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?minmax\(88px,\s*88px\)[\s\S]*?repeat\(var\(--compare-cols\), minmax\(104px, 1fr\)\)/);
+  assert.doesNotMatch(css, /\.compare-toolbar\.search-collapsed/);
+  assert.match(css, /\.compare-add-sheet\s*\{/);
+  assert.match(css, /\.compare-sheet-backdrop\s*\{/);
+  assert.match(css, /\.compare-sheet-panel\s*\{/);
+  assert.match(compareSource, /className="compare-pick-list"/);
 });
 
 test("compare cards give quality and opportunity matching mobile-safe score hierarchy", () => {
@@ -264,7 +266,7 @@ test("wide mobile content scrolls inside its own touch container", () => {
   assert.match(compareMetricTableRule, /width:\s*100%;/);
   assert.match(compareMetricTableRule, /min-width:\s*0;/);
   assert.match(compareMetricTableRule, /max-width:\s*100%;/);
-  assert.match(css, /\.compare-metric-row\s*\{[\s\S]*?min-width:\s*calc\(88px \+ var\(--compare-cols\) \* 88px \+ \(var\(--compare-cols\) \+ 1\) \* 6px\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-metric-row\s*\{[\s\S]*?min-width:\s*calc\(96px \+ var\(--compare-cols\) \* 112px \+ var\(--compare-cols\) \* 8px\);/);
   assert.doesNotMatch(css, /\.compare-suggestions,[\s\S]*?\.compare-metric-table\s*\{[\s\S]*?mask-image:/);
 });
 
@@ -304,17 +306,32 @@ test("compare search explains the five ticker limit in place", () => {
   assert.match(compareSource, /placeholder=\{compareLimitReached \? "최대 5개입니다" : "비교할 종목 검색"\}/);
   assert.match(compareSource, /buttonLabel=\{compareLimitReached \? "완료" : "추가"\}/);
   assert.match(compareSource, /disabled=\{compareLimitReached\}/);
+  assert.match(compareSource, /closeLabel=\{compareLimitReached \? "완료" : "닫기"\}/);
+});
+
+test("mobile compare add search is an explicit sheet instead of scroll-collapsing input", () => {
+  assert.doesNotMatch(compareSource, /window\.addEventListener\("scroll"[\s\S]*setCompareSearchCollapsed/);
+  assert.match(compareSource, /document\.documentElement\.classList\.add\("compare-search-open"\)/);
+  assert.match(compareSource, /document\.body\.classList\.add\("compare-search-open"\)/);
+  assert.match(compareSource, /<CompareSearchSheet/);
+  assert.match(compareSource, /autoFocusOnMount/);
+  assert.match(css, /html\.compare-search-open,[\s\S]*?body\.compare-search-open\s*\{[\s\S]*?overflow:\s*hidden;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /@media \(min-width: 641px\)[\s\S]*?\.compare-add-sheet\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail \.compare-add-button\s*\{[\s\S]*?display:\s*inline-flex;/);
+  assert.match(css, /\.compare-sheet-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset-inline:\s*0;[\s\S]*?bottom:\s*0;/);
 });
 
 test("horizontal affordances use native touch carousel behavior", () => {
   const tickerChipsRule = css.match(/\.ticker-chips\s*\{([^}]*)\}/)?.[1] || "";
-  const comparePicksRule = css.match(/\.compare-picks,\s*\.compare-suggestions\s*\{([^}]*)\}/)?.[1] || "";
+  const comparePickListRule = css.match(/\.compare-pick-list,\s*\.compare-suggestions\s*\{([^}]*)\}/)?.[1] || "";
   const compareMetricTableRule = css.match(/\.compare-metric-table\s*\{([^}]*)\}/)?.[1] || "";
 
   assert.match(tickerChipsRule, /scroll-snap-type:\s*x proximity;/);
   assert.match(css, /\.ticker-chips button\s*\{[\s\S]*?scroll-snap-align:\s*start;/);
-  assert.match(comparePicksRule, /-webkit-overflow-scrolling:\s*touch;/);
-  assert.match(comparePicksRule, /scroll-snap-type:\s*x proximity;/);
+  assert.match(comparePickListRule, /-webkit-overflow-scrolling:\s*touch;/);
+  assert.match(comparePickListRule, /scroll-snap-type:\s*x proximity;/);
   assert.match(css, /\.compare-picks span,[\s\S]*?\.compare-suggestions button\s*\{[\s\S]*?scroll-snap-align:\s*start;/);
   assert.match(compareMetricTableRule, /scroll-snap-type:\s*x proximity;/);
   assert.match(css, /@supports \(\(mask-image:\s*linear-gradient\(90deg,\s*#000,\s*#000\)\) or \(-webkit-mask-image:\s*linear-gradient\(90deg,\s*#000,\s*#000\)\)\)/);

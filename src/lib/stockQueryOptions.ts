@@ -142,7 +142,7 @@ export function stockPendingRetryDelayMs(attempt = 0): number {
 export function stockDetailViewRefetchIntervalMs(result: StockDetailViewResponse | undefined): number | false {
   if (!result || result.ok === false) return false;
   if (result.mode === "ready") return false;
-  return typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : 1_500;
+  return typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : false;
 }
 
 export function stockQueryRefetchIntervalMs(
@@ -162,7 +162,7 @@ export function stockQueryShouldPoll(
   result: ScoreQueryResult | TechnicalScoreQueryResult | DisplayQueryResult | QuoteQueryResult | JudgmentQueryResult | SymbolSearchQueryResult | undefined,
 ): boolean {
   if (!result) return false;
-  if (isDisplayQueryResult(result)) return result.data.refresh.active || result.data.completion.recoveringParts.length > 0;
+  if (isDisplayQueryResult(result)) return displayShouldPoll(result.data);
   if (result.state === "pending") return isPollablePending(result);
   if (result.state === "partial") return isPollablePending(result.pending);
   if (result.state === "ready") return stockScorePayloadNeedsEnrichment(result.data) || stockScorePayloadNeedsEnrichment(result.payload);
@@ -196,10 +196,17 @@ function isDisplayQueryResult(result: unknown): result is DisplayQueryResult {
   return Boolean(data && typeof data === "object" && !Array.isArray(data) && (data as { ok?: unknown }).ok === true && "completion" in data && "refresh" in data);
 }
 
-function displayRefetchIntervalMs(result: unknown): number | undefined {
+function displayRefetchIntervalMs(result: unknown): number | false | undefined {
   if (!isDisplayQueryResult(result)) return undefined;
+  if (!displayShouldPoll(result.data)) return false;
   const nextPollMs = result.data.refresh.nextPollMs;
-  return typeof nextPollMs === "number" && Number.isFinite(nextPollMs) && nextPollMs > 0 ? nextPollMs : 1_500;
+  return typeof nextPollMs === "number" && Number.isFinite(nextPollMs) && nextPollMs > 0 ? nextPollMs : false;
+}
+
+function displayShouldPoll(payload: StockDisplayPayload): boolean {
+  if (payload.refresh.pollable === false) return false;
+  if (payload.refresh.queue?.attempted && payload.refresh.queue.queuedActions === 0 && payload.refresh.queue.failedActions > 0) return false;
+  return payload.refresh.active || payload.completion.recoveringParts.length > 0;
 }
 
 export function quoteDataFromQueryResult(result: QuoteQueryResult | undefined): StockQuoteResponse | undefined {

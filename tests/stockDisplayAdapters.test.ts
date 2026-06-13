@@ -112,6 +112,7 @@ function displayPayload(parts: {
     },
     refresh: {
       active: Object.keys(parts).length === 0,
+      pollable: Object.keys(parts).length === 0,
       staleParts: [],
       recoveringParts: Object.keys(parts).length ? [] : ["price", "chart", "score"],
     },

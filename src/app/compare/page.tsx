@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cache } from "react";
 import StockCompare from "@/components/StockCompare";
 import { parseTickers } from "@/components/stockCompareHelpers";
-import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletionDetached } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import { compareShareMetadataFromPayloads, stockShareMetadataToNextMetadata, stockShareOriginFromEnv } from "@/lib/stockShareMetadata";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
@@ -37,7 +37,7 @@ const buildInitialComparePayloads = cache(async function buildInitialComparePayl
   const payloads = await Promise.all(tickers.map(async (ticker) => {
     try {
       const payload = await buildStockDisplayPayload({ ticker, view: "compare" });
-      scheduleStockDisplayPayloadCompletion(payload);
+      scheduleStockDisplayPayloadCompletionDetached(payload);
       return payload;
     } catch {
       return undefined;

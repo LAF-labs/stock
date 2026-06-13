@@ -24,7 +24,7 @@ export function yahooFinanceFallbackEnabled(env: Record<string, string | undefin
   const raw = env.STOCK_YAHOO_FALLBACK?.trim().toLowerCase();
   if (raw === "0" || raw === "false" || raw === "off") return false;
   if (raw === "1" || raw === "true" || raw === "on") return true;
-  return env.VERCEL === "1" || Boolean(env.VERCEL_ENV);
+  return false;
 }
 
 export async function fetchYahooQuote(tickerRef: string): Promise<StockPayload> {

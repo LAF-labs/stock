@@ -145,7 +145,7 @@ function inlineChartRefreshAvailable(): boolean {
 
 export async function getStockChart(
   tickerRef: string,
-  options: { forceRefresh?: boolean; enqueueOnMiss?: boolean; enqueueStaleRefresh?: boolean } = {}
+  options: { forceRefresh?: boolean; enqueueOnMiss?: boolean; enqueueStaleRefresh?: boolean; readOnly?: boolean } = {}
 ): Promise<StockChartResult> {
   const ticker = normalizeTickerRef(tickerRef);
   const nowMs = Date.now();
@@ -178,6 +178,18 @@ export async function getStockChart(
   }
 
   if (!options.forceRefresh && freshCandidate) return decorate(freshCandidate, "fresh", freshSource);
+
+  if (options.readOnly) {
+    if (staleCandidate) {
+      rememberMemorySnapshot(staleCandidate, nowMs);
+      return decorate(staleCandidate, "stale", staleSource);
+    }
+    throw new StockDataUnavailableError({
+      kind: "chart",
+      ticker,
+      reason: options.forceRefresh ? "refresh_background_only" : "snapshot_miss",
+    });
+  }
 
   if (!options.forceRefresh && staleCandidate) {
     rememberMemorySnapshot(staleCandidate, nowMs);

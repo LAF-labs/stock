@@ -68,6 +68,7 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
     },
     refresh: {
       active: refreshActive,
+      pollable: refreshActive,
       staleParts,
       recoveringParts: completion.recoveringParts,
       ...(refreshActive ? { nextPollMs: 1_500 } : {}),

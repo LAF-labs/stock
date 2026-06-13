@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import TechnicalAnalysisPage from "@/components/TechnicalAnalysisPage";
-import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletionDetached } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import { buildStockShareDisplayPayload } from "@/lib/stockSharePayload";
 import { stockShareMetadataFromPayload, stockShareMetadataToNextMetadata, stockShareOriginFromEnv } from "@/lib/stockShareMetadata";
@@ -51,7 +51,7 @@ export async function generateMetadata({ searchParams }: TechnicalRouteProps): P
 const buildInitialTechnicalPayload = cache(async function buildInitialTechnicalPayload(ticker: string) {
   try {
     const payload = await buildStockDisplayPayload({ ticker, view: "technical" });
-    scheduleStockDisplayPayloadCompletion(payload);
+    scheduleStockDisplayPayloadCompletionDetached(payload);
     return payload;
   } catch {
     return undefined;

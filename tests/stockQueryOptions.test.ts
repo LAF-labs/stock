@@ -66,7 +66,7 @@ test("display query polls from refresh metadata instead of pending state names",
         recoveringParts: ["price", "chart", "score"],
         unavailableParts: [],
       },
-      refresh: { active: true, staleParts: [], recoveringParts: ["price", "chart", "score"], nextPollMs: 1500 },
+      refresh: { active: true, pollable: true, staleParts: [], recoveringParts: ["price", "chart", "score"], nextPollMs: 1500 },
       capabilities: { canCompare: true, canTechnical: true },
     },
   };
@@ -74,6 +74,47 @@ test("display query polls from refresh metadata instead of pending state names",
   assert.equal(stockQueryShouldPoll(display), true);
   assert.equal(stockQueryRefetchIntervalMs(display, 0), 1500);
   assert.equal(stockQueryRefetchIntervalMs(display, STOCK_QUERY_MAX_PENDING_POLLS + 10), 1500);
+});
+
+test("display query does not poll when recovery queue is unavailable", () => {
+  const display: DisplayQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: {},
+    data: {
+      ok: true,
+      ticker: "US:VLD",
+      requestedTicker: "US:VLD",
+      view: "detail",
+      generatedAt: "2026-06-10T00:00:00.000Z",
+      snapshotVersion: "display-v1",
+      hotnessTier: "active",
+      identity: { value: { ticker: "US:VLD", market: "US", symbol: "VLD", name: "Velo3D" }, freshness: "fresh", source: "symbol-master" },
+      completion: {
+        requiredParts: ["identity", "price", "chart", "score"],
+        presentParts: ["identity"],
+        missingParts: ["price", "chart", "score"],
+        recoveringParts: ["price", "chart", "score"],
+        unavailableParts: [],
+      },
+      refresh: {
+        active: true,
+        pollable: false,
+        staleParts: [],
+        recoveringParts: ["price", "chart", "score"],
+        queue: {
+          attempted: true,
+          state: "unavailable",
+          queuedActions: 0,
+          failedActions: 3,
+        },
+      },
+      capabilities: { canCompare: true, canTechnical: true },
+    },
+  };
+
+  assert.equal(stockQueryShouldPoll(display), false);
+  assert.equal(stockQueryRefetchIntervalMs(display, 0), false);
 });
 
 test("display query result can be seeded from server-rendered payload", () => {
@@ -104,6 +145,7 @@ test("display query result can be seeded from server-rendered payload", () => {
     },
     refresh: {
       active: true,
+      pollable: true,
       staleParts: [],
       recoveringParts: ["chart", "score"],
       nextPollMs: 1500,
@@ -370,7 +412,7 @@ test("display price payload can seed quote query data without an immediate quote
       recoveringParts: ["chart", "score"],
       unavailableParts: [],
     },
-    refresh: { active: true, staleParts: [], recoveringParts: ["chart", "score"], nextPollMs: 1500 },
+    refresh: { active: true, pollable: true, staleParts: [], recoveringParts: ["chart", "score"], nextPollMs: 1500 },
     capabilities: { canCompare: true, canTechnical: true },
   };
 

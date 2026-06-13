@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiLimitPolicy } from "@/lib/apiRateLimit";
+import { guardedRateLimit } from "@/lib/apiRequestGuards";
 import { publicVercelCdnCacheHeaders } from "@/lib/httpCacheHeaders";
-import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
+import { stockDisplayPayloadWithQueueSchedule } from "@/lib/stockDisplayCompletionSchedule";
 import { stockDetailViewFromDisplayPayload } from "@/lib/stockDetailViewModel";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import type { StockDisplayView } from "@/lib/stockDisplayTypes";
 import { parseStrictTickerRef, resolveTickerAlias } from "@/lib/tickerRef";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -25,11 +30,17 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const displayPayload = await buildStockDisplayPayload({
+  const rateLimit = await guardedRateLimit(
+    request,
+    apiLimitPolicy("stock_detail_view", 180, 60),
+    "stock_detail_view",
+  );
+  if (!rateLimit.ok) return rateLimit.response;
+
+  const displayPayload = await stockDisplayPayloadWithQueueSchedule(await buildStockDisplayPayload({
     ticker: strict.ticker,
     view,
-  });
-  scheduleStockDisplayPayloadCompletion(displayPayload);
+  }));
 
   const detailView = stockDetailViewFromDisplayPayload(displayPayload);
 

@@ -4,9 +4,25 @@ import assert from "node:assert/strict";
 import {
   planStockDisplayCompletion,
   planCompareDisplayCompletion,
+  scheduleStockDisplayCompletion,
   stockCompletionRefreshInput,
   stockCompletionInputFromPayload,
 } from "../src/lib/stockCompletionPlanner";
+import { clearStockRefreshEnqueueMemoryForTests } from "../src/lib/stockRefreshQueue";
+
+const ENV_KEYS = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_PUBLISHABLE_KEY"] as const;
+const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+
+function restoreEnv() {
+  for (const key of ENV_KEYS) {
+    const value = originalEnv[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  clearStockRefreshEnqueueMemoryForTests();
+}
+
+test.afterEach(restoreEnv);
 
 test("detail identity-only display still owes price, chart, and score recovery", () => {
   const plan = planStockDisplayCompletion({
@@ -113,5 +129,28 @@ test("completion scheduling preserves enriched required parts from display paylo
   assert.deepEqual(plan.missingParts, ["fundamentals", "industryBenchmark"]);
   assert.deepEqual(plan.actions.map(stockCompletionRefreshInput), [
     { kind: "score", ticker: "US:GMAB", view: "detail", priority: 25, reason: "snapshot_miss" },
+  ]);
+});
+
+test("completion scheduling returns queue failures instead of detaching them", async () => {
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+
+  const plan = planStockDisplayCompletion({
+    ticker: "US:VLD",
+    view: "detail",
+    presentParts: ["identity"],
+  });
+  const results = await scheduleStockDisplayCompletion(plan);
+
+  assert.deepEqual(results.map((result) => ({
+    part: result.action.part,
+    queued: result.queued,
+    reason: result.reason,
+  })), [
+    { part: "price", queued: false, reason: "missing_supabase_admin_config" },
+    { part: "chart", queued: false, reason: "missing_supabase_admin_config" },
+    { part: "score", queued: false, reason: "missing_supabase_admin_config" },
   ]);
 });

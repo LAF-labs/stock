@@ -24,6 +24,7 @@ type SymbolAutocompleteProps = {
   formAction?: string;
   formMethod?: "get" | "post";
   inputName?: string;
+  autoFocusOnMount?: boolean;
 };
 
 function displayInputValue(item: SymbolSearchItem): string {
@@ -71,6 +72,7 @@ export default function SymbolAutocomplete({
   formAction,
   formMethod = "get",
   inputName,
+  autoFocusOnMount = false,
 }: SymbolAutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -95,6 +97,12 @@ export default function SymbolAutocomplete({
   useEffect(() => {
     if (isCollapsed) setIsOpen(false);
   }, [isCollapsed]);
+
+  useEffect(() => {
+    if (!autoFocusOnMount || disabled) return undefined;
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
+    return () => window.clearTimeout(timer);
+  }, [autoFocusOnMount, disabled]);
 
   useEffect(() => {
     function closeOnOutside(event: MouseEvent) {

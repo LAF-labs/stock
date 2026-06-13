@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cache } from "react";
 import StockDashboard from "@/components/StockDashboard";
 import { dashboardTickerFromSearchParam } from "@/components/stockDashboardHelpers";
-import { scheduleStockDisplayPayloadCompletion } from "@/lib/stockCompletionPlanner";
+import { scheduleStockDisplayPayloadCompletionDetached } from "@/lib/stockCompletionPlanner";
 import { buildStockDisplayPayload } from "@/lib/stockDisplayModel";
 import { buildStockShareDisplayPayload } from "@/lib/stockSharePayload";
 import { stockShareMetadataFromPayload, stockShareMetadataToNextMetadata, stockShareOriginFromEnv } from "@/lib/stockShareMetadata";
@@ -31,7 +31,7 @@ export async function generateMetadata({ searchParams }: DashboardRouteProps): P
 const buildInitialDisplayPayload = cache(async function buildInitialDisplayPayload(ticker: string) {
   try {
     const payload = await buildStockDisplayPayload({ ticker, view: "detail" });
-    scheduleStockDisplayPayloadCompletion(payload);
+    scheduleStockDisplayPayloadCompletionDetached(payload);
     return payload;
   } catch {
     return undefined;

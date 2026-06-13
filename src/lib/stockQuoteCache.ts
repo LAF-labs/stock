@@ -274,7 +274,7 @@ function inlineQuoteRefreshAvailable(): boolean {
   return liveStockProviderConfigured() || !!marketDataServiceConfig();
 }
 
-export async function getStockQuote(tickerRef: string, options: { forceRefresh?: boolean } = {}): Promise<StockQuoteResult> {
+export async function getStockQuote(tickerRef: string, options: { forceRefresh?: boolean; readOnly?: boolean } = {}): Promise<StockQuoteResult> {
   const ticker = normalizeTickerRef(tickerRef);
   const nowMs = Date.now();
   let freshCandidate: StoredQuoteSnapshot | undefined;
@@ -307,6 +307,15 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
 
   if (!options.forceRefresh && freshCandidate) {
     return decorate(freshCandidate, "fresh", freshSource);
+  }
+
+  if (options.readOnly) {
+    if (staleCandidate) return decorate(staleCandidate, "stale", staleSource);
+    throw new StockDataUnavailableError({
+      kind: "quote",
+      ticker,
+      reason: "snapshot_miss",
+    });
   }
 
   if (!options.forceRefresh) {

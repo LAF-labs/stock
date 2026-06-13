@@ -32,6 +32,8 @@ type PendingPartialReadyPart =
   | { kind: "chart"; status: "fulfilled"; value: StockChartResult }
   | { kind: "chart"; status: "rejected" };
 
+type PendingPartialIncludePart = "identity" | "quote" | "chart";
+
 export function attachScoreParts(result: StockScoreResult): StockPayload {
   const parts: StockParts = {
     ...partsFromPayload(result.payload),
@@ -78,23 +80,31 @@ export async function pendingPartialStockPayload({
   pending,
   ticker,
   view,
+  includeParts,
 }: {
   pending: StockPendingPayload;
   ticker: string;
   view?: ScoreView;
+  includeParts?: PendingPartialIncludePart[];
 }): Promise<StockPayload | undefined> {
   const parts: StockParts = pendingParts(pending, view);
+  const requestedParts = new Set(includeParts || defaultPendingPartialIncludeParts(pending));
   let quote: StockPayload | undefined;
   let chart: StockPayload | undefined;
 
   const readyParts: PendingPartialReadyPart[] = [];
-  const quotePromise = trackReadyPart(readyParts, "quote", getStockQuote(ticker));
-  const chartPromise = trackReadyPart(
-    readyParts,
-    "chart",
-    getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false })
-  );
-  const partsPromise = Promise.all([quotePromise, chartPromise]);
+  const pendingPartPromises: Promise<void>[] = [];
+  if (requestedParts.has("quote")) {
+    pendingPartPromises.push(trackReadyPart(readyParts, "quote", getStockQuote(ticker, { readOnly: true })));
+  }
+  if (requestedParts.has("chart")) {
+    pendingPartPromises.push(trackReadyPart(
+      readyParts,
+      "chart",
+      getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false, readOnly: true })
+    ));
+  }
+  const partsPromise = Promise.all(pendingPartPromises);
   const identity = await localIdentityPayload(ticker);
 
   if (identity) {
@@ -146,6 +156,12 @@ export async function pendingPartialStockPayload({
     },
     parts
   );
+}
+
+function defaultPendingPartialIncludeParts(pending: StockPendingPayload): PendingPartialIncludePart[] {
+  if (pending.kind === "chart") return ["identity", "chart"];
+  if (pending.kind === "quote") return ["identity", "quote"];
+  return ["identity", "quote"];
 }
 
 export async function terminalUnavailableStockPayload({

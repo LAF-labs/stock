@@ -25,7 +25,7 @@ test("technical display terminal unavailable is derived from completion instead 
         { part: "technical", reason: "provider_confirmed_empty" },
       ],
     },
-    refresh: { active: false, staleParts: [], recoveringParts: [] },
+    refresh: { active: false, pollable: false, staleParts: [], recoveringParts: [] },
     capabilities: { canCompare: true, canTechnical: true },
   } satisfies StockDisplayPayload;
 

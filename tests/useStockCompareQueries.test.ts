@@ -200,7 +200,7 @@ test("compare state is projected from the display pipeline payload", () => {
       recoveringParts: [],
       unavailableParts: [],
     },
-    refresh: { active: false, staleParts: [], recoveringParts: [] },
+    refresh: { active: false, pollable: false, staleParts: [], recoveringParts: [] },
   });
 
   const state = compareStateFromDisplayPayload(payload);
@@ -226,7 +226,7 @@ test("compare display payload stays partial while display lanes are recovering",
       recoveringParts: ["fundamentals"],
       unavailableParts: [],
     },
-    refresh: { active: true, staleParts: [], recoveringParts: ["fundamentals"], nextPollMs: 1500 },
+    refresh: { active: true, pollable: true, staleParts: [], recoveringParts: ["fundamentals"], nextPollMs: 1500 },
   });
 
   const state = compareStateFromDisplayPayload(payload);

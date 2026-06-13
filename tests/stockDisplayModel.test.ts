@@ -5,6 +5,19 @@ import { buildStockDisplayPayload, displayLaneTimeoutMs, readStockDisplayScoreSo
 import { partialStockScoreTimeoutMs } from "../src/lib/stockScorePartialFastPath";
 import { providerEmptyError } from "../src/lib/stockProviderErrors";
 
+const ENV_KEYS = ["STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS"] as const;
+const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+
+function restoreEnv() {
+  for (const key of ENV_KEYS) {
+    const value = originalEnv[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+test.afterEach(restoreEnv);
+
 test("display model keeps price and chart lanes fast while score uses the interactive score SLA", () => {
   assert.equal(displayLaneTimeoutMs("price"), 900);
   assert.equal(displayLaneTimeoutMs("chart"), 1_000);
@@ -48,6 +61,34 @@ test("display model keeps provider timeouts recoverable instead of terminal", as
   assert.equal(payload.price?.value.latest_price, 60);
   assert.deepEqual(payload.completion.unavailableParts, []);
   assert.deepEqual(payload.completion.recoveringParts, ["chart", "technical"]);
+});
+
+test("display model aborts a lane source when its deadline expires", async () => {
+  process.env.STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS = "10";
+  let aborted = false;
+
+  const payload = await buildStockDisplayPayload({
+    ticker: "US:SLOW",
+    view: "detail",
+    sources: {
+      identity: async () => ({ ticker: "US:SLOW", market: "US", symbol: "SLOW", name: "Slow Inc" }),
+      price: async () => ({ latest_price: 12 }),
+      chart: async (_ticker, ctx) => {
+        await new Promise<void>((resolve) => {
+          ctx.signal.addEventListener("abort", () => {
+            aborted = true;
+            resolve();
+          }, { once: true });
+        });
+        return undefined;
+      },
+      score: async () => undefined,
+    },
+  });
+
+  assert.equal(aborted, true);
+  assert.deepEqual(payload.completion.unavailableParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, ["chart", "score"]);
 });
 
 test("display model marks provider-confirmed empty lanes unavailable instead of recovering forever", async () => {

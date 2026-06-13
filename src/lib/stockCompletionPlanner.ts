@@ -15,6 +15,14 @@ export type CompletionAction = {
   scoreView?: ScoreView;
 };
 
+export type CompletionScheduleResult = {
+  action: CompletionAction;
+  queued: boolean;
+  status?: string;
+  jobId?: string;
+  reason?: string;
+};
+
 export type StockCompletionPlan = {
   ticker: string;
   view: StockDisplayView;
@@ -124,14 +132,47 @@ export function planStockDisplayPayloadCompletion(
 
 export function scheduleStockDisplayPayloadCompletion(
   payload: Pick<StockDisplayPayload, "ticker" | "view" | "completion">,
-): void {
-  scheduleStockDisplayCompletion(planStockDisplayPayloadCompletion(payload));
+): Promise<CompletionScheduleResult[]> {
+  return scheduleStockDisplayCompletion(planStockDisplayPayloadCompletion(payload));
 }
 
-export function scheduleStockDisplayCompletion(plan: StockCompletionPlan): void {
+export function scheduleStockDisplayPayloadCompletionDetached(
+  payload: Pick<StockDisplayPayload, "ticker" | "view" | "completion">,
+): void {
+  scheduleStockDisplayCompletionDetached(planStockDisplayPayloadCompletion(payload));
+}
+
+export function scheduleStockDisplayCompletionDetached(plan: StockCompletionPlan): void {
   for (const action of plan.actions) {
     void enqueueStockRefreshJob(stockCompletionRefreshInput(action)).catch(() => undefined);
   }
+}
+
+export async function scheduleStockDisplayCompletion(plan: StockCompletionPlan): Promise<CompletionScheduleResult[]> {
+  return Promise.all(plan.actions.map(async (action) => {
+    try {
+      const result = await enqueueStockRefreshJob(stockCompletionRefreshInput(action));
+      if (result.queued) {
+        return {
+          action,
+          queued: true,
+          status: result.job?.status,
+          jobId: result.job?.id,
+        };
+      }
+      return {
+        action,
+        queued: false,
+        reason: result.reason,
+      };
+    } catch {
+      return {
+        action,
+        queued: false,
+        reason: "enqueue_failed",
+      };
+    }
+  }));
 }
 
 function actionForPart(ticker: string, view: StockDisplayView, part: StockDisplayPartName): CompletionAction[] {

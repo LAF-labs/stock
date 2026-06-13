@@ -167,6 +167,7 @@ function sharePayload(overrides: {
     },
     refresh: {
       active: true,
+      pollable: true,
       staleParts: [],
       recoveringParts: ["score"],
     },

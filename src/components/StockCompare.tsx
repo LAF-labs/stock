@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { ComparePendingOverviewSkeleton, SkeletonSectionTitle } from "@/components/StockLoadingSkeletons";
@@ -71,16 +71,14 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const firstTickerLabel = firstTicker ? displayTickerRef(firstTicker) : "";
   const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
   const [input, setInput] = useState("");
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const { states, items, chartItems, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
   const compareLimitReached = tickers.length >= MAX_COMPARE;
   const firstItem = useMemo(() => (firstTicker ? items.find((item) => item.ticker === firstTickerLabel) : undefined), [firstTicker, items, firstTickerLabel]);
   const hasCompareChart = useMemo(() => compareDateAlignedSeries(chartItems).series.some((entry) => entry.points.length >= 1), [chartItems]);
   const detailHref = originTicker ? `/?ticker=${encodeURIComponent(originTicker)}` : "/";
-  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
   const [compareLoadingWindow, setCompareLoadingWindow] = useState<{ key: string; startedAtMs: number; nowMs: number } | undefined>(undefined);
-  const lastScrollYRef = useRef(0);
-  const isSearchCollapsedRef = useRef(false);
   const tickersKey = tickers.join("|");
   const hasRecoveringCompareWork = selectedCount > 0 && states.some((state) => state.status === "loading" || state.status === "pending" || state.status === "partial");
   const compareLoadingExpired = Boolean(compareLoadingWindow && compareLoadingWindow.nowMs - compareLoadingWindow.startedAtMs >= PARTIAL_SECTION_SKELETON_DEADLINE_MS);
@@ -92,12 +90,6 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     items.length >= 2 &&
     !hasCompareChart &&
     states.some((state) => state.status === "partial" || state.status === "pending" || state.status === "loading");
-
-  function setCompareSearchCollapsed(nextCollapsed: boolean) {
-    if (isSearchCollapsedRef.current === nextCollapsed) return;
-    isSearchCollapsedRef.current = nextCollapsed;
-    setIsSearchCollapsed(nextCollapsed);
-  }
 
   useEffect(() => {
     if (!hasRecoveringCompareWork || !tickersKey) {
@@ -123,40 +115,22 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   }, [compareLoadingWindow, hasRecoveringCompareWork]);
 
   useEffect(() => {
-    let ticking = false;
-    lastScrollYRef.current = window.scrollY;
-
-    function updateSearchChrome() {
-      const scrollY = window.scrollY;
-      const delta = scrollY - lastScrollYRef.current;
-
-      if (scrollY <= 16) {
-        setCompareSearchCollapsed(false);
-      } else if (delta > 8 && scrollY > 92) {
-        setCompareSearchCollapsed(true);
-      } else if (delta < -24) {
-        setCompareSearchCollapsed(false);
-      }
-
-      lastScrollYRef.current = scrollY;
-      ticking = false;
-    }
-
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(updateSearchChrome);
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+    if (!isMobileSearchOpen) return undefined;
+    document.documentElement.classList.add("compare-search-open");
+    document.body.classList.add("compare-search-open");
+    return () => {
+      document.documentElement.classList.remove("compare-search-open");
+      document.body.classList.remove("compare-search-open");
+    };
+  }, [isMobileSearchOpen]);
 
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
     if (!ticker || tickers.includes(ticker) || compareLimitReached) return;
+    const nextTickers = [...tickers, ticker];
     setInput("");
-    pushTickers(router, [...tickers, ticker], originTicker);
+    if (nextTickers.length >= MAX_COMPARE) setIsMobileSearchOpen(false);
+    pushTickers(router, nextTickers, originTicker);
   }
 
   function addSymbol(item: SymbolSearchItem) {
@@ -193,30 +167,40 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </section>
       </section>
 
-      <section className="compare-picks" aria-label="선택된 종목">
-        {tickers.length ? tickers.map((ticker) => {
-          const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
-          const partial = partialStates.find((state) => state.ticker === ticker);
-          const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
-          const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
-          const removeDisabled = tickers.length <= 1;
-          return (
-            <span key={ticker}>
-              {label}
-              <button
-                type="button"
-                onClick={() => removeTicker(ticker)}
-                aria-label={`${label} 삭제`}
-                disabled={removeDisabled}
-              >
-                ×
-              </button>
-            </span>
-          );
-        }) : <span>비교할 종목을 추가해주세요</span>}
+      <section className="compare-picks compare-ticker-rail" aria-label="선택된 종목">
+        <div className="compare-pick-list">
+          {tickers.length ? tickers.map((ticker) => {
+            const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));
+            const partial = partialStates.find((state) => state.ticker === ticker);
+            const partialIdentity = partial ? stockHeaderIdentity(partial.data) : undefined;
+            const label = loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker);
+            const removeDisabled = tickers.length <= 1;
+            return (
+              <span key={ticker}>
+                {label}
+                <button
+                  type="button"
+                  onClick={() => removeTicker(ticker)}
+                  aria-label={`${label} 삭제`}
+                  disabled={removeDisabled}
+                >
+                  ×
+                </button>
+              </span>
+            );
+          }) : <span>비교할 종목을 추가해주세요</span>}
+        </div>
+        <button
+          type="button"
+          className="compare-add-button"
+          onClick={() => setIsMobileSearchOpen(true)}
+          disabled={compareLimitReached}
+        >
+          {compareLimitReached ? "최대 5개" : "+ 종목 추가"}
+        </button>
       </section>
 
-      <section className={["compare-toolbar", isSearchCollapsed ? "search-collapsed" : ""].filter(Boolean).join(" ")}>
+      <section className="compare-toolbar">
         <SymbolAutocomplete
           id="compare-ticker"
           value={input}
@@ -227,11 +211,19 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           label="비교할 국내·미국 주식 검색"
           disabled={compareLimitReached}
           className="stock-search-form compare-add-form"
-          variant="floating"
-          isCollapsed={isSearchCollapsed}
-          onExpandRequest={() => setCompareSearchCollapsed(false)}
         />
       </section>
+
+      <CompareSearchSheet
+        isOpen={isMobileSearchOpen}
+        value={input}
+        onValueChange={setInput}
+        onSelect={addSymbol}
+        onClose={() => setIsMobileSearchOpen(false)}
+        compareLimitReached={compareLimitReached}
+        selectedCount={selectedCount}
+        closeLabel={compareLimitReached ? "완료" : "닫기"}
+      />
 
       {errorStates.length ? (
         <section className="compare-errors" role="alert" aria-live="assertive">
@@ -275,6 +267,55 @@ function CompareEmptyState({ onSelect }: { onSelect: (ticker: string) => void })
         ))}
       </div>
     </section>
+  );
+}
+
+function CompareSearchSheet({
+  isOpen,
+  value,
+  onValueChange,
+  onSelect,
+  onClose,
+  compareLimitReached,
+  selectedCount,
+  closeLabel,
+}: {
+  isOpen: boolean;
+  value: string;
+  onValueChange: (value: string) => void;
+  onSelect: (item: SymbolSearchItem) => void;
+  onClose: () => void;
+  compareLimitReached: boolean;
+  selectedCount: number;
+  closeLabel: string;
+}) {
+  if (!isOpen) return null;
+  return (
+    <div className="compare-add-sheet" role="dialog" aria-modal="true" aria-labelledby="compare-add-sheet-title">
+      <button type="button" className="compare-sheet-backdrop" aria-label="종목 추가 닫기" onClick={onClose} />
+      <section className="compare-sheet-panel">
+        <header className="compare-sheet-header">
+          <div>
+            <span>종목 추가</span>
+            <h2 id="compare-add-sheet-title">비교할 종목 검색</h2>
+          </div>
+          <button type="button" onClick={onClose}>{closeLabel}</button>
+        </header>
+        <SymbolAutocomplete
+          id="compare-ticker-sheet"
+          value={value}
+          onValueChange={onValueChange}
+          onSelect={onSelect}
+          placeholder={compareLimitReached ? "최대 5개입니다" : "종목명 또는 티커"}
+          buttonLabel={compareLimitReached ? "완료" : "추가"}
+          label="비교할 국내·미국 주식 검색"
+          disabled={compareLimitReached}
+          className="stock-search-form compare-add-form compare-sheet-search"
+          autoFocusOnMount
+        />
+        <p className="compare-sheet-count">{selectedCount}/{MAX_COMPARE}개 선택</p>
+      </section>
+    </div>
   );
 }
 

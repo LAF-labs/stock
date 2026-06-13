@@ -83,9 +83,17 @@ export type StockDisplaySnapshot = {
 
 export type StockDisplayRefresh = {
   active: boolean;
+  pollable?: boolean;
   staleParts: StockDisplayPartName[];
   recoveringParts: StockDisplayPartName[];
   nextPollMs?: number;
+  queue?: {
+    state: "idle" | "queued" | "unavailable" | "unknown";
+    attempted: boolean;
+    queuedActions: number;
+    failedActions: number;
+    failures?: Array<{ part: StockDisplayPartName; reason: string }>;
+  };
 };
 
 export type StockDisplayCapabilities = {

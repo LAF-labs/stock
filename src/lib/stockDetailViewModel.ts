@@ -31,7 +31,7 @@ export function stockDetailViewFromDisplayPayload(payload: StockDisplayPayload):
     generatedAt: payload.generatedAt,
     snapshotVersion: payload.snapshotVersion,
     ...(!hasVisibleNonIdentitySection ? { degradedReason: "identity_only" as const } : {}),
-    ...(payload.refresh.active ? { nextPollMs: payload.refresh.nextPollMs || 1_500 } : {}),
+    ...(payload.refresh.nextPollMs !== undefined ? { nextPollMs: payload.refresh.nextPollMs } : {}),
     identity: payload.identity.value,
     sections: {
       ...(payload.price ? { price: payload.price.value } : {}),
