@@ -1,7 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { chooseDashboardLoadState, type DashboardLoadState } from "../src/components/useStockDashboardQueries";
+import {
+  chooseDashboardLoadState,
+  stockDashboardQueryEnablement,
+  stockDetailViewPrimaryEnabled,
+  type DashboardLoadState,
+} from "../src/components/useStockDashboardQueries";
+
+test("detail-view primary disables automatic legacy score display and quote reads", () => {
+  assert.deepEqual(stockDashboardQueryEnablement({ enabled: true, detailViewPrimary: true }), {
+    detailView: true,
+    score: false,
+    display: false,
+    quote: false,
+  });
+});
+
+test("detail-view primary can be explicitly opted out", () => {
+  assert.equal(stockDetailViewPrimaryEnabled({ NEXT_PUBLIC_STOCK_DETAIL_VIEW_PRIMARY: "0" }), false);
+  assert.deepEqual(stockDashboardQueryEnablement({ enabled: true, detailViewPrimary: false }), {
+    detailView: true,
+    score: true,
+    display: true,
+    quote: true,
+  });
+});
 
 test("dashboard query state keeps a ready score result over a partial detail-view result", () => {
   const detailPartial: DashboardLoadState = {
