@@ -10,6 +10,7 @@ Next.js 기반 주식 티커 조회 리더입니다.
 - 현재가, 원화 환산, 시가총액, 기간별 수익률, PER/PBR/EPS/BPS 표시
 - 기간별 시세 기반 가격 차트와 비교 화면
 - 한 번에 최대 5개 종목 비교
+- `/market-cap` 시가총액 대시보드에서 전체/국내/해외 상위 100개 단일종목, 섹터 필터, 상세 페이지 진입 제공
 - 조회 결과를 서버 메모리와 Supabase `stock_score_snapshots`에 저장해 반복 조회 시 API 호출 축소
 - yfinance 펀더멘털 보강값을 Supabase `stock_fundamental_snapshots`에 저장하고 로컬 파일 캐시는 fallback으로 사용
 - 룰 기반 판단문을 6시간 버킷에 캐시하고, PER/PBR은 업종/섹터 벤치마크와 비교
@@ -49,6 +50,8 @@ SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 STOCK_REFRESH_COOKIE_SECRET=...
 STOCK_RATE_LIMIT_SECRET=...
+# 선택: /api/market-cap/refresh 수동/cron 갱신 보호용. 없으면 CRON_SECRET 사용
+MARKET_CAP_REFRESH_SECRET=...
 # 선택: /api/health/stock-data?verbose=1 상세 점검용
 STOCK_HEALTH_CHECK_TOKEN=...
 ```
@@ -133,6 +136,9 @@ MARKET_DATA_SERVICE_ENABLE_SCORE=0
 MARKET_DATA_SERVICE_URL=http://127.0.0.1:8080
 MARKET_DATA_BIND_ADDR=0.0.0.0:8080
 MARKET_DATA_INTERNAL_TOKEN=...
+MARKET_CAP_USD_KRW_RATE=1400
+MARKET_CAP_SUPABASE_READ_TIMEOUT_MS=1500
+MARKET_CAP_SUPABASE_WRITE_TIMEOUT_MS=5000
 REDIS_URL=
 ```
 
@@ -236,6 +242,9 @@ npm run dev
 
 ```text
 http://127.0.0.1:3000/?ticker=KO
+http://127.0.0.1:3000/compare?tickers=US:KO,US:PEP
+http://127.0.0.1:3000/market-cap
+http://127.0.0.1:3000/technical?ticker=US:KO
 ```
 
 ## 검증
@@ -259,6 +268,14 @@ http://127.0.0.1:3000/compare?tickers=US:KO,US:PEP,US:MNST
 
 확인 항목은 차트 비어 있음, 텍스트 겹침/가로 overflow, 자동완성 키보드 이동, retry/status/alert 상태, `h1`, chart `aria-describedby`, compare semantic table입니다.
 
+## 시가총액 대시보드
+
+`/market-cap`은 `scope=all|domestic|overseas` 탭과 `sector` 필터를 지원합니다. 각 scope는 시가총액 기준 상위 100개 단일종목만 표시하고, 각 행은 종목 상세 페이지로 이동합니다. 섹터는 별도 외부 provider를 다시 치지 않고 Supabase에 백필된 종목별 industry profile/tag 기준으로 붙입니다.
+
+데이터 경로는 `/api/market-cap`입니다. 이 API는 Supabase `market_cap_snapshots`와 서버 메모리를 먼저 읽고, 스냅샷이 없거나 장중/허용 세션에서 1시간 이상 지난 경우에만 KIS 시가총액 ranking provider를 호출합니다. 휴장/폐장 상태에서는 기존 스냅샷을 재사용하고 provider 호출을 시작하지 않습니다. 국내 장은 정규장과 NXT 시간대, 미국 장은 정규장과 장마감 후 4시간을 refresh 가능 세션으로 봅니다.
+
+Vercel Cron은 `vercel.json`에서 `/api/market-cap/refresh`를 매시 0분에 호출합니다. 이 엔드포인트는 `MARKET_CAP_REFRESH_SECRET` 또는 `CRON_SECRET`으로 보호하고, `?scope=domestic|overseas|all`을 지정하지 않으면 국내/해외/all 스냅샷을 함께 갱신합니다. 스냅샷 저장 테이블은 `supabase/migrations/20260612170000_market_cap_snapshots.sql`로 관리합니다.
+
 ## 배포
 
 Vercel + Supabase 배포에서는 공개 요청 경로에서 무거운 Python score collector를 실행하지 않습니다. Next API는 Supabase snapshot을 먼저 읽고, quote는 KIS 키가 있으면 Vercel Node 런타임에서 종목별 lease 아래 즉시 갱신합니다. score/analysis가 없거나 너무 오래되었고 즉시 만들 수 없는 경우에는 `stock_refresh_jobs`에 수집 작업을 넣은 뒤 pending 응답을 반환합니다.
@@ -275,9 +292,10 @@ STOCK_RATE_LIMIT_SECRET=...
 STOCK_API_APP_KEY=...
 STOCK_API_APP_SECRET=...
 STOCK_API_BASE=https://openapi.koreainvestment.com:9443
+MARKET_CAP_REFRESH_SECRET=...
 ```
 
-`STOCK_API_*` 값은 quote 수동 새로고침과 만료 quote의 요청 주도 갱신에 사용합니다. GitHub Actions는 모든 종목을 계속 만드는 주 데이터 경로가 아니라 queue drain, hot ticker optional warm-up, 업종 benchmark, 상장/상폐 delta 같은 유지보수 역할입니다. 배포 후에는 값을 노출하지 않는 진단 엔드포인트로 env 연결 상태를 확인할 수 있습니다.
+`STOCK_API_*` 값은 quote 수동 새로고침, 만료 quote의 요청 주도 갱신, 시가총액 ranking 스냅샷 갱신에 사용합니다. GitHub Actions는 모든 종목을 계속 만드는 주 데이터 경로가 아니라 queue drain, hot ticker optional warm-up, 업종 benchmark, 상장/상폐 delta 같은 유지보수 역할입니다. Vercel Cron은 시가총액 스냅샷만 매시 갱신을 시도하되, 휴장/폐장 조건에서는 provider 호출을 건너뜁니다. 배포 후에는 값을 노출하지 않는 진단 엔드포인트로 env 연결 상태를 확인할 수 있습니다.
 
 ```bash
 curl https://<preview-url>/api/health/stock-data
