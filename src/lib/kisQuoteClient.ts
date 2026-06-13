@@ -21,7 +21,7 @@ type KisConfig = {
   baseUrl: string;
 };
 
-type KisPayload = Record<string, unknown>;
+export type KisPayload = Record<string, unknown>;
 type KisUsMarket = (typeof KIS_US_MARKETS)[number];
 type KisUsDiscoveryCacheEntry = {
   market: KisUsMarket;
@@ -470,16 +470,25 @@ async function fetchUsDailyRowsForMarket(symbol: string, market: KisUsMarket): P
 }
 
 async function kisGet(path: string, trId: string, params: Record<string, string>, options: { timeoutMs?: number } = {}): Promise<KisPayload> {
+  return (await kisGetRaw(path, trId, params, options)).payload;
+}
+
+export async function kisGetRaw(
+  path: string,
+  trId: string,
+  params: Record<string, string>,
+  options: { timeoutMs?: number; trCont?: string } = {}
+): Promise<{ payload: KisPayload; trCont: string }> {
   const config = kisConfig();
   const cacheKey = kisTokenCacheKey(config);
   const first = await kisGetOnce(config, path, trId, params, options);
-  if (first.ok) return first.payload;
+  if (first.ok) return { payload: first.payload, trCont: first.trCont };
 
   if (kisTokenExpiredMessage(first.message)) {
     tokenCache.delete(cacheKey);
     await deleteSharedKisAccessToken(cacheKey);
     const retry = await kisGetOnce(config, path, trId, params, { ...options, skipSharedTokenCache: true });
-    if (retry.ok) return retry.payload;
+    if (retry.ok) return { payload: retry.payload, trCont: retry.trCont };
     throw new KisQuoteError(retry.message);
   }
 
@@ -491,24 +500,26 @@ async function kisGetOnce(
   path: string,
   trId: string,
   params: Record<string, string>,
-  options: { skipSharedTokenCache?: boolean; timeoutMs?: number } = {}
-): Promise<{ ok: true; payload: KisPayload } | { ok: false; message: string }> {
+  options: { skipSharedTokenCache?: boolean; timeoutMs?: number; trCont?: string } = {}
+): Promise<{ ok: true; payload: KisPayload; trCont: string } | { ok: false; message: string }> {
   const url = new URL(`${config.baseUrl}${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
+  const headers: Record<string, string> = {
+    "content-type": "application/json; charset=utf-8",
+    authorization: `Bearer ${await kisAccessToken(config, options)}`,
+    appkey: config.appKey,
+    appsecret: config.appSecret,
+    tr_id: trId,
+    custtype: "P",
+  };
+  if (options.trCont) headers.tr_cont = options.trCont;
 
   const response = await fetchWithTimeout(
     url.toString(),
     {
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        authorization: `Bearer ${await kisAccessToken(config, options)}`,
-        appkey: config.appKey,
-        appsecret: config.appSecret,
-        tr_id: trId,
-        custtype: "P",
-      },
+      headers,
       cache: "no-store",
     },
     options.timeoutMs ?? 12_000
@@ -518,7 +529,7 @@ async function kisGetOnce(
     const message = stringValue(payload?.msg1) || stringValue(payload?.msg_cd) || `KIS HTTP ${response.status}`;
     return { ok: false, message };
   }
-  return { ok: true, payload };
+  return { ok: true, payload, trCont: response.headers.get("tr_cont") || "" };
 }
 
 function kisTokenExpiredMessage(message: string): boolean {

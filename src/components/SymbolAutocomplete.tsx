@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { activeSymbolItemForQuery } from "@/components/symbolAutocompleteHelpers";
 import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
@@ -20,6 +20,8 @@ type SymbolAutocompleteProps = {
   className?: string;
   variant?: "default" | "floating";
   isCollapsed?: boolean;
+  collapsedDisplayValue?: string;
+  focusOnCollapsedExpand?: boolean;
   onExpandRequest?: () => void;
   formAction?: string;
   formMethod?: "get" | "post";
@@ -68,6 +70,8 @@ export default function SymbolAutocomplete({
   className = "",
   variant = "default",
   isCollapsed = false,
+  collapsedDisplayValue,
+  focusOnCollapsedExpand = true,
   onExpandRequest,
   formAction,
   formMethod = "get",
@@ -123,9 +127,12 @@ export default function SymbolAutocomplete({
   const activeOptionId = isOpen && activeItem ? `${listId}-option-${activeIndex}` : undefined;
   const isFloating = variant === "floating";
   const formClassName = [className, isFloating ? "symbol-autocomplete-floating" : "", isFloating && isCollapsed ? "is-collapsed" : ""].filter(Boolean).join(" ");
+  const displayedInputValue = isFloating && isCollapsed && collapsedDisplayValue !== undefined ? collapsedDisplayValue : value;
+  const collapsedWidthValue = collapsedDisplayValue !== undefined ? collapsedDisplayValue : value;
   const floatingStyle = isFloating
-    ? ({ "--symbol-search-content-width": collapsedContentWidth(value, placeholder) } as CSSProperties)
+    ? ({ "--symbol-search-content-width": collapsedContentWidth(collapsedWidthValue, placeholder) } as CSSProperties)
     : undefined;
+  const isFloatingActionDisabled = disabled && !isCollapsed;
   const actionLabel = isCollapsed ? "검색창 펼치기" : query ? "종목 조회" : "종목 검색";
   const searchStatus = symbolSearch.isLoading
     ? "종목을 검색하고 있어요."
@@ -173,11 +180,17 @@ export default function SymbolAutocomplete({
   }
 
   function onFloatingAction() {
-    if (disabled) return;
+    if (disabled && !isCollapsed) return;
     if (isCollapsed) {
       onExpandRequest?.();
-      focusInput();
+      if (focusOnCollapsedExpand) focusInput();
     }
+  }
+
+  function onFloatingPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!isFloating || !isCollapsed) return;
+    event.preventDefault();
+    onFloatingAction();
   }
 
   function onCollapsedBoxClick(event: ReactMouseEvent<HTMLDivElement>) {
@@ -224,7 +237,7 @@ export default function SymbolAutocomplete({
           id={id}
           name={inputName}
           ref={inputRef}
-          value={value}
+          value={displayedInputValue}
           onChange={(event) => onValueChange(event.target.value)}
           onFocus={() => setIsOpen(Boolean(query && visibleItems.length))}
           onKeyDown={onKeyDown}
@@ -244,8 +257,9 @@ export default function SymbolAutocomplete({
           <button
             type={isCollapsed ? "button" : "submit"}
             className="symbol-search-action search"
-            disabled={disabled}
+            disabled={isFloatingActionDisabled}
             aria-label={actionLabel}
+            onPointerDown={isCollapsed ? onFloatingPointerDown : undefined}
             onClick={isCollapsed ? onFloatingAction : undefined}
           >
             <SearchIcon />

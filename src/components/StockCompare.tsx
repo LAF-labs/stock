@@ -146,6 +146,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   return (
     <main className="stock-app compare-app">
       <nav className="compare-side-index" aria-label="비교 화면 이동">
+        <a href="/market-cap">시가총액 대시보드</a>
         <a href="/">홈으로 돌아가기</a>
         <a href={detailHref}>{originTicker ? "상세 분석으로 돌아가기" : "검색으로 돌아가기"}</a>
       </nav>

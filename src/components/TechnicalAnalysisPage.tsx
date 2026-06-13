@@ -1,5 +1,6 @@
 "use client";
 
+import AppNavigationMenu from "@/components/AppNavigationMenu";
 import { isTechnicalAnalysisPayload } from "@/components/technicalAnalysisHelpers";
 import {
   TechnicalAnalysisFeed,
@@ -27,6 +28,7 @@ export default function TechnicalAnalysisPage({ ticker, initialDisplayPayload }:
 
   return (
     <main className="stock-app stock-detail-app technical-analysis-app">
+      <AppNavigationMenu context={{ page: "technical", ticker, detailHref }} />
       <TechnicalAnalysisTopbar detailHref={detailHref} displayTicker={displayTicker} />
 
       {state.status === "loading" ? <TechnicalAnalysisSkeleton /> : null}
