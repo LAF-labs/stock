@@ -2,11 +2,15 @@ import { acquireRateLimit, apiLimitPolicy, fixedRateLimitKey } from "@/lib/apiRa
 import { safeErrorMessage } from "@/lib/errorSafety";
 import {
   acquireSharedKisTokenIssueLock,
+  deleteLocalKisAccessToken,
   deleteSharedKisAccessToken,
   isFreshKisToken,
   kisTokenCacheKey,
+  readLocalKisAccessToken,
   readSharedKisAccessToken,
   waitForSharedKisAccessToken,
+  withLocalKisTokenIssueLock,
+  writeLocalKisAccessToken,
   writeSharedKisAccessToken,
   type KisTokenCacheEntry,
 } from "@/lib/kisTokenCache";
@@ -76,12 +80,14 @@ export type KisDailyChartPayload = {
 
 declare global {
   var __kisQuoteTokenCache: Map<string, KisTokenCacheEntry> | undefined;
+  var __kisQuoteTokenInflight: Map<string, Promise<KisTokenCacheEntry>> | undefined;
   var __kisQuoteDiscoveryCache: Map<string, KisUsDiscoveryCacheEntry> | undefined;
   var __kisDailyChartMemoryCache: Map<string, KisDailyChartCacheEntry> | undefined;
   var __kisDailyChartInflight: Map<string, Promise<KisDailyChartPayload>> | undefined;
 }
 
 const tokenCache = (globalThis.__kisQuoteTokenCache ??= new Map<string, KisTokenCacheEntry>());
+const tokenInflight = (globalThis.__kisQuoteTokenInflight ??= new Map<string, Promise<KisTokenCacheEntry>>());
 const discoveryCache = (globalThis.__kisQuoteDiscoveryCache ??= new Map<string, KisUsDiscoveryCacheEntry>());
 const dailyChartCache = (globalThis.__kisDailyChartMemoryCache ??= new Map<string, KisDailyChartCacheEntry>());
 const dailyChartInflight = (globalThis.__kisDailyChartInflight ??= new Map<string, Promise<KisDailyChartPayload>>());
@@ -486,6 +492,7 @@ export async function kisGetRaw(
 
   if (kisTokenExpiredMessage(first.message)) {
     tokenCache.delete(cacheKey);
+    await deleteLocalKisAccessToken(cacheKey);
     await deleteSharedKisAccessToken(cacheKey);
     const retry = await kisGetOnce(config, path, trId, params, { ...options, skipSharedTokenCache: true });
     if (retry.ok) return { payload: retry.payload, trCont: retry.trCont };
@@ -544,49 +551,94 @@ async function kisAccessToken(config: KisConfig, options: { skipSharedTokenCache
     return cached.accessToken;
   }
 
+  const local = await readLocalKisAccessToken(cacheKey);
+  if (local) {
+    tokenCache.set(cacheKey, local);
+    return local.accessToken;
+  }
+
   if (!options.skipSharedTokenCache) {
     const shared = await readSharedKisAccessToken(cacheKey);
     if (shared) {
       tokenCache.set(cacheKey, shared);
+      await writeLocalKisAccessToken(cacheKey, shared);
       return shared.accessToken;
     }
   }
 
-  const lockAcquired = await acquireSharedKisTokenIssueLock(cacheKey);
-  if (lockAcquired === false) {
-    const waited = await waitForSharedKisAccessToken(cacheKey);
-    if (waited) {
-      tokenCache.set(cacheKey, waited);
-      return waited.accessToken;
+  const existing = tokenInflight.get(cacheKey);
+  if (existing) {
+    const entry = await existing;
+    tokenCache.set(cacheKey, entry);
+    return entry.accessToken;
+  }
+
+  const promise = issueKisAccessToken(config, cacheKey, options);
+  tokenInflight.set(cacheKey, promise);
+  try {
+    const entry = await promise;
+    tokenCache.set(cacheKey, entry);
+    return entry.accessToken;
+  } finally {
+    if (tokenInflight.get(cacheKey) === promise) {
+      tokenInflight.delete(cacheKey);
     }
   }
+}
 
-  const response = await fetchWithTimeout(
-    `${config.baseUrl}/oauth2/tokenP`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify({
-        grant_type: "client_credentials",
-        appkey: config.appKey,
-        appsecret: config.appSecret,
-      }),
-      cache: "no-store",
-    },
-    12_000
-  );
-  const payload = (await response.json().catch(() => undefined)) as KisPayload | undefined;
-  const token = stringValue(payload?.access_token);
-  if (!response.ok || !token) {
-    const message = stringValue(payload?.error_description) || stringValue(payload?.msg1) || `KIS token HTTP ${response.status}`;
-    throw new KisQuoteError(`token_failed: ${message}`);
-  }
+async function issueKisAccessToken(
+  config: KisConfig,
+  cacheKey: string,
+  options: { skipSharedTokenCache?: boolean } = {}
+): Promise<KisTokenCacheEntry> {
+  return withLocalKisTokenIssueLock(cacheKey, async () => {
+    const local = await readLocalKisAccessToken(cacheKey);
+    if (local) return local;
 
-  const expiresAtMs = parseTokenExpiry(payload?.access_token_token_expired) ?? Date.now() + Number(payload?.expires_in || 60 * 60 * 23) * 1000;
-  const entry = { accessToken: token, expiresAtMs };
-  tokenCache.set(cacheKey, entry);
-  await writeSharedKisAccessToken(cacheKey, entry);
-  return token;
+    if (!options.skipSharedTokenCache) {
+      const shared = await readSharedKisAccessToken(cacheKey);
+      if (shared) {
+        await writeLocalKisAccessToken(cacheKey, shared);
+        return shared;
+      }
+    }
+
+    const lockAcquired = await acquireSharedKisTokenIssueLock(cacheKey);
+    if (lockAcquired === false) {
+      const waited = await waitForSharedKisAccessToken(cacheKey);
+      if (waited) {
+        await writeLocalKisAccessToken(cacheKey, waited);
+        return waited;
+      }
+    }
+
+    const response = await fetchWithTimeout(
+      `${config.baseUrl}/oauth2/tokenP`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          grant_type: "client_credentials",
+          appkey: config.appKey,
+          appsecret: config.appSecret,
+        }),
+        cache: "no-store",
+      },
+      12_000
+    );
+    const payload = (await response.json().catch(() => undefined)) as KisPayload | undefined;
+    const token = stringValue(payload?.access_token);
+    if (!response.ok || !token) {
+      const message = stringValue(payload?.error_description) || stringValue(payload?.msg1) || `KIS token HTTP ${response.status}`;
+      throw new KisQuoteError(`token_failed: ${message}`);
+    }
+
+    const expiresAtMs = parseTokenExpiry(payload?.access_token_token_expired) ?? Date.now() + Number(payload?.expires_in || 60 * 60 * 23) * 1000;
+    const entry = { accessToken: token, expiresAtMs };
+    await writeLocalKisAccessToken(cacheKey, entry);
+    await writeSharedKisAccessToken(cacheKey, entry);
+    return entry;
+  });
 }
 
 function kisConfig(): KisConfig {

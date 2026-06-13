@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { fetchKisDailyChart, fetchKisQuote } from "../src/lib/kisQuoteClient";
 
@@ -15,20 +18,27 @@ const ENV_KEYS = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_PUBLISHABLE_KEY",
   "STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES",
+  "STOCK_KIS_TOKEN_CACHE_DIR",
+  "STOCK_KIS_LOCAL_TOKEN_CACHE",
 ] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 const globalWithKisCache = globalThis as typeof globalThis & {
   __kisQuoteTokenCache?: Map<string, { accessToken: string; expiresAtMs: number }>;
+  __kisQuoteTokenInflight?: Map<string, unknown>;
   __kisQuoteDiscoveryCache?: Map<string, unknown>;
   __kisDailyChartMemoryCache?: Map<string, unknown>;
   __kisDailyChartInflight?: Map<string, unknown>;
 };
+let activeTokenCacheDir: string | undefined;
 
 function setupEnv() {
+  if (activeTokenCacheDir) rmSync(activeTokenCacheDir, { recursive: true, force: true });
+  activeTokenCacheDir = mkdtempSync(join(tmpdir(), "stock-kis-token-"));
   process.env.STOCK_API_APP_KEY = "app-key";
   process.env.STOCK_API_APP_SECRET = "app-secret";
   process.env.STOCK_API_BASE = "https://kis.example.com";
+  process.env.STOCK_KIS_TOKEN_CACHE_DIR = activeTokenCacheDir;
   delete process.env.KIS_APP_KEY;
   delete process.env.KIS_APP_SECRET;
   delete process.env.KIS_API_BASE;
@@ -36,7 +46,9 @@ function setupEnv() {
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.SUPABASE_PUBLISHABLE_KEY;
   delete process.env.STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES;
+  delete process.env.STOCK_KIS_LOCAL_TOKEN_CACHE;
   globalWithKisCache.__kisQuoteTokenCache?.clear();
+  globalWithKisCache.__kisQuoteTokenInflight?.clear();
   globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
   globalWithKisCache.__kisDailyChartMemoryCache?.clear();
   globalWithKisCache.__kisDailyChartInflight?.clear();
@@ -52,7 +64,12 @@ function restore() {
     }
   }
   globalThis.fetch = originalFetch;
+  if (activeTokenCacheDir) {
+    rmSync(activeTokenCacheDir, { recursive: true, force: true });
+    activeTokenCacheDir = undefined;
+  }
   globalWithKisCache.__kisQuoteTokenCache?.clear();
+  globalWithKisCache.__kisQuoteTokenInflight?.clear();
   globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
   globalWithKisCache.__kisDailyChartMemoryCache?.clear();
   globalWithKisCache.__kisDailyChartInflight?.clear();
@@ -265,6 +282,101 @@ test("fetchKisDailyChart reuses in-flight daily requests inside the server insta
   assert.equal(dailyCalls, 1);
   assert.equal(first.chartSeries.length, 2);
   assert.equal(second.chartSeries.length, 2);
+});
+
+test("concurrent cold KIS quote and chart requests share one token issue inside the server instance", async () => {
+  setupEnv();
+
+  let tokenEndpointCalls = 0;
+  let priceDetailCalls = 0;
+  let dailyCalls = 0;
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      tokenEndpointCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return Response.json({ access_token: `token-${tokenEndpointCalls}`, expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/price-detail")) {
+      priceDetailCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          last: "70.50",
+          base: "69.00",
+          rate: "2.17",
+          tvol: "1000",
+          curr: "USD",
+          t_rate: "1370",
+          xymd: "20260605",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/search-info")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          prdt_eng_name: "Known stock",
+          ovrs_excg_name: "Nasdaq",
+        },
+      });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      dailyCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output2: [{ xymd: "20260605", open: "70", high: "72", low: "69", clos: "71", tvol: "1000" }],
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  await Promise.all([
+    fetchKisQuote("US:KO"),
+    fetchKisDailyChart("US:KO"),
+    fetchKisQuote("US:PEP"),
+    fetchKisDailyChart("US:PEP"),
+  ]);
+
+  assert.equal(tokenEndpointCalls, 1);
+  assert.equal(priceDetailCalls, 2);
+  assert.equal(dailyCalls, 2);
+});
+
+test("fetchKisQuote reuses the local KIS token cache after memory cache is cleared", async () => {
+  setupEnv();
+
+  let tokenEndpointCalls = 0;
+  let quoteCalls = 0;
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      tokenEndpointCalls += 1;
+      return Response.json({ access_token: "local-cache-token", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      quoteCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "70000",
+          stck_sdpr: "69000",
+          prdy_ctrt: "1.45",
+          acml_vol: "123456",
+          hts_kor_isnm: "삼성전자",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  await fetchKisQuote("KR:005930");
+  globalWithKisCache.__kisQuoteTokenCache?.clear();
+  await fetchKisQuote("KR:005930");
+
+  assert.equal(tokenEndpointCalls, 1);
+  assert.equal(quoteCalls, 2);
 });
 
 test("fetchKisDailyChart falls back to domestic stock market div and sorts rows oldest first", async () => {
