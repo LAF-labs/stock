@@ -5728,46 +5728,98 @@ body {
 .app-bottom-nav {
   position: fixed;
   right: auto;
-  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
   left: 50%;
   z-index: 90;
-  width: min(calc(100vw - 24px), 430px);
-  min-height: 62px;
+  width: min(calc(100vw - 28px), 396px);
+  min-height: 56px;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
-  padding: 6px;
+  padding: 5px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(22px);
-  transform: translate(-50%, 0);
+  opacity: 0;
+  transform: translate(-50%, 12px) scale(0.92);
+  transform-origin: center bottom;
   transition: transform 220ms ease, opacity 180ms ease;
+  pointer-events: none;
+}
+
+.app-bottom-nav.is-open {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
   pointer-events: auto;
 }
 
-.app-bottom-nav.is-hidden {
+.app-bottom-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.app-bottom-menu-trigger {
+  position: fixed;
+  right: auto;
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  z-index: 90;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(20px);
+  transform: translateX(-50%) scale(1);
+  transition: transform 180ms ease, opacity 160ms ease, color 160ms ease, background-color 160ms ease;
+  pointer-events: auto;
+}
+
+.app-bottom-menu-trigger:hover {
+  color: var(--accent-strong);
+  background: #fff;
+}
+
+.app-bottom-menu-trigger svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.3;
+}
+
+.app-bottom-menu-trigger.is-hidden {
   opacity: 0;
-  transform: translate(-50%, calc(100% + 24px));
+  transform: translateX(-50%) scale(0.84);
   pointer-events: none;
 }
 
 .app-bottom-nav-item {
   min-width: 0;
-  min-height: 50px;
+  min-height: 44px;
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 3px;
+  gap: 2px;
   padding: 0 4px;
   border: 0;
-  border-radius: 16px;
+  border-radius: 15px;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
   text-decoration: none;
@@ -5776,8 +5828,8 @@ body {
 }
 
 .app-bottom-nav-item svg {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
   stroke-width: 2.25;
 }
 
@@ -5800,27 +5852,27 @@ body {
 
 .app-bottom-context-action {
   position: fixed;
-  right: max(16px, calc((100vw - 430px) / 2 + 12px));
-  bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+  right: max(16px, calc((100vw - 396px) / 2 + 12px));
+  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
   z-index: 91;
-  min-height: 46px;
+  min-width: 42px;
+  min-height: 42px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 0 16px 0 14px;
+  padding: 0 14px 0 12px;
   border: 1px solid rgba(49, 130, 246, 0.16);
   border-radius: 999px;
   background: var(--accent);
   color: #fff;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
-  box-shadow: 0 16px 34px rgba(49, 130, 246, 0.28);
-  transform: translateY(0);
-  transition: transform 220ms ease, opacity 180ms ease, background-color 160ms ease;
+  box-shadow: 0 12px 28px rgba(49, 130, 246, 0.26);
+  transition: width 180ms ease, height 180ms ease, padding 180ms ease, transform 180ms ease, opacity 180ms ease, background-color 160ms ease;
   pointer-events: auto;
 }
 
@@ -5829,15 +5881,22 @@ body {
 }
 
 .app-bottom-context-action svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   stroke-width: 2.5;
 }
 
-.app-bottom-context-action.is-hidden {
-  opacity: 0;
-  transform: translateY(calc(100% + 28px));
-  pointer-events: none;
+.app-bottom-context-action.is-compact {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.app-bottom-context-action.is-compact span {
+  display: none;
 }
 
 .app-bottom-context-action:disabled {
@@ -5850,7 +5909,7 @@ body {
 
 @media (max-width: 899px) {
   .stock-app {
-    padding-bottom: calc(116px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -5860,6 +5919,8 @@ body {
   }
 
   .app-bottom-nav,
+  .app-bottom-nav-backdrop,
+  .app-bottom-menu-trigger,
   .app-bottom-context-action {
     display: none;
   }

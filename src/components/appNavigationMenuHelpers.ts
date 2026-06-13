@@ -17,11 +17,14 @@ export type AppNavigationContext =
   | { page: "technical"; ticker: string; detailHref: string; compareHref?: string }
   | { page: "compare"; originTicker?: string; detailHref?: string };
 
-export type BottomNavigationScrollState = {
-  currentHidden: boolean;
-  scrollY: number;
-  delta: number;
+export type MobileNavigationEvent = "toggle" | "scroll" | "outside" | "noop";
+
+export type MobileNavigationOpenState = {
+  currentOpen: boolean;
+  event: MobileNavigationEvent;
 };
+
+export type MobileContextActionVariant = "full" | "compact";
 
 export function navigationItemsForContext(context: AppNavigationContext): AppNavigationItem[] {
   if (context.page === "home") {
@@ -103,14 +106,14 @@ export function globalNavigationItemsForContext(context: AppNavigationContext): 
   return items;
 }
 
-export function nextBottomNavigationHidden({
-  currentHidden,
-  scrollY,
-  delta,
-}: BottomNavigationScrollState): boolean {
-  if (scrollY < 80 || delta < -6) return false;
-  if (delta > 8 && scrollY > 140) return true;
-  return currentHidden;
+export function nextMobileNavigationOpen({ currentOpen, event }: MobileNavigationOpenState): boolean {
+  if (event === "toggle") return !currentOpen;
+  if (event === "scroll" || event === "outside") return false;
+  return currentOpen;
+}
+
+export function mobileContextActionVariant(scrollY: number): MobileContextActionVariant {
+  return scrollY >= 24 ? "compact" : "full";
 }
 
 function detailNavigationTarget(context: AppNavigationContext): { href: string } | undefined {

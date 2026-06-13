@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, FileText, GitCompareArrows, Plus, Search } from "lucide-react";
+import { BarChart3, FileText, GitCompareArrows, Menu, Plus, Search } from "lucide-react";
 import AppNavigationLinks from "@/components/AppNavigationLinks";
 import {
   globalNavigationItemsForContext,
-  nextBottomNavigationHidden,
+  mobileContextActionVariant,
+  nextMobileNavigationOpen,
   type AppNavigationContext,
   type AppNavigationItem,
   type GlobalNavigationId,
+  type MobileContextActionVariant,
 } from "@/components/appNavigationMenuHelpers";
 
 type MobileContextAction = {
@@ -30,7 +32,7 @@ export default function AppNavigationMenu({
   mobileContextAction,
 }: AppNavigationMenuProps) {
   const items = useMemo(() => globalNavigationItemsForContext(context), [context]);
-  const isHidden = useBottomNavigationHidden();
+  const mobileNavigation = useMobileFloatingNavigation();
 
   return (
     <div className={["app-navigation-chrome", className].filter(Boolean).join(" ")}>
@@ -41,16 +43,47 @@ export default function AppNavigationMenu({
         </div>
       </nav>
 
-      <nav className={["app-bottom-nav", isHidden ? "is-hidden" : ""].filter(Boolean).join(" ")} aria-label="주요 페이지">
-        {items.map((item) => <BottomNavigationLink key={`${item.id}:${item.href}`} item={item} />)}
+      {mobileNavigation.isOpen ? (
+        <button
+          type="button"
+          className="app-bottom-nav-backdrop"
+          aria-label="주요 페이지 메뉴 닫기"
+          onClick={mobileNavigation.closeFromOutside}
+        />
+      ) : null}
+
+      <button
+        type="button"
+        className={["app-bottom-menu-trigger", mobileNavigation.isOpen ? "is-hidden" : ""].filter(Boolean).join(" ")}
+        aria-label="주요 페이지 메뉴 열기"
+        aria-expanded={mobileNavigation.isOpen}
+        onClick={mobileNavigation.toggle}
+      >
+        <Menu aria-hidden="true" />
+      </button>
+
+      <nav className={["app-bottom-nav", mobileNavigation.isOpen ? "is-open" : ""].filter(Boolean).join(" ")} aria-label="주요 페이지" aria-hidden={!mobileNavigation.isOpen}>
+        {items.map((item) => (
+          <BottomNavigationLink
+            key={`${item.id}:${item.href}`}
+            item={item}
+            tabIndex={mobileNavigation.isOpen ? undefined : -1}
+          />
+        ))}
       </nav>
       {mobileContextAction ? (
         <button
           type="button"
-          className={["app-bottom-context-action", isHidden ? "is-hidden" : ""].filter(Boolean).join(" ")}
+          className={[
+            "app-bottom-context-action",
+            mobileNavigation.contextActionVariant === "compact" ? "is-compact" : "",
+          ].filter(Boolean).join(" ")}
           disabled={mobileContextAction.disabled}
           aria-label={mobileContextAction.ariaLabel || mobileContextAction.label}
-          onClick={mobileContextAction.onClick}
+          onClick={() => {
+            mobileNavigation.closeFromOutside();
+            mobileContextAction.onClick();
+          }}
         >
           <Plus aria-hidden="true" />
           <span>{mobileContextAction.label}</span>
@@ -60,10 +93,10 @@ export default function AppNavigationMenu({
   );
 }
 
-function BottomNavigationLink({ item }: { item: AppNavigationItem }) {
+function BottomNavigationLink({ item, tabIndex }: { item: AppNavigationItem; tabIndex?: number }) {
   const Icon = iconForItem(item.id);
   return (
-    <a className={["app-bottom-nav-item", item.active ? "active" : ""].filter(Boolean).join(" ")} href={item.href} aria-current={item.active ? "page" : undefined}>
+    <a className={["app-bottom-nav-item", item.active ? "active" : ""].filter(Boolean).join(" ")} href={item.href} aria-current={item.active ? "page" : undefined} tabIndex={tabIndex}>
       <Icon aria-hidden="true" />
       <span>{item.shortLabel || item.label}</span>
     </a>
@@ -77,19 +110,24 @@ function iconForItem(id: GlobalNavigationId | undefined) {
   return Search;
 }
 
-function useBottomNavigationHidden(): boolean {
-  const [hidden, setHidden] = useState(false);
+function useMobileFloatingNavigation(): {
+  isOpen: boolean;
+  contextActionVariant: MobileContextActionVariant;
+  toggle: () => void;
+  closeFromOutside: () => void;
+} {
+  const [isOpen, setIsOpen] = useState(false);
+  const [contextActionVariant, setContextActionVariant] = useState<MobileContextActionVariant>(() => (
+    typeof window === "undefined" ? "full" : mobileContextActionVariant(window.scrollY)
+  ));
 
   useEffect(() => {
-    let lastScrollY = window.scrollY;
     let frame = 0;
 
     const update = () => {
       frame = 0;
-      const nextScrollY = window.scrollY;
-      const delta = nextScrollY - lastScrollY;
-      lastScrollY = nextScrollY;
-      setHidden((currentHidden) => nextBottomNavigationHidden({ currentHidden, scrollY: nextScrollY, delta }));
+      setContextActionVariant(mobileContextActionVariant(window.scrollY));
+      setIsOpen((currentOpen) => nextMobileNavigationOpen({ currentOpen, event: "scroll" }));
     };
 
     const onScroll = () => {
@@ -106,5 +144,10 @@ function useBottomNavigationHidden(): boolean {
     };
   }, []);
 
-  return hidden;
+  return {
+    isOpen,
+    contextActionVariant,
+    toggle: () => setIsOpen((currentOpen) => nextMobileNavigationOpen({ currentOpen, event: "toggle" })),
+    closeFromOutside: () => setIsOpen((currentOpen) => nextMobileNavigationOpen({ currentOpen, event: "outside" })),
+  };
 }

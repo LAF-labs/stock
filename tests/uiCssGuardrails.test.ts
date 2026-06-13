@@ -194,8 +194,8 @@ test("shared navigation exposes global GNB and mobile bottom bar without replaci
   assert.doesNotMatch(dashboardSource, /stock-detail-index-menu/);
   assert.match(compareSource, /AppNavigationMenu/);
   assert.match(compareSource, /mobileContextAction/);
-  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?bottom:\s*max\(10px, env\(safe-area-inset-bottom, 0px\)\);/);
-  assert.match(css, /\.app-bottom-nav\.is-hidden\s*\{[\s\S]*?transform:\s*translate\(-50%, calc\(100% \+ 24px\)\);/);
+  assert.match(css, /\.app-bottom-menu-trigger\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?bottom:\s*max\(14px, env\(safe-area-inset-bottom, 0px\)\);/);
+  assert.match(css, /\.app-bottom-nav\.is-open\s*\{[\s\S]*?transform:\s*translate\(-50%, 0\) scale\(1\);/);
   assert.doesNotMatch(css, /\.app-navigation-trigger/);
 });
 
@@ -325,19 +325,30 @@ test("wide mobile content scrolls inside its own touch container", () => {
 test("mobile compare navigation keeps route tabs and contextual add action separate", () => {
   const mobileBottomNavRule = css.match(/\.app-bottom-nav\s*\{([^}]*)\}/)?.[1] || "";
   const mobileBottomItemRule = css.match(/\.app-bottom-nav-item\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileMenuTriggerRule = css.match(/\.app-bottom-menu-trigger\s*\{([^}]*)\}/)?.[1] || "";
 
   assert.match(mobileBottomNavRule, /grid-auto-flow:\s*column;/);
-  assert.match(mobileBottomNavRule, /width:\s*min\(calc\(100vw - 24px\),\s*430px\);/);
-  assert.match(mobileBottomItemRule, /min-height:\s*50px;/);
+  assert.match(mobileBottomNavRule, /width:\s*min\(calc\(100vw - 28px\),\s*396px\);/);
+  assert.match(mobileBottomNavRule, /opacity:\s*0;/);
+  assert.match(mobileBottomItemRule, /min-height:\s*44px;/);
+  assert.match(mobileMenuTriggerRule, /position:\s*fixed;/);
+  assert.match(mobileMenuTriggerRule, /width:\s*48px;/);
+  assert.match(mobileMenuTriggerRule, /height:\s*48px;/);
+  assert.match(appNavigationSource, /import \{ BarChart3, FileText, GitCompareArrows, Menu, Plus, Search \} from "lucide-react"/);
+  assert.match(appNavigationSource, /app-bottom-menu-trigger/);
+  assert.match(appNavigationSource, /app-bottom-nav-backdrop/);
+  assert.match(appNavigationSource, /nextMobileNavigationOpen/);
   assert.doesNotMatch(appNavigationSource, /app-bottom-nav-action/);
   assert.doesNotMatch(appNavigationSource, /mobileAction/);
   assert.match(appNavigationSource, /app-bottom-context-action/);
   assert.match(compareSource, /mobileContextAction/);
-  assert.match(compareSource, /IntersectionObserver/);
-  assert.match(compareSource, /isTickerRailVisible/);
+  assert.doesNotMatch(compareSource, /IntersectionObserver/);
+  assert.doesNotMatch(compareSource, /isTickerRailVisible/);
   assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?border-radius:\s*999px;/);
-  assert.match(css, /\.app-bottom-context-action\.is-hidden\s*\{[\s\S]*?transform:\s*translateY\(calc\(100% \+ 28px\)\);/);
-  assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.stock-app\s*\{[\s\S]*?padding-bottom:\s*calc\(116px \+ env\(safe-area-inset-bottom,\s*0px\)\);/);
+  assert.match(css, /\.app-bottom-context-action\.is-compact\s*\{[\s\S]*?width:\s*42px;[\s\S]*?height:\s*42px;/);
+  assert.match(css, /\.app-bottom-context-action\.is-compact span\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /\.app-bottom-nav\.is-open\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?pointer-events:\s*auto;/);
+  assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.stock-app\s*\{[\s\S]*?padding-bottom:\s*calc\(104px \+ env\(safe-area-inset-bottom,\s*0px\)\);/);
 });
 
 test("mobile route headers keep first content flush and compact", () => {
@@ -353,8 +364,8 @@ test("mobile route headers keep first content flush and compact", () => {
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action svg\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
-  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?min-height:\s*62px;/);
-  assert.match(css, /\.app-bottom-nav-item\s*\{[\s\S]*?font-size:\s*11px;/);
+  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?min-height:\s*56px;/);
+  assert.match(css, /\.app-bottom-nav-item\s*\{[\s\S]*?font-size:\s*10px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-picks\s*\{[\s\S]*?padding-top:\s*10px;[\s\S]*?padding-bottom:\s*12px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.technical-analysis-app \.technical-hero\s*\{[\s\S]*?border-top:\s*0;[\s\S]*?padding-top:\s*28px;/);
 });

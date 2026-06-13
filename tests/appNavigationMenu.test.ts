@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   globalNavigationItemsForContext,
+  mobileContextActionVariant,
   navigationItemsForContext,
-  nextBottomNavigationHidden,
+  nextMobileNavigationOpen,
 } from "../src/components/appNavigationMenuHelpers";
 
 test("home navigation exposes compare and market-cap dashboard entry points", () => {
@@ -76,10 +77,16 @@ test("detail-aware global navigation adds a compact detail return target", () =>
   }).find((item) => item.id === "detail")?.active, true);
 });
 
-test("bottom navigation visibility hides only on deliberate downward scroll", () => {
-  assert.equal(nextBottomNavigationHidden({ currentHidden: true, scrollY: 40, delta: 12 }), false);
-  assert.equal(nextBottomNavigationHidden({ currentHidden: true, scrollY: 220, delta: -7 }), false);
-  assert.equal(nextBottomNavigationHidden({ currentHidden: false, scrollY: 180, delta: 9 }), true);
-  assert.equal(nextBottomNavigationHidden({ currentHidden: true, scrollY: 180, delta: 2 }), true);
-  assert.equal(nextBottomNavigationHidden({ currentHidden: false, scrollY: 120, delta: 9 }), false);
+test("mobile floating navigation opens from a trigger and closes on scroll or outside taps", () => {
+  assert.equal(nextMobileNavigationOpen({ currentOpen: false, event: "toggle" }), true);
+  assert.equal(nextMobileNavigationOpen({ currentOpen: true, event: "toggle" }), false);
+  assert.equal(nextMobileNavigationOpen({ currentOpen: true, event: "scroll" }), false);
+  assert.equal(nextMobileNavigationOpen({ currentOpen: true, event: "outside" }), false);
+  assert.equal(nextMobileNavigationOpen({ currentOpen: false, event: "noop" }), false);
+});
+
+test("mobile context action is full at the top and compact after scrolling", () => {
+  assert.equal(mobileContextActionVariant(0), "full");
+  assert.equal(mobileContextActionVariant(8), "full");
+  assert.equal(mobileContextActionVariant(24), "compact");
 });
