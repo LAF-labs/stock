@@ -223,6 +223,13 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /className="compare-pick-list"/);
 });
 
+test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?width:\s*min\(1400px,\s*calc\(100% - 64px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-landing,[\s\S]*?\.compare-app \.compare-picks,[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?position:\s*static;[\s\S]*?border-bottom:\s*1px solid rgba\(49,\s*130,\s*246,\s*0\.12\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-side-index\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+});
+
 test("compare cards give quality and opportunity matching mobile-safe score hierarchy", () => {
   const scoreTileTextRule = css.match(/\.compare-score-tile span,[\s\S]*?\.compare-score-tile small\s*\{([^}]*)\}/)?.[1] || "";
 

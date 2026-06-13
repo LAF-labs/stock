@@ -5567,6 +5567,60 @@ body {
     width: min(1400px, calc(100% - 64px));
   }
 
+  .compare-app .compare-side-index {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .compare-app .compare-side-index a {
+    border: 1px solid rgba(49, 130, 246, 0.1);
+    background: rgba(255, 255, 255, 0.82);
+  }
+
+  .compare-app .compare-landing,
+  .compare-app .compare-picks,
+  .compare-app .compare-toolbar {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .compare-app .compare-landing {
+    padding: 32px 0 22px;
+    border-bottom: 1px solid rgba(49, 130, 246, 0.12);
+  }
+
+  .compare-app .compare-hero {
+    padding: 0;
+    background: transparent;
+  }
+
+  .compare-app .compare-hero h1 {
+    font-size: 38px;
+  }
+
+  .compare-app .compare-picks {
+    padding: 18px 0 12px;
+    border-bottom: 1px solid rgba(49, 130, 246, 0.1);
+  }
+
+  .compare-app .compare-picks span {
+    border: 1px solid rgba(49, 130, 246, 0.1);
+    background: rgba(255, 255, 255, 0.84);
+  }
+
+  .compare-app .compare-toolbar {
+    position: static;
+    padding: 16px 0 24px;
+    border-bottom: 1px solid rgba(49, 130, 246, 0.12);
+    backdrop-filter: none;
+  }
+
   .compare-app .compare-feed {
     gap: 28px;
   }
