@@ -148,6 +148,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     <main className="stock-app compare-app">
       <AppNavigationMenu
         context={{ page: "compare", originTicker, detailHref }}
+        suppressMobileChrome={isMobileSearchOpen}
         mobileContextAction={{
           label: compareLimitReached ? "최대 5개" : "종목 추가",
           ariaLabel: compareLimitReached ? "비교 종목 최대 개수 도달" : "비교할 종목 추가",

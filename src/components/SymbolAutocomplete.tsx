@@ -236,6 +236,7 @@ export default function SymbolAutocomplete({
         <input
           id={id}
           name={inputName}
+          type="search"
           ref={inputRef}
           value={displayedInputValue}
           onChange={(event) => onValueChange(event.target.value)}
@@ -243,6 +244,9 @@ export default function SymbolAutocomplete({
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          enterKeyHint="search"
           spellCheck={false}
           disabled={disabled}
           role="combobox"

@@ -24,12 +24,14 @@ type AppNavigationMenuProps = {
   context: AppNavigationContext;
   className?: string;
   mobileContextAction?: MobileContextAction;
+  suppressMobileChrome?: boolean;
 };
 
 export default function AppNavigationMenu({
   context,
   className = "",
   mobileContextAction,
+  suppressMobileChrome = false,
 }: AppNavigationMenuProps) {
   const items = useMemo(() => globalNavigationItemsForContext(context), [context]);
   const mobileNavigation = useMobileFloatingNavigation();
@@ -43,7 +45,7 @@ export default function AppNavigationMenu({
         </div>
       </nav>
 
-      {mobileNavigation.isOpen ? (
+      {!suppressMobileChrome && mobileNavigation.isOpen ? (
         <button
           type="button"
           className="app-bottom-nav-backdrop"
@@ -52,26 +54,30 @@ export default function AppNavigationMenu({
         />
       ) : null}
 
-      <button
-        type="button"
-        className={["app-bottom-menu-trigger", mobileNavigation.isOpen ? "is-hidden" : ""].filter(Boolean).join(" ")}
-        aria-label="주요 페이지 메뉴 열기"
-        aria-expanded={mobileNavigation.isOpen}
-        onClick={mobileNavigation.toggle}
-      >
-        <Menu aria-hidden="true" />
-      </button>
+      {!suppressMobileChrome ? (
+        <button
+          type="button"
+          className={["app-bottom-menu-trigger", mobileNavigation.isOpen ? "is-hidden" : ""].filter(Boolean).join(" ")}
+          aria-label="주요 페이지 메뉴 열기"
+          aria-expanded={mobileNavigation.isOpen}
+          onClick={mobileNavigation.toggle}
+        >
+          <Menu aria-hidden="true" />
+        </button>
+      ) : null}
 
-      <nav className={["app-bottom-nav", mobileNavigation.isOpen ? "is-open" : ""].filter(Boolean).join(" ")} aria-label="주요 페이지" aria-hidden={!mobileNavigation.isOpen}>
-        {items.map((item) => (
-          <BottomNavigationLink
-            key={`${item.id}:${item.href}`}
-            item={item}
-            tabIndex={mobileNavigation.isOpen ? undefined : -1}
-          />
-        ))}
-      </nav>
-      {mobileContextAction ? (
+      {!suppressMobileChrome ? (
+        <nav className={["app-bottom-nav", mobileNavigation.isOpen ? "is-open" : ""].filter(Boolean).join(" ")} aria-label="주요 페이지" aria-hidden={!mobileNavigation.isOpen}>
+          {items.map((item) => (
+            <BottomNavigationLink
+              key={`${item.id}:${item.href}`}
+              item={item}
+              tabIndex={mobileNavigation.isOpen ? undefined : -1}
+            />
+          ))}
+        </nav>
+      ) : null}
+      {!suppressMobileChrome && mobileContextAction ? (
         <button
           type="button"
           className={[

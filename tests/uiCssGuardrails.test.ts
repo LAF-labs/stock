@@ -20,6 +20,23 @@ const appNavigationLinksSource = readFileSync(join(process.cwd(), "src/component
 const searchChromeSource = readFileSync(join(process.cwd(), "src/components/SearchChromeWithNavigation.tsx"), "utf8");
 const collapsibleSearchChromeSource = readFileSync(join(process.cwd(), "src/components/useCollapsibleSearchChrome.ts"), "utf8");
 
+function lastCssDeclaration(selector: string, property: string): string | undefined {
+  let value: string | undefined;
+  const rulePattern = /([^{}]+)\s*\{([^{}]*)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = rulePattern.exec(css))) {
+    const selectors = match[1].split(",").map((item) => item.trim().replace(/\s+/g, " "));
+    if (!selectors.includes(selector)) continue;
+    for (const declaration of match[2].split(";")) {
+      const [rawName, ...rawValueParts] = declaration.split(":");
+      if (rawName?.trim() === property) {
+        value = rawValueParts.join(":").trim();
+      }
+    }
+  }
+  return value;
+}
+
 test("visited link color is scoped to news links", () => {
   assert.doesNotMatch(css, /(^|})\s*a:visited\s*\{/);
   assert.match(css, /\.news-list\s+a:visited\s*\{[\s\S]*?color:\s*#6b4eff;/);
@@ -390,6 +407,22 @@ test("mobile compare add search is an explicit sheet instead of scroll-collapsin
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail \.compare-add-button\s*\{[\s\S]*?display:\s*inline-flex;/);
   assert.match(css, /\.compare-sheet-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset-inline:\s*0;[\s\S]*?bottom:\s*0;/);
+});
+
+test("mobile compare add sheet owns the screen while searching", () => {
+  assert.match(appNavigationSource, /suppressMobileChrome/);
+  assert.match(compareSource, /suppressMobileChrome=\{isMobileSearchOpen\}/);
+  assert.match(appNavigationSource, /!suppressMobileChrome && mobileNavigation\.isOpen/);
+  assert.match(appNavigationSource, /!suppressMobileChrome && mobileContextAction/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-panel\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?max-height:\s*none;[\s\S]*?border-radius:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-search \.symbol-suggestions\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 230px - env\(safe-area-inset-bottom,\s*0px\)\);/);
+});
+
+test("mobile compare sheet suggestions do not inherit primary add button colors", () => {
+  assert.equal(lastCssDeclaration(".compare-sheet-search .symbol-suggestions button", "background"), "transparent");
+  assert.equal(lastCssDeclaration(".compare-sheet-search .symbol-suggestions button", "color"), "var(--text)");
+  assert.equal(lastCssDeclaration(".compare-sheet-search .symbol-suggestions button.active", "background"), "var(--surface-accent)");
+  assert.equal(lastCssDeclaration(".compare-sheet-search .symbol-suggestions button.active", "color"), "var(--text)");
 });
 
 test("horizontal affordances use native touch carousel behavior", () => {

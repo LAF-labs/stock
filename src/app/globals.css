@@ -2399,7 +2399,7 @@ a:focus-visible {
 }
 
 .compare-add-form:not(.symbol-autocomplete-floating) input,
-.compare-add-form:not(.symbol-autocomplete-floating) button,
+.compare-add-form:not(.symbol-autocomplete-floating) > .symbol-search-box > button,
 .compare-suggestions button,
 .compare-picks span {
   border: 0;
@@ -2422,14 +2422,14 @@ a:focus-visible {
   opacity: 0.55;
 }
 
-.compare-add-form:not(.symbol-autocomplete-floating) button {
+.compare-add-form:not(.symbol-autocomplete-floating) > .symbol-search-box > button {
   min-height: 44px;
   background: var(--cta-primary-bg);
   color: var(--cta-primary-text);
   font-weight: 700;
 }
 
-.compare-add-form:not(.symbol-autocomplete-floating) button:disabled {
+.compare-add-form:not(.symbol-autocomplete-floating) > .symbol-search-box > button:disabled {
   background: var(--cta-disabled-bg);
   color: var(--cta-primary-text);
   cursor: default;
@@ -2599,9 +2599,22 @@ body.compare-search-open {
 
 .compare-sheet-search .symbol-suggestions {
   position: static;
+  grid-column: 1 / -1;
   max-height: min(48dvh, 380px);
   margin-top: 10px;
+  overflow-y: auto;
   box-shadow: none;
+}
+
+.compare-sheet-search .symbol-suggestions button {
+  background: transparent;
+  color: var(--text);
+}
+
+.compare-sheet-search .symbol-suggestions button:hover,
+.compare-sheet-search .symbol-suggestions button.active {
+  background: var(--surface-accent);
+  color: var(--text);
 }
 
 @media (min-width: 641px) {
@@ -5265,6 +5278,43 @@ body {
   .compare-toolbar {
     display: none;
     padding-top: 10px;
+  }
+
+  .compare-add-sheet {
+    z-index: 120;
+    align-items: stretch;
+  }
+
+  .compare-sheet-backdrop {
+    display: none;
+  }
+
+  .compare-sheet-panel {
+    top: 0;
+    bottom: 0;
+    max-height: none;
+    align-content: start;
+    gap: 16px;
+    overflow: hidden;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .compare-sheet-search {
+    min-height: 0;
+  }
+
+  .compare-sheet-search .symbol-search-box {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) 68px;
+    align-content: start;
+  }
+
+  .compare-sheet-search .symbol-suggestions {
+    max-height: calc(100dvh - 230px - env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .technical-topbar {
