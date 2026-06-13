@@ -31,7 +31,8 @@ test("desktop index layouts use centered grid containers", () => {
     /--detail-index-left|--detail-content-left|--compare-side-left|--compare-content-left|calc\(50vw - 600px\)/,
   );
   assert.match(css, /\.stock-detail-app\.has-detail-context\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
-  assert.match(css, /\.compare-app\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
+  assert.doesNotMatch(css, /\.compare-app\s*\{[^}]*grid-template-columns:\s*184px minmax\(0, 1fr\);/);
+  assert.match(css, /\.app-desktop-nav\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*12px;/);
 });
 
 test("font weights stay on supported tiers", () => {
@@ -179,22 +180,23 @@ test("market-cap dashboard renders tabs, a compact sector filter, and detail row
   assert.match(css, /\.market-cap-table-row\s*\{[\s\S]*?grid-template-columns:\s*72px minmax\(180px,\s*1\.4fr\) minmax\(86px,\s*0\.5fr\) minmax\(130px,\s*0\.8fr\) minmax\(110px,\s*0\.6fr\) minmax\(96px,\s*0\.5fr\);/);
 });
 
-test("shared navigation exposes market-cap entry points without replacing compare sheet UX", () => {
-  assert.match(appNavigationSource, /navigationItemsForContext/);
+test("shared navigation exposes global GNB and mobile bottom bar without replacing compare sheet UX", () => {
+  assert.match(appNavigationSource, /globalNavigationItemsForContext/);
   assert.match(appNavigationSource, /AppNavigationLinks/);
-  assert.match(appNavigationSource, /import \{ Menu \} from "lucide-react"/);
-  assert.match(appNavigationSource, /<Menu aria-hidden="true"/);
-  assert.match(appNavigationLinksSource, /type AppNavigationLinksVariant = "popover" \| "index"/);
+  assert.doesNotMatch(appNavigationSource, /import \{ Menu \} from "lucide-react"/);
+  assert.doesNotMatch(appNavigationSource, /app-navigation-trigger/);
+  assert.match(appNavigationLinksSource, /type AppNavigationLinksVariant = "global" \| "bottom" \| "index"/);
   assert.match(searchChromeSource, /AppNavigationMenu/);
   assert.match(searchChromeSource, /searchChrome\.className/);
   assert.match(collapsibleSearchChromeSource, /detailSearchScrollDecision/);
   assert.match(collapsibleSearchChromeSource, /compareSearchScrollDecision/);
   assert.match(dashboardSource, /SearchChromeWithNavigation/);
-  assert.match(dashboardSource, /navigationItemsForContext/);
-  assert.match(dashboardSource, /stock-detail-index-menu/);
-  assert.match(compareSource, /시가총액 대시보드/);
-  assert.match(compareSource, /href="\/market-cap"/);
-  assert.match(css, /\.app-navigation-trigger\s*\{[\s\S]*?border-radius:\s*50%;/);
+  assert.doesNotMatch(dashboardSource, /stock-detail-index-menu/);
+  assert.match(compareSource, /AppNavigationMenu/);
+  assert.match(compareSource, /mobileContextAction/);
+  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?bottom:\s*max\(10px, env\(safe-area-inset-bottom, 0px\)\);/);
+  assert.match(css, /\.app-bottom-nav\.is-hidden\s*\{[\s\S]*?transform:\s*translate\(-50%, calc\(100% \+ 24px\)\);/);
+  assert.doesNotMatch(css, /\.app-navigation-trigger/);
 });
 
 test("detail search keeps user draft edits separate from server identity sync", () => {
@@ -248,8 +250,9 @@ test("waiting states use shared skeletons instead of error containers", () => {
 });
 
 test("compare page keeps selected tickers editable and removes dense duplicate copy", () => {
-  assert.match(compareSource, /홈으로 돌아가기/);
-  assert.match(compareSource, /시가총액 대시보드/);
+  assert.match(compareSource, /AppNavigationMenu/);
+  assert.match(compareSource, /context=\{\{ page: "compare"/);
+  assert.match(compareSource, /ariaLabel: compareLimitReached \? "비교 종목 최대 개수 도달" : "비교할 종목 추가"/);
   assert.match(compareSource, /tickers\.length <= 1/);
   assert.match(compareSource, /disabled=\{removeDisabled\}/);
   assert.match(compareSource, /className="stock-search-form compare-add-form"/);
@@ -266,10 +269,10 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
 });
 
 test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?width:\s*min\(1400px,\s*calc\(100% - 64px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?width:\s*min\(1040px,\s*calc\(100% - 48px\)\);/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-landing,[\s\S]*?\.compare-app \.compare-picks,[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?position:\s*static;[\s\S]*?border-bottom:\s*1px solid rgba\(49,\s*130,\s*246,\s*0\.12\);/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-side-index\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+  assert.doesNotMatch(compareSource, /compare-side-index/);
 });
 
 test("compare cards give quality and opportunity matching mobile-safe score hierarchy", () => {
@@ -319,16 +322,22 @@ test("wide mobile content scrolls inside its own touch container", () => {
   assert.doesNotMatch(css, /\.compare-suggestions,[\s\S]*?\.compare-metric-table\s*\{[\s\S]*?mask-image:/);
 });
 
-test("mobile compare navigation is a compact horizontal action rail", () => {
-  const mobileCompareNavRule = css.match(/@media \(max-width: 899px\)[\s\S]*?\.compare-side-index\s*\{([^}]*)\}/)?.[1] || "";
-  const mobileCompareNavLinkRule = css.match(/@media \(max-width: 899px\)[\s\S]*?\.compare-side-index a\s*\{([^}]*)\}/)?.[1] || "";
+test("mobile compare navigation keeps route tabs and contextual add action separate", () => {
+  const mobileBottomNavRule = css.match(/\.app-bottom-nav\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileBottomItemRule = css.match(/\.app-bottom-nav-item\s*\{([^}]*)\}/)?.[1] || "";
 
-  assert.match(mobileCompareNavRule, /display:\s*flex;/);
-  assert.match(mobileCompareNavRule, /overflow-x:\s*auto;/);
-  assert.match(mobileCompareNavRule, /scroll-snap-type:\s*x proximity;/);
-  assert.match(mobileCompareNavLinkRule, /flex:\s*0 0 auto;/);
-  assert.match(mobileCompareNavLinkRule, /min-height:\s*40px;/);
-  assert.match(mobileCompareNavLinkRule, /scroll-snap-align:\s*start;/);
+  assert.match(mobileBottomNavRule, /grid-auto-flow:\s*column;/);
+  assert.match(mobileBottomNavRule, /width:\s*min\(calc\(100vw - 24px\),\s*430px\);/);
+  assert.match(mobileBottomItemRule, /min-height:\s*50px;/);
+  assert.doesNotMatch(appNavigationSource, /app-bottom-nav-action/);
+  assert.doesNotMatch(appNavigationSource, /mobileAction/);
+  assert.match(appNavigationSource, /app-bottom-context-action/);
+  assert.match(compareSource, /mobileContextAction/);
+  assert.match(compareSource, /IntersectionObserver/);
+  assert.match(compareSource, /isTickerRailVisible/);
+  assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?border-radius:\s*999px;/);
+  assert.match(css, /\.app-bottom-context-action\.is-hidden\s*\{[\s\S]*?transform:\s*translateY\(calc\(100% \+ 28px\)\);/);
+  assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.stock-app\s*\{[\s\S]*?padding-bottom:\s*calc\(116px \+ env\(safe-area-inset-bottom,\s*0px\)\);/);
 });
 
 test("mobile route headers keep first content flush and compact", () => {
@@ -344,8 +353,8 @@ test("mobile route headers keep first content flush and compact", () => {
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action svg\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?min-height:\s*52px;[\s\S]*?margin:\s*0;[\s\S]*?border-bottom:\s*1px solid var\(--line\);/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-side-index a,[\s\S]*?\.technical-topbar a\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?font-size:\s*13px;/);
+  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?min-height:\s*62px;/);
+  assert.match(css, /\.app-bottom-nav-item\s*\{[\s\S]*?font-size:\s*11px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-picks\s*\{[\s\S]*?padding-top:\s*10px;[\s\S]*?padding-bottom:\s*12px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.technical-analysis-app \.technical-hero\s*\{[\s\S]*?border-top:\s*0;[\s\S]*?padding-top:\s*28px;/);
 });

@@ -1,167 +1,110 @@
 "use client";
 
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Menu } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { BarChart3, FileText, GitCompareArrows, Plus, Search } from "lucide-react";
 import AppNavigationLinks from "@/components/AppNavigationLinks";
-import { navigationItemsForContext, type AppNavigationContext } from "@/components/appNavigationMenuHelpers";
+import {
+  globalNavigationItemsForContext,
+  nextBottomNavigationHidden,
+  type AppNavigationContext,
+  type AppNavigationItem,
+  type GlobalNavigationId,
+} from "@/components/appNavigationMenuHelpers";
+
+type MobileContextAction = {
+  label: string;
+  ariaLabel?: string;
+  disabled?: boolean;
+  onClick: () => void;
+};
 
 type AppNavigationMenuProps = {
   context: AppNavigationContext;
   className?: string;
-  isSearchCollapsed?: boolean;
-  isOpenSuppressed?: boolean;
-  onCollapsedExpandRequest?: () => void;
+  mobileContextAction?: MobileContextAction;
 };
 
 export default function AppNavigationMenu({
   context,
   className = "",
-  isSearchCollapsed = false,
-  isOpenSuppressed = false,
-  onCollapsedExpandRequest,
+  mobileContextAction,
 }: AppNavigationMenuProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isHoverOpenSuppressed, setIsHoverOpenSuppressed] = useState(false);
-  const hoverSuppressTimerRef = useRef<number | undefined>(undefined);
-  const closeTimerRef = useRef<number | undefined>(undefined);
-  const collapsedPointerResetTimerRef = useRef<number | undefined>(undefined);
-  const collapsedExpandAtRef = useRef(0);
-  const collapsedPointerDownRef = useRef(false);
-  const items = useMemo(() => navigationItemsForContext(context), [context]);
-
-  useEffect(() => () => {
-    if (hoverSuppressTimerRef.current !== undefined) window.clearTimeout(hoverSuppressTimerRef.current);
-    if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current);
-    if (collapsedPointerResetTimerRef.current !== undefined) window.clearTimeout(collapsedPointerResetTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    if ((isHoverOpenSuppressed || isOpenSuppressed) && isOpen) setIsOpen(false);
-  }, [isHoverOpenSuppressed, isOpen, isOpenSuppressed]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsOpen(false);
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [isOpen]);
-
-  function toggleMenu(event: ReactMouseEvent<HTMLButtonElement>) {
-    cancelCloseMenu();
-    if (collapsedPointerDownRef.current) {
-      clearCollapsedPointerDown();
-      return;
-    }
-    if (isOpenSuppressed) return;
-    if (isSearchCollapsed || event.currentTarget.closest(".search-collapsed")) {
-      collapsedExpandAtRef.current = Date.now();
-      suppressHoverOpenBriefly();
-      onCollapsedExpandRequest?.();
-      return;
-    }
-    if (Date.now() - collapsedExpandAtRef.current < 450) return;
-    setIsOpen((open) => !open);
-  }
-
-  function handlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (!isSearchCollapsed && !event.currentTarget.closest(".search-collapsed")) return;
-    rememberCollapsedPointerDown();
-    collapsedExpandAtRef.current = Date.now();
-    suppressHoverOpenBriefly();
-    onCollapsedExpandRequest?.();
-    event.preventDefault();
-  }
-
-  function handleMouseDown(event: ReactMouseEvent<HTMLButtonElement>) {
-    if (!isSearchCollapsed && !event.currentTarget.closest(".search-collapsed")) return;
-    rememberCollapsedPointerDown();
-    collapsedExpandAtRef.current = Date.now();
-    suppressHoverOpenBriefly();
-    onCollapsedExpandRequest?.();
-    event.preventDefault();
-  }
-
-  function handleMenuMouseEnter(event: ReactMouseEvent<HTMLElement>) {
-    cancelCloseMenu();
-    if (event.currentTarget.closest(".search-collapsed")) collapsedExpandAtRef.current = Date.now();
-    if (canHoverOpen() && !isSearchCollapsed && !isHoverOpenSuppressed && !isOpenSuppressed) setIsOpen(true);
-  }
-
-  const isMenuVisible = isOpen && !isOpenSuppressed && !isHoverOpenSuppressed;
-
-  function cancelCloseMenu() {
-    if (closeTimerRef.current === undefined) return;
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = undefined;
-  }
-
-  function closeMenuSoon() {
-    if (!canHoverOpen()) return;
-    cancelCloseMenu();
-    closeTimerRef.current = window.setTimeout(() => {
-      setIsOpen(false);
-      closeTimerRef.current = undefined;
-    }, 180);
-  }
-
-  function rememberCollapsedPointerDown() {
-    collapsedPointerDownRef.current = true;
-    if (collapsedPointerResetTimerRef.current !== undefined) window.clearTimeout(collapsedPointerResetTimerRef.current);
-    collapsedPointerResetTimerRef.current = window.setTimeout(() => {
-      collapsedPointerDownRef.current = false;
-      collapsedPointerResetTimerRef.current = undefined;
-    }, 320);
-  }
-
-  function clearCollapsedPointerDown() {
-    collapsedPointerDownRef.current = false;
-    if (collapsedPointerResetTimerRef.current === undefined) return;
-    window.clearTimeout(collapsedPointerResetTimerRef.current);
-    collapsedPointerResetTimerRef.current = undefined;
-  }
-
-  function suppressHoverOpenBriefly() {
-    setIsHoverOpenSuppressed(true);
-    if (hoverSuppressTimerRef.current !== undefined) window.clearTimeout(hoverSuppressTimerRef.current);
-    hoverSuppressTimerRef.current = window.setTimeout(() => {
-      setIsHoverOpenSuppressed(false);
-      hoverSuppressTimerRef.current = undefined;
-    }, 420);
-  }
+  const items = useMemo(() => globalNavigationItemsForContext(context), [context]);
+  const isHidden = useBottomNavigationHidden();
 
   return (
-    <nav
-      className={["app-navigation-menu", isMenuVisible ? "is-open" : "", className].filter(Boolean).join(" ")}
-      aria-label="페이지 이동 메뉴"
-      onMouseEnter={handleMenuMouseEnter}
-      onMouseLeave={closeMenuSoon}
-    >
-      <button
-        type="button"
-        className="app-navigation-trigger"
-        aria-label="페이지 이동 메뉴"
-        aria-expanded={isMenuVisible}
-        onPointerDown={handlePointerDown}
-        onMouseDown={handleMouseDown}
-        onClick={toggleMenu}
-      >
-        <Menu aria-hidden="true" />
-      </button>
-      {isMenuVisible ? (
-        <>
-          <div className="app-navigation-backdrop" aria-hidden="true" onClick={() => setIsOpen(false)} />
-          <div className="app-navigation-popover" role="menu" onMouseEnter={cancelCloseMenu} onMouseLeave={closeMenuSoon}>
-            <AppNavigationLinks items={items} variant="popover" onNavigate={() => setIsOpen(false)} />
-          </div>
-        </>
+    <div className={["app-navigation-chrome", className].filter(Boolean).join(" ")}>
+      <nav className="app-desktop-nav" aria-label="주요 페이지">
+        <div className="app-desktop-nav-inner">
+          <a className="app-desktop-nav-brand" href="/">스톡스토커</a>
+          <AppNavigationLinks items={items} variant="global" className="app-desktop-nav-links" />
+        </div>
+      </nav>
+
+      <nav className={["app-bottom-nav", isHidden ? "is-hidden" : ""].filter(Boolean).join(" ")} aria-label="주요 페이지">
+        {items.map((item) => <BottomNavigationLink key={`${item.id}:${item.href}`} item={item} />)}
+      </nav>
+      {mobileContextAction ? (
+        <button
+          type="button"
+          className={["app-bottom-context-action", isHidden ? "is-hidden" : ""].filter(Boolean).join(" ")}
+          disabled={mobileContextAction.disabled}
+          aria-label={mobileContextAction.ariaLabel || mobileContextAction.label}
+          onClick={mobileContextAction.onClick}
+        >
+          <Plus aria-hidden="true" />
+          <span>{mobileContextAction.label}</span>
+        </button>
       ) : null}
-    </nav>
+    </div>
   );
 }
 
-function canHoverOpen(): boolean {
-  return typeof window !== "undefined" && window.matchMedia("(min-width: 641px)").matches;
+function BottomNavigationLink({ item }: { item: AppNavigationItem }) {
+  const Icon = iconForItem(item.id);
+  return (
+    <a className={["app-bottom-nav-item", item.active ? "active" : ""].filter(Boolean).join(" ")} href={item.href} aria-current={item.active ? "page" : undefined}>
+      <Icon aria-hidden="true" />
+      <span>{item.shortLabel || item.label}</span>
+    </a>
+  );
+}
+
+function iconForItem(id: GlobalNavigationId | undefined) {
+  if (id === "detail") return FileText;
+  if (id === "compare") return GitCompareArrows;
+  if (id === "marketCap") return BarChart3;
+  return Search;
+}
+
+function useBottomNavigationHidden(): boolean {
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+    let frame = 0;
+
+    const update = () => {
+      frame = 0;
+      const nextScrollY = window.scrollY;
+      const delta = nextScrollY - lastScrollY;
+      lastScrollY = nextScrollY;
+      setHidden((currentHidden) => nextBottomNavigationHidden({ currentHidden, scrollY: nextScrollY, delta }));
+    };
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(update);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+
+  return hidden;
 }

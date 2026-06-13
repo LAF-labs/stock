@@ -4,9 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
-import AppNavigationLinks from "@/components/AppNavigationLinks";
 import SearchChromeWithNavigation from "@/components/SearchChromeWithNavigation";
-import { navigationItemsForContext, type AppNavigationItem } from "@/components/appNavigationMenuHelpers";
 import StockHeader from "@/components/StockHeader";
 import { SkeletonSectionTitle, StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
 import SkeletonBlock from "@/components/SkeletonBlock";
@@ -180,10 +178,6 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
 
   const visibleDetailSections = DETAIL_SECTIONS;
   const compareHref = displayData && tickerParam ? compareHrefForStock(displayData, quoteData, tickerParam) : "";
-  const detailNavigationItems = useMemo(
-    () => tickerParam ? navigationItemsForContext({ page: "detail", ticker: tickerParam, compareHref: compareHref || undefined }) : [],
-    [compareHref, tickerParam],
-  );
   const pageIdentity = displayData ? stockHeaderIdentity(displayData, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
 
@@ -297,7 +291,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
       {!tickerParam && <DashboardLandingHero />}
-      {tickerParam ? <DetailIndex sections={indexSections} activeSection={activeSection} onSelect={scrollToDetailSection} navigationItems={detailNavigationItems} /> : null}
+      {tickerParam ? <DetailIndex sections={indexSections} activeSection={activeSection} onSelect={scrollToDetailSection} /> : null}
 
       {isPartialFeedVisible && displayPartialData ? (
         <PartialStockFeed
@@ -750,16 +744,13 @@ function DetailIndex({
   sections,
   activeSection,
   onSelect,
-  navigationItems,
 }: {
   sections: ReadonlyArray<{ id: DetailSectionId; label: string }>;
   activeSection: DetailSectionId;
   onSelect: (id: DetailSectionId) => void;
-  navigationItems: ReadonlyArray<AppNavigationItem>;
 }) {
   return (
     <nav className="stock-detail-index" aria-label="상세 화면 목차">
-      <AppNavigationLinks items={navigationItems} variant="index" className="stock-detail-index-menu" ariaLabel="페이지 이동" />
       <span>목차</span>
       <div>
         {sections.map((section) => (

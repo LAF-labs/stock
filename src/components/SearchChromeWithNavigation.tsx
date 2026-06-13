@@ -22,13 +22,7 @@ export default function SearchChromeWithNavigation({
     <>
       <span ref={searchChrome.anchorRef} className="search-chrome-scroll-anchor" aria-hidden="true" />
       <section ref={searchChrome.containerRef} className={searchChrome.className(className)}>
-        <AppNavigationMenu
-          key={searchChrome.navigationResetKey}
-          context={context}
-          isSearchCollapsed={searchChrome.isCollapsed}
-          isOpenSuppressed={searchChrome.isNavigationOpenSuppressed}
-          onCollapsedExpandRequest={searchChrome.expandFromNavigation}
-        />
+        <AppNavigationMenu context={context} />
         {children}
       </section>
     </>

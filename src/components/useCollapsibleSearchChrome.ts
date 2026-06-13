@@ -15,20 +15,16 @@ export type SearchChromeScrollInput = {
 type UseCollapsibleSearchChromeOptions = {
   scrollDecision: (input: SearchChromeScrollInput) => SearchChromeScrollDecision;
   expandAnimationMs?: number;
-  navigationSuppressMs?: number;
 };
 
 export type CollapsibleSearchChrome = {
   isCollapsed: boolean;
   isExpanding: boolean;
-  isNavigationOpenSuppressed: boolean;
-  navigationResetKey: number;
   anchorRef: RefCallback<HTMLElement>;
   containerRef: RefCallback<HTMLElement>;
   className: (baseClassName: string) => string;
   setCollapsed: (nextCollapsed: boolean) => void;
   expandSearch: () => void;
-  expandFromNavigation: () => void;
 };
 
 export function detailSearchScrollDecision({ scrollY, delta }: SearchChromeScrollInput): SearchChromeScrollDecision {
@@ -55,12 +51,9 @@ export function compareSearchScrollDecision(input: SearchChromeScrollInput): Sea
 export function useCollapsibleSearchChrome({
   scrollDecision,
   expandAnimationMs = 380,
-  navigationSuppressMs = 520,
 }: UseCollapsibleSearchChromeOptions): CollapsibleSearchChrome {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isExpanding, setIsExpanding] = useState(false);
-  const [isNavigationOpenSuppressed, setIsNavigationOpenSuppressed] = useState(false);
-  const [navigationResetKey, setNavigationResetKey] = useState(0);
   const collapsedRef = useRef(false);
   const renderedCollapsedRef = useRef(false);
   const previousRenderedCollapsedRef = useRef(false);
@@ -69,7 +62,6 @@ export function useCollapsibleSearchChrome({
   const containerElementRef = useRef<HTMLElement | null>(null);
   const containerDocumentTopRef = useRef<number | undefined>(undefined);
   const searchExpandTimerRef = useRef<number | undefined>(undefined);
-  const navigationSuppressTimerRef = useRef<number | undefined>(undefined);
 
   const anchorRef = useCallback((node: HTMLElement | null) => {
     anchorElementRef.current = node;
@@ -80,35 +72,20 @@ export function useCollapsibleSearchChrome({
     containerDocumentTopRef.current = node ? node.getBoundingClientRect().top + window.scrollY : undefined;
   }, []);
 
-  const clearNavigationSuppressTimer = useCallback(() => {
-    if (navigationSuppressTimerRef.current === undefined) return;
-    window.clearTimeout(navigationSuppressTimerRef.current);
-    navigationSuppressTimerRef.current = undefined;
-  }, []);
-
   const clearSearchExpandTimer = useCallback(() => {
     if (searchExpandTimerRef.current === undefined) return;
     window.clearTimeout(searchExpandTimerRef.current);
     searchExpandTimerRef.current = undefined;
   }, []);
 
-  const scheduleNavigationOpenSuppressionRelease = useCallback(() => {
-    clearNavigationSuppressTimer();
-    navigationSuppressTimerRef.current = window.setTimeout(() => {
-      setIsNavigationOpenSuppressed(false);
-      navigationSuppressTimerRef.current = undefined;
-    }, navigationSuppressMs);
-  }, [clearNavigationSuppressTimer, navigationSuppressMs]);
-
   const beginExpandAnimation = useCallback(() => {
     setIsExpanding(true);
-    scheduleNavigationOpenSuppressionRelease();
     clearSearchExpandTimer();
     searchExpandTimerRef.current = window.setTimeout(() => {
       setIsExpanding(false);
       searchExpandTimerRef.current = undefined;
     }, expandAnimationMs);
-  }, [clearSearchExpandTimer, expandAnimationMs, scheduleNavigationOpenSuppressionRelease]);
+  }, [clearSearchExpandTimer, expandAnimationMs]);
 
   useEffect(() => {
     const wasCollapsed = previousRenderedCollapsedRef.current;
@@ -124,8 +101,6 @@ export function useCollapsibleSearchChrome({
     renderedCollapsedRef.current = nextCollapsed;
 
     if (nextCollapsed) {
-      setIsNavigationOpenSuppressed(true);
-      clearNavigationSuppressTimer();
       clearSearchExpandTimer();
       setIsExpanding(false);
     } else if (wasCollapsed || forceExpandAnimation) {
@@ -133,7 +108,7 @@ export function useCollapsibleSearchChrome({
     }
 
     setIsCollapsed(nextCollapsed);
-  }, [beginExpandAnimation, clearNavigationSuppressTimer, clearSearchExpandTimer]);
+  }, [beginExpandAnimation, clearSearchExpandTimer]);
 
   const setCollapsed = useCallback((nextCollapsed: boolean) => {
     applyCollapsedState(nextCollapsed);
@@ -142,13 +117,6 @@ export function useCollapsibleSearchChrome({
   const expandSearch = useCallback(() => {
     applyCollapsedState(false, true);
   }, [applyCollapsedState]);
-
-  const expandFromNavigation = useCallback(() => {
-    setIsNavigationOpenSuppressed(true);
-    scheduleNavigationOpenSuppressionRelease();
-    setNavigationResetKey((key) => key + 1);
-    applyCollapsedState(false, true);
-  }, [applyCollapsedState, scheduleNavigationOpenSuppressionRelease]);
 
   const className = useCallback((baseClassName: string) => (
     [baseClassName, isCollapsed ? "search-collapsed" : "", isExpanding ? "search-expanding" : ""].filter(Boolean).join(" ")
@@ -197,20 +165,16 @@ export function useCollapsibleSearchChrome({
   }, [scrollDecision, setCollapsed]);
 
   useEffect(() => () => {
-    clearNavigationSuppressTimer();
     clearSearchExpandTimer();
-  }, [clearNavigationSuppressTimer, clearSearchExpandTimer]);
+  }, [clearSearchExpandTimer]);
 
   return {
     isCollapsed,
     isExpanding,
-    isNavigationOpenSuppressed,
-    navigationResetKey,
     anchorRef,
     containerRef,
     className,
     setCollapsed,
     expandSearch,
-    expandFromNavigation,
   };
 }

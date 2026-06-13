@@ -1,8 +1,9 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import AppNavigationMenu from "@/components/AppNavigationMenu";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import { ComparePendingOverviewSkeleton, SkeletonSectionTitle } from "@/components/StockLoadingSkeletons";
 import SkeletonBlock from "@/components/SkeletonBlock";
@@ -72,6 +73,8 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
   const [input, setInput] = useState("");
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const tickerRailRef = useRef<HTMLElement | null>(null);
+  const [isTickerRailVisible, setIsTickerRailVisible] = useState(true);
   const { states, items, chartItems, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
   const compareLimitReached = tickers.length >= MAX_COMPARE;
@@ -124,6 +127,18 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     };
   }, [isMobileSearchOpen]);
 
+  useEffect(() => {
+    const node = tickerRailRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsTickerRailVisible(entry.isIntersecting);
+    }, { threshold: 0.16 });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   function addTicker(value: string) {
     const ticker = normalizeTicker(value);
     if (!ticker || tickers.includes(ticker) || compareLimitReached) return;
@@ -145,11 +160,15 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 
   return (
     <main className="stock-app compare-app">
-      <nav className="compare-side-index" aria-label="비교 화면 이동">
-        <a href="/market-cap">시가총액 대시보드</a>
-        <a href="/">홈으로 돌아가기</a>
-        <a href={detailHref}>{originTicker ? "상세 분석으로 돌아가기" : "검색으로 돌아가기"}</a>
-      </nav>
+      <AppNavigationMenu
+        context={{ page: "compare", originTicker, detailHref }}
+        mobileContextAction={!isTickerRailVisible ? {
+          label: compareLimitReached ? "최대 5개" : "종목 추가",
+          ariaLabel: compareLimitReached ? "비교 종목 최대 개수 도달" : "비교할 종목 추가",
+          disabled: compareLimitReached,
+          onClick: () => setIsMobileSearchOpen(true),
+        } : undefined}
+      />
 
       <section className="compare-landing">
         <section className="compare-hero">
@@ -168,7 +187,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </section>
       </section>
 
-      <section className="compare-picks compare-ticker-rail" aria-label="선택된 종목">
+      <section ref={tickerRailRef} className="compare-picks compare-ticker-rail" aria-label="선택된 종목">
         <div className="compare-pick-list">
           {tickers.length ? tickers.map((ticker) => {
             const loaded = items.find((item) => item.ticker === displayTickerRef(ticker));

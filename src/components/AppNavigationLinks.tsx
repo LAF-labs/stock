@@ -1,6 +1,6 @@
 import type { AppNavigationItem } from "@/components/appNavigationMenuHelpers";
 
-type AppNavigationLinksVariant = "popover" | "index";
+type AppNavigationLinksVariant = "global" | "bottom" | "index";
 
 type AppNavigationLinksProps = {
   items: ReadonlyArray<AppNavigationItem>;
@@ -22,11 +22,12 @@ export default function AppNavigationLinks({
   const links = items.map((item) => (
     <a
       key={`${item.label}:${item.href}`}
+      className={item.active ? "active" : undefined}
       href={item.href}
-      role={variant === "popover" ? "menuitem" : undefined}
+      aria-current={item.active ? "page" : undefined}
       onClick={onNavigate}
     >
-      {item.label}
+      {variant === "bottom" ? (item.shortLabel || item.label) : item.label}
     </a>
   ));
 
