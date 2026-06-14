@@ -12,6 +12,7 @@ import {
   marketCapScopeFromParam,
   marketCapScopeLabel,
 } from "@/components/marketCapDashboardHelpers";
+import { DataTable, Panel, PriceChange } from "@/components/ui";
 import { useMarketCapDashboardQuery } from "@/components/useMarketCapDashboardQuery";
 import type { MarketCapScope } from "@/lib/marketCapRankingTypes";
 
@@ -66,12 +67,12 @@ export default function MarketCapDashboard() {
       {state.status === "pending" ? <MarketCapStatus title="스냅샷 준비 중" body={state.payload.message || "정기 갱신이 끝나면 바로 표시됩니다."} /> : null}
 
       {snapshot ? (
-        <section className="market-cap-panel" aria-label="시가총액 순위">
+        <Panel className="market-cap-panel" aria-label="시가총액 순위">
           <div className="market-cap-meta">
             <span>업데이트 {formatDateTime(snapshot.fetchedAt)}</span>
             <span>{state.status === "success" ? state.payload.cache.state : "pending"}</span>
           </div>
-          <div className="market-cap-table" role="table" aria-label={`${marketCapScopeLabel(scope)} 시가총액 상위 종목`}>
+          <DataTable className="market-cap-table" role="table" density="compact" aria-label={`${marketCapScopeLabel(scope)} 시가총액 상위 종목`}>
             <div className="market-cap-table-head" role="row">
               <span>순위</span>
               <span>종목명</span>
@@ -90,12 +91,14 @@ export default function MarketCapDashboard() {
                 <span>{row.ticker}</span>
                 <span>{formatMarketCapAmount(row.marketCap, row.marketCapCurrency)}</span>
                 <span>{formatMarketCapPrice(row)}</span>
-                <span className={`market-cap-change ${marketCapChangeTone(row)}`}>{formatMarketCapChange(row)}</span>
+                <PriceChange className={`market-cap-change ${marketCapChangeTone(row)}`} value={row.priceChangePercent} tone={priceChangeToneForMarketCapRow(row)}>
+                  {formatMarketCapChange(row)}
+                </PriceChange>
               </a>
             ))}
-          </div>
+          </DataTable>
           {!rows.length ? <MarketCapStatus title="표시할 종목이 없어요" body="다른 탭이나 섹터를 선택해보세요." /> : null}
-        </section>
+        </Panel>
       ) : null}
     </main>
   );
@@ -108,6 +111,17 @@ function MarketCapStatus({ title, body, tone = "default" }: { title: string; bod
       <p>{body}</p>
     </section>
   );
+}
+
+function priceChangeToneForMarketCapRow(row: Parameters<typeof marketCapChangeTone>[0]): "positive" | "negative" | "neutral" {
+  switch (marketCapChangeTone(row)) {
+    case "up":
+      return "positive";
+    case "down":
+      return "negative";
+    default:
+      return "neutral";
+  }
 }
 
 function formatDateTime(value: string): string {

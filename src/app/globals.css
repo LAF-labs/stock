@@ -4073,7 +4073,7 @@ body {
 }
 
 .stock-detail-app .quick-read {
-  gap: 12px;
+  gap: var(--space-4);
 }
 
 .stock-detail-app .quick-read article {
@@ -4898,7 +4898,7 @@ body {
 
 .stock-detail-app .quick-read {
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-4);
   align-items: stretch;
 }
 
@@ -5808,6 +5808,10 @@ body {
   overflow: hidden;
 }
 
+.search-chrome-frame {
+  width: 100%;
+}
+
 .app-navigation-chrome {
   pointer-events: none;
 }
@@ -6203,6 +6207,7 @@ body {
 .market-cap-panel {
   display: grid;
   gap: 10px;
+  border-radius: var(--radius-md);
 }
 
 .market-cap-meta {
@@ -6243,6 +6248,7 @@ body {
   min-height: 62px;
   border-top: 1px solid var(--line);
   color: var(--text);
+  font-variant-numeric: tabular-nums;
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
@@ -6272,18 +6278,6 @@ body {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.market-cap-change {
-  color: var(--muted);
-}
-
-.market-cap-change.up {
-  color: var(--red);
-}
-
-.market-cap-change.down {
-  color: var(--down);
 }
 
 .market-cap-status {

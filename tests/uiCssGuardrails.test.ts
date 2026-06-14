@@ -23,6 +23,7 @@ const appNavigationLinksSource = readFileSync(join(process.cwd(), "src/component
 const appShellNavSource = readFileSync(join(process.cwd(), "src/components/layout/AppShellNav.tsx"), "utf8");
 const mobileNavLauncherSource = readFileSync(join(process.cwd(), "src/components/layout/MobileNavLauncher.tsx"), "utf8");
 const searchChromeSource = readFileSync(join(process.cwd(), "src/components/SearchChromeWithNavigation.tsx"), "utf8");
+const searchChromeFrameSource = readFileSync(join(process.cwd(), "src/components/layout/SearchChrome.tsx"), "utf8");
 const collapsibleSearchChromeSource = readFileSync(join(process.cwd(), "src/components/useCollapsibleSearchChrome.ts"), "utf8");
 
 function lastCssDeclaration(selector: string, property: string): string | undefined {
@@ -249,6 +250,20 @@ test("market-cap dashboard renders tabs, a compact sector filter, and detail row
   assert.match(css, /\.market-cap-app\s*\{/);
   assert.match(css, /\.market-cap-toolbar\s*\{[\s\S]*?justify-content:\s*space-between;/);
   assert.match(css, /\.market-cap-table-row\s*\{[\s\S]*?grid-template-columns:\s*72px minmax\(180px,\s*1\.4fr\) minmax\(86px,\s*0\.5fr\) minmax\(130px,\s*0\.8fr\) minmax\(110px,\s*0\.6fr\) minmax\(96px,\s*0\.5fr\);/);
+});
+
+test("page patterns use shared search and data primitives", () => {
+  assert.match(searchChromeFrameSource, /search-chrome-frame/);
+  assert.match(searchChromeSource, /SearchChromeFrame/);
+  assert.match(marketCapSource, /DataTable/);
+  assert.match(marketCapSource, /PriceChange/);
+  assert.match(marketCapSource, /Panel/);
+  assert.match(marketCapSource, /function priceChangeToneForMarketCapRow/);
+  assert.match(marketCapSource, /case "up":[\s\S]*?return "positive";[\s\S]*?case "down":[\s\S]*?return "negative";[\s\S]*?return "neutral";/);
+  assert.match(marketCapSource, /tone=\{priceChangeToneForMarketCapRow\(row\)\}/);
+  assert.match(css, /\.market-cap-table-row\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
+  assert.doesNotMatch(css, /\.market-cap-change(?:\.(?:up|down))?\s*\{[\s\S]*?(?:color|background):/);
+  assert.match(css, /\.stock-detail-app \.quick-read\s*\{[\s\S]*?gap:\s*var\(--space-4\);/);
 });
 
 test("shared navigation exposes global GNB and mobile bottom bar without replacing compare sheet UX", () => {
