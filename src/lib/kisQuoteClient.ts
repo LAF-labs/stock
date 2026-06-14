@@ -179,7 +179,7 @@ export async function fetchKisDomesticFinanceBundle(
     if (isHardKisFinanceError(message)) throw error;
   }
 
-  for (const endpoint of KIS_DOMESTIC_FINANCE_ENDPOINTS) {
+  const financeResults = await Promise.all(KIS_DOMESTIC_FINANCE_ENDPOINTS.map(async (endpoint) => {
     try {
       const rows = outputList(
         await kisGet(
@@ -193,13 +193,23 @@ export async function fetchKisDomesticFinanceBundle(
           { timeoutMs: options.timeoutMs ?? domesticFinanceTimeoutMs() }
         )
       );
-      if (rows.length) raw[endpoint.key] = rows;
+      return { endpoint, rows };
     } catch (error) {
-      const message = safeErrorMessage(error);
-      errors[endpoint.key] = message;
-      if (isHardKisFinanceError(message)) throw error;
+      return { endpoint, error, message: safeErrorMessage(error) };
     }
+  }));
+
+  let hardError: unknown;
+  for (const result of financeResults) {
+    if ("error" in result) {
+      const message = result.message || "kis_finance_request_failed";
+      errors[result.endpoint.key] = message;
+      if (!hardError && isHardKisFinanceError(message)) hardError = result.error;
+      continue;
+    }
+    if (result.rows.length) raw[result.endpoint.key] = result.rows;
   }
+  if (hardError) throw hardError;
 
   return {
     symbol: cleanSymbol,

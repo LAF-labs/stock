@@ -39,9 +39,9 @@ export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput)
   const now = input.now ?? new Date();
   const generatedAt = now.toISOString();
   const identityPromise = loadIdentity(ticker, input.sources);
-  const pricePromise = withLaneDeadline("price", input.signal, (signal) => input.sources.price?.(ticker, { signal }));
-  const chartPromise = withLaneDeadline("chart", input.signal, (signal) => input.sources.chart?.(ticker, { signal }));
-  const scorePromise = withLaneDeadline("score", input.signal, (signal) => input.sources.score?.(ticker, input.view, { signal }));
+  const pricePromise = withLaneDeadline("price", input.view, input.signal, (signal) => input.sources.price?.(ticker, { signal }));
+  const chartPromise = withLaneDeadline("chart", input.view, input.signal, (signal) => input.sources.chart?.(ticker, { signal }));
+  const scorePromise = withLaneDeadline("score", input.view, input.signal, (signal) => input.sources.score?.(ticker, input.view, { signal }));
   const terminalFailuresPromise = withAbortDeadline(
     input.signal,
     (signal) => input.sources.terminalFailures?.(ticker, input.view, { signal }),
@@ -84,13 +84,17 @@ export async function buildStockDataEnvelope(input: BuildStockDataEnvelopeInput)
   };
 }
 
-export function displayLaneTimeoutMs(lane: "price" | "chart" | "score"): number {
+export function displayLaneTimeoutMs(lane: "price" | "chart" | "score", view: StockDisplayView = "detail"): number {
   if (lane === "price") return numericEnv("STOCK_DISPLAY_PRICE_LANE_TIMEOUT_MS", 900);
   if (lane === "chart") return numericEnv("STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS", 1_000);
   if (process.env.STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS?.trim()) {
     return numericEnv("STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS", partialStockScoreTimeoutMs("detail"));
   }
-  return partialStockScoreTimeoutMs("detail");
+  if (view === "technical") return partialStockScoreTimeoutMs("technical");
+  if (process.env.STOCK_DISPLAY_DETAIL_SCORE_LANE_TIMEOUT_MS?.trim()) {
+    return numericEnv("STOCK_DISPLAY_DETAIL_SCORE_LANE_TIMEOUT_MS", 6_500);
+  }
+  return Math.max(partialStockScoreTimeoutMs("detail"), 6_500);
 }
 
 export function fallbackIdentity(tickerRef: string): StockIdentityView {
@@ -251,10 +255,11 @@ function uniqueUnavailableParts(parts: StockDisplayUnavailablePart[]): StockDisp
 
 async function withLaneDeadline<T>(
   lane: "price" | "chart" | "score",
+  view: StockDisplayView,
   parentSignal: AbortSignal | undefined,
   source: (signal: AbortSignal) => Promise<T | undefined> | undefined,
 ): Promise<T | undefined> {
-  return withAbortDeadline(parentSignal, source, displayLaneTimeoutMs(lane));
+  return withAbortDeadline(parentSignal, source, displayLaneTimeoutMs(lane, view));
 }
 
 async function withAbortDeadline<T>(

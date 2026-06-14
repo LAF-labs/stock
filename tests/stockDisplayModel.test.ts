@@ -5,7 +5,12 @@ import { buildStockDisplayPayload, displayLaneTimeoutMs, readStockDisplayScoreSo
 import { partialStockScoreTimeoutMs } from "../src/lib/stockScorePartialFastPath";
 import { providerEmptyError } from "../src/lib/stockProviderErrors";
 
-const ENV_KEYS = ["STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS"] as const;
+const ENV_KEYS = [
+  "STOCK_DISPLAY_CHART_LANE_TIMEOUT_MS",
+  "STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS",
+  "STOCK_DISPLAY_DETAIL_SCORE_LANE_TIMEOUT_MS",
+  "STOCK_PENDING_PARTIAL_SCORE_TIMEOUT_MS",
+] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 function restoreEnv() {
@@ -18,10 +23,21 @@ function restoreEnv() {
 
 test.afterEach(restoreEnv);
 
-test("display model keeps price and chart lanes fast while score uses the interactive score SLA", () => {
+test("display model keeps price and chart lanes fast while detail score can finish the financial fast path", () => {
   assert.equal(displayLaneTimeoutMs("price"), 900);
   assert.equal(displayLaneTimeoutMs("chart"), 1_000);
-  assert.equal(displayLaneTimeoutMs("score"), partialStockScoreTimeoutMs("detail"));
+  assert.equal(displayLaneTimeoutMs("score", "detail"), 6_500);
+  assert.equal(displayLaneTimeoutMs("score", "technical"), partialStockScoreTimeoutMs("technical"));
+});
+
+test("display model still honors an explicit generic score lane timeout", () => {
+  process.env.STOCK_DISPLAY_SCORE_LANE_TIMEOUT_MS = "1234";
+  assert.equal(displayLaneTimeoutMs("score", "detail"), 1_234);
+});
+
+test("display model honors an explicit detail score lane timeout", () => {
+  process.env.STOCK_DISPLAY_DETAIL_SCORE_LANE_TIMEOUT_MS = "4321";
+  assert.equal(displayLaneTimeoutMs("score", "detail"), 4_321);
 });
 
 test("display model returns identity-only payload while recovering core parts", async () => {
