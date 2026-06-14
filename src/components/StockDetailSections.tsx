@@ -335,7 +335,7 @@ export function NewsFeed({ news }: { news: NewsItem[] | undefined }) {
               return (
                 <a href={safeExternalUrl(item.link)} target="_blank" rel="noopener noreferrer" key={`${item.title}-${index}`}>
                   <span>{publisher}</span>
-                  <strong>{item.title || "-"}</strong>
+                  <strong><NewsTitle title={item.title} /></strong>
                   {publishedAt !== "-" ? <small>{publishedAt}</small> : null}
                 </a>
               );
@@ -349,11 +349,58 @@ export function NewsFeed({ news }: { news: NewsItem[] | undefined }) {
   );
 }
 
+function NewsTitle({ title }: { title: string | undefined }) {
+  return (
+    <>
+      {newsTitleSegments(title || "-").map((segment, index) => (
+        segment.bold ? <b key={index}>{segment.text}</b> : <span key={index}>{segment.text}</span>
+      ))}
+    </>
+  );
+}
+
+export function newsTitleSegments(title: string): Array<{ text: string; bold: boolean }> {
+  const segments: Array<{ text: string; bold: boolean }> = [];
+  const tagPattern = /<\/?b>/gi;
+  let bold = false;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagPattern.exec(title))) {
+    pushNewsTitleSegment(segments, title.slice(cursor, match.index), bold);
+    bold = !match[0].startsWith("</");
+    cursor = match.index + match[0].length;
+  }
+  pushNewsTitleSegment(segments, title.slice(cursor), bold);
+  return segments.length ? segments : [{ text: "-", bold: false }];
+}
+
+function pushNewsTitleSegment(segments: Array<{ text: string; bold: boolean }>, text: string, bold: boolean) {
+  if (!text) return;
+  const decoded = decodeBasicHtmlEntities(text);
+  if (!decoded) return;
+  const previous = segments.at(-1);
+  if (previous?.bold === bold) {
+    previous.text += decoded;
+    return;
+  }
+  segments.push({ text: decoded, bold });
+}
+
+function decodeBasicHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'");
+}
+
 function safeExternalUrl(value: string | undefined): string {
   if (!value) return "#";
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "#";
+    return url.protocol === "http:" || url.protocol === "https:" ? value : "#";
   } catch {
     return "#";
   }

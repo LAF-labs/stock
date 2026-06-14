@@ -41,6 +41,7 @@ import {
 } from "@/components/stockDashboardHelpers";
 import { useStockDashboardQueries } from "@/components/useStockDashboardQueries";
 import { detailSearchScrollDecision, useCollapsibleSearchChrome } from "@/components/useCollapsibleSearchChrome";
+import { useStockNews } from "@/components/useStockNews";
 import { clampScore } from "@/lib/format";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -108,6 +109,8 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     refreshPrice,
   } = useStockDashboardQueries(tickerParam, initialDisplayPayload);
   const displayData = data || (initialDisplayComplete ? initialDisplayData : undefined);
+  const stockNewsState = useStockNews(tickerParam, Boolean(displayData));
+  const displayNews = stockNewsState.status === "success" && stockNewsState.items.length ? stockNewsState.items : displayData?.news;
   const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
   const hasDisplayablePartialData = hasDisplayableStockPartialData(displayPartialData);
   const showStockSkeleton = Boolean(tickerParam && !displayData && shouldShowStockSkeleton(state.status, hasDisplayablePartialData, hasDetailViewResponse));
@@ -334,7 +337,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
               <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={displayData.key_metrics} stock={displayData} defaultOpen />
             </DetailSection>
             <DetailSection id="detail-news">
-              <NewsFeed news={displayData.news} />
+              <NewsFeed news={displayNews} />
             </DetailSection>
             <DetailSection id="detail-profile">
               <SimpleList title="회사 정보" description="어떤 회사인지 빠르게 확인해요." items={displayData.stock_profile} stock={displayData} desktopOpen />

@@ -105,6 +105,8 @@ STOCK_QUOTE_RATE_LIMIT=240
 STOCK_QUOTE_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_QUOTE_REFRESH_RATE_LIMIT=8
 STOCK_QUOTE_REFRESH_RATE_LIMIT_WINDOW_SECONDS=900
+STOCK_NEWS_RATE_LIMIT=60
+STOCK_NEWS_RATE_LIMIT_WINDOW_SECONDS=60
 STOCK_REFRESH_LEASE_SECONDS=30
 STOCK_QUOTE_REFRESH_LEASE_SECONDS=30
 STOCK_KIS_QUOTE_PROVIDER_RATE_LIMIT=120
@@ -140,6 +142,13 @@ MARKET_CAP_USD_KRW_RATE=1400
 MARKET_CAP_SUPABASE_READ_TIMEOUT_MS=1500
 MARKET_CAP_SUPABASE_WRITE_TIMEOUT_MS=5000
 REDIS_URL=
+```
+
+상세 화면 뉴스는 Naver 검색 API를 별도 `/api/stock/news` 요청으로 조회합니다. 결과는 score snapshot이나 Supabase에 저장하지 않고 응답도 `no-store`로 내려보내며, 클릭 URL은 Naver 응답의 `link` 값을 그대로 사용합니다. 배포 환경에는 아래 값을 추가하세요.
+
+```text
+NAVER_SEARCH_CLIENT_ID=...
+NAVER_SEARCH_CLIENT_SECRET=...
 ```
 
 `REDIS_URL`은 향후 durable cache/queue backend를 붙일 때만 설정합니다. 현재 Rust 서비스는 `REDIS_URL`이 비어 있으면 bounded memory cache/queue로 동작하고, `/readyz`의 `durable_refresh_available=false`는 score durable refresh가 아직 Rust 소유가 아님을 뜻합니다.
@@ -292,6 +301,8 @@ STOCK_RATE_LIMIT_SECRET=...
 STOCK_API_APP_KEY=...
 STOCK_API_APP_SECRET=...
 STOCK_API_BASE=https://openapi.koreainvestment.com:9443
+NAVER_SEARCH_CLIENT_ID=...
+NAVER_SEARCH_CLIENT_SECRET=...
 MARKET_CAP_REFRESH_SECRET=...
 ```
 

@@ -161,6 +161,11 @@ test("stock detail summary ends at the score panels without a judgment card", ()
   assert.match(css, /\.stock-detail-app \.quick-read \.score-donut\s*\{[\s\S]*?width:\s*82px;[\s\S]*?height:\s*82px;/);
 });
 
+test("stock detail news uses Naver items only when the route returns real items", () => {
+  assert.match(dashboardSource, /useStockNews\(tickerParam, Boolean\(displayData\)\)/);
+  assert.match(dashboardSource, /stockNewsState\.status === "success" && stockNewsState\.items\.length \? stockNewsState\.items : displayData\?\.news/);
+});
+
 test("detail score panels explain quality and opportunity in plain language with larger visuals", () => {
   assert.match(stockHeaderSource, /품질 점수/);
   assert.match(stockHeaderSource, /회사의 기본 체력/);
