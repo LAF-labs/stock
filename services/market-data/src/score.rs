@@ -553,11 +553,7 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
             clamp(effective_weight / total_weight, 0.0, 1.0),
         )
     };
-    let mut score = clamp(
-        raw_score * confidence + 50.0 * (1.0 - confidence),
-        0.0,
-        100.0,
-    );
+    let mut score = clamp(raw_score, 0.0, 100.0);
     let mut caps = Vec::new();
     let sales_multiple = positive_or(input.ev_to_revenue, input.price_to_sales);
     let weak_profit = input
@@ -568,10 +564,6 @@ fn opportunity_score(input: &ScoreEngineInput) -> OpportunityResult {
     if sales_multiple.is_some_and(|multiple| multiple >= 20.0) && (weak_profit || weak_cashflow) {
         score = score.min(72.0);
         caps.push("speculative_expensive_sales");
-    }
-    if positive(input.forward_pe).is_none() && input.analyst_count.unwrap_or(0.0) < 3.0 {
-        score = score.min(68.0);
-        caps.push("low_forward_coverage");
     }
     if input
         .atr14_pct
@@ -855,8 +847,7 @@ fn composite_score(scores: ComponentScores) -> (f64, f64) {
         .sum::<f64>()
         / effective_weight;
     let confidence = clamp(effective_weight / total_weight, 0.0, 1.0);
-    let anchored = raw * confidence + 50.0 * (1.0 - confidence);
-    (round1(clamp(anchored, 0.0, 100.0)), confidence)
+    (round1(clamp(raw, 0.0, 100.0)), confidence)
 }
 
 fn grade_for(score: f64) -> ScoreGrade {

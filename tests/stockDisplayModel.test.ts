@@ -104,8 +104,8 @@ test("display model aborts a lane source when its deadline expires", async () =>
 
   assert.equal(aborted, true);
   assert.deepEqual(payload.completion.unavailableParts, []);
-  assert.equal(payload.score?.value.data_quality, "market_data_fallback");
-  assert.deepEqual(payload.completion.recoveringParts, ["chart"]);
+  assert.equal(payload.score, undefined);
+  assert.deepEqual(payload.completion.recoveringParts, ["chart", "score"]);
 });
 
 test("display model marks provider-confirmed empty lanes unavailable instead of recovering forever", async () => {
@@ -231,26 +231,28 @@ test("display model keeps current-provider fast-path score visible without block
   }
 });
 
-test("display score source uses request fast path when score snapshot is missing", async () => {
+test("display score source uses the same score generation path as the score API", async () => {
+  const views: string[] = [];
   const payload = await readStockDisplayScoreSource("US:COLD", "detail", {
-    readSnapshot: async () => undefined,
-    detailFastPathEnabled: () => true,
-    technicalFastPathEnabled: () => false,
-    buildDetailFastPathPayload: async () => ({
-      ok: true,
-      score: 54,
-      quality_score: 54,
-      latest_price: 12.3,
-      chart_series: [{ date: "2026-06-09", close: 12 }, { date: "2026-06-10", close: 12.3 }],
-      financials: { detail_fast_path: true },
-    }),
-    buildTechnicalScoreFastPathPayload: async () => {
-      throw new Error("unexpected technical fast path");
+    readScore: async (_ticker, view) => {
+      views.push(view);
+      return {
+        payload: {
+          ok: true,
+          score: 54,
+          quality_score: 54,
+          latest_price: 12.3,
+          chart_series: [{ date: "2026-06-09", close: 12 }, { date: "2026-06-10", close: 12.3 }],
+          financials: { detail_fast_path: true },
+        },
+        cache: { state: "miss", source: "market-data", ticker: "US:COLD", view },
+      };
     },
     enrichStockPayloadWithSymbolProfile: async (score) => ({ ...score, stock_profile: [{ label: "티커", value: "COLD" }] }),
     enrichStockPayloadWithIndustryBenchmarks: async (score) => ({ ...score, industry_benchmarks: [{ metric: "per", value: 20 }] }),
   });
 
+  assert.deepEqual(views, ["detail"]);
   assert.equal(payload?.quality_score, 54);
   assert.equal(payload?.latest_price, 12.3);
   assert.equal(Array.isArray(payload?.chart_series), true);
@@ -261,48 +263,39 @@ test("display score source uses request fast path when score snapshot is missing
 test("compare display score source reuses detail-grade score data for chart fallback", async () => {
   const views: string[] = [];
   const payload = await readStockDisplayScoreSource("US:COLD", "compare", {
-    readSnapshot: async (_ticker, view) => {
-      views.push(`snapshot:${view}`);
-      return undefined;
-    },
-    detailFastPathEnabled: () => true,
-    technicalFastPathEnabled: () => false,
-    buildDetailFastPathPayload: async (_ticker, view) => {
-      views.push(`fast:${view}`);
+    readScore: async (_ticker, view) => {
+      views.push(view);
       return {
-        ok: true,
-        score: 54,
-        quality_score: 54,
-        latest_price: 12.3,
-        chart_series: [{ date: "2026-06-09", close: 12 }, { date: "2026-06-10", close: 12.3 }],
-        financials: { detail_fast_path: true },
+        payload: {
+          ok: true,
+          score: 54,
+          quality_score: 54,
+          latest_price: 12.3,
+          chart_series: [{ date: "2026-06-09", close: 12 }, { date: "2026-06-10", close: 12.3 }],
+          financials: { detail_fast_path: true },
+        },
+        cache: { state: "miss", source: "market-data", ticker: "US:COLD", view },
       };
-    },
-    buildTechnicalScoreFastPathPayload: async () => {
-      throw new Error("unexpected technical fast path");
     },
     enrichStockPayloadWithSymbolProfile: async (score) => score,
     enrichStockPayloadWithIndustryBenchmarks: async (score) => score,
   });
 
-  assert.deepEqual(views, ["snapshot:detail", "fast:detail"]);
+  assert.deepEqual(views, ["detail"]);
   assert.equal(payload?.quality_score, 54);
   assert.equal(Array.isArray(payload?.chart_series), true);
 });
 
-test("technical display score source uses technical request fast path when snapshot is missing", async () => {
+test("technical display score source uses the technical score generation path", async () => {
   const payload = await readStockDisplayScoreSource("US:TECH", "technical", {
-    readSnapshot: async () => undefined,
-    detailFastPathEnabled: () => false,
-    technicalFastPathEnabled: () => true,
-    buildDetailFastPathPayload: async () => {
-      throw new Error("unexpected detail fast path");
-    },
-    buildTechnicalScoreFastPathPayload: async () => ({
-      ok: true,
-      latest_price: 22,
-      chart_series: [{ date: "2026-06-09", close: 21 }, { date: "2026-06-10", close: 22 }],
-      technical_analysis: { type: "technical_analysis", summary: { headline: "우호" } },
+    readScore: async (_ticker, view) => ({
+      payload: {
+        ok: true,
+        latest_price: 22,
+        chart_series: [{ date: "2026-06-09", close: 21 }, { date: "2026-06-10", close: 22 }],
+        technical_analysis: { type: "technical_analysis", summary: { headline: "우호" } },
+      },
+      cache: { state: "miss", source: "market-data", ticker: "US:TECH", view },
     }),
     enrichStockPayloadWithSymbolProfile: async (score) => score,
     enrichStockPayloadWithIndustryBenchmarks: async (score) => score,

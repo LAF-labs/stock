@@ -264,7 +264,11 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const detailAppClassName = ["stock-app", "stock-detail-app", tickerParam ? "has-detail-context" : ""].filter(Boolean).join(" ");
+  const detailAppClassName = [
+    "stock-app",
+    "stock-detail-app",
+    tickerParam ? "has-detail-context" : "stock-home-app",
+  ].filter(Boolean).join(" ");
 
   return (
     <main ref={detailAppRef} className={detailAppClassName}>

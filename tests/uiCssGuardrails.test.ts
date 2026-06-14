@@ -173,6 +173,11 @@ test("detail score panels explain quality and opportunity in plain language with
   assert.equal(lastCssDeclaration(".stock-detail-app .score-panel-explain strong", "font-size"), "18px");
 });
 
+test("detail score panels do not expose confidence percentages as product copy", () => {
+  assert.doesNotMatch(stockHeaderSource, /scoreConfidenceChips|qualityConfidence|opportunityConfidence/);
+  assert.doesNotMatch(stockHeaderSource, /품질 근거|기회 근거|근거 충분도/);
+});
+
 test("detail summary quick read is a flat stat strip, not nested cards", () => {
   assert.equal(lastCssDeclaration(".stock-detail-app .quick-read", "border"), "0");
   assert.equal(lastCssDeclaration(".stock-detail-app .quick-read", "background"), "transparent");
@@ -232,6 +237,9 @@ test("market-cap mobile table uses four columns and hides ticker change and sect
 });
 
 test("landing content centers without a side rail and first visual stays bright", () => {
+  assert.match(dashboardSource, /tickerParam \? "has-detail-context" : "stock-home-app"/);
+  assert.equal(lastCssDeclaration(".stock-home-app", "width"), "min(var(--mc-wide-content-width), calc(100% - 48px))");
+  assert.equal(lastCssDeclaration(".stock-home-app .dashboard-landing", "width"), "100%");
   assert.equal(lastCssDeclaration(".dashboard-landing", "margin-inline"), "auto");
   assert.equal(lastCssDeclaration(".dashboard-landing", "width"), "min(var(--mc-wide-content-width), calc(100vw - 48px))");
   assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-visual", "background"), "linear-gradient(135deg, #ffffff 0%, #f8fbff 52%, #eef5ff 100%)");

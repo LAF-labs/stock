@@ -1889,6 +1889,16 @@ body {
   margin-inline: auto;
 }
 
+@media (min-width: 900px) {
+  .stock-home-app {
+    width: min(var(--mc-wide-content-width), calc(100% - 48px));
+  }
+
+  .stock-home-app .dashboard-landing {
+    width: 100%;
+  }
+}
+
 @media (max-width: 899px) {
   .compare-app {
     width: min(100%, 760px);

@@ -14,7 +14,6 @@ import type {
   StockDisplayUnavailablePart,
   StockDisplayView,
   StockFundamentalsView,
-  StockIdentityView,
   StockIndustryBenchmarkView,
   StockNewsView,
   StockPriceView,
@@ -23,11 +22,10 @@ import type {
 } from "@/lib/stockDisplayTypes";
 
 export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): StockDisplayPayload {
-  const identityValue = partValue(envelope.parts.identity);
   const chart = partValue(envelope.parts.chart);
   const sourceScore = normalizeDisplayScore(partValue(envelope.parts.score));
   const price = normalizePriceWithChart(partValue(envelope.parts.price), chart, sourceScore);
-  const score = sourceScore ?? marketFallbackScoreFromParts(envelope, identityValue, price, chart);
+  const score = sourceScore;
   const scoreDisplayState = envelope.parts.score ?? envelope.parts.chart ?? envelope.parts.price;
   const suppressTechnical = envelope.view === "technical" && unavailableReasonForPart(envelope, "chart") === "no_history";
   const technical = suppressTechnical ? undefined : partValue(envelope.parts.technical) ?? technicalFromScore(score);
@@ -81,87 +79,6 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
       canCompare: true,
       canTechnical: true,
       technicalHref: `/technical?ticker=${encodeURIComponent(envelope.ticker)}`,
-    },
-  };
-}
-
-function marketFallbackScoreFromParts(
-  envelope: StockDataEnvelope,
-  identity: StockIdentityView | undefined,
-  price: StockPriceView | undefined,
-  chart: StockChartView | undefined,
-): StockScoreView | undefined {
-  if (!price && !hasUsableChart(chart)) return undefined;
-  const chartRows = Array.isArray(chart?.chart_series) ? chart.chart_series : [];
-  const latestRow = recordValue(chartRows.at(-1));
-  const previousRow = recordValue(chartRows.at(-2));
-  const latestPrice = numberValue(price?.latest_price) ?? numberValue(latestRow?.close);
-  if (!positiveNumber(latestPrice)) return undefined;
-
-  const previousClose = numberValue(price?.previous_close) ?? numberValue(previousRow?.close);
-  const latestChange = numberValue(price?.latest_change) ?? (positiveNumber(previousClose) ? roundRatio(latestPrice / previousClose - 1) : undefined);
-  const market = stringValue(identity?.market) || stringValue(price?.market) || stringValue(chart?.market) || envelope.ticker.split(":")[0] || "";
-  const symbol = stringValue(identity?.symbol) || stringValue(price?.symbol) || stringValue(chart?.symbol) || envelope.ticker.replace(/^(US|KR):/i, "");
-  const name = stringValue(identity?.name) || stringValue(identity?.koreanName) || stringValue(price?.name) || stringValue(chart?.name) || symbol;
-  const currency = stringValue(price?.currency) || stringValue(chart?.currency) || (market === "KR" ? "KRW" : "USD");
-  const exchange = stringValue(identity?.exchange) || stringValue(price?.exchange) || stringValue(chart?.exchange);
-  const volume = numberValue(price?.volume) ?? numberValue(recordValue(price?.price_metrics)?.volume);
-  const volumeLabel = stringValue(price?.volume_label);
-  const latestBarDate = stringValue(price?.latest_bar_date) || stringValue(chart?.latest_bar_date) || stringValue(latestRow?.date);
-
-  return {
-    app: STOCKSTALKER_SERVICE_NAME,
-    requested_ticker: envelope.ticker,
-    market,
-    symbol,
-    name,
-    display_name: name,
-    korean_name: stringValue(identity?.koreanName),
-    english_name: stringValue(identity?.englishName),
-    instrument_type: stringValue(identity?.instrumentType),
-    exchange,
-    currency,
-    score_model_version: "market-data-fallback",
-    score: 50,
-    quality_score: 50,
-    opportunity_score: 50,
-    grade: "C",
-    quality_grade: "C",
-    opportunity_grade: "C",
-    opportunity_confidence: 0.2,
-    confidence: 0.2,
-    summary: `${name}은 현재 확인 가능한 가격과 거래 기록을 기준으로 먼저 보여줍니다.`,
-    benchmark: market === "KR" ? "KRX" : "US",
-    benchmark_label: market === "KR" ? "국내 상장 종목" : "미국 상장 종목",
-    latest_price: latestPrice,
-    latest_price_label: stringValue(price?.latest_price_label) || formatCurrencyAmount(latestPrice, currency),
-    latest_change: latestChange,
-    latest_change_label: stringValue(price?.latest_change_label) || formatPercent(latestChange),
-    latest_bar_date: latestBarDate,
-    data_quality: "market_data_fallback",
-    key_metrics: [
-      { label: "현재가", value: stringValue(price?.latest_price_label) || formatCurrencyAmount(latestPrice, currency) },
-      ...(latestChange !== undefined ? [{ label: "전일 대비", value: stringValue(price?.latest_change_label) || formatPercent(latestChange) }] : []),
-      ...(volume !== undefined || volumeLabel ? [{ label: "거래량", value: volumeLabel || String(volume) }] : []),
-    ],
-    stock_profile: [
-      { label: "시장", value: market === "KR" ? "국내" : market === "US" ? "미국" : market },
-      ...(exchange ? [{ label: "거래소", value: exchange }] : []),
-      { label: "티커", value: symbol },
-      { label: "통화", value: currency },
-      ...(identity?.instrumentType ? [{ label: "상품 유형", value: identity.instrumentType }] : []),
-    ],
-    chart_series: chartRows,
-    price_metrics: {
-      ...recordValue(price?.price_metrics),
-      price: latestPrice,
-      previous_close: previousClose,
-      latest_change: latestChange,
-      volume,
-    },
-    fetch: {
-      source: "market_data",
-      provider_mode: "market_data_fallback",
     },
   };
 }

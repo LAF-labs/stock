@@ -1,4 +1,3 @@
-import { isProviderConfirmedEmptyError } from "@/lib/stockProviderErrors";
 import { findExactLocalSymbol } from "@/lib/symbolSearch";
 import {
   buildStockDataEnvelope,
@@ -20,11 +19,7 @@ export type StockDisplaySourceResult<T extends Record<string, unknown>> = StockD
 export type StockDisplaySources = StockDataEnvelopeSources;
 
 export type StockDisplayScoreSourceDeps = {
-  readSnapshot: (ticker: string, view: ScoreView) => Promise<StockScoreResult | undefined>;
-  detailFastPathEnabled: () => boolean | Promise<boolean>;
-  technicalFastPathEnabled: () => boolean | Promise<boolean>;
-  buildDetailFastPathPayload: (ticker: string, view: ScoreView) => Promise<StockPayload>;
-  buildTechnicalScoreFastPathPayload: (ticker: string) => Promise<StockPayload>;
+  readScore: (ticker: string, view: ScoreView) => Promise<StockScoreResult | undefined>;
   enrichStockPayloadWithSymbolProfile: (payload: StockPayload) => Promise<StockPayload>;
   enrichStockPayloadWithIndustryBenchmarks: (payload: StockPayload) => Promise<StockPayload>;
 };
@@ -42,13 +37,8 @@ export async function readStockDisplayScoreSource(
   deps: StockDisplayScoreSourceDeps = defaultDisplayScoreSourceDeps()
 ): Promise<StockDisplaySourceResult<StockScoreView>> {
   const scoreView = displayScoreView(view);
-  const snapshot = await deps.readSnapshot(ticker, scoreView).catch(() => undefined);
-  let payload = snapshot?.payload;
-
-  if (!payload || payload.ok === false) {
-    payload = await requestFastPathDisplayScore(ticker, scoreView, deps);
-  }
-
+  const result = await deps.readScore(ticker, scoreView);
+  const payload = result?.payload;
   if (!payload || payload.ok === false) return undefined;
   if (scoreView === "technical") return payload;
 
@@ -106,45 +96,11 @@ function displayScoreView(view: StockDisplayView): ScoreView {
   return view === "technical" ? "technical" : "detail";
 }
 
-async function requestFastPathDisplayScore(
-  ticker: string,
-  view: ScoreView,
-  deps: StockDisplayScoreSourceDeps
-): Promise<StockPayload | undefined> {
-  try {
-    if (view === "technical") {
-      if (!(await deps.technicalFastPathEnabled())) return undefined;
-      return await deps.buildTechnicalScoreFastPathPayload(ticker);
-    }
-    if (!(await deps.detailFastPathEnabled())) return undefined;
-    return await deps.buildDetailFastPathPayload(ticker, view);
-  } catch (error) {
-    if (isProviderConfirmedEmptyError(error)) throw error;
-    return undefined;
-  }
-}
-
 function defaultDisplayScoreSourceDeps(): StockDisplayScoreSourceDeps {
   return {
-    readSnapshot: async (ticker, view) => {
-      const { readStockScoreSnapshotForDisplay } = await import("@/lib/stockScoreSnapshotReader");
-      return readStockScoreSnapshotForDisplay(ticker, view);
-    },
-    detailFastPathEnabled: async () => {
-      const { detailRequestFastPathEnabled } = await import("@/lib/detailScoreFastPath");
-      return detailRequestFastPathEnabled();
-    },
-    technicalFastPathEnabled: async () => {
-      const { technicalRequestFastPathEnabled } = await import("@/lib/technicalScoreFastPath");
-      return technicalRequestFastPathEnabled();
-    },
-    buildDetailFastPathPayload: async (ticker, view) => {
-      const { buildDetailScoreFastPathPayload } = await import("@/lib/detailScoreFastPath");
-      return buildDetailScoreFastPathPayload(ticker, view);
-    },
-    buildTechnicalScoreFastPathPayload: async (ticker) => {
-      const { buildTechnicalScoreFastPathPayload } = await import("@/lib/technicalScoreFastPath");
-      return buildTechnicalScoreFastPathPayload(ticker);
+    readScore: async (ticker, view) => {
+      const { getStockScore } = await import("@/lib/stockSnapshotCache");
+      return getStockScore(ticker, view);
     },
     enrichStockPayloadWithSymbolProfile: async (payload) => {
       const { enrichStockPayloadWithSymbolProfile } = await import("@/lib/symbolProfiles");

@@ -9,7 +9,6 @@ import {
   hasDisplayableScoreComponents,
   opportunityExtremes,
   riskLevelLabel,
-  scoreConfidenceChips,
   scoreDataWithQuote,
   signalLabel,
   stockHeaderFreshnessTimeChip,
@@ -71,9 +70,6 @@ export default function StockHeader({
   const { strongest, weakest } = strongestAndWeakest(displayData);
   const opportunity = opportunityExtremes(displayData.opportunity_components);
   const headerTime = stockHeaderFreshnessTimeChip(data, quote);
-  const confidenceChips = scoreConfidenceChips(displayData);
-  const qualityConfidence = confidenceChips.find((chip) => chip.label === "품질 근거");
-  const opportunityConfidence = confidenceChips.find((chip) => chip.label === "기회 근거");
   const scoreEvidenceMissing = qualityScore === undefined && opportunityScore === undefined;
 
   return (
@@ -138,7 +134,6 @@ export default function StockHeader({
             <div className="score-chip-row" aria-label="품질 점수 보조 신호">
               <span>매수신호 {signal}</span>
               <span>변동성 {risk}</span>
-              {qualityConfidence ? <span>{qualityConfidence.label} {String(qualityConfidence.value)}</span> : null}
             </div>
           </ScoreInsightPanel>
         ) : null}
@@ -164,11 +159,6 @@ export default function StockHeader({
                 </span>
               ) : null}
             </div>
-            {opportunityConfidence ? (
-              <div className="score-chip-row" aria-label="기회 점수 근거 충분도">
-                <span>{opportunityConfidence.label} {String(opportunityConfidence.value)}</span>
-              </div>
-            ) : null}
           </ScoreInsightPanel>
         ) : null}
       </div>

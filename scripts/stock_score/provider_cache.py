@@ -28,6 +28,7 @@ from .cache_policy import fresh_seconds as policy_fresh_seconds, stale_seconds a
 YFINANCE_FUNDAMENTAL_CACHE_VERSION = 2
 YFINANCE_FUNDAMENTAL_SOURCE = "yfinance"
 SUPABASE_FUNDAMENTAL_TABLE = "stock_fundamental_snapshots"
+SUPABASE_FUNDAMENTAL_LATEST_TABLE = "stock_fundamental_latest"
 SUPABASE_TIMEOUT_SECONDS = 8
 KIS_TOKEN_CACHE_TABLE = "kis_access_tokens"
 KIS_TOKEN_LOCK_RPC = "acquire_kis_token_issue_lock"
@@ -97,6 +98,32 @@ YFINANCE_FUNDAMENTAL_FIELD_CLASSES = {
     "beta": "liquidity",
     "averageVolume": "liquidity",
     "averageVolume10days": "liquidity",
+}
+
+SCORING_FUNDAMENTAL_FIELDS = frozenset(
+    {
+        *YFINANCE_FUNDAMENTAL_FIELDS,
+        "totalAssets",
+        "totalLiabilities",
+        "totalEquity",
+        "operatingIncome",
+        "netIncome",
+        "eps",
+        "bps",
+        "ebitda",
+        "evToEbitda",
+        "listedShares",
+        "marketCap",
+    }
+)
+
+FUNDAMENTAL_COVERAGE_GROUPS = {
+    "profitability": ["eps", "bps", "returnOnEquity", "profitMargins", "operatingMargins"],
+    "growth": ["totalRevenue", "revenueGrowth", "earningsGrowth"],
+    "health": ["debtToEquity", "currentRatio", "quickRatio", "totalAssets", "totalLiabilities", "totalEquity"],
+    "cashflow": ["operatingCashflow", "freeCashflow"],
+    "valuation": ["trailingPE", "forwardPE", "priceToBook", "enterpriseToRevenue", "priceToSalesTrailing12Months", "evToEbitda"],
+    "market": ["marketCap", "beta", "averageVolume", "averageVolume10days", "targetMeanPrice", "numberOfAnalystOpinions", "recommendationMean"],
 }
 
 
@@ -176,6 +203,199 @@ def supabase_cache_state(row: dict[str, Any], now: datetime) -> str | None:
     if stale_expires_at and now <= stale_expires_at:
         return "stale"
     return None
+
+
+def normalized_fundamental_cache_meta(store: str, state: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "source": extra.pop("source", "normalized_fundamentals"),
+        "provider": extra.pop("provider", "unknown"),
+        "store": store,
+        "cache": state,
+        **{key: value for key, value in extra.items() if value is not None},
+    }
+
+
+def clean_fundamental_values(values: dict[str, Any] | None) -> dict[str, float]:
+    if not isinstance(values, dict):
+        return {}
+
+    cleaned: dict[str, float] = {}
+    for field, value in values.items():
+        if field not in SCORING_FUNDAMENTAL_FIELDS:
+            continue
+        parsed = as_float(value)
+        if parsed is not None:
+            cleaned[field] = float(parsed)
+    return cleaned
+
+
+def merge_fundamental_values(*sources: dict[str, Any] | None) -> dict[str, float]:
+    merged: dict[str, float] = {}
+    for source in sources:
+        for field, value in clean_fundamental_values(source).items():
+            if field not in merged:
+                merged[field] = value
+    return merged
+
+
+def fundamental_coverage(values: dict[str, Any] | None) -> dict[str, list[str]]:
+    cleaned = clean_fundamental_values(values)
+    return {
+        group: [field for field in fields if field in cleaned]
+        for group, fields in FUNDAMENTAL_COVERAGE_GROUPS.items()
+        if any(field in cleaned for field in fields)
+    }
+
+
+def read_supabase_normalized_fundamental_cache(
+    symbol: str,
+    market: str = "US",
+) -> tuple[dict[str, float] | None, str | None, dict[str, Any] | None, dict[str, Any] | None]:
+    config = supabase_read_config()
+    if not config:
+        return None, None, normalized_fundamental_cache_meta("supabase", "miss", error="missing_config"), None
+
+    url, key = config
+    clean_symbol = clean_ticker(symbol)
+    clean_market = clean_ticker(market) or "US"
+    try:
+        response = requests.get(
+            f"{url}/rest/v1/{SUPABASE_FUNDAMENTAL_LATEST_TABLE}",
+            params={
+                "market": f"eq.{clean_market}",
+                "symbol": f"eq.{clean_symbol}",
+                "select": (
+                    "market,symbol,provider,source,source_filing_id,period_end,fiscal_year,fiscal_period,"
+                    "report_type,currency,is_consolidated,normalized_facts,coverage,payload,raw_ref,"
+                    "fetched_at,expires_at,stale_expires_at"
+                ),
+                "limit": "1",
+            },
+            headers=supabase_headers(key),
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        if response.status_code == 404:
+            return None, None, normalized_fundamental_cache_meta("supabase", "miss", error="table_missing"), None
+        if not response.ok:
+            return None, None, normalized_fundamental_cache_meta("supabase", "miss", error=f"HTTP {response.status_code}"), None
+        rows = response.json()
+    except Exception as exc:
+        return None, None, normalized_fundamental_cache_meta("supabase", "miss", error=str(exc)), None
+
+    if not isinstance(rows, list) or not rows:
+        return None, None, normalized_fundamental_cache_meta("supabase", "miss"), None
+
+    row = rows[0] if isinstance(rows[0], dict) else {}
+    state = supabase_cache_state(row, datetime.now(timezone.utc))
+    if state is None:
+        return None, None, normalized_fundamental_cache_meta("supabase", "expired"), row
+
+    facts = clean_fundamental_values(row.get("normalized_facts") if isinstance(row.get("normalized_facts"), dict) else None)
+    if not facts:
+        return None, None, normalized_fundamental_cache_meta("supabase", "miss", error="empty_normalized_facts"), row
+
+    provider = str(row.get("provider") or "unknown")
+    source = str(row.get("source") or "normalized_fundamentals")
+    meta = normalized_fundamental_cache_meta(
+        "supabase",
+        state,
+        provider=provider,
+        source=source,
+        period_end=row.get("period_end"),
+        fiscal_year=row.get("fiscal_year"),
+        fiscal_period=row.get("fiscal_period"),
+        currency=row.get("currency"),
+        fetched_at=row.get("fetched_at"),
+        expires_at=row.get("expires_at"),
+        stale_expires_at=row.get("stale_expires_at"),
+    )
+    payload = {
+        "provider": provider,
+        "source": source,
+        "source_filing_id": row.get("source_filing_id"),
+        "period_end": row.get("period_end"),
+        "fiscal_year": row.get("fiscal_year"),
+        "fiscal_period": row.get("fiscal_period"),
+        "report_type": row.get("report_type"),
+        "currency": row.get("currency"),
+        "is_consolidated": row.get("is_consolidated"),
+        "normalized_facts": facts,
+        "coverage": row.get("coverage") if isinstance(row.get("coverage"), dict) else {},
+        "payload": row.get("payload") if isinstance(row.get("payload"), dict) else {},
+        "raw_ref": row.get("raw_ref") if isinstance(row.get("raw_ref"), dict) else {},
+    }
+    return facts, state, meta, payload
+
+
+def normalized_fundamentals(
+    symbol: str,
+    market: str = "US",
+) -> tuple[dict[str, float], str | None, dict[str, Any], dict[str, Any]]:
+    facts, state, meta, payload = read_supabase_normalized_fundamental_cache(symbol, market)
+    return facts or {}, state, meta or normalized_fundamental_cache_meta("supabase", "miss"), payload or {}
+
+
+def write_supabase_normalized_fundamental_latest(
+    symbol: str,
+    values: dict[str, Any],
+    *,
+    market: str = "US",
+    provider: str,
+    source: str,
+    payload: dict[str, Any] | None = None,
+    source_filing_id: str | None = None,
+    period_end: str | None = None,
+    fiscal_year: int | None = None,
+    fiscal_period: str | None = None,
+    report_type: str | None = None,
+    currency: str | None = None,
+    is_consolidated: bool | None = None,
+) -> bool:
+    cleaned = clean_fundamental_values(values)
+    if not cleaned:
+        return False
+
+    config = supabase_write_config()
+    if not config:
+        return False
+
+    url, key = config
+    legacy_payload = payload if isinstance(payload, dict) else {}
+    now = datetime.now(timezone.utc)
+    row = {
+        "market": clean_ticker(market) or "US",
+        "symbol": clean_ticker(symbol),
+        "provider": provider,
+        "source": source,
+        "source_filing_id": source_filing_id,
+        "period_end": period_end,
+        "fiscal_year": fiscal_year,
+        "fiscal_period": fiscal_period,
+        "report_type": report_type,
+        "currency": currency,
+        "is_consolidated": is_consolidated,
+        "normalized_facts": cleaned,
+        "coverage": fundamental_coverage(cleaned),
+        "payload": legacy_payload,
+        "raw_ref": {"legacy_payload_version": legacy_payload.get("version")} if legacy_payload else {},
+        "fetched_at": legacy_payload.get("fetched_at_iso") or now.isoformat(),
+        "expires_at": legacy_payload.get("expires_at_iso") or datetime.fromtimestamp(now.timestamp() + policy_fresh_seconds("fundamentals_statement"), timezone.utc).isoformat(),
+        "stale_expires_at": legacy_payload.get("stale_expires_at_iso") or datetime.fromtimestamp(now.timestamp() + policy_stale_seconds("fundamentals_statement"), timezone.utc).isoformat(),
+    }
+    try:
+        response = requests.post(
+            f"{url}/rest/v1/{SUPABASE_FUNDAMENTAL_LATEST_TABLE}",
+            params={"on_conflict": "market,symbol"},
+            headers={
+                **supabase_headers(key),
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            json={key: value for key, value in row.items() if value is not None},
+            timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        return response.ok
+    except Exception:
+        return False
 
 
 def fundamental_cache_payload(symbol: str, values: dict[str, Any], now: float | None = None) -> dict[str, Any]:
@@ -296,6 +516,14 @@ def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any
             },
             json=row,
             timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        write_supabase_normalized_fundamental_latest(
+            symbol,
+            values,
+            market=market,
+            provider=YFINANCE_FUNDAMENTAL_SOURCE,
+            source=YFINANCE_FUNDAMENTAL_SOURCE,
+            payload=payload,
         )
         return response.ok
     except Exception:
@@ -438,6 +666,17 @@ def write_supabase_kis_domestic_fundamental_cache(
             },
             json=row,
             timeout=SUPABASE_TIMEOUT_SECONDS,
+        )
+        write_supabase_normalized_fundamental_latest(
+            symbol,
+            normalized or {},
+            market=market,
+            provider="kis",
+            source=KIS_DOMESTIC_FUNDAMENTAL_SOURCE,
+            payload=payload,
+            fiscal_period=payload.get("period") if isinstance(payload.get("period"), str) else None,
+            report_type=period_type,
+            currency="KRW",
         )
         return response.ok, payload
     except Exception:

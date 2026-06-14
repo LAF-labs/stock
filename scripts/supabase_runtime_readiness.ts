@@ -13,6 +13,7 @@ export const RUNTIME_TABLE_CHECKS = [
   "public.stock_rule_judgments",
   "public.stock_industry_benchmarks",
   "public.stock_symbol_profiles",
+  "public.stock_fundamental_latest",
   "public.market_calendar",
   "public.kis_access_tokens",
 ] as const;
@@ -44,6 +45,7 @@ export const PUBLIC_READ_CHECKS = [
   ["stock_quote_snapshots", "ticker"],
   ["stock_chart_snapshots", "ticker"],
   ["stock_fundamental_snapshots", "market"],
+  ["stock_fundamental_latest", "market"],
   ["market_calendar", "market"],
   ["stock_industry_benchmarks", "metric"],
   ["stock_symbol_profiles", "market"],

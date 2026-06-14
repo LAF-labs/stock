@@ -25,12 +25,6 @@ def signal_for(score: float, rsi: float | None, return_3m: float | None) -> str:
     return "HOLD"
 
 
-def confidence_pct(value: float | None) -> str:
-    if value is None:
-        return "-"
-    return f"{value * 100:.1f}%"
-
-
 def top_like_current(
     symbol: str,
     name: str,
@@ -76,9 +70,7 @@ def opportunity_components_for(
             "short": "모",
             "score": round(components["momentum"].score, 1),
             "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
-            "metrics": [
-                {"label": "근거 충분도", "value": confidence_pct(components["momentum"].confidence)},
-            ],
+            "metrics": [],
         },
         {
             "key": "opportunity_growth",
@@ -86,9 +78,7 @@ def opportunity_components_for(
             "short": "성",
             "score": round(components["estimate_growth"].score, 1),
             "summary": "매출과 이익 성장률이 기회로 이어질 수 있는지 봐요.",
-            "metrics": [
-                {"label": "근거 충분도", "value": confidence_pct(components["estimate_growth"].confidence)},
-            ],
+            "metrics": [],
         },
         {
             "key": "opportunity_analyst",

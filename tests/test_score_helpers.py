@@ -29,6 +29,25 @@ from scripts.fetch_stock_score import (
 )
 
 
+def us_score_rows(count=260):
+    rows = []
+    start = date(2025, 1, 1)
+    for index in range(count):
+        current = start + timedelta(days=index)
+        close = 90 + index * 0.2
+        rows.append(
+            {
+                "xymd": current.strftime("%Y%m%d"),
+                "open": str(close - 1),
+                "high": str(close + 2),
+                "low": str(close - 2),
+                "clos": str(close),
+                "tvol": "1200000",
+            }
+        )
+    return rows
+
+
 class ScoreHelperTests(unittest.TestCase):
     def test_scoring_helpers_are_extracted_through_score_entrypoint(self):
         self.assertIs(score_module.FactorScore, scoring.FactorScore)
@@ -73,6 +92,8 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertIs(score_module.kis_token_cache_key, provider_cache.kis_token_cache_key)
         self.assertIs(score_module.read_supabase_kis_access_token, provider_cache.read_supabase_kis_access_token)
         self.assertIs(score_module.write_supabase_kis_access_token, provider_cache.write_supabase_kis_access_token)
+        self.assertIs(score_module.normalized_fundamentals, provider_cache.normalized_fundamentals)
+        self.assertIs(score_module.merge_fundamental_values, provider_cache.merge_fundamental_values)
 
     def test_kis_client_helpers_are_extracted_through_score_entrypoint(self):
         self.assertIs(score_module.KisApiError, kis_client.KisApiError)
@@ -202,6 +223,86 @@ class ScoreHelperTests(unittest.TestCase):
                 else:
                     os.environ["STOCK_YFINANCE_REQUEST_FETCH"] = original_flag
 
+    def test_us_score_prefers_normalized_fundamentals_and_keeps_yfinance_market_ratios(self):
+        with (
+            patch.object(
+                score_module,
+                "discover_kis_stock",
+                return_value={
+                    "market": {"excd": "NAS", "label": "Nasdaq"},
+                    "detail": {
+                        "curr": "USD",
+                        "last": "135.00",
+                        "base": "132.00",
+                        "tomv": "2100000000000",
+                        "tvol": "35000000",
+                        "h52p": "150.00",
+                        "l52p": "80.00",
+                        "epsx": "4.20",
+                        "bpsx": "18.00",
+                        "perx": "32.1",
+                        "pbrx": "7.5",
+                        "shar": "15500000000",
+                        "e_ordyn": "Y",
+                    },
+                    "price": {"last": "135.00", "base": "132.00", "rate": "2.27", "tvol": "35000000"},
+                    "search": {
+                        "prdt_eng_name": "NVIDIA",
+                        "ovrs_excg_name": "Nasdaq",
+                        "tr_crcy_cd": "USD",
+                        "lstg_yn": "Y",
+                        "lstg_dt": "19990122",
+                    },
+                },
+            ),
+            patch.object(score_module, "kis_daily_rows", return_value=us_score_rows()),
+            patch.object(
+                score_module,
+                "normalized_fundamentals",
+                return_value=(
+                    {
+                        "totalRevenue": 100_000_000_000.0,
+                        "profitMargins": 0.42,
+                        "operatingMargins": 0.55,
+                        "revenueGrowth": 0.35,
+                        "earningsGrowth": 0.5,
+                        "debtToEquity": 38.0,
+                        "currentRatio": 3.5,
+                    },
+                    "fresh",
+                    {"source": "sec_companyfacts", "provider": "sec", "cache": "fresh"},
+                    {"normalized_facts": {"totalRevenue": 100_000_000_000.0}},
+                ),
+            ),
+            patch.object(
+                score_module,
+                "yfinance_fundamentals",
+                return_value=(
+                    {
+                        "totalRevenue": 1.0,
+                        "profitMargins": 0.01,
+                        "forwardPE": 28.5,
+                        "enterpriseToRevenue": 18.2,
+                        "targetMeanPrice": 155.0,
+                        "numberOfAnalystOpinions": 44,
+                        "beta": 1.3,
+                    },
+                    {"source": "yfinance", "cache": "fresh"},
+                ),
+            ),
+            patch.object(score_module, "kis_news", return_value=[]),
+        ):
+            payload = score_module.fetch_score_kis_us("NVDA", view="detail")
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["financials"]["totalRevenue"], 100_000_000_000.0)
+        self.assertEqual(payload["financials"]["profitMargins"], 0.42)
+        self.assertEqual(payload["financials"]["debtToEquity"], 38.0)
+        self.assertEqual(payload["financials"]["forwardPE"], 28.5)
+        self.assertEqual(payload["financials"]["targetMeanPrice"], 155.0)
+        self.assertEqual(payload["financial_statement"]["normalized_fundamentals"]["fields"]["totalRevenue"], 100_000_000_000.0)
+        self.assertEqual(payload["fetch"]["fundamentals_source"], "normalized_fundamentals+yfinance")
+
     def test_yfinance_provider_helpers_normalize_fake_ticker_data(self):
         class FakeTicker:
             info = {"marketCap": 123}
@@ -319,14 +420,15 @@ class ScoreHelperTests(unittest.TestCase):
             "opportunity_liquidity",
             "opportunity_risk",
         ])
-        self.assertEqual(components[0]["metrics"][0], {"label": "근거 충분도", "value": "80.0%"})
-        self.assertEqual(components[1]["metrics"][0], {"label": "근거 충분도", "value": "70.0%"})
+        self.assertEqual(components[0]["metrics"], [])
+        self.assertEqual(components[1]["metrics"], [])
         self.assertEqual(components[2]["metrics"][0], {"label": "목표가 여지", "value": "+25.0%"})
         self.assertEqual(components[2]["metrics"][1], {"label": "평균 목표가", "value": "$125.00"})
         self.assertEqual(components[2]["metrics"][2], {"label": "애널리스트 수", "value": "7명"})
         for component in components:
             labels = [metric["label"] for metric in component["metrics"]]
             self.assertNotIn("신뢰도", labels)
+            self.assertNotIn("근거 충분도", labels)
             self.assertNotIn("적용 상한", labels)
 
     def test_timeseries_helpers_build_chart_rows(self):
@@ -489,7 +591,7 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertEqual(valuation.score, 78.0)
         self.assertEqual(valuation.confidence, 1.0)
 
-    def test_composite_score_anchors_sparse_data_toward_neutral(self):
+    def test_composite_score_excludes_missing_factors_without_neutral_anchor(self):
         score, confidence = composite_score(
             {
                 "profitability": FactorScore(score=50.0, confidence=0.0),
@@ -501,8 +603,7 @@ class ScoreHelperTests(unittest.TestCase):
         )
 
         self.assertLessEqual(confidence, 0.4)
-        self.assertGreaterEqual(score, 35.0)
-        self.assertLessEqual(score, 55.0)
+        self.assertAlmostEqual(score, 29.6, places=1)
 
     def test_domestic_yfinance_symbol_uses_exchange_suffixes(self):
         self.assertEqual(domestic_yfinance_symbol("005930", "KOSPI"), "005930.KS")
@@ -557,6 +658,7 @@ class ScoreHelperTests(unittest.TestCase):
                     "lstg_stqt": "133445785",
                 },
             ),
+            patch.object(score_module, "normalized_fundamentals", return_value=({}, None, {"cache": "miss"}, {})),
             patch.object(score_module, "yfinance_fundamentals", return_value=({}, {"cache": "miss"})),
             patch.object(score_module, "kis_domestic_news", return_value=[]),
         ):
@@ -599,7 +701,7 @@ class ScoreHelperTests(unittest.TestCase):
         self.assertLessEqual(opportunity.score, 72.0)
         self.assertIn("speculative_expensive_sales", opportunity.caps)
 
-    def test_opportunity_score_anchors_sparse_data_toward_neutral(self):
+    def test_opportunity_score_excludes_missing_factors_without_neutral_anchor(self):
         opportunity = opportunity_factor_score(
             market="US",
             latest_price=10.0,
@@ -628,8 +730,7 @@ class ScoreHelperTests(unittest.TestCase):
         )
 
         self.assertLessEqual(opportunity.confidence, 0.45)
-        self.assertGreaterEqual(opportunity.score, 45.0)
-        self.assertLessEqual(opportunity.score, 65.0)
+        self.assertGreaterEqual(opportunity.score, 70.0)
 
     def test_kis_access_token_reuses_supabase_shared_cache(self):
         original_env = {

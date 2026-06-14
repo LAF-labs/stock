@@ -231,6 +231,8 @@ try:
         write_local_kis_token_cache,
         write_supabase_kis_access_token,
         kis_domestic_fundamentals,
+        merge_fundamental_values,
+        normalized_fundamentals,
         yfinance_fundamentals,
     )
 except ModuleNotFoundError:
@@ -243,6 +245,8 @@ except ModuleNotFoundError:
         write_local_kis_token_cache,
         write_supabase_kis_access_token,
         kis_domestic_fundamentals,
+        merge_fundamental_values,
+        normalized_fundamentals,
         yfinance_fundamentals,
     )
 
@@ -484,7 +488,20 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     except Exception:
         daily_rows = []
 
-    fundamentals, fundamentals_cache = yfinance_fundamentals(symbol)
+    normalized_values, normalized_state, normalized_cache, normalized_payload = normalized_fundamentals(symbol, market="US")
+    yfinance_values, yfinance_cache = yfinance_fundamentals(symbol)
+    fundamentals = merge_fundamental_values(normalized_values, yfinance_values)
+    has_normalized_fundamentals = bool(normalized_values)
+    fundamentals_cache = (
+        {
+            "source": "normalized_fundamentals+yfinance",
+            "cache": normalized_state or "miss",
+            "normalized": normalized_cache,
+            "yfinance": yfinance_cache,
+        }
+        if has_normalized_fundamentals
+        else yfinance_cache
+    )
 
     currency = str(detail.get("curr") or search.get("tr_crcy_cd") or "USD")
     usd_krw = (usd_krw_override if use_rate_override else as_float(detail.get("t_rate"))) if currency == "USD" else None
@@ -808,13 +825,21 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
         "earningsGrowth": earnings_growth,
         "totalRevenue": total_revenue,
         "operatingCashflow": operating_cashflow,
+        "freeCashflow": free_cashflow,
         "debtToEquity": debt_to_equity,
         "currentRatio": current_ratio,
         "quickRatio": quick_ratio,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "priceToBook": price_to_book,
+        "enterpriseToRevenue": ev_to_revenue,
+        "priceToSalesTrailing12Months": price_to_sales,
         "targetMeanPrice": target_mean_price,
         "numberOfAnalystOpinions": analyst_count,
         "recommendationMean": recommendation_mean,
         "beta": beta,
+        "ocfMargin": ocf_margin,
+        "fcfMargin": fcf_margin,
         "eps": eps,
         "bps": bps,
         "listedShares": listed_shares,
@@ -822,9 +847,14 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
     financial_statement: dict[str, Any] = {
         "price_detail": {key: finite_or_none(value) for key, value in detail.items()},
         "product_info": {key: finite_or_none(value) for key, value in search.items()},
+        "normalized_fundamentals": {
+            "cache": normalized_cache,
+            "fields": {key: finite_or_none(value) for key, value in normalized_values.items()},
+            "snapshot": normalized_payload,
+        },
         "yfinance_fundamentals": {
-            "cache": fundamentals_cache,
-            "fields": {key: finite_or_none(value) for key, value in fundamentals.items()},
+            "cache": yfinance_cache,
+            "fields": {key: finite_or_none(value) for key, value in yfinance_values.items()},
         },
     }
 
@@ -932,7 +962,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
             },
         },
         "fetch": {
-            "source": "market_data+yfinance_fundamentals",
+            "source": "market_data+normalized_fundamentals+yfinance_fundamentals" if has_normalized_fundamentals else "market_data+yfinance_fundamentals",
             "score_model_version": SCORE_MODEL_VERSION,
             "price_endpoint": "/uapi/overseas-price/v1/quotations/price",
             "price_detail_endpoint": "/uapi/overseas-price/v1/quotations/price-detail",
@@ -942,7 +972,7 @@ def fetch_score_kis_us(raw_ticker: str, view: str = "detail", usd_krw_override: 
             "fetched_at": now.isoformat(),
             "cache": "no-store",
             "fundamentals_cache": fundamentals_cache,
-            "fundamentals_source": "yfinance",
+            "fundamentals_source": "normalized_fundamentals+yfinance" if has_normalized_fundamentals else "yfinance",
             "input_mode": "exact_ticker_only",
             "market_scope": "US listed equity",
             "exchange_code": excd,
@@ -990,12 +1020,25 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     english_name = str(stock_info.get("prdt_eng_name") or search.get("prdt_eng_name") or "")
     exchange = domestic_exchange_name(stock_info)
     yahoo_symbol = domestic_yfinance_symbol(symbol, exchange)
-    fundamentals, fundamentals_cache = yfinance_fundamentals(yahoo_symbol, market="KR")
+    normalized_values, normalized_state, normalized_cache, normalized_payload = normalized_fundamentals(symbol, market="KR")
+    yfinance_values, yfinance_cache = yfinance_fundamentals(yahoo_symbol, market="KR")
     kis_financials: dict[str, Any] = {}
     kis_financials_cache: dict[str, Any] = {"source": "kis_domestic_financials", "cache": "disabled_view"}
     kis_financials_payload: dict[str, Any] = {}
     if not is_compare_view:
         kis_financials, kis_financials_cache, kis_financials_payload = kis_domestic_fundamentals(symbol, market="KR")
+    financial_facts = merge_fundamental_values(normalized_values, kis_financials, yfinance_values)
+    has_normalized_fundamentals = bool(normalized_values)
+    fundamentals_cache = (
+        {
+            "source": "normalized_fundamentals+yfinance",
+            "cache": normalized_state or "miss",
+            "normalized": normalized_cache,
+            "yfinance": yfinance_cache,
+        }
+        if has_normalized_fundamentals
+        else yfinance_cache
+    )
     history_source = "kis"
     if len(daily_rows) < CHART_SERIES_TRADING_YEAR_ROWS:
         yfinance_rows = yfinance_domestic_daily_rows(safe_history_for_symbol(yahoo_symbol))
@@ -1029,42 +1072,42 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
     atr14, atr14_pct = atr_percent(history_df.dropna(subset=["Close"]) if not history_df.empty else history_df, 14)
     distance_52w_high = ((latest_price / year_high) - 1.0) if latest_price and year_high else None
 
-    eps = first_float(price.get("eps"), kis_financials.get("eps"))
-    bps = first_float(price.get("bps"), kis_financials.get("bps"))
-    trailing_pe = first_float(price.get("per"), fundamentals.get("trailingPE"))
-    price_to_book = first_float(price.get("pbr"), fundamentals.get("priceToBook"))
-    forward_pe = as_float(fundamentals.get("forwardPE"))
-    ev_to_revenue = as_float(fundamentals.get("enterpriseToRevenue"))
-    price_to_sales = as_float(fundamentals.get("priceToSalesTrailing12Months"))
-    target_mean_price = first_float(fundamentals.get("targetMeanPrice"), fundamentals.get("targetMedianPrice"))
-    analyst_count = as_float(fundamentals.get("numberOfAnalystOpinions"))
-    recommendation_mean = as_float(fundamentals.get("recommendationMean"))
-    beta = as_float(fundamentals.get("beta"))
-    profit_margin = first_float(kis_financials.get("profitMargins"), fundamentals.get("profitMargins"))
-    operating_margin = first_float(kis_financials.get("operatingMargins"), fundamentals.get("operatingMargins"))
-    revenue_growth = first_float(kis_financials.get("revenueGrowth"), fundamentals.get("revenueGrowth"))
-    earnings_growth = first_float(kis_financials.get("earningsGrowth"), fundamentals.get("earningsGrowth"))
-    total_revenue = first_float(kis_financials.get("totalRevenue"), fundamentals.get("totalRevenue"))
-    operating_cashflow = as_float(fundamentals.get("operatingCashflow"))
-    free_cashflow = as_float(fundamentals.get("freeCashflow"))
-    total_cash = as_float(fundamentals.get("totalCash"))
-    total_debt = as_float(fundamentals.get("totalDebt"))
-    total_assets = as_float(kis_financials.get("totalAssets"))
-    total_liabilities = as_float(kis_financials.get("totalLiabilities"))
-    total_equity = as_float(kis_financials.get("totalEquity"))
-    operating_income = as_float(kis_financials.get("operatingIncome"))
-    net_income = as_float(kis_financials.get("netIncome"))
-    ebitda = as_float(kis_financials.get("ebitda"))
-    ev_to_ebitda = as_float(kis_financials.get("evToEbitda"))
-    debt_to_equity = first_float(kis_financials.get("debtToEquity"), fundamentals.get("debtToEquity"))
-    current_ratio = first_float(kis_financials.get("currentRatio"), fundamentals.get("currentRatio"))
-    quick_ratio = first_float(kis_financials.get("quickRatio"), fundamentals.get("quickRatio"))
+    eps = first_float(price.get("eps"), financial_facts.get("eps"))
+    bps = first_float(price.get("bps"), financial_facts.get("bps"))
+    trailing_pe = first_float(price.get("per"), financial_facts.get("trailingPE"))
+    price_to_book = first_float(price.get("pbr"), financial_facts.get("priceToBook"))
+    forward_pe = as_float(financial_facts.get("forwardPE"))
+    ev_to_revenue = as_float(financial_facts.get("enterpriseToRevenue"))
+    price_to_sales = as_float(financial_facts.get("priceToSalesTrailing12Months"))
+    target_mean_price = first_float(financial_facts.get("targetMeanPrice"), financial_facts.get("targetMedianPrice"))
+    analyst_count = as_float(financial_facts.get("numberOfAnalystOpinions"))
+    recommendation_mean = as_float(financial_facts.get("recommendationMean"))
+    beta = as_float(financial_facts.get("beta"))
+    profit_margin = as_float(financial_facts.get("profitMargins"))
+    operating_margin = as_float(financial_facts.get("operatingMargins"))
+    revenue_growth = as_float(financial_facts.get("revenueGrowth"))
+    earnings_growth = as_float(financial_facts.get("earningsGrowth"))
+    total_revenue = as_float(financial_facts.get("totalRevenue"))
+    operating_cashflow = as_float(financial_facts.get("operatingCashflow"))
+    free_cashflow = as_float(financial_facts.get("freeCashflow"))
+    total_cash = as_float(financial_facts.get("totalCash"))
+    total_debt = as_float(financial_facts.get("totalDebt"))
+    total_assets = as_float(financial_facts.get("totalAssets"))
+    total_liabilities = as_float(financial_facts.get("totalLiabilities"))
+    total_equity = as_float(financial_facts.get("totalEquity"))
+    operating_income = as_float(financial_facts.get("operatingIncome"))
+    net_income = as_float(financial_facts.get("netIncome"))
+    ebitda = as_float(financial_facts.get("ebitda"))
+    ev_to_ebitda = as_float(financial_facts.get("evToEbitda"))
+    debt_to_equity = as_float(financial_facts.get("debtToEquity"))
+    current_ratio = as_float(financial_facts.get("currentRatio"))
+    quick_ratio = as_float(financial_facts.get("quickRatio"))
     ocf_margin = sane_cashflow_margin(operating_cashflow, total_revenue)
     fcf_margin = sane_cashflow_margin(free_cashflow, total_revenue)
     roe_raw = as_float(stock_info.get("roe"))
     if roe_raw is not None and abs(roe_raw) > 1:
         roe_raw = roe_raw / 100.0
-    yfinance_roe = as_float(fundamentals.get("returnOnEquity"))
+    yfinance_roe = as_float(financial_facts.get("returnOnEquity"))
     roe = (eps / bps) if eps is not None and bps not in (None, 0) else roe_raw if roe_raw is not None else yfinance_roe
     ev_or_sales = positive_or(ev_to_revenue, price_to_sales)
     halted = str(price.get("temp_stop_yn") or stock_info.get("tr_stop_yn") or "").upper() == "Y"
@@ -1371,6 +1414,11 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         "domestic_price": {key: finite_or_none(value) for key, value in price.items()},
         "product_info": {key: finite_or_none(value) for key, value in search.items()},
         "stock_info": {key: finite_or_none(value) for key, value in stock_info.items()},
+        "normalized_fundamentals": {
+            "cache": normalized_cache,
+            "fields": {key: finite_or_none(value) for key, value in normalized_values.items()},
+            "snapshot": normalized_payload,
+        },
         "kis_domestic_financials": {
             "cache": kis_financials_cache,
             "normalized": {key: finite_or_none(value) for key, value in kis_financials.items()},
@@ -1379,10 +1427,19 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
         },
         "yfinance_fundamentals": {
             "symbol": yahoo_symbol,
-            "cache": fundamentals_cache,
-            "fields": {key: finite_or_none(value) for key, value in fundamentals.items()},
+            "cache": yfinance_cache,
+            "fields": {key: finite_or_none(value) for key, value in yfinance_values.items()},
         },
     }
+    fundamental_source_parts = [
+        *(["normalized_fundamentals"] if has_normalized_fundamentals else []),
+        *(["kis_domestic_financials"] if kis_financials else []),
+        "yfinance",
+    ]
+    fundamentals_source_label = "+".join(fundamental_source_parts)
+    fetch_fundamentals_source_label = "+".join(
+        "yfinance_fundamentals" if source == "yfinance" else source for source in fundamental_source_parts
+    )
 
     chart_series = kis_domestic_chart_series(daily_rows)
     if view == "technical":
@@ -1489,7 +1546,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             },
         },
         "fetch": {
-            "source": "market_data+kis_domestic_financials+yfinance_fundamentals" if kis_financials else "market_data+yfinance_fundamentals",
+            "source": f"market_data+{fetch_fundamentals_source_label}",
             "score_model_version": SCORE_MODEL_VERSION,
             "price_endpoint": "/uapi/domestic-stock/v1/quotations/inquire-price",
             "price_market_div_code": KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
@@ -1511,7 +1568,7 @@ def fetch_score_kis_domestic(raw_ticker: str, view: str = "detail", usd_krw_over
             "fundamentals_cache": fundamentals_cache,
             "kis_domestic_fundamentals_cache": kis_financials_cache,
             "fundamentals_symbol": yahoo_symbol,
-            "fundamentals_source": "kis_domestic_financials+yfinance" if kis_financials else "yfinance",
+            "fundamentals_source": fundamentals_source_label,
             "input_mode": "symbol_master_selection",
             "market_scope": "KR listed equity",
             "exchange_code": exchange,

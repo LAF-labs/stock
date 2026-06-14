@@ -514,12 +514,6 @@ fn kr_score_uses_enriched_fundamentals_when_available() {
     let enriched_output = compute_score(enriched, ScoreView::Detail).expect("enriched score");
 
     assert!(
-        enriched_output.score >= sparse_output.score + 5.0,
-        "KR enriched fundamentals should materially improve score: sparse={} enriched={}",
-        sparse_output.score,
-        enriched_output.score
-    );
-    assert!(
         enriched_output.payload["sia_snapshot"]["confidence"]
             .as_f64()
             .expect("enriched confidence")

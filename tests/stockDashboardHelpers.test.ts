@@ -33,7 +33,6 @@ import {
   partialSectionDisplayState,
   priceVolatilitySummaryItems,
   riskLevelLabel,
-  scoreConfidenceChips,
   scoreDataWithQuote,
   scoreFreshnessSummary,
   scoreFreshnessTimeChip,
@@ -809,21 +808,6 @@ test("shouldUseCompactMetricGrid keeps only short numeric metric groups horizont
   );
 });
 
-test("scoreConfidenceChips exposes score confidence without noisy missing values", () => {
-  assert.deepEqual(
-    scoreConfidenceChips({
-      opportunity_confidence: 0.734,
-      sia_snapshot: { confidence: 0.812 },
-    }),
-    [
-      { label: "품질 근거", value: "81%" },
-      { label: "기회 근거", value: "73%" },
-    ],
-  );
-
-  assert.deepEqual(scoreConfidenceChips({ sia_snapshot: { confidence: Number.NaN } as any }), []);
-});
-
 test("priceVolatilitySummaryItems selects compact chart context from raw price metrics", () => {
   assert.deepEqual(
     priceVolatilitySummaryItems({
@@ -1137,7 +1121,6 @@ test("dashboard list display removes internal source and company metadata fields
       { label: "Forward PER (예상 PER)", value: "13.40", note: "yfinance" },
       { label: "FCF 마진 (잉여현금흐름률)", value: "+12.4%" },
       { label: "OCF 마진 (영업현금흐름률)", value: "+14.2%" },
-      { label: "근거 충분도", value: "80.0%" },
     ],
   );
 });
@@ -1153,7 +1136,7 @@ test("dashboard hides provider-only notes and explains recommendation mean", () 
   assert.equal(formatNote("yfinance"), undefined);
   assert.equal(formatNote("Yahoo Finance 기준"), undefined);
   assert.equal(termTipFor("투자의견 평균")?.body, "애널리스트 투자의견을 평균낸 값이에요. 1에 가까울수록 매수 쪽, 5에 가까울수록 매도 쪽이에요.");
-  assert.equal(termTipFor("근거 충분도")?.body, "이 항목 점수에 쓸 데이터가 얼마나 충분했는지 보여줘요.");
+  assert.equal(termTipFor("근거 충분도"), undefined);
 });
 
 test("displayTickerInput strips market prefixes only", () => {

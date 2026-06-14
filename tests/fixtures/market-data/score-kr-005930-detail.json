@@ -52,12 +52,7 @@
       "short": "모",
       "score": 71.2,
       "summary": "중기 가격 흐름과 신고가 접근도를 봐요.",
-      "metrics": [
-        {
-          "label": "근거 충분도",
-          "value": "100.0%"
-        }
-      ]
+      "metrics": []
     }
   ],
   "key_metrics": [

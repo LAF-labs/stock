@@ -135,6 +135,7 @@ class KisDomesticFundamentalTests(unittest.TestCase):
             patch.object(score_module, "kis_domestic_daily_rows", return_value=kr_daily_rows()),
             patch.object(score_module, "kis_domestic_stock_info", return_value={"prdt_abrv_name": "삼성전자", "scts_mket_lstg_dt": "19750611"}),
             patch.object(score_module, "kis_domestic_search_info") as search_info,
+            patch.object(score_module, "normalized_fundamentals", return_value=({}, None, {"cache": "miss"}, {})),
             patch.object(
                 score_module,
                 "kis_domestic_fundamentals",
@@ -193,6 +194,90 @@ class KisDomesticFundamentalTests(unittest.TestCase):
         }
         self.assertEqual(metrics_by_label["OCF 마진"], "-")
         self.assertEqual(metrics_by_label["FCF 마진"], "-")
+
+    def test_domestic_score_prefers_normalized_fundamentals_over_kis_and_yfinance(self):
+        with (
+            patch.object(
+                score_module,
+                "kis_domestic_price",
+                return_value={
+                    "stck_prpr": "72000",
+                    "stck_sdpr": "71000",
+                    "prdy_ctrt": "1.41",
+                    "lstn_stcn": "5969782550",
+                    "hts_avls": "4300000",
+                    "w52_hgpr": "90000",
+                    "w52_lwpr": "60000",
+                    "per": "20",
+                    "pbr": "1.2",
+                    "eps": "3600",
+                    "bps": "60000",
+                    "acml_vol": "1000000",
+                },
+            ),
+            patch.object(score_module, "kis_domestic_daily_rows", return_value=kr_daily_rows()),
+            patch.object(score_module, "kis_domestic_stock_info", return_value={"prdt_abrv_name": "삼성전자", "scts_mket_lstg_dt": "19750611"}),
+            patch.object(score_module, "kis_domestic_search_info") as search_info,
+            patch.object(
+                score_module,
+                "normalized_fundamentals",
+                return_value=(
+                    {
+                        "totalRevenue": 900000.0,
+                        "operatingMargins": 0.21,
+                        "profitMargins": 0.19,
+                        "returnOnEquity": 0.18,
+                        "revenueGrowth": 0.13,
+                        "debtToEquity": 42.0,
+                        "currentRatio": 3.1,
+                    },
+                    "fresh",
+                    {"source": "dart_financials", "provider": "dart", "cache": "fresh"},
+                    {"normalized_facts": {"totalRevenue": 900000.0}},
+                ),
+            ),
+            patch.object(
+                score_module,
+                "kis_domestic_fundamentals",
+                return_value=(
+                    {
+                        "totalRevenue": 800000.0,
+                        "operatingMargins": 0.15,
+                        "profitMargins": 0.1125,
+                        "returnOnEquity": 0.152,
+                        "revenueGrowth": 0.08,
+                        "debtToEquity": 66.7,
+                        "currentRatio": 2.5,
+                    },
+                    {"source": "kis_domestic_financials", "cache": "fresh"},
+                    {"raw": {"income_statement": [{"sale_account": "800000"}]}, "normalized": {"totalRevenue": 800000.0}},
+                ),
+            ),
+            patch.object(
+                score_module,
+                "yfinance_fundamentals",
+                return_value=(
+                    {
+                        "totalRevenue": 1.0,
+                        "forwardPE": 17.5,
+                        "beta": 1.2,
+                    },
+                    {"source": "yfinance", "cache": "fresh"},
+                ),
+            ),
+            patch.object(score_module, "kis_domestic_news", return_value=[]),
+        ):
+            payload = score_module.fetch_score_kis_domestic("005930", view="detail")
+
+        search_info.assert_not_called()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["financials"]["totalRevenue"], 900000.0)
+        self.assertEqual(payload["financials"]["profitMargins"], 0.19)
+        self.assertEqual(payload["financials"]["debtToEquity"], 42.0)
+        self.assertEqual(payload["financials"]["currentRatio"], 3.1)
+        self.assertEqual(payload["financials"]["forwardPE"], 17.5)
+        self.assertEqual(payload["financial_statement"]["normalized_fundamentals"]["fields"]["totalRevenue"], 900000.0)
+        self.assertEqual(payload["fetch"]["fundamentals_source"], "normalized_fundamentals+kis_domestic_financials+yfinance")
 
 
 if __name__ == "__main__":

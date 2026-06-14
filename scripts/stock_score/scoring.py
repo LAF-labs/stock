@@ -202,8 +202,7 @@ def composite_score(scores: dict[str, FactorScore]) -> tuple[float, float]:
 
     raw = sum(scores[key].score * weights[key] * scores[key].confidence for key in weights) / effective_weight
     confidence = max(0.0, min(1.0, effective_weight / total_weight))
-    anchored = raw * confidence + 50.0 * (1.0 - confidence)
-    return round(clamp_score(anchored), 1), confidence
+    return round(clamp_score(raw), 1), confidence
 
 
 def analyst_count_confidence(value: float | None) -> float:
@@ -330,7 +329,7 @@ def opportunity_factor_score(
         raw_score = sum(components[key].score * weights[key] * components[key].confidence for key in weights) / effective_weight
         confidence = max(0.0, min(1.0, effective_weight / total_weight))
 
-    score = clamp_score(raw_score * confidence + 50.0 * (1.0 - confidence))
+    score = clamp_score(raw_score)
     caps: list[str] = []
     sales_multiple = positive_or(ev_to_revenue, price_to_sales)
     weak_profit = operating_margin is not None and operating_margin < 0.0
@@ -338,9 +337,6 @@ def opportunity_factor_score(
     if sales_multiple is not None and sales_multiple >= 20.0 and (weak_profit or weak_cashflow):
         score = min(score, 72.0)
         caps.append("speculative_expensive_sales")
-    if positive_value(forward_pe) is None and (analyst_count is None or analyst_count < 3):
-        score = min(score, 68.0)
-        caps.append("low_forward_coverage")
     if (atr14_pct is not None and atr14_pct > 0.10) or (rsi14 is not None and rsi14 > 85.0):
         score = min(score, 75.0)
         caps.append("short_term_overheat")

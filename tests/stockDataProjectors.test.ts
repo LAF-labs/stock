@@ -124,7 +124,7 @@ test("display projector marks provider-empty required parts unavailable instead 
   assert.equal(payload.refresh.active, false);
 });
 
-test("display projector derives a visible score when price and chart are ready but score times out", () => {
+test("display projector does not synthesize a neutral score when price and chart are ready but score times out", () => {
   const payload = stockDisplayPayloadFromEnvelope(envelope({
     price: readyPart({
       latest_price: 12000,
@@ -143,19 +143,15 @@ test("display projector derives a visible score when price and chart are ready b
     }, "market-data", generatedAt),
   }));
 
-  assert.equal(payload.score?.value.score, 50);
-  assert.equal(payload.score?.value.data_quality, "market_data_fallback");
-  assert.deepEqual(payload.fundamentals?.value.key_metrics, [
-    { label: "현재가", value: "12,000원" },
-    { label: "전일 대비", value: "+1.7%" },
-    { label: "거래량", value: "123,456" },
-  ]);
-  assert.equal(payload.industryBenchmark?.value.benchmark_label, "미국 상장 종목");
+  assert.equal(payload.score, undefined);
+  assert.equal(payload.fundamentals, undefined);
+  assert.equal(payload.industryBenchmark, undefined);
   assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
-  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
-  assert.deepEqual(payload.completion.missingParts, []);
-  assert.deepEqual(payload.completion.recoveringParts, []);
-  assert.equal(payload.refresh.active, false);
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart"]);
+  assert.deepEqual(payload.completion.missingParts, ["score"]);
+  assert.deepEqual(payload.completion.recoveringParts, ["score"]);
+  assert.equal(payload.refresh.active, true);
+  assert.equal(payload.refresh.nextPollMs, 1500);
 });
 
 function envelope(parts: Partial<StockDataEnvelope["parts"]>): StockDataEnvelope {

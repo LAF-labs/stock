@@ -39,7 +39,7 @@
     },
     "expected_opportunity": { "min": 70, "max": 90 },
     "expected_parity": {
-      "quality_score": { "value": 86.2, "tolerance": 0.05 },
+      "quality_score": { "value": 86.9, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.982, "tolerance": 0.001 },
       "opportunity_score": { "value": 81.4, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -85,7 +85,7 @@
     },
     "expected_opportunity": { "min": 54, "max": 74 },
     "expected_parity": {
-      "quality_score": { "value": 63.5, "tolerance": 0.05 },
+      "quality_score": { "value": 66.0, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.848, "tolerance": 0.001 },
       "opportunity_score": { "value": 55.5, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -131,7 +131,7 @@
     },
     "expected_opportunity": { "min": 50, "max": 68 },
     "expected_parity": {
-      "quality_score": { "value": 67.2, "tolerance": 0.05 },
+      "quality_score": { "value": 69.1, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.899, "tolerance": 0.001 },
       "opportunity_score": { "value": 52.2, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -177,7 +177,7 @@
     },
     "expected_opportunity": { "min": 63, "max": 82 },
     "expected_parity": {
-      "quality_score": { "value": 62.8, "tolerance": 0.05 },
+      "quality_score": { "value": 66.5, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.775, "tolerance": 0.001 },
       "opportunity_score": { "value": 67.1, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -223,9 +223,9 @@
     },
     "expected_opportunity": { "min": 55, "max": 72 },
     "expected_parity": {
-      "quality_score": { "value": 49.2, "tolerance": 0.05 },
+      "quality_score": { "value": 48.6, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.601, "tolerance": 0.001 },
-      "opportunity_score": { "value": 68.0, "tolerance": 0.05 },
+      "opportunity_score": { "value": 72.0, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 0.904, "tolerance": 0.001 }
     }
   },
@@ -269,7 +269,7 @@
     },
     "expected_opportunity": { "min": 50, "max": 72 },
     "expected_parity": {
-      "quality_score": { "value": 58.4, "tolerance": 0.05 },
+      "quality_score": { "value": 61.3, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.746, "tolerance": 0.001 },
       "opportunity_score": { "value": 51.5, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -315,7 +315,7 @@
     },
     "expected_opportunity": { "min": 58, "max": 76 },
     "expected_parity": {
-      "quality_score": { "value": 74.6, "tolerance": 0.05 },
+      "quality_score": { "value": 77.2, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.903, "tolerance": 0.001 },
       "opportunity_score": { "value": 61.8, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -361,7 +361,7 @@
     },
     "expected_opportunity": { "min": 68, "max": 86 },
     "expected_parity": {
-      "quality_score": { "value": 75.6, "tolerance": 0.05 },
+      "quality_score": { "value": 79.1, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.88, "tolerance": 0.001 },
       "opportunity_score": { "value": 78.0, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -407,7 +407,7 @@
     },
     "expected_opportunity": { "min": 62, "max": 78 },
     "expected_parity": {
-      "quality_score": { "value": 59.0, "tolerance": 0.05 },
+      "quality_score": { "value": 62.6, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.713, "tolerance": 0.001 },
       "opportunity_score": { "value": 75.9, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
@@ -453,7 +453,7 @@
     },
     "expected_opportunity": { "min": 58, "max": 72 },
     "expected_parity": {
-      "quality_score": { "value": 49.5, "tolerance": 0.05 },
+      "quality_score": { "value": 49.4, "tolerance": 0.05 },
       "quality_confidence": { "value": 0.714, "tolerance": 0.001 },
       "opportunity_score": { "value": 72.0, "tolerance": 0.05 },
       "opportunity_confidence": { "value": 1.0, "tolerance": 0.001 }
