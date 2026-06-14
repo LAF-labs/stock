@@ -34,7 +34,7 @@ test("display projector shows degraded score while continuing financial enrichme
   assert.equal(payload.refresh.nextPollMs, 1500);
 });
 
-test("display projector keeps stale visible parts on screen while marking refresh active", () => {
+test("display projector keeps stale visible parts on screen without promising active recovery", () => {
   const payload = stockDisplayPayloadFromEnvelope(envelope({
     price: staleReadyPart({ latest_price: 21 }, "supabase", "2026-06-11T00:00:00.000Z"),
     chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 20 }, { date: "2026-06-12", close: 21 }] }, "supabase", generatedAt),
@@ -45,7 +45,8 @@ test("display projector keeps stale visible parts on screen while marking refres
   assert.equal(payload.price?.freshness, "stale");
   assert.deepEqual(payload.completion.recoveringParts, []);
   assert.deepEqual(payload.refresh.staleParts, ["price"]);
-  assert.equal(payload.refresh.active, true);
+  assert.equal(payload.refresh.active, false);
+  assert.equal(payload.refresh.nextPollMs, undefined);
 });
 
 test("display projector normalizes stale quote change fields from usable chart rows", () => {

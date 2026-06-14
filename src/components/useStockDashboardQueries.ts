@@ -497,7 +497,6 @@ export function detailViewPendingFromResult(result: StockDetailViewResponse, fal
 
 function detailViewHasActiveRecovery(result: StockDetailViewResponse): boolean {
   if (!result.ok || result.mode === "ready") return false;
-  if (detailViewExplicitPollMs(result) !== undefined) return true;
   if (result.jobs.length > 0) return true;
   return Object.values(result.parts).some((part) => part.state === "refreshing" || part.state === "failed_retrying");
 }

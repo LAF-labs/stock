@@ -138,6 +138,7 @@ test("detail-view pending state treats stale-only partials without polling metad
     view: "detail",
     generatedAt: "2026-06-14T05:45:00.000Z",
     snapshotVersion: "display-v1",
+    nextPollMs: 1500,
     identity: { ticker: "US:STALE", market: "US", symbol: "STALE", name: "Stale Co" },
     sections: {
       price: { latest_price: 10 },

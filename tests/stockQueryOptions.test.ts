@@ -221,7 +221,7 @@ test("detail-view query keeps polling recoverable partials even when nextPollMs 
   assert.equal(stockDetailViewRefetchIntervalMs(partial), 1500);
 });
 
-test("detail-view query honors explicit nextPollMs even when parts are stale-ready", () => {
+test("detail-view query ignores explicit nextPollMs when no recovery work exists", () => {
   const partial: StockDetailViewResponse = {
     ok: true,
     mode: "partial",
@@ -245,7 +245,7 @@ test("detail-view query honors explicit nextPollMs even when parts are stale-rea
     jobs: [],
   };
 
-  assert.equal(stockDetailViewRefetchIntervalMs(partial), 2500);
+  assert.equal(stockDetailViewRefetchIntervalMs(partial), false);
 });
 
 test("detail-view query does not poll missing-only partials without queued recovery work", () => {

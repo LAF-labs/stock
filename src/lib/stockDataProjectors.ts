@@ -41,7 +41,7 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
     unavailableParts,
   });
   const staleParts = stalePartsFromEnvelope(envelope, presentParts);
-  const refreshActive = completion.recoveringParts.length > 0 || staleParts.length > 0;
+  const refreshActive = completion.recoveringParts.length > 0;
 
   return {
     ok: true,

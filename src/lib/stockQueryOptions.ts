@@ -143,9 +143,9 @@ export function stockPendingRetryDelayMs(attempt = 0): number {
 export function stockDetailViewRefetchIntervalMs(result: StockDetailViewResponse | undefined): number | false {
   if (!result || result.ok === false) return false;
   if (result.mode === "ready") return false;
+  if (!stockDetailViewShouldPoll(result)) return false;
   const explicitPollMs = typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : undefined;
   if (explicitPollMs !== undefined) return explicitPollMs;
-  if (!stockDetailViewShouldPoll(result)) return false;
   return STOCK_DETAIL_VIEW_DEFAULT_POLL_INTERVAL_MS;
 }
 
