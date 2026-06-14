@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { priceChangeToneForValue } from "../src/components/ui/PriceChange";
+
 const primitivesCss = readFileSync(join(process.cwd(), "src/styles/primitives.css"), "utf8");
 const buttonSource = readFileSync(join(process.cwd(), "src/components/ui/Button.tsx"), "utf8");
 const iconButtonSource = readFileSync(join(process.cwd(), "src/components/ui/IconButton.tsx"), "utf8");
@@ -47,4 +49,35 @@ test("ui index exports action and surface primitives", () => {
   assert.match(uiIndexSource, /export \{ default as FloatingActionButton \} from "\.\/FloatingActionButton";/);
   assert.match(uiIndexSource, /export \{ default as Panel \} from "\.\/Panel";/);
   assert.match(uiIndexSource, /export \{ default as Sheet \} from "\.\/Sheet";/);
+});
+
+test("price change tone helper keeps missing and flat values neutral", () => {
+  assert.equal(priceChangeToneForValue(undefined), "neutral");
+  assert.equal(priceChangeToneForValue(Number.NaN), "neutral");
+  assert.equal(priceChangeToneForValue(0), "neutral");
+  assert.equal(priceChangeToneForValue(0.01), "positive");
+  assert.equal(priceChangeToneForValue(-0.01), "negative");
+});
+
+test("data primitives expose table, metric, and chip class hooks", () => {
+  const priceChangeSource = readFileSync(join(process.cwd(), "src/components/ui/PriceChange.tsx"), "utf8");
+  const judgmentChipSource = readFileSync(join(process.cwd(), "src/components/ui/JudgmentChip.tsx"), "utf8");
+  const metricTileSource = readFileSync(join(process.cwd(), "src/components/ui/MetricTile.tsx"), "utf8");
+  const dataTableSource = readFileSync(join(process.cwd(), "src/components/ui/DataTable.tsx"), "utf8");
+
+  assert.match(priceChangeSource, /ui-price-change--\$\{tone\}/);
+  assert.match(judgmentChipSource, /type JudgmentChipTone = "neutral" \| "positive" \| "negative" \| "warning" \| "accent";/);
+  assert.match(judgmentChipSource, /type JudgmentChipAccessibleName =[\s\S]*children: ReactNode;[\s\S]*"aria-label"\?: string[\s\S]*\|[\s\S]*children\?: ReactNode;[\s\S]*"aria-label": string/);
+  assert.match(judgmentChipSource, /Omit<HTMLAttributes<HTMLSpanElement>, "children" \| "aria-label">/);
+  assert.match(metricTileSource, /ui-metric-tile/);
+  assert.doesNotMatch(dataTableSource, /role\s*=\s*"table"/);
+  assert.match(dataTableSource, /const roleProps = role \? \{ role \} : \{\};/);
+  assert.match(dataTableSource, /<div \{\.\.\.roleProps\}/);
+  assert.match(primitivesCss, /\.ui-price-change\s*\{/);
+  assert.match(primitivesCss, /\.ui-judgment-chip\s*\{/);
+  assert.match(primitivesCss, /\.ui-metric-tile\s*\{/);
+  assert.match(primitivesCss, /\.ui-metric-tile--accent\s*\{/);
+  assert.match(primitivesCss, /\.ui-metric-tile--positive\s*\{/);
+  assert.match(primitivesCss, /\.ui-metric-tile--negative\s*\{/);
+  assert.match(primitivesCss, /\.ui-data-table\s*\{/);
 });

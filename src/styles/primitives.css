@@ -323,3 +323,109 @@
     border-radius: var(--radius-lg);
   }
 }
+
+.ui-price-change {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-price-change--positive { color: var(--color-positive); background: rgba(12, 166, 120, 0.1); }
+.ui-price-change--negative { color: var(--color-negative); background: rgba(229, 72, 77, 0.1); }
+.ui-price-change--neutral { color: var(--color-neutral); background: var(--color-surface-subtle); }
+
+.ui-judgment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ui-judgment-chip--neutral { color: var(--color-text-secondary); background: var(--color-surface-subtle); }
+.ui-judgment-chip--positive { color: var(--color-positive); background: rgba(12, 166, 120, 0.1); }
+.ui-judgment-chip--negative { color: var(--color-negative); background: rgba(229, 72, 77, 0.1); }
+.ui-judgment-chip--warning { color: #a16207; background: rgba(245, 159, 0, 0.14); }
+.ui-judgment-chip--accent { color: var(--color-accent-strong); background: var(--color-accent-soft); }
+
+.ui-metric-tile {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.ui-metric-tile--accent {
+  border-color: color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+  background: var(--color-surface-accent);
+}
+
+.ui-metric-tile--positive {
+  border-color: color-mix(in srgb, var(--color-positive) 24%, var(--color-border));
+  background: color-mix(in srgb, var(--color-positive) 10%, var(--color-surface));
+}
+
+.ui-metric-tile--negative {
+  border-color: color-mix(in srgb, var(--color-negative) 24%, var(--color-border));
+  background: color-mix(in srgb, var(--color-negative) 10%, var(--color-surface));
+}
+
+.ui-metric-tile > span {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ui-metric-tile > strong {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-metric-tile--accent > strong {
+  color: var(--color-accent-strong);
+}
+
+.ui-metric-tile--positive > strong {
+  color: var(--color-positive);
+}
+
+.ui-metric-tile--negative > strong {
+  color: var(--color-negative);
+}
+
+.ui-metric-tile > small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ui-data-table {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.ui-data-table--compact {
+  font-size: 14px;
+}
