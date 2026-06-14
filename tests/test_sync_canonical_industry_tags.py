@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import Mock, patch
 
 from scripts.finviz_industry_taxonomy import canonical_industry_key_for
+import scripts.sync_canonical_industry_tags as sync_tags
 from scripts.sync_canonical_industry_tags import (
     canonical_industry_for_profile,
     canonical_tag_rows_for_profile,
@@ -8,6 +10,19 @@ from scripts.sync_canonical_industry_tags import (
 
 
 class SyncCanonicalIndustryTagsTests(unittest.TestCase):
+    def test_fetch_profiles_includes_newly_listed_stocks(self):
+        response = Mock()
+        response.json.return_value = []
+        response.raise_for_status.return_value = None
+
+        with patch.object(sync_tags, "read_config", return_value=("https://example.supabase.co", "key")):
+            with patch.object(sync_tags.requests, "get", return_value=response) as get:
+                sync_tags.fetch_profiles()
+
+        params = get.call_args.kwargs["params"]
+        self.assertEqual(params["asset_class"], "eq.stock")
+        self.assertEqual(params["listing_status"], "neq.delisted")
+
     def test_manual_kr_product_override_wins_for_ambiguous_source_industry(self):
         profile = {
             "market": "KR",

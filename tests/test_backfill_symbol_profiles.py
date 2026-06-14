@@ -4,10 +4,20 @@ import scripts.backfill_symbol_profiles as profiles
 
 
 class BackfillSymbolProfilesTests(unittest.TestCase):
-    def test_asset_class_detects_abbreviated_investment_corp_spac(self):
-        item = symbol_item("US", "NHIC", "NEWHOLD INVT CORP III", "NAS")
+    def test_asset_class_ignores_company_name_spac_substrings(self):
+        item = symbol_item("US", "ASTS", "AST SPACEMOBILE INC", "NAS")
+
+        self.assertEqual(profiles.asset_class(item), "stock")
+
+    def test_asset_class_uses_explicit_instrument_type_for_spac(self):
+        item = symbol_item("US", "NHIC", "NEWHOLD INVT CORP III", "NAS", instrument_type="SPAC")
 
         self.assertEqual(profiles.asset_class(item), "spac")
+
+    def test_asset_class_uses_explicit_instrument_type_for_non_stock_products(self):
+        self.assertEqual(profiles.asset_class(symbol_item("US", "SPY", "SPDR S&P 500 ETF", "NAS", instrument_type="ETF")), "etf")
+        self.assertEqual(profiles.asset_class(symbol_item("US", "VXX", "iPath Series B S&P 500 VIX ETN", "NAS", instrument_type="ETN")), "etn")
+        self.assertEqual(profiles.asset_class(symbol_item("US", "BAC-P", "Bank of America Preferred", "NYS", instrument_type="PREFERRED")), "preferred")
 
     def test_curated_rows_fill_provider_miss_profiles(self):
         items = [
@@ -33,7 +43,7 @@ class BackfillSymbolProfilesTests(unittest.TestCase):
         self.assertGreaterEqual(len(tags), len(rows) * 2)
 
 
-def symbol_item(market, ticker, english_name, exchange):
+def symbol_item(market, ticker, english_name, exchange, instrument_type="STOCK"):
     return {
         "market": market,
         "ticker": ticker,
@@ -41,7 +51,7 @@ def symbol_item(market, ticker, english_name, exchange):
         "koreanName": "나우코스" if ticker == "257990" else "",
         "exchange": exchange,
         "exchangeName": exchange,
-        "instrumentType": "STOCK",
+        "instrumentType": instrument_type,
         "currency": "KRW" if market == "KR" else "USD",
     }
 

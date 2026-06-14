@@ -127,7 +127,7 @@ def fetch_profiles(markets: list[str] | None = None) -> list[dict[str, Any]]:
     size = 1000
     params: dict[str, str] = {
         "select": "market,symbol,name,asset_class,primary_sector,primary_industry,metadata,listing_status",
-        "listing_status": "eq.listed",
+        "listing_status": "neq.delisted",
         "asset_class": "eq.stock",
         "order": "market.asc,symbol.asc",
     }
