@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import CompareSelectedTickerList, { type CompareSelectedTickerEntry } from "@/components/compare/CompareSelectedTickerList";
 import { Sheet, Button } from "@/components/ui";
@@ -15,6 +16,7 @@ type CompareEditSheetProps = {
   selectedTickers: CompareSelectedTickerEntry[];
   onRemoveTicker: (ticker: string) => void;
   closeLabel: string;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 };
 
 export default function CompareEditSheet({
@@ -28,9 +30,10 @@ export default function CompareEditSheet({
   selectedTickers,
   onRemoveTicker,
   closeLabel,
+  returnFocusRef,
 }: CompareEditSheetProps) {
   return (
-    <Sheet open={isOpen} labelledBy="compare-add-sheet-title" onClose={onClose} className="compare-add-sheet">
+    <Sheet open={isOpen} labelledBy="compare-add-sheet-title" onClose={onClose} returnFocusRef={returnFocusRef} className="compare-add-sheet">
       <header className="compare-sheet-header">
         <div>
           <span>종목 편집</span>

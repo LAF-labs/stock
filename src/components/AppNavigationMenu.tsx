@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { RefObject } from "react";
 import AppShellNav from "@/components/layout/AppShellNav";
 import MobileNavLauncher from "@/components/layout/MobileNavLauncher";
 import {
@@ -13,6 +14,7 @@ type MobileContextAction = {
   ariaLabel?: string;
   disabled?: boolean;
   icon?: "plus" | "edit";
+  controlRef?: RefObject<HTMLButtonElement | null>;
   onClick: () => void;
 };
 

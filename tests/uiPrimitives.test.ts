@@ -32,9 +32,15 @@ test("surface primitives expose panel and sheet class hooks", () => {
   assert.match(sheetSource, /"use client";/);
   assert.match(sheetSource, /useEffect/);
   assert.match(sheetSource, /useRef/);
+  assert.match(sheetSource, /previousActiveElementRef/);
+  assert.match(sheetSource, /returnFocusRef/);
+  assert.match(sheetSource, /focusableElements/);
   assert.match(sheetSource, /role=\{role\}/);
   assert.match(sheetSource, /aria-modal=\{modal\}/);
   assert.match(sheetSource, /event\.key === "Escape"/);
+  assert.match(sheetSource, /event\.key === "Tab"/);
+  assert.match(sheetSource, /event\.shiftKey/);
+  assert.match(sheetSource, /\(returnFocusRef\?\.current \?\? previousActiveElementRef\.current\)\?\.focus\(\)/);
   assert.match(sheetSource, /tabIndex=\{-1\}/);
   assert.match(sheetSource, /<div className="ui-sheet-backdrop" aria-hidden="true" onClick=\{onClose\} \/>/);
   assert.doesNotMatch(sheetSource, /<button[^>]*className="ui-sheet-backdrop"/);
@@ -66,6 +72,7 @@ test("data primitives expose table, metric, and chip class hooks", () => {
   const dataTableSource = readFileSync(join(process.cwd(), "src/components/ui/DataTable.tsx"), "utf8");
 
   assert.match(priceChangeSource, /ui-price-change--\$\{tone\}/);
+  assert.match(priceChangeSource, /type PriceChangeTone = "positive" \| "negative" \| "neutral" \| "price-up" \| "price-down";/);
   assert.match(judgmentChipSource, /type JudgmentChipTone = "neutral" \| "positive" \| "negative" \| "warning" \| "accent";/);
   assert.match(judgmentChipSource, /type JudgmentChipAccessibleName =[\s\S]*children: ReactNode;[\s\S]*"aria-label"\?: string[\s\S]*\|[\s\S]*children\?: ReactNode;[\s\S]*"aria-label": string/);
   assert.match(judgmentChipSource, /Omit<HTMLAttributes<HTMLSpanElement>, "children" \| "aria-label">/);
@@ -74,6 +81,8 @@ test("data primitives expose table, metric, and chip class hooks", () => {
   assert.match(dataTableSource, /const roleProps = role \? \{ role \} : \{\};/);
   assert.match(dataTableSource, /<div \{\.\.\.roleProps\}/);
   assert.match(primitivesCss, /\.ui-price-change\s*\{/);
+  assert.match(primitivesCss, /\.ui-price-change--price-up\s*\{[\s\S]*?color:\s*var\(--red\);[\s\S]*?background:\s*var\(--red-soft\);/);
+  assert.match(primitivesCss, /\.ui-price-change--price-down\s*\{[\s\S]*?color:\s*var\(--down\);[\s\S]*?background:\s*#eff6ff;/);
   assert.match(primitivesCss, /\.ui-judgment-chip\s*\{/);
   assert.match(primitivesCss, /\.ui-metric-tile\s*\{/);
   assert.match(primitivesCss, /\.ui-metric-tile--accent\s*\{/);

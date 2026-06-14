@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { BarChart3, FileText, GitCompareArrows, Menu, PencilLine, Plus, Search } from "lucide-react";
 import { FloatingActionButton } from "@/components/ui";
 import {
@@ -16,6 +17,7 @@ type MobileContextAction = {
   ariaLabel?: string;
   disabled?: boolean;
   icon?: "plus" | "edit";
+  controlRef?: RefObject<HTMLButtonElement | null>;
   onClick: () => void;
 };
 
@@ -79,6 +81,7 @@ export default function MobileNavLauncher({ items, mobileContextAction }: Mobile
 
       {mobileContextAction ? (
         <FloatingActionButton
+          ref={mobileContextAction.controlRef}
           className="app-bottom-context-action"
           disabled={mobileContextAction.disabled}
           aria-label={mobileContextAction.ariaLabel || mobileContextAction.label}

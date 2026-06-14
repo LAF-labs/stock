@@ -339,6 +339,8 @@
 
 .ui-price-change--positive { color: var(--color-positive); background: rgba(12, 166, 120, 0.1); }
 .ui-price-change--negative { color: var(--color-negative); background: rgba(229, 72, 77, 0.1); }
+.ui-price-change--price-up { color: var(--red); background: var(--red-soft); }
+.ui-price-change--price-down { color: var(--down); background: #eff6ff; }
 .ui-price-change--neutral { color: var(--color-neutral); background: var(--color-surface-subtle); }
 
 .ui-judgment-chip {

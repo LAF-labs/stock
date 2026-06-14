@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type FloatingActionButtonVariant = "full" | "compact";
@@ -17,16 +18,17 @@ type FloatingActionButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "
   variant?: FloatingActionButtonVariant;
 } & FloatingActionButtonAccessibleName;
 
-export default function FloatingActionButton({
+const FloatingActionButton = forwardRef<HTMLButtonElement, FloatingActionButtonProps>(function FloatingActionButton({
   icon,
   variant = "full",
   className = "",
   children,
   type = "button",
   ...props
-}: FloatingActionButtonProps) {
+}, ref) {
   return (
     <button
+      ref={ref}
       type={type}
       className={["ui-fab", variant === "compact" ? "ui-fab--compact" : "ui-fab--full", className].filter(Boolean).join(" ")}
       {...props}
@@ -35,6 +37,8 @@ export default function FloatingActionButton({
       <span className="ui-fab-label">{children}</span>
     </button>
   );
-}
+});
+
+export default FloatingActionButton;
 
 export type { FloatingActionButtonProps, FloatingActionButtonVariant };

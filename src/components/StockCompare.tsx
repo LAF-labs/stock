@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppNavigationMenu from "@/components/AppNavigationMenu";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
@@ -76,6 +76,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
   const [input, setInput] = useState("");
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const mobileEditActionRef = useRef<HTMLButtonElement>(null);
   const { states, items, chartItems, partialStates, errorStates, retryCompare } = useStockCompareQueries(tickers, initialDisplayPayloads);
   const selectedCount = tickers.length;
   const compareLimitReached = tickers.length >= MAX_COMPARE;
@@ -166,6 +167,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           label: compactSelectionLabel === "비교 종목" ? "종목 편집" : compactSelectionLabel,
           ariaLabel: "비교 종목 편집",
           icon: "edit",
+          controlRef: mobileEditActionRef,
           onClick: () => setIsMobileSearchOpen(true),
         }}
       />
@@ -228,6 +230,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         selectedTickers={selectedTickerEntries}
         onRemoveTicker={removeTicker}
         closeLabel={compareLimitReached ? "완료" : "닫기"}
+        returnFocusRef={mobileEditActionRef}
       />
 
       {errorStates.length ? (

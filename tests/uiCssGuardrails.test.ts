@@ -259,7 +259,7 @@ test("page patterns use shared search and data primitives", () => {
   assert.match(marketCapSource, /PriceChange/);
   assert.match(marketCapSource, /Panel/);
   assert.match(marketCapSource, /function priceChangeToneForMarketCapRow/);
-  assert.match(marketCapSource, /case "up":[\s\S]*?return "positive";[\s\S]*?case "down":[\s\S]*?return "negative";[\s\S]*?return "neutral";/);
+  assert.match(marketCapSource, /case "up":[\s\S]*?return "price-up";[\s\S]*?case "down":[\s\S]*?return "price-down";[\s\S]*?return "neutral";/);
   assert.match(marketCapSource, /tone=\{priceChangeToneForMarketCapRow\(row\)\}/);
   assert.match(css, /\.market-cap-table-row\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
   assert.doesNotMatch(css, /\.market-cap-change(?:\.(?:up|down))?\s*\{[\s\S]*?(?:color|background):/);
@@ -361,7 +361,12 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
 
 test("compare mobile editor keeps selected tickers inside the sheet and uses shared floating action", () => {
   assert.match(compareSource, /CompareEditSheet/);
+  assert.match(compareSource, /const mobileEditActionRef = useRef<HTMLButtonElement>\(null\);/);
   assert.match(compareSource, /compareCollapsedTickerLabel/);
+  assert.match(compareSource, /controlRef:\s*mobileEditActionRef/);
+  assert.match(compareSource, /returnFocusRef=\{mobileEditActionRef\}/);
+  assert.match(compareEditSheetSource, /returnFocusRef/);
+  assert.match(mobileNavLauncherSource, /ref=\{mobileContextAction\.controlRef\}/);
   assert.doesNotMatch(compareSource, /function CompareSearchSheet/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /\.compare-sheet-selection\s*\{[\s\S]*?border:\s*1px solid var\(--color-border\);/);

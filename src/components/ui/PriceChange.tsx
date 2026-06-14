@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 
-type PriceChangeTone = "positive" | "negative" | "neutral";
+type PriceChangeTone = "positive" | "negative" | "neutral" | "price-up" | "price-down";
 
 function priceChangeToneForValue(value: number | undefined): PriceChangeTone {
   if (typeof value !== "number" || !Number.isFinite(value) || value === 0) return "neutral";

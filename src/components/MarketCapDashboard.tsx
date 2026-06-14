@@ -13,6 +13,7 @@ import {
   marketCapScopeLabel,
 } from "@/components/marketCapDashboardHelpers";
 import { DataTable, Panel, PriceChange } from "@/components/ui";
+import type { PriceChangeTone } from "@/components/ui/PriceChange";
 import { useMarketCapDashboardQuery } from "@/components/useMarketCapDashboardQuery";
 import type { MarketCapScope } from "@/lib/marketCapRankingTypes";
 
@@ -113,12 +114,12 @@ function MarketCapStatus({ title, body, tone = "default" }: { title: string; bod
   );
 }
 
-function priceChangeToneForMarketCapRow(row: Parameters<typeof marketCapChangeTone>[0]): "positive" | "negative" | "neutral" {
+function priceChangeToneForMarketCapRow(row: Parameters<typeof marketCapChangeTone>[0]): PriceChangeTone {
   switch (marketCapChangeTone(row)) {
     case "up":
-      return "positive";
+      return "price-up";
     case "down":
-      return "negative";
+      return "price-down";
     default:
       return "neutral";
   }
