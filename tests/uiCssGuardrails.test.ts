@@ -7,6 +7,8 @@ const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 const designTokensCss = readFileSync(join(process.cwd(), "src/styles/design-tokens.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
+const compareEditSheetSource = readFileSync(join(process.cwd(), "src/components/compare/CompareEditSheet.tsx"), "utf8");
+const compareSelectedTickerListSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSelectedTickerList.tsx"), "utf8");
 const autocompleteSource = readFileSync(join(process.cwd(), "src/components/SymbolAutocomplete.tsx"), "utf8");
 const symbolSearchHookSource = readFileSync(join(process.cwd(), "src/components/useSymbolSearchQuery.ts"), "utf8");
 const stockDetailSectionsSource = readFileSync(join(process.cwd(), "src/components/StockDetailSections.tsx"), "utf8");
@@ -323,23 +325,32 @@ test("waiting states use shared skeletons instead of error containers", () => {
 test("compare page keeps selected tickers editable and removes dense duplicate copy", () => {
   assert.match(compareSource, /AppNavigationMenu/);
   assert.match(compareSource, /context=\{\{ page: "compare"/);
-  assert.match(compareSource, /label: "종목 편집"/);
+  assert.match(compareSource, /compactSelectionLabel === "비교 종목" \? "종목 편집" : compactSelectionLabel/);
   assert.match(compareSource, /ariaLabel: "비교 종목 편집"/);
   assert.match(compareSource, /tickers\.length <= 1/);
-  assert.match(compareSource, /disabled=\{entry\.removeDisabled\}/);
+  assert.match(compareSelectedTickerListSource, /disabled=\{entry\.removeDisabled\}/);
   assert.match(compareSource, /className="stock-search-form compare-add-form"/);
   assert.match(compareSource, /const \[isMobileSearchOpen, setIsMobileSearchOpen\] = useState\(false\);/);
-  assert.match(compareSource, /function CompareSearchSheet/);
+  assert.match(compareSource, /<CompareEditSheet/);
   assert.match(compareSource, /compare-add-button/);
   assert.doesNotMatch(compareSource, /isSearchCollapsed|setCompareSearchCollapsed|lastScrollYRef|isSearchCollapsedRef|variant="floating"|isCollapsed=\{/);
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
   assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
   assert.match(css, /\.compare-add-sheet\s*\{/);
-  assert.match(css, /\.compare-sheet-backdrop\s*\{/);
-  assert.match(css, /\.compare-sheet-panel\s*\{/);
-  assert.match(compareSource, /\["compare-pick-list", className\]/);
-  assert.match(compareSource, /className="compare-sheet-picks"/);
-  assert.match(compareSource, /aria-label="종목 편집 닫기"/);
+  assert.match(css, /\.compare-add-sheet \.ui-sheet-backdrop\s*\{/);
+  assert.match(css, /\.compare-add-sheet \.ui-sheet-panel\s*\{/);
+  assert.match(compareSelectedTickerListSource, /\["compare-pick-list", className\]/);
+  assert.match(compareEditSheetSource, /className="compare-sheet-picks"/);
+  assert.match(compareEditSheetSource, /labelledBy="compare-add-sheet-title"/);
+});
+
+test("compare mobile editor keeps selected tickers inside the sheet and uses shared floating action", () => {
+  assert.match(compareSource, /CompareEditSheet/);
+  assert.match(compareSource, /compareCollapsedTickerLabel/);
+  assert.doesNotMatch(compareSource, /function CompareSearchSheet/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /\.compare-sheet-selection\s*\{[\s\S]*?border:\s*1px solid var\(--color-border\);/);
+  assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?transition:[\s\S]*?transform var\(--motion-standard\)/);
 });
 
 test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
@@ -425,10 +436,13 @@ test("mobile compare navigation keeps route tabs and contextual add action separ
   assert.doesNotMatch(compareSource, /IntersectionObserver/);
   assert.doesNotMatch(compareSource, /isTickerRailVisible/);
   assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?border-radius:\s*999px;/);
-  assert.match(mobileContextActionRule, /width:\s*104px;/);
-  assert.match(mobileContextActionRule, /transition:[\s\S]*?width 220ms/);
+  assert.match(mobileContextActionRule, /width:\s*auto;/);
+  assert.match(mobileContextActionRule, /max-width:\s*min\(320px,\s*calc\(100vw - 96px\)\);/);
+  assert.match(mobileContextActionRule, /transition:[\s\S]*?width var\(--motion-standard\)[\s\S]*?transform var\(--motion-standard\)/);
   assert.match(css, /\.app-bottom-context-action\.ui-fab--compact\s*\{[\s\S]*?width:\s*var\(--control-height-lg\);[\s\S]*?height:\s*var\(--control-height-lg\);/);
-  assert.match(mobileContextActionSpanRule, /max-width:\s*64px;/);
+  assert.match(mobileContextActionSpanRule, /max-width:\s*min\(220px,\s*calc\(100vw - 176px\)\);/);
+  assert.match(mobileContextActionSpanRule, /text-overflow:\s*ellipsis;/);
+  assert.match(mobileContextActionSpanRule, /white-space:\s*nowrap;/);
   assert.match(mobileContextActionSpanRule, /transition:/);
   assert.match(mobileContextActionCompactSpanRule, /max-width:\s*0;/);
   assert.match(mobileContextActionCompactSpanRule, /opacity:\s*0;/);
@@ -495,14 +509,14 @@ test("mobile compare add search is an explicit sheet instead of scroll-collapsin
   assert.doesNotMatch(compareSource, /window\.addEventListener\("scroll"[\s\S]*setCompareSearchCollapsed/);
   assert.match(compareSource, /document\.documentElement\.classList\.add\("compare-search-open"\)/);
   assert.match(compareSource, /document\.body\.classList\.add\("compare-search-open"\)/);
-  assert.match(compareSource, /<CompareSearchSheet/);
-  assert.match(compareSource, /autoFocusOnMount/);
+  assert.match(compareSource, /<CompareEditSheet/);
+  assert.match(compareEditSheetSource, /autoFocusOnMount/);
   assert.match(css, /html\.compare-search-open,[\s\S]*?body\.compare-search-open\s*\{[\s\S]*?overflow:\s*hidden;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-toolbar\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(min-width: 641px\)[\s\S]*?\.compare-add-sheet\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-picks\s*\{[\s\S]*?display:\s*grid;/);
-  assert.match(css, /\.compare-sheet-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset-inline:\s*0;[\s\S]*?bottom:\s*0;/);
+  assert.match(css, /\.compare-add-sheet \.ui-sheet-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset-inline:\s*0;[\s\S]*?bottom:\s*0;/);
 });
 
 test("mobile compare add sheet owns the screen while searching", () => {
@@ -511,7 +525,7 @@ test("mobile compare add sheet owns the screen while searching", () => {
   assert.match(appNavigationSource, /!suppressMobileChrome \? \(\s*<MobileNavLauncher/);
   assert.match(mobileNavLauncherSource, /mobileNavigation\.isOpen \? \(/);
   assert.match(mobileNavLauncherSource, /mobileContextAction \? \(/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-panel\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?max-height:\s*none;[\s\S]*?border-radius:\s*0;/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-add-sheet \.ui-sheet-panel\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?max-height:\s*none;[\s\S]*?border-radius:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-search \.symbol-suggestions\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 318px - env\(safe-area-inset-bottom,\s*0px\)\);/);
 });
 

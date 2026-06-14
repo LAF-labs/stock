@@ -86,6 +86,19 @@ export function displayTickerRef(value: string): string {
   return value.replace(/^(US|KR):/i, "");
 }
 
+type CompareCollapsedTickerEntry = {
+  ticker: string;
+  label: string;
+};
+
+export function compareCollapsedTickerLabel(entries: readonly CompareCollapsedTickerEntry[]): string {
+  if (!entries.length) return "비교 종목";
+  return entries.map((entry) => {
+    if (entry.ticker.startsWith("KR:")) return entry.label || displayTickerRef(entry.ticker);
+    return displayTickerRef(entry.ticker);
+  }).join(" · ");
+}
+
 export function symbolRef(item: SymbolSearchItem): string {
   return `${item.market}:${item.ticker}`;
 }

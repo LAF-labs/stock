@@ -5,6 +5,7 @@ import {
   MAX_COMPARE,
   averageAnchoredFill,
   bestBy,
+  compareCollapsedTickerLabel,
   compareItemTitle,
   compareDateAlignedSeries,
   comparePartialData,
@@ -107,6 +108,21 @@ test("compare display helpers keep internal tickers but write Korean names", () 
 
   assert.equal(item.ticker, "0194M0");
   assert.equal(compareItemTitle(item), "ACE 삼성전자단일종목레버리지");
+});
+
+test("compare collapsed ticker label uses Korean names for KR and tickers for US", () => {
+  assert.equal(compareCollapsedTickerLabel([
+    { ticker: "KR:035720", label: "카카오" },
+    { ticker: "US:NVDA", label: "엔비디아" },
+    { ticker: "US:AAPL", label: "애플" },
+  ]), "카카오 · NVDA · AAPL");
+
+  assert.equal(compareCollapsedTickerLabel([
+    { ticker: "KR:005930", label: "삼성전자" },
+    { ticker: "KR:000660", label: "SK하이닉스" },
+  ]), "삼성전자 · SK하이닉스");
+
+  assert.equal(compareCollapsedTickerLabel([]), "비교 종목");
 });
 
 test("compare helpers choose best values and normalize chart series", () => {
