@@ -2376,7 +2376,7 @@ a:focus-visible {
   color: var(--text);
   font-size: 16px;
   line-height: 1.45;
-  font-weight: 650;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 

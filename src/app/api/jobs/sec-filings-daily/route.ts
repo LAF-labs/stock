@@ -1,5 +1,5 @@
 import symbols from "@/data/symbols.generated.json";
-import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, indexFilingNeedsDocumentFacts, parseMasterIndex } from "@/lib/secFilingIndexBackfill";
+import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex, rankIndexFilingFactCandidates } from "@/lib/secFilingIndexBackfill";
 import { writeSecFilings, type SecFilingListItem } from "@/lib/secFilings";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { envValue, fetchWithTimeout, numericEnv } from "@/lib/supabaseRest";
@@ -44,12 +44,13 @@ async function runDailyIndexJob(request: NextRequest) {
         const filing = indexEntryToFiling(entry, cikToTicker);
         if (filing) filings.push(filing);
       }
-      for (let index = 0; index < filings.length && enriched < factFetchLimit; index += 1) {
-        const filing = filings[index];
-        if (!filing.sourceUrl || !indexFilingNeedsDocumentFacts(filing)) continue;
+      for (const candidate of rankIndexFilingFactCandidates(filings)) {
+        if (enriched >= factFetchLimit) break;
+        const filing = candidate.filing;
+        if (!filing.sourceUrl) continue;
         const documentText = await fetchSecText(filing.sourceUrl).catch(() => "");
         if (!documentText) continue;
-        filings[index] = enrichIndexFilingFromDocument(filing, documentText);
+        filings[candidate.index] = enrichIndexFilingFromDocument(filing, documentText);
         enriched += 1;
       }
       rows += filings.length;

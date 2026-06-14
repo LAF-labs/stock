@@ -1,7 +1,7 @@
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import symbols from "@/data/symbols.generated.json";
-import { enrichIndexFilingFromDocument, indexEntryToFiling, indexFilingNeedsDocumentFacts, parseMasterIndex } from "@/lib/secFilingIndexBackfill";
+import { enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex, rankIndexFilingFactCandidates } from "@/lib/secFilingIndexBackfill";
 import { writeSecFilings, type SecFilingListItem } from "@/lib/secFilings";
 
 const SEC_UA = process.env.STOCK_SEC_EDGAR_USER_AGENT || "LAF-labs stock filings admin@laflabs.ai";
@@ -23,17 +23,23 @@ async function main() {
 
   for (const { year, quarter } of quarters) {
     const text = await fetchText(`https://www.sec.gov/Archives/edgar/full-index/${year}/QTR${quarter}/master.gz`);
-    for (const entry of parseMasterIndex(text)) {
-      if (entry.filedAt.slice(0, 10) < since) continue;
-      let filing = indexEntryToFiling(entry, cikToTicker);
-      if (!filing) continue;
-      if (enriched < fetchDocLimit && filing.sourceUrl && indexFilingNeedsDocumentFacts(filing)) {
-        const documentText = await fetchText(filing.sourceUrl).catch(() => "");
-        if (documentText) {
-          filing = enrichIndexFilingFromDocument(filing, documentText);
-          enriched += 1;
-        }
+    const filings = parseMasterIndex(text)
+      .filter((entry) => entry.filedAt.slice(0, 10) >= since)
+      .flatMap((entry) => {
+        const filing = indexEntryToFiling(entry, cikToTicker);
+        return filing ? [filing] : [];
+      });
+    for (const candidate of rankIndexFilingFactCandidates(filings)) {
+      if (enriched >= fetchDocLimit) break;
+      const filing = candidate.filing;
+      if (!filing.sourceUrl) continue;
+      const documentText = await fetchText(filing.sourceUrl).catch(() => "");
+      if (documentText) {
+        filings[candidate.index] = enrichIndexFilingFromDocument(filing, documentText);
+        enriched += 1;
       }
+    }
+    for (const filing of filings) {
       buffer.push(filing);
       rows += 1;
       if (buffer.length >= chunkSize) {

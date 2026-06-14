@@ -12,6 +12,8 @@ export type SecFilingFacts = {
   plannedSaleValue?: number;
   revenue?: number;
   netIncome?: number;
+  fiscalPeriod?: string;
+  periodEnd?: string;
   offeringAmount?: number;
   shares?: number;
   price?: number;
@@ -87,7 +89,7 @@ function summarize8K(items: string[] | string | undefined, facts: SecFilingFacts
   const labels = itemList.map((item) => EIGHT_K_ITEMS[item]).filter(Boolean);
   if (itemList.includes("2.02")) {
     const numbers = financialNumbers(facts);
-    return makeSummary("current_report", "high", ["8-K", "실적"], `실적 발표 관련 8-K예요.${numbers ? ` ${numbers}` : " 정식 분기보고서 전 실적 자료일 수 있어요."}`);
+    return makeSummary("current_report", "high", ["8-K", "실적"], `${earningsLead(facts)}${numbers ? ` ${numbers}` : " 정식 분기보고서 전 실적 자료일 수 있어요."}`);
   }
   if (itemList.includes("5.02")) return makeSummary("current_report", "high", ["8-K", "임원변경"], "임원이나 이사회 구성 변경 공시예요. CEO/CFO급 변경이면 주가 영향이 커질 수 있어요.");
   if (itemList.includes("1.01")) return makeSummary("current_report", "high", ["8-K", "계약"], "중요 계약 체결 공시예요. 매출, 자금조달, 인수합병과 연결되는지 확인해야 해요.");
@@ -96,9 +98,9 @@ function summarize8K(items: string[] | string | undefined, facts: SecFilingFacts
 }
 
 function summarizePeriodic(form: string, facts: SecFilingFacts): SecFilingSummary {
-  const label = form.startsWith("10-K") ? "연간보고서" : "분기보고서";
+  const label = periodicLabel(form, facts);
   const numbers = financialNumbers(facts);
-  return makeSummary("periodic_report", "high", [label], `${label}예요.${numbers ? ` ${numbers}` : " 매출, 이익, 현금흐름을 확인하는 핵심 공시예요."}`);
+  return makeSummary("periodic_report", "high", [label], `${label}이 발표됐어요.${numbers ? ` ${numbers}` : " 매출, 이익, 현금흐름을 확인하는 핵심 공시예요."}`);
 }
 
 function summarizeForm144(facts: SecFilingFacts): SecFilingSummary {
@@ -116,7 +118,7 @@ function summarizeOwnershipStake(form: string, facts: SecFilingFacts): SecFiling
 function summarizeOffering(facts: SecFilingFacts): SecFilingSummary {
   const amount = positive(facts.offeringAmount) ? ` 모집 규모는 약 ${formatMoney(facts.offeringAmount, facts.currency)}입니다.` : "";
   const shareText = positive(facts.shares) ? ` 발행 주식 수는 ${formatShares(facts.shares)}예요.` : "";
-  const priceText = positive(facts.price) ? ` 공모가는 주당 ${formatMoney(facts.price, facts.currency)}입니다.` : "";
+  const priceText = positive(facts.price) ? ` 공모가는 주당 ${formatUnitPrice(facts.price, facts.currency)}입니다.` : "";
   return makeSummary("offering", "high", ["증권발행"], `증권 발행/공모 관련 공시예요.${amount}${shareText}${priceText || ""}${shareText || amount ? "" : " 기존 주주 지분 희석 가능성을 봐야 해요."}`);
 }
 
@@ -127,6 +129,22 @@ function financialNumbers(facts: SecFilingFacts): string {
     parts.push(`${facts.netIncome < 0 ? "순손실" : "순이익"} 약 ${formatMoney(Math.abs(facts.netIncome), facts.currency)}`);
   }
   return parts.length ? `${parts.join(", ")}을 보고했어요.` : "";
+}
+
+function periodicLabel(form: string, facts: SecFilingFacts): string {
+  if (form.startsWith("10-K")) return "연간 실적";
+  const quarter = fiscalQuarterLabel(facts.fiscalPeriod);
+  return quarter ? `${quarter} 실적` : "분기 실적";
+}
+
+function earningsLead(facts: SecFilingFacts): string {
+  const quarter = fiscalQuarterLabel(facts.fiscalPeriod);
+  return quarter ? `${quarter} 실적이 발표됐어요.` : "실적이 발표됐어요.";
+}
+
+function fiscalQuarterLabel(value: string | undefined): string | undefined {
+  const match = value?.trim().match(/^Q([1-4])$/i);
+  return match ? `${match[1]}분기` : undefined;
 }
 
 function makeSummary(category: string, importance: SecFilingSummary["importance"], tags: string[], summaryKo: string): SecFilingSummary {
@@ -179,4 +197,11 @@ function formatMoney(value: number | undefined, currency = "USD"): string {
   if (amount >= 1_000_000) return `${prefix}${(amount / 1_000_000).toFixed(1)}M`;
   if (amount >= 1_000) return `${prefix}${(amount / 1_000).toFixed(1)}K`;
   return `${prefix}${amount.toFixed(0)}`;
+}
+
+function formatUnitPrice(value: number | undefined, currency = "USD"): string {
+  const amount = Math.abs(value || 0);
+  if (amount >= 1_000) return formatMoney(amount, currency);
+  const prefix = currency.toUpperCase() === "USD" ? "$" : `${currency.toUpperCase()} `;
+  return `${prefix}${amount.toFixed(2).replace(/\.00$/, "")}`;
 }

@@ -70,6 +70,14 @@ export function indexFilingNeedsDocumentFacts(filing: SecFilingListItem): boolea
     || isOfferingForm(form);
 }
 
+export function rankIndexFilingFactCandidates(filings: SecFilingListItem[]): Array<{ index: number; filing: SecFilingListItem }> {
+  return filings
+    .map((filing, index) => ({ filing, index, priority: indexFilingFactPriority(filing) }))
+    .filter((candidate) => candidate.priority > 0)
+    .sort((left, right) => right.priority - left.priority || left.index - right.index)
+    .map(({ filing, index }) => ({ filing, index }));
+}
+
 export function enrichIndexFilingFromDocument(filing: SecFilingListItem, text: string): SecFilingListItem {
   const form = filing.formType.trim().toUpperCase();
   const facts = extractFacts(form, text);
@@ -91,6 +99,17 @@ export function enrichIndexFilingFromDocument(filing: SecFilingListItem, text: s
   };
 }
 
+function indexFilingFactPriority(filing: SecFilingListItem): number {
+  const form = filing.formType.trim().toUpperCase();
+  if (form.startsWith("10-Q") || form.startsWith("10-K")) return 100;
+  if (isOfferingForm(form)) return 98;
+  if (form === "4" || form === "144") return 95;
+  if (form === "8-K" || form === "8-K/A") return 85;
+  if (isBeneficialOwnershipForm(form)) return 70;
+  if (form === "3" || form === "5") return 60;
+  return 0;
+}
+
 function accessionFromFilename(filename: string | undefined): string | undefined {
   return filename?.split("/").pop()?.replace(/\.txt$/i, "");
 }
@@ -103,9 +122,11 @@ function extractFacts(form: string, text: string): SecFilingFacts {
     currency: "USD",
   };
   if (form === "8-K" || form === "8-K/A" || form.startsWith("10-Q") || form.startsWith("10-K")) {
+    const fiscalContextRef = fiscalPeriodContextRef(text);
     return {
-      revenue: moneyAfter(text, /(?:revenue|revenues|net sales)[^$.]{0,80}\$/i),
-      netIncome: moneyAfter(text, /(?:net income|net earnings)[^$.]{0,80}\$/i),
+      revenue: xbrlFactNumber(text, REVENUE_FACTS, fiscalContextRef) ?? moneyAfter(text, /(?:revenue|revenues|net sales)[^$.]{0,80}\$/i),
+      netIncome: xbrlFactNumber(text, NET_INCOME_FACTS, fiscalContextRef) ?? moneyAfter(text, /(?:net income|net earnings)[^$.]{0,80}\$/i),
+      fiscalPeriod: fiscalPeriodFromText(text),
       currency: "USD",
     };
   }
@@ -131,10 +152,11 @@ function offeringFacts(text: string): SecFilingFacts {
 }
 
 function priceFromText(text: string): number | undefined {
-  return firstNumber(
-    text.match(/(?:public offering price|offering price|price to public)[\s\S]{0,160}?\$\s*([\d,.]+)/i)?.[1]
-      || text.match(/(?:offer|offering)[\s\S]{0,160}?\bat\s*\$\s*([\d,.]+)\s*(?:per share|a share|per ordinary share)/i)?.[1]
-  );
+  const value = text.match(/(?:public offering price|offering price|price to public)[\s\S]{0,160}?\$\s*([\d,.]+)\s*(?:per share|a share|per ordinary share)/i)?.[1]
+    || text.match(/(?:offer|offering)[\s\S]{0,160}?\bat\s*\$\s*([\d,.]+)\s*(?:per share|a share|per ordinary share)/i)?.[1];
+  const price = firstNumber(value);
+  if (!price || price > 10_000) return undefined;
+  return price;
 }
 
 function offeringAmountFromText(text: string): number | undefined {
@@ -198,6 +220,67 @@ function moneyFromParts(value: string | undefined, unitValue: string | undefined
   if (unit === "million" || unit === "m") return base * 1_000_000;
   if (unit === "thousand" || unit === "k") return base * 1_000;
   return base;
+}
+
+const REVENUE_FACTS = new Set([
+  "RevenueFromContractWithCustomerExcludingAssessedTax",
+  "RevenueFromContractWithCustomerIncludingAssessedTax",
+  "Revenues",
+  "SalesRevenueNet",
+]);
+
+const NET_INCOME_FACTS = new Set([
+  "NetIncomeLoss",
+  "ProfitLoss",
+  "NetIncomeLossAvailableToCommonStockholdersBasic",
+]);
+
+function xbrlFactNumber(text: string, factNames: Set<string>, contextRef: string | undefined): number | undefined {
+  for (const match of text.matchAll(/<ix:nonFraction\b([^>]*)>([\s\S]*?)<\/ix:nonFraction>/gi)) {
+    const attrs = match[1] || "";
+    const name = localName(attrValue(attrs, "name"));
+    if (!name || !factNames.has(name)) continue;
+    if (contextRef && attrValue(attrs, "contextRef") !== contextRef) continue;
+    const unitRef = attrValue(attrs, "unitRef");
+    if (unitRef && !/usd/i.test(unitRef)) continue;
+    const value = inlineXbrlNumber(match[2] || "", attrs);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function inlineXbrlNumber(rawValue: string, attrs: string): number | undefined {
+  const text = rawValue.replace(/<[^>]+>/g, "").replace(/&nbsp;|&#160;/gi, "").trim();
+  const value = firstNumber(text.match(/[\d,.]+/)?.[0]);
+  if (value === undefined) return undefined;
+  const scale = Number(attrValue(attrs, "scale") || 0);
+  const scaled = Number.isFinite(scale) ? value * (10 ** scale) : value;
+  return attrValue(attrs, "sign") === "-" ? -scaled : scaled;
+}
+
+function fiscalPeriodContextRef(text: string): string | undefined {
+  for (const match of text.matchAll(/<ix:nonNumeric\b([^>]*)>([\s\S]*?)<\/ix:nonNumeric>/gi)) {
+    const attrs = match[1] || "";
+    if (localName(attrValue(attrs, "name")) !== "DocumentFiscalPeriodFocus") continue;
+    const period = match[2]?.replace(/<[^>]+>/g, "").trim().toUpperCase();
+    if (period === "FY" || /^Q[1-4]$/.test(period || "")) return attrValue(attrs, "contextRef");
+  }
+  return undefined;
+}
+
+function fiscalPeriodFromText(text: string): string | undefined {
+  const tagged = tagValue(text, "DocumentFiscalPeriodFocus")
+    || text.match(/DocumentFiscalPeriodFocus[^>]*>\s*(Q[1-4]|FY)\s*</i)?.[1];
+  const period = tagged?.trim().toUpperCase();
+  return period === "FY" || /^Q[1-4]$/.test(period || "") ? period : undefined;
+}
+
+function attrValue(attrs: string, name: string): string | undefined {
+  return attrs.match(new RegExp(`\\b${name}=["']([^"']+)["']`, "i"))?.[1];
+}
+
+function localName(value: string | undefined): string | undefined {
+  return value?.split(":").pop();
 }
 
 function tagValue(text: string, tag: string): string | undefined {

@@ -102,7 +102,8 @@ test("desktop index layouts use centered grid containers", () => {
 
 test("detail side index tracks scroll in both complete and partial feeds", () => {
   assert.match(dashboardSource, /const shouldShowDetailIndex = Boolean\(displayData \|\| isPartialFeedVisible\);/);
-  assert.match(dashboardSource, /const indexSections = shouldShowDetailIndex \? visibleDetailSections : \[\];/);
+  assert.match(dashboardSource, /const indexSections = shouldShowDetailIndex\s*\?\s*visibleDetailSections\.map\(\(section\) => \(/);
+  assert.match(dashboardSource, /section\.id === "detail-filings" && hasRecentSecFiling\(stockFilingsState\)/);
   assert.match(dashboardSource, /if \(!shouldShowDetailIndex \|\| !visibleDetailSections\.length\) return;/);
   assert.doesNotMatch(dashboardSource, /if \(!displayData \|\| !visibleDetailSections\.length\) return;/);
 });

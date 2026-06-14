@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex } from "../src/lib/secFilingIndexBackfill";
+import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex, rankIndexFilingFactCandidates } from "../src/lib/secFilingIndexBackfill";
 
 test("parses SEC master index rows into rule-summary filings", () => {
   const entries = parseMasterIndex(`
@@ -23,6 +23,25 @@ test("builds SEC daily master index URL from a filing date", () => {
   assert.equal(
     dailyMasterIndexUrl("2026-06-12"),
     "https://www.sec.gov/Archives/edgar/daily-index/2026/QTR2/master.20260612.idx"
+  );
+});
+
+test("prioritizes high-value filing types for document fact fetching", () => {
+  const filings = ["8-K", "424B5", "4", "10-Q"].map((formType, index) => {
+    const filing = indexEntryToFiling({
+      cik: String(index + 1).padStart(10, "0"),
+      companyName: `Company ${index}`,
+      formType,
+      filedAt: "2026-06-12T00:00:00.000Z",
+      filename: `edgar/data/${index + 1}/000000000${index}-26-000001.txt`,
+    }, new Map([[String(index + 1).padStart(10, "0"), `T${index}`]]));
+    assert.ok(filing);
+    return filing;
+  });
+
+  assert.deepEqual(
+    rankIndexFilingFactCandidates(filings).slice(0, 3).map((candidate) => candidate.filing.formType),
+    ["10-Q", "424B5", "4"]
   );
 });
 
@@ -72,6 +91,31 @@ test("enriches indexed 8-K summaries with item and financial numbers", () => {
   assert.match(enriched.summaryKo, /순이익 약 \$25\.8B/);
 });
 
+test("enriches periodic summaries with SEC fiscal period tag", () => {
+  const filing = indexEntryToFiling({
+    cik: "0000320193",
+    companyName: "Apple Inc.",
+    formType: "10-Q",
+    filedAt: "2026-06-12T00:00:00.000Z",
+    filename: "edgar/data/320193/0000320193-26-000129.txt",
+  }, new Map([["0000320193", "AAPL"]]));
+  assert.ok(filing);
+
+  const enriched = enrichIndexFilingFromDocument(filing, `
+    <ix:nonNumeric name="dei:DocumentFiscalPeriodFocus" contextRef="c1">Q1</ix:nonNumeric>
+    <ix:nonFraction unitRef="usd" contextRef="c1" name="us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax" scale="3">215,225</ix:nonFraction>
+    <ix:nonFraction unitRef="usd" contextRef="prior" name="us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax" scale="3">242,125</ix:nonFraction>
+    <ix:nonFraction unitRef="usd" contextRef="c1" name="us-gaap:NetIncomeLoss" sign="-" scale="3">53,191</ix:nonFraction>
+  `);
+
+  assert.equal(enriched.facts.fiscalPeriod, "Q1");
+  assert.equal(enriched.facts.revenue, 215_225_000);
+  assert.equal(enriched.facts.netIncome, -53_191_000);
+  assert.match(enriched.summaryKo, /1분기 실적이 발표/);
+  assert.match(enriched.summaryKo, /매출 약 \$215\.2M/);
+  assert.match(enriched.summaryKo, /순손실 약 \$53\.2M/);
+});
+
 test("enriches offering summaries with shares, price, and total value", () => {
   const filing = indexEntryToFiling({
     cik: "0000000001",
@@ -107,4 +151,22 @@ test("does not treat par value as offering price", () => {
   assert.equal(enriched.facts.price, undefined);
   assert.equal(enriched.facts.offeringAmount, undefined);
   assert.doesNotMatch(enriched.summaryKo, /\$0\.01|\$50\.0K/);
+});
+
+test("does not treat total price-to-public as per-share offering price", () => {
+  const filing = indexEntryToFiling({
+    cik: "0000000001",
+    companyName: "Example Corp",
+    formType: "424B5",
+    filedAt: "2026-06-12T00:00:00.000Z",
+    filename: "edgar/data/1/0000000001-26-000001.txt",
+  }, new Map([["0000000001", "EX"]]));
+  assert.ok(filing);
+
+  const enriched = enrichIndexFilingFromDocument(filing, "Price to public $5,235,810. We are offering 681,155 shares of common stock.");
+
+  assert.equal(enriched.facts.shares, 681_155);
+  assert.equal(enriched.facts.price, undefined);
+  assert.equal(enriched.facts.offeringAmount, undefined);
+  assert.doesNotMatch(enriched.summaryKo, /\$5\.2M|\$3566\.4B/);
 });
