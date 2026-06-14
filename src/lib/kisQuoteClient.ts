@@ -44,6 +44,8 @@ type DomesticChartRow = {
   close: number;
   volume: number | undefined;
 };
+
+const DOMESTIC_MARKET_CAP_UNIT = 100_000_000;
 export type KisDailyChartBar = {
   date: string;
   open: number;
@@ -159,6 +161,8 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
   const previousClose = asFloat(price.stck_sdpr) ?? asFloat(price.stck_prdy_clpr);
   const latestChange = kisPercent(price.prdy_ctrt) ?? changeFrom(latestPrice, previousClose);
   const volume = asInt(price.acml_vol);
+  const listedShares = asInt(price.lstn_stcn);
+  const marketCap = domesticMarketCap(price, latestPrice, listedShares);
   const name = stringValue(price.hts_kor_isnm) || stringValue(price.prdt_abrv_name) || symbol;
   const latestDate = kisDate(price.stck_bsop_date) || dateInSeoul(now);
 
@@ -179,11 +183,14 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
     latest_change_label: pct(latestChange),
     volume,
     volume_label: numLabel(volume),
+    market_cap: marketCap,
+    market_cap_label: labeledMoney(marketCap, "KRW"),
     price_metrics: {
       price: latestPrice,
       previous_close: previousClose,
       latest_change: latestChange,
       volume,
+      market_cap: marketCap,
     },
     fetch: {
       source: "market_data",
@@ -193,6 +200,13 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
       cache: "server",
     },
   };
+}
+
+function domesticMarketCap(price: KisPayload, latestPrice: number | undefined, listedShares: number | undefined): number | undefined {
+  const htsMarketCapEok = asFloat(price.hts_avls) ?? asFloat(price.stck_avls);
+  if (htsMarketCapEok !== undefined) return htsMarketCapEok * DOMESTIC_MARKET_CAP_UNIT;
+  if (latestPrice !== undefined && listedShares !== undefined) return latestPrice * listedShares;
+  return undefined;
 }
 
 async function fetchUsQuote(symbol: string): Promise<StockPayload> {

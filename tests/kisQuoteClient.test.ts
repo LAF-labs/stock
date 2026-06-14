@@ -93,6 +93,8 @@ test("fetchKisQuote maps domestic KIS quote payload into public quote shape", as
           stck_sdpr: "69000",
           prdy_ctrt: "1.45",
           acml_vol: "123456",
+          hts_avls: "4300000",
+          lstn_stcn: "5969782550",
           hts_kor_isnm: "삼성전자",
           stck_bsop_date: "20260605",
         },
@@ -113,6 +115,9 @@ test("fetchKisQuote maps domestic KIS quote payload into public quote shape", as
   assert.equal(payload.latest_price_label, "70,000원");
   assert.equal(payload.previous_close, 69000);
   assert.equal(payload.latest_change, 0.0145);
+  assert.equal(payload.market_cap, 430_000_000_000_000);
+  assert.equal(payload.market_cap_label, "430,000,000,000,000원");
+  assert.equal((payload.price_metrics as { market_cap?: unknown } | undefined)?.market_cap, 430_000_000_000_000);
   assert.equal(payload.latest_bar_date, "2026-06-05");
   assert.equal((payload.fetch as { source?: unknown } | undefined)?.source, "market_data");
 });

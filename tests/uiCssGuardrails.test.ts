@@ -147,6 +147,15 @@ test("mobile stock summary prioritizes judgment and compact score cards", () => 
   assert.match(css, /\.stock-detail-app \.score-donut\s*\{[\s\S]*?width:\s*64px;[\s\S]*?height:\s*64px;/);
 });
 
+test("detail summary quick read is a flat stat strip, not nested cards", () => {
+  assert.equal(lastCssDeclaration(".stock-detail-app .quick-read", "border"), "0");
+  assert.equal(lastCssDeclaration(".stock-detail-app .quick-read", "background"), "transparent");
+  assert.equal(lastCssDeclaration(".stock-detail-app .quick-read article", "border"), "0");
+  assert.equal(lastCssDeclaration(".stock-detail-app .quick-read article.quick-metric-card", "border"), "0");
+  assert.equal(lastCssDeclaration(".stock-detail-app .quick-read .score-panel", "border"), "0");
+  assert.equal(lastCssDeclaration(".stock-detail-app .quick-read .score-panel", "background"), "transparent");
+});
+
 test("home screen has no old default ticker fallback and renders animated landing", () => {
   assert.doesNotMatch(dashboardSource, /searchParams\.get\("ticker"\)\s*\|\|\s*"US:KO"/);
   assert.doesNotMatch(dashboardSource, /tickerParam\s*\|\|\s*"US:KO"/);
