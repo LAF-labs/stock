@@ -116,7 +116,8 @@ function summarizeOwnershipStake(form: string, facts: SecFilingFacts): SecFiling
 function summarizeOffering(facts: SecFilingFacts): SecFilingSummary {
   const amount = positive(facts.offeringAmount) ? ` 모집 규모는 약 ${formatMoney(facts.offeringAmount, facts.currency)}입니다.` : "";
   const shareText = positive(facts.shares) ? ` 발행 주식 수는 ${formatShares(facts.shares)}예요.` : "";
-  return makeSummary("offering", "high", ["증권발행"], `증권 발행/공모 관련 공시예요.${amount}${shareText || " 기존 주주 지분 희석 가능성을 봐야 해요."}`);
+  const priceText = positive(facts.price) ? ` 공모가는 주당 ${formatMoney(facts.price, facts.currency)}입니다.` : "";
+  return makeSummary("offering", "high", ["증권발행"], `증권 발행/공모 관련 공시예요.${amount}${shareText}${priceText || ""}${shareText || amount ? "" : " 기존 주주 지분 희석 가능성을 봐야 해요."}`);
 }
 
 function financialNumbers(facts: SecFilingFacts): string {

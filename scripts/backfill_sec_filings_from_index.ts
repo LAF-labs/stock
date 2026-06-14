@@ -1,10 +1,11 @@
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import symbols from "@/data/symbols.generated.json";
-import { indexEntryToFiling, parseMasterIndex } from "@/lib/secFilingIndexBackfill";
+import { enrichIndexFilingFromDocument, indexEntryToFiling, indexFilingNeedsDocumentFacts, parseMasterIndex } from "@/lib/secFilingIndexBackfill";
 import { writeSecFilings, type SecFilingListItem } from "@/lib/secFilings";
 
 const SEC_UA = process.env.STOCK_SEC_EDGAR_USER_AGENT || "LAF-labs stock filings admin@laflabs.ai";
+let lastSecRequestAt = 0;
 
 async function main() {
   loadCliEnvFiles();
@@ -12,18 +13,27 @@ async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const quiet = process.argv.includes("--quiet");
   const chunkSize = positiveInt(arg("--chunk-size"), 250);
+  const fetchDocLimit = positiveInt(arg("--fetch-doc-limit"), 0);
   const cikToTicker = await loadCikToTicker();
   const quarters = quartersSince(since);
   let rows = 0;
   let written = 0;
+  let enriched = 0;
   const buffer: SecFilingListItem[] = [];
 
   for (const { year, quarter } of quarters) {
     const text = await fetchText(`https://www.sec.gov/Archives/edgar/full-index/${year}/QTR${quarter}/master.gz`);
     for (const entry of parseMasterIndex(text)) {
       if (entry.filedAt.slice(0, 10) < since) continue;
-      const filing = indexEntryToFiling(entry, cikToTicker);
+      let filing = indexEntryToFiling(entry, cikToTicker);
       if (!filing) continue;
+      if (enriched < fetchDocLimit && filing.sourceUrl && indexFilingNeedsDocumentFacts(filing)) {
+        const documentText = await fetchText(filing.sourceUrl).catch(() => "");
+        if (documentText) {
+          filing = enrichIndexFilingFromDocument(filing, documentText);
+          enriched += 1;
+        }
+      }
       buffer.push(filing);
       rows += 1;
       if (buffer.length >= chunkSize) {
@@ -38,7 +48,7 @@ async function main() {
     if (!dryRun) await writeChunk(buffer);
     written += buffer.length;
   }
-  console.log(JSON.stringify({ ok: true, since, dryRun, quarters: quarters.length, rows, written }));
+  console.log(JSON.stringify({ ok: true, since, dryRun, quarters: quarters.length, rows, written, enriched }));
 }
 
 async function writeChunk(items: SecFilingListItem[]): Promise<void> {
@@ -70,16 +80,27 @@ async function loadCikToTicker(): Promise<Map<string, string>> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
+  await throttleSec();
   const response = await fetch(url, { headers: { "User-Agent": SEC_UA, Accept: "application/json" } });
   if (!response.ok) throw new Error(`SEC HTTP ${response.status} ${url}`);
   return await response.json() as T;
 }
 
 async function fetchText(url: string): Promise<string> {
+  await throttleSec();
   const response = await fetch(url, { headers: { "User-Agent": SEC_UA } });
   if (!response.ok) throw new Error(`SEC HTTP ${response.status} ${url}`);
   const bytes = Buffer.from(await response.arrayBuffer());
-  return url.endsWith(".gz") ? gunzipSync(bytes).toString("utf8") : bytes.toString("utf8");
+  const text = url.endsWith(".gz") ? gunzipSync(bytes).toString("utf8") : bytes.toString("utf8");
+  if (text.includes("Request Rate Threshold Exceeded")) throw new Error("SEC rate limit");
+  return text;
+}
+
+async function throttleSec(): Promise<void> {
+  const now = Date.now();
+  const waitMs = Math.max(0, 150 - (now - lastSecRequestAt));
+  if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  lastSecRequestAt = Date.now();
 }
 
 function quartersSince(since: string): Array<{ year: number; quarter: number }> {

@@ -51,12 +51,14 @@ test("summarizes periodic reports with revenue and net income", () => {
 test("summarizes offering forms with amount", () => {
   const result = summarizeSecFiling({
     formType: "S-3",
-    facts: { offeringAmount: 750_000_000, currency: "USD" },
+    facts: { offeringAmount: 750_000_000, shares: 12_000_000, price: 62.5, currency: "USD" },
   });
 
   assert.equal(result.category, "offering");
   assert.match(result.summaryKo, /증권 발행/);
   assert.match(result.summaryKo, /\$750\.0M/);
+  assert.match(result.summaryKo, /12,000,000주/);
+  assert.match(result.summaryKo, /주당 \$63/);
 });
 
 test("summarizes schedule 13G index forms as major holder disclosures", () => {

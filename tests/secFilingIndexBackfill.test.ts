@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { dailyMasterIndexUrl, indexEntryToFiling, parseMasterIndex } from "../src/lib/secFilingIndexBackfill";
+import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex } from "../src/lib/secFilingIndexBackfill";
 
 test("parses SEC master index rows into rule-summary filings", () => {
   const entries = parseMasterIndex(`
@@ -24,4 +24,87 @@ test("builds SEC daily master index URL from a filing date", () => {
     dailyMasterIndexUrl("2026-06-12"),
     "https://www.sec.gov/Archives/edgar/daily-index/2026/QTR2/master.20260612.idx"
   );
+});
+
+test("enriches indexed form 4 summaries with sale shares and value", () => {
+  const filing = indexEntryToFiling({
+    cik: "0000320193",
+    companyName: "Apple Inc.",
+    formType: "4",
+    filedAt: "2026-06-12T00:00:00.000Z",
+    filename: "edgar/data/320193/0000320193-26-000129.txt",
+  }, new Map([["0000320193", "AAPL"]]));
+  assert.ok(filing);
+
+  const enriched = enrichIndexFilingFromDocument(filing, `
+    <rptOwnerName>Jane Doe</rptOwnerName>
+    <nonDerivativeTransaction>
+      <transactionCoding><transactionCode>S</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>5000</value></transactionShares>
+        <transactionPricePerShare><value>180.50</value></transactionPricePerShare>
+      </transactionAmounts>
+      <postTransactionAmounts><sharesOwnedFollowingTransaction><value>12000</value></sharesOwnedFollowingTransaction></postTransactionAmounts>
+    </nonDerivativeTransaction>
+  `);
+
+  assert.match(enriched.summaryKo, /Jane Doe/);
+  assert.match(enriched.summaryKo, /5,000주/);
+  assert.match(enriched.summaryKo, /\$902\.5K/);
+  assert.equal(enriched.facts.saleShares, 5000);
+});
+
+test("enriches indexed 8-K summaries with item and financial numbers", () => {
+  const filing = indexEntryToFiling({
+    cik: "0000789019",
+    companyName: "Microsoft Corp",
+    formType: "8-K",
+    filedAt: "2026-06-12T00:00:00.000Z",
+    filename: "edgar/data/789019/0000789019-26-000129.txt",
+  }, new Map([["0000789019", "MSFT"]]));
+  assert.ok(filing);
+
+  const enriched = enrichIndexFilingFromDocument(filing, "Item 2.02 Results of Operations and Financial Condition. Revenue was $70.1 billion. Net income was $25.8 billion.");
+
+  assert.equal(enriched.category, "current_report");
+  assert.equal(enriched.importance, "high");
+  assert.match(enriched.summaryKo, /매출 약 \$70\.1B/);
+  assert.match(enriched.summaryKo, /순이익 약 \$25\.8B/);
+});
+
+test("enriches offering summaries with shares, price, and total value", () => {
+  const filing = indexEntryToFiling({
+    cik: "0000000001",
+    companyName: "Example Corp",
+    formType: "424B5",
+    filedAt: "2026-06-12T00:00:00.000Z",
+    filename: "edgar/data/1/0000000001-26-000001.txt",
+  }, new Map([["0000000001", "EX"]]));
+  assert.ok(filing);
+
+  const enriched = enrichIndexFilingFromDocument(filing, "We are offering 5,000,000 shares of common stock at $50.00 per share.");
+
+  assert.equal(enriched.facts.shares, 5_000_000);
+  assert.equal(enriched.facts.price, 50);
+  assert.equal(enriched.facts.offeringAmount, 250_000_000);
+  assert.match(enriched.summaryKo, /\$250\.0M/);
+  assert.match(enriched.summaryKo, /5,000,000주/);
+});
+
+test("does not treat par value as offering price", () => {
+  const filing = indexEntryToFiling({
+    cik: "0000000001",
+    companyName: "Example Corp",
+    formType: "424B5",
+    filedAt: "2026-06-12T00:00:00.000Z",
+    filename: "edgar/data/1/0000000001-26-000001.txt",
+  }, new Map([["0000000001", "EX"]]));
+  assert.ok(filing);
+
+  const enriched = enrichIndexFilingFromDocument(filing, "We are offering 5,000,000 shares of common stock, $0.01 par value per share.");
+
+  assert.equal(enriched.facts.shares, 5_000_000);
+  assert.equal(enriched.facts.price, undefined);
+  assert.equal(enriched.facts.offeringAmount, undefined);
+  assert.doesNotMatch(enriched.summaryKo, /\$0\.01|\$50\.0K/);
 });
