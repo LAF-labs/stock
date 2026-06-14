@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { fetchYahooDailyChart, fetchYahooQuote, yahooFinanceFallbackEnabled } from "../src/lib/yahooFinanceClient";
+import { fetchYahooDailyChart, fetchYahooFundamentals, fetchYahooQuote, yahooFinanceFallbackEnabled } from "../src/lib/yahooFinanceClient";
 
 test("Yahoo fallback is production opt-in instead of Vercel default-on", () => {
   assert.equal(yahooFinanceFallbackEnabled({ VERCEL: "1", VERCEL_ENV: "production" }), false);
@@ -55,3 +55,76 @@ test("Yahoo daily fallback ignores split-skewed regularMarketPrice and uses char
     else process.env.STOCK_YAHOO_FALLBACK = originalFallback;
   }
 });
+
+test("Yahoo fundamentals maps timeseries rows into common financial fields", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => Response.json({
+    timeseries: {
+      result: [
+        {
+          meta: { symbol: ["PZZA"], type: ["trailingTotalRevenue"] },
+          trailingTotalRevenue: [reported("2026-03-31", 2_014_108_000, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["trailingNetIncome"] },
+          trailingNetIncome: [reported("2026-03-31", 28_564_000, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["trailingOperatingIncome"] },
+          trailingOperatingIncome: [reported("2026-03-31", 82_728_000, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["trailingPeRatio"] },
+          trailingPeRatio: [reported("2026-06-12", 39.277108)],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["trailingDilutedEPS"] },
+          trailingDilutedEPS: [reported("2026-03-31", 0.87, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["quarterlyTotalAssets"] },
+          quarterlyTotalAssets: [reported("2026-03-31", 1_012_000_000, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["quarterlyTotalLiabilitiesNetMinorityInterest"] },
+          quarterlyTotalLiabilitiesNetMinorityInterest: [reported("2026-03-31", 750_000_000, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["quarterlyStockholdersEquity"] },
+          quarterlyStockholdersEquity: [reported("2026-03-31", 262_000_000, "USD")],
+        },
+        {
+          meta: { symbol: ["PZZA"], type: ["annualTotalRevenue"] },
+          annualTotalRevenue: [
+            reported("2024-12-31", 2_059_387_000, "USD"),
+            reported("2025-12-31", 2_053_808_000, "USD"),
+          ],
+        },
+      ],
+      error: null,
+    },
+  });
+
+  try {
+    const result = await fetchYahooFundamentals("US:PZZA", { latestPrice: 34.17, marketCap: 1_090_000_000 });
+    assert.equal(result.normalized.totalRevenue, 2_014_108_000);
+    assert.equal(result.normalized.netIncome, 28_564_000);
+    assert.equal(result.normalized.operatingIncome, 82_728_000);
+    assert.equal(result.normalized.trailingPE, 39.277108);
+    assert.equal(result.normalized.eps, 0.87);
+    assert.equal(result.normalized.profitMargins, 0.014182);
+    assert.equal(result.normalized.revenueGrowth, -0.002709);
+    assert.equal(result.normalized.currency, "USD");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+function reported(asOfDate: string, raw: number, currencyCode?: string) {
+  return {
+    asOfDate,
+    periodType: "TTM",
+    ...(currencyCode ? { currencyCode } : {}),
+    reportedValue: { raw, fmt: String(raw) },
+  };
+}

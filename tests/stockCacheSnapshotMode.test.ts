@@ -50,6 +50,15 @@ function restoreEnv() {
   globalThis.fetch = originalFetch;
 }
 
+function reported(asOfDate: string, raw: number, currencyCode?: string) {
+  return {
+    asOfDate,
+    periodType: "TTM",
+    ...(currencyCode ? { currencyCode } : {}),
+    reportedValue: { raw, fmt: String(raw) },
+  };
+}
+
 function useSnapshotOnlyRuntime() {
   restoreEnv();
   process.env.VERCEL = "1";
@@ -225,6 +234,62 @@ test("detail score cache builds a request fast path from KIS daily rows in Verce
   assert.equal((result.payload.fetch as Record<string, unknown>).detail_fast_path, true);
   assert.equal(result.cache.source, "market-data");
   assert.equal(result.cache.state, "miss");
+});
+
+test("US detail fast path includes Yahoo fundamentals instead of an empty financial section", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  const rows = Array.from({ length: 120 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 0, 2 + index)).toISOString().slice(0, 10).replace(/-/g, "");
+    const close = 30 + index * 0.03;
+    return {
+      xymd: date,
+      open: String(close - 0.1),
+      high: String(close + 0.2),
+      low: String(close - 0.2),
+      clos: String(close),
+      tvol: String(50_000 + index),
+    };
+  });
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-us-detail-financials", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      return Response.json({ rt_cd: "0", output2: rows });
+    }
+    if (text.includes("query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/PZZA")) {
+      return Response.json({
+        timeseries: {
+          result: [
+            { meta: { symbol: ["PZZA"], type: ["trailingTotalRevenue"] }, trailingTotalRevenue: [reported("2026-03-31", 2_014_108_000, "USD")] },
+            { meta: { symbol: ["PZZA"], type: ["trailingNetIncome"] }, trailingNetIncome: [reported("2026-03-31", 28_564_000, "USD")] },
+            { meta: { symbol: ["PZZA"], type: ["trailingOperatingIncome"] }, trailingOperatingIncome: [reported("2026-03-31", 82_728_000, "USD")] },
+            { meta: { symbol: ["PZZA"], type: ["trailingPeRatio"] }, trailingPeRatio: [reported("2026-06-12", 39.277108)] },
+            { meta: { symbol: ["PZZA"], type: ["trailingDilutedEPS"] }, trailingDilutedEPS: [reported("2026-03-31", 0.87, "USD")] },
+            { meta: { symbol: ["PZZA"], type: ["annualTotalRevenue"] }, annualTotalRevenue: [reported("2025-12-31", 2_053_808_000, "USD")] },
+          ],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("US:PZZA", "detail");
+
+  assert.equal(result.payload.ok, true);
+  assert.equal((result.payload.fetch as Record<string, unknown>).pending_enrichment, undefined);
+  assert.equal((result.payload.fetch as Record<string, unknown>).fundamentals_source, "yahoo_fundamentals");
+  assert.equal((result.payload.financials as Record<string, unknown>).totalRevenue, 2_014_108_000);
+  assert.equal((result.payload.financials as Record<string, unknown>).netIncome, 28_564_000);
+  assert.equal((result.payload.financials as Record<string, unknown>).trailingPE, 39.277108);
+  assert.equal((result.payload.financial_statement as Record<string, unknown>).yahoo_fundamentals !== undefined, true);
 });
 
 test("domestic detail fast path includes KIS financials instead of a pending enrichment placeholder", async () => {

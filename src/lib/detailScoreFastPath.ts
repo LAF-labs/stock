@@ -7,6 +7,7 @@ import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { findExactSymbol } from "@/lib/symbolSearch";
 import { envValue } from "@/lib/supabaseRest";
 import { fetchKisDomesticFinanceBundle, type KisDomesticFinanceBundle } from "@/lib/kisQuoteClient";
+import { fetchYahooFundamentals, type YahooFundamentalsPayload } from "@/lib/yahooFinanceClient";
 import type { ScoreView, StockPayload } from "@/lib/stockScoreContract";
 import type { Grade, LabeledValue, ScoreComponent } from "@/lib/types";
 
@@ -87,7 +88,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
   technicalAnalysis.ticker = `${daily.market}:${daily.symbol}`;
   technicalAnalysis.market = daily.market;
   technicalAnalysis.symbol = daily.symbol;
-  const financialBundle = await domesticFinancialFastPath(daily, signals, view);
+  const financialBundle = await financialFastPath(daily, signals, view);
 
   const priceMetrics = {
     ...daily.priceMetrics,
@@ -183,12 +184,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
       score_model_version: SCORE_MODEL_VERSION,
       detail_fast_path: true,
       request_fast_path: true,
-      ...(financialBundle
-        ? {
-            fundamentals_source: "kis_domestic_financials",
-            kis_domestic_financials: "request_fast_path",
-          }
-        : { pending_enrichment: true }),
+      ...(financialBundle?.fetch ?? { pending_enrichment: true }),
       source: "market_data",
       provider_mode: "detail_request_fast_path",
       timeout_ms: detailRequestFastPathTimeoutMs(),
@@ -693,19 +689,47 @@ function multipleLabel(value: number | undefined): string | undefined {
 type FastPathFinancials = {
   financials: Record<string, number | string>;
   financialStatement: Record<string, unknown>;
+  fetch: Record<string, unknown>;
 };
 
-async function domesticFinancialFastPath(
-  daily: { market: "US" | "KR"; symbol: string },
+async function financialFastPath(
+  daily: { market: "US" | "KR"; symbol: string; requestedTicker?: string; latestPrice?: number; priceMetrics?: Record<string, unknown> },
   signals: PriceSignals,
   view: ScoreView
 ): Promise<FastPathFinancials | undefined> {
-  if (view !== "detail" || daily.market !== "KR") return undefined;
+  if (view !== "detail") return undefined;
+  if (daily.market === "US") return yahooFinancialFastPath(daily, signals);
+  if (daily.market !== "KR") return undefined;
   const bundle = await withTimeout(fetchKisDomesticFinanceBundle(daily.symbol), detailFinancialFastPathTimeoutMs()).catch(() => undefined);
   if (!bundle || !Object.keys(bundle.normalized).length) return undefined;
   return {
     financials: bundle.normalized,
     financialStatement: domesticFinancialStatement(bundle, signals),
+    fetch: {
+      fundamentals_source: "kis_domestic_financials",
+      kis_domestic_financials: "request_fast_path",
+    },
+  };
+}
+
+async function yahooFinancialFastPath(
+  daily: { requestedTicker?: string; symbol: string; latestPrice?: number; priceMetrics?: Record<string, unknown> },
+  signals: PriceSignals
+): Promise<FastPathFinancials | undefined> {
+  const latestPrice = signals.latestPrice ?? daily.latestPrice;
+  const marketCap = numberValue(daily.priceMetrics?.market_cap);
+  const bundle = await withTimeout(
+    fetchYahooFundamentals(daily.requestedTicker || `US:${daily.symbol}`, { latestPrice, marketCap }),
+    detailFinancialFastPathTimeoutMs()
+  ).catch(() => undefined);
+  if (!bundle || !Object.keys(bundle.normalized).length) return undefined;
+  return {
+    financials: bundle.normalized,
+    financialStatement: yahooFinancialStatement(bundle),
+    fetch: {
+      fundamentals_source: "yahoo_fundamentals",
+      yahoo_fundamentals: "request_fast_path",
+    },
   };
 }
 
@@ -728,6 +752,24 @@ function domesticFinancialStatement(bundle: KisDomesticFinanceBundle, signals: P
     },
     domestic_price: {
       stck_prpr: signals.latestPrice,
+    },
+  };
+}
+
+function yahooFinancialStatement(bundle: YahooFundamentalsPayload): Record<string, unknown> {
+  return {
+    yahoo_fundamentals: {
+      source: "yahoo_fundamentals",
+      cache: {
+        source: "yahoo_fundamentals",
+        store: "provider",
+        cache: "request_fast_path",
+      },
+      symbol: bundle.symbol,
+      yahoo_symbol: bundle.yahooSymbol,
+      normalized: bundle.normalized,
+      raw: bundle.raw,
+      fetched_at: bundle.fetchedAt,
     },
   };
 }
