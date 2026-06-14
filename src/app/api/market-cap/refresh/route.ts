@@ -26,8 +26,7 @@ async function refresh(request: Request) {
 function authorized(request: Request): boolean {
   const secret = envValue("MARKET_CAP_REFRESH_SECRET") || envValue("CRON_SECRET");
   if (!secret) return process.env.NODE_ENV !== "production";
-  const url = new URL(request.url);
-  const candidate = url.searchParams.get("secret") || request.headers.get("x-refresh-secret") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const candidate = request.headers.get("x-refresh-secret") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   return candidate === secret;
 }
 

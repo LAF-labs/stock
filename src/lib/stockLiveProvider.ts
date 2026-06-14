@@ -1,8 +1,7 @@
 import { fetchKisDailyChart, fetchKisQuote, kisQuoteConfigured, type KisDailyChartPayload } from "@/lib/kisQuoteClient";
 import { fetchYahooDailyChart, fetchYahooQuote, yahooFinanceFallbackEnabled } from "@/lib/yahooFinanceClient";
-import { combineProviderErrors, isProviderConfirmedEmptyError } from "@/lib/stockProviderErrors";
+import { combineProviderErrors } from "@/lib/stockProviderErrors";
 import type { StockPayload } from "@/lib/stockScoreContract";
-import { numericEnv } from "@/lib/supabaseRest";
 
 export function liveStockProviderConfigured(env: Record<string, string | undefined> = process.env): boolean {
   return kisConfigured(env) || yahooFinanceFallbackEnabled(env);
@@ -40,16 +39,6 @@ async function firstLiveProviderResult<T>(ticker: string, attempts: Array<() => 
     }
 
     errors.push(result.error);
-    if (isProviderConfirmedEmptyError(result.error)) {
-      const quick = await firstProviderSuccessWithin(pending, liveEmptyConfirmationMs());
-      if (quick.ok) {
-        drainPending(pending);
-        return quick.value;
-      }
-      if (quick.error) errors.push(quick.error);
-      drainPending(pending);
-      throw combineProviderErrors(ticker, errors);
-    }
   }
 
   throw combineProviderErrors(ticker, errors);
@@ -63,46 +52,6 @@ async function settleProvider<T>(promise: Promise<T>): Promise<{ ok: true; value
   }
 }
 
-async function firstProviderSuccessWithin<T>(
-  pending: Array<Promise<{ ok: true; value: T } | { ok: false; error: unknown }>>,
-  timeoutMs: number
-): Promise<{ ok: true; value: T } | { ok: false; error?: unknown }> {
-  if (!pending.length) return { ok: false };
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      waitForFirstSuccess(pending),
-      new Promise<{ ok: false }>((resolve) => {
-        timer = setTimeout(() => resolve({ ok: false }), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-async function waitForFirstSuccess<T>(
-  pending: Array<Promise<{ ok: true; value: T } | { ok: false; error: unknown }>>
-): Promise<{ ok: true; value: T } | { ok: false; error?: unknown }> {
-  const errors: unknown[] = [];
-  const successPromises = pending.map((promise) =>
-    promise.then((result) => {
-      if (result.ok) return result;
-      errors.push(result.error);
-      throw result.error;
-    })
-  );
-  try {
-    return await Promise.any(successPromises);
-  } catch {
-    return { ok: false, error: errors[0] };
-  }
-}
-
 function drainPending<T>(pending: Array<Promise<T>>) {
   for (const promise of pending) void promise.catch(() => undefined);
-}
-
-function liveEmptyConfirmationMs(): number {
-  return numericEnv("STOCK_LIVE_PROVIDER_EMPTY_CONFIRMATION_MS", 350);
 }
