@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import QueryProvider from "@/components/QueryProvider";
 import { STOCKSTALKER_DEFAULT_DESCRIPTION, STOCKSTALKER_SERVICE_NAME } from "@/lib/stockShareMetadata";
 import "./globals.css";
+import "../styles/market-console.css";
 
 export const metadata: Metadata = {
   title: STOCKSTALKER_SERVICE_NAME,

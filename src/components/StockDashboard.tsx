@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChartStory, FactorStory, NewsFeed, RecordCard, SimpleList } from "@/components/StockDetailSections";
@@ -9,6 +9,8 @@ import StockHeader from "@/components/StockHeader";
 import { SkeletonSectionTitle, StockDetailLoadingSkeleton } from "@/components/StockLoadingSkeletons";
 import SkeletonBlock from "@/components/SkeletonBlock";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
+import StockLanding from "@/components/landing/StockLanding";
+import DetailSectionIndex from "@/components/stock-detail/DetailSectionIndex";
 import { stockDisplayPayloadIsComplete, stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
   chooseRicherStockData,
@@ -162,9 +164,13 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     previousTickerParamRef.current = decision.previousTickerParam;
     if (decision.action === "none") return;
 
-    setIsSearchEditing((current) => (current === decision.isSearchEditing ? current : decision.isSearchEditing));
-    setTickerInput((current) => (current === decision.value ? current : decision.value));
-  }, [data, initialDisplayData, isSearchEditing, partialData, quoteData, tickerParam]);
+    if (isSearchEditing !== decision.isSearchEditing) {
+      setIsSearchEditing(decision.isSearchEditing);
+    }
+    if (tickerInput !== decision.value) {
+      setTickerInput(decision.value);
+    }
+  }, [data, initialDisplayData, isSearchEditing, partialData, quoteData, tickerInput, tickerParam]);
 
   function handleTickerInputChange(value: string) {
     setIsSearchEditing(true);
@@ -290,8 +296,8 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
         <StockDetailLoadingSkeleton tickerLabel={skeletonTickerLabel} />
       )}
       {tickerParam && state.status === "error" && <StatusCard title="조회할 수 없어요" body={state.error} tone="error" actionLabel="다시 시도" onAction={retryLoad} />}
-      {!tickerParam && <DashboardLandingHero />}
-      {tickerParam ? <DetailIndex sections={indexSections} activeSection={activeSection} onSelect={scrollToDetailSection} /> : null}
+      {!tickerParam && <StockLanding />}
+      {tickerParam ? <DetailSectionIndex sections={indexSections} activeSection={activeSection} onSelect={scrollToDetailSection} /> : null}
 
       {isPartialFeedVisible && displayPartialData ? (
         <PartialStockFeed
@@ -561,211 +567,6 @@ function PartialStockSummary({
         </button>
       </div>
     </section>
-  );
-}
-
-function DashboardLandingHero() {
-  return (
-    <section className="dashboard-landing" aria-label="주식 점수 검색 시작">
-      <article className="landing-story-section dashboard-landing-hero">
-        <div className="landing-copy">
-          <span>AI Stock Score</span>
-          <h2>종목만 입력하세요</h2>
-          <p>검색 한 번으로 투자 후보를 압축합니다.</p>
-          <div className="landing-proof-list">
-            <span>한글 종목명·해외 티커 모두 검색</span>
-            <span>품질 점수와 기회 점수를 동시에 확인</span>
-            <span>관심 종목은 상세 분석으로 바로 연결</span>
-          </div>
-        </div>
-
-        <div className="landing-visual landing-stock-visual" aria-hidden="true">
-          <div className="landing-grid" />
-          <div className="landing-scanline" />
-          <div className="landing-score-stack">
-            <div className="landing-score-card">
-              <span>QUALITY</span>
-              <strong>82</strong>
-            </div>
-            <div className="landing-score-card secondary">
-              <span>OPPORTUNITY</span>
-              <strong>74</strong>
-            </div>
-          </div>
-          <div className="landing-stock-loop">
-            <div className="landing-loop-window">
-              <div className="landing-loop-track">
-                <div className="landing-loop-group">
-                  <span>NVDA</span>
-                  <span>애플</span>
-                  <span>TSLA</span>
-                  <span>엔비디아</span>
-                  <span>삼성전자</span>
-                  <span>SK하이닉스</span>
-                  <span>현대차</span>
-                  <span>네이버</span>
-                </div>
-                <div className="landing-loop-group" aria-hidden="true">
-                  <span>NVDA</span>
-                  <span>애플</span>
-                  <span>TSLA</span>
-                  <span>엔비디아</span>
-                  <span>삼성전자</span>
-                  <span>SK하이닉스</span>
-                  <span>현대차</span>
-                  <span>네이버</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="landing-console">
-            <span>신호 확인</span>
-            <i />
-            <span>점수 동기화</span>
-          </div>
-        </div>
-      </article>
-
-      <article className="landing-story-section landing-story-info">
-        <div className="landing-copy">
-          <span>Company Brief</span>
-          <h2>종목 정보 확인</h2>
-          <p>처음 보는 회사도 핵심 맥락부터 잡습니다.</p>
-          <div className="landing-proof-list">
-            <span>시총·섹터·재무를 한 화면에서 정리</span>
-            <span>뉴스와 밸류에이션 부담을 함께 확인</span>
-            <span>국내·해외 종목 표기를 읽기 쉽게 변환</span>
-          </div>
-        </div>
-
-        <div className="landing-visual landing-info-visual" aria-hidden="true">
-          <div className="landing-grid" />
-          <div className="landing-info-orbit">
-            <span>섹터</span>
-            <span>시총</span>
-            <span>재무</span>
-          </div>
-          <div className="landing-info-panel">
-            <span>AI 반도체</span>
-            <strong>상위 1%</strong>
-            <i />
-          </div>
-          <div className="landing-info-list">
-            <span>
-              매출
-              <b>+18%</b>
-            </span>
-            <span>
-              마진
-              <b>개선</b>
-            </span>
-            <span>
-              뉴스
-              <b>확인</b>
-            </span>
-          </div>
-        </div>
-      </article>
-
-      <article className="landing-story-section landing-story-technical">
-        <div className="landing-copy">
-          <span>Technical Flow</span>
-          <h2>기술적 분석</h2>
-          <p>가격 흐름을 점수와 분리해서 봅니다.</p>
-          <div className="landing-proof-list">
-            <span>추세·변동성·신호를 따로 해석</span>
-            <span>차트 패턴과 단기 리스크를 구분</span>
-            <span>기술적 분석 화면으로 바로 이동</span>
-          </div>
-        </div>
-
-        <div className="landing-visual landing-technical-visual" aria-hidden="true">
-          <div className="landing-grid" />
-          <div className="landing-chart-stage">
-            <div className="landing-chart-bars">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="landing-chart-line">
-              <i />
-            </div>
-          </div>
-          <div className="landing-signal-row">
-            <span>추세</span>
-            <b>상승</b>
-            <span>변동성</span>
-            <b>중립</b>
-          </div>
-        </div>
-      </article>
-
-      <article className="landing-story-section landing-story-compare">
-        <div className="landing-copy">
-          <span>Compare Mode</span>
-          <h2>종목별 비교</h2>
-          <p>고민 중인 종목을 같은 기준에 올립니다.</p>
-          <div className="landing-proof-list">
-            <span>후보를 나란히 비교</span>
-            <span>점수·재무·밸류에이션을 한 번에 대조</span>
-            <span>가장 강한 지표를 자동으로 강조</span>
-          </div>
-        </div>
-
-        <div className="landing-visual landing-compare-visual" aria-hidden="true">
-          <div className="landing-grid" />
-          <div className="landing-compare-board">
-            <div className="landing-compare-card" style={{ "--landing-line": "86%" } as CSSProperties}>
-              <span>AAPL</span>
-              <strong>86</strong>
-              <i />
-            </div>
-            <div className="landing-compare-card" style={{ "--landing-line": "78%" } as CSSProperties}>
-              <span>삼성전자</span>
-              <strong>78</strong>
-              <i />
-            </div>
-            <div className="landing-compare-card" style={{ "--landing-line": "72%" } as CSSProperties}>
-              <span>MSFT</span>
-              <strong>72</strong>
-              <i />
-            </div>
-          </div>
-        </div>
-      </article>
-    </section>
-  );
-}
-
-function DetailIndex({
-  sections,
-  activeSection,
-  onSelect,
-}: {
-  sections: ReadonlyArray<{ id: DetailSectionId; label: string }>;
-  activeSection: DetailSectionId;
-  onSelect: (id: DetailSectionId) => void;
-}) {
-  return (
-    <nav className="stock-detail-index" aria-label="상세 화면 목차">
-      <span>목차</span>
-      <div>
-        {sections.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            className={activeSection === section.id ? "active" : undefined}
-            aria-current={activeSection === section.id ? "true" : undefined}
-            onClick={() => onSelect(section.id)}
-          >
-            {section.label}
-          </button>
-        ))}
-      </div>
-    </nav>
   );
 }
 

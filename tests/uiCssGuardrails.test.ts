@@ -3,10 +3,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+const globalsCss = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+const marketConsoleCss = readFileSync(join(process.cwd(), "src/styles/market-console.css"), "utf8");
+const css = `${globalsCss}\n${marketConsoleCss}`;
 const designTokensCss = readFileSync(join(process.cwd(), "src/styles/design-tokens.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
+const stockLandingSource = readFileSync(join(process.cwd(), "src/components/landing/StockLanding.tsx"), "utf8");
+const compareSectionSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSection.tsx"), "utf8");
+const compareSideIndexSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSideIndex.tsx"), "utf8");
+const detailSectionIndexSource = readFileSync(join(process.cwd(), "src/components/stock-detail/DetailSectionIndex.tsx"), "utf8");
 const compareEditSheetSource = readFileSync(join(process.cwd(), "src/components/compare/CompareEditSheet.tsx"), "utf8");
 const compareSelectedTickerListSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSelectedTickerList.tsx"), "utf8");
 const autocompleteSource = readFileSync(join(process.cwd(), "src/components/SymbolAutocomplete.tsx"), "utf8");
@@ -73,6 +79,8 @@ test("desktop index layouts use centered grid containers", () => {
     /--detail-index-left|--detail-content-left|--compare-side-left|--compare-content-left|calc\(50vw - 600px\)/,
   );
   assert.match(css, /\.stock-detail-app\.has-detail-context\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
+  assert.match(dashboardSource, /<DetailSectionIndex sections=\{indexSections\}/);
+  assert.match(detailSectionIndexSource, /className="stock-detail-index"/);
   assert.doesNotMatch(css, /\.compare-app\s*\{[^}]*grid-template-columns:\s*184px minmax\(0, 1fr\);/);
   assert.match(css, /\.app-desktop-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*0;[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;/);
 });
@@ -99,11 +107,11 @@ test("primary CTA styles use shared tokens instead of black overrides", () => {
 });
 
 test("design system foundation tokens are role based and imported first", () => {
-  assert.equal(css.startsWith('@import "../styles/design-tokens.css";'), true);
-  assert.match(designTokensCss, /--color-app-bg:\s*#f5f7fa;/);
+  assert.equal(globalsCss.startsWith('@import "../styles/design-tokens.css";'), true);
+  assert.match(designTokensCss, /--color-app-bg:\s*#f6f8fb;/);
   assert.match(designTokensCss, /--color-surface:\s*#ffffff;/);
-  assert.match(designTokensCss, /--color-text-primary:\s*#191f28;/);
-  assert.match(designTokensCss, /--color-accent:\s*#2878f0;/);
+  assert.match(designTokensCss, /--color-text-primary:\s*#111827;/);
+  assert.match(designTokensCss, /--color-accent:\s*#2563eb;/);
   assert.match(designTokensCss, /--space-4:\s*16px;/);
   assert.match(designTokensCss, /--radius-pill:\s*999px;/);
   assert.match(designTokensCss, /--control-height-lg:\s*56px;/);
@@ -143,7 +151,8 @@ test("home screen has no old default ticker fallback and renders animated landin
   assert.doesNotMatch(dashboardSource, /searchParams\.get\("ticker"\)\s*\|\|\s*"US:KO"/);
   assert.doesNotMatch(dashboardSource, /tickerParam\s*\|\|\s*"US:KO"/);
   assert.match(dashboardSource, /dashboardTickerFromSearchParam\(searchParams\.get\("ticker"\)\)/);
-  assert.match(dashboardSource, /!tickerParam && <DashboardLandingHero \/>/);
+  assert.match(dashboardSource, /!tickerParam && <StockLanding \/>/);
+  assert.match(stockLandingSource, /aria-label="주식 점수 검색 시작"/);
   assert.match(css, /\.dashboard-landing-hero\s*\{/);
   assert.match(css, /@keyframes landing-orbit/);
   assert.match(css, /@keyframes landing-pulse/);
@@ -160,13 +169,13 @@ test("compare and technical routes do not invent a default stock selection", () 
   assert.match(technicalRouteSource, /if \(!rawTicker\) \{\s*redirect\("\/"\);/);
 });
 
-test("landing hero has four scrollable headline sections and a seamless stock loop", () => {
-  const storyMatches = dashboardSource.match(/className="landing-story-section/g) || [];
-  const proofMatches = dashboardSource.match(/className="landing-proof-list"/g) || [];
-  assert.equal(storyMatches.length, 4);
-  assert.equal(proofMatches.length, 4);
-  assert.match(dashboardSource, /<h2>종목만 입력하세요<\/h2>[\s\S]*<h2>종목 정보 확인<\/h2>[\s\S]*<h2>기술적 분석<\/h2>[\s\S]*<h2>종목별 비교<\/h2>/);
-  assert.match(dashboardSource, /한글 종목명·해외 티커[\s\S]*시총·섹터·재무[\s\S]*추세·변동성·신호[\s\S]*후보를 나란히 비교/);
+test("landing hero has scrollable product sections and a seamless stock loop", () => {
+  const storyMatches = stockLandingSource.match(/className="landing-story-section/g) || [];
+  const proofMatches = stockLandingSource.match(/className="landing-proof-list"/g) || [];
+  assert.equal(storyMatches.length, 5);
+  assert.equal(proofMatches.length, 5);
+  assert.match(stockLandingSource, /<h2>시장을 훑고, 후보만 남깁니다<\/h2>[\s\S]*<h2>큰 종목부터 빠르게 봅니다<\/h2>[\s\S]*<h2>상세 페이지는 판단 순서대로 읽힙니다<\/h2>[\s\S]*<h2>가격 흐름은 따로 분리합니다<\/h2>[\s\S]*<h2>마지막엔 후보를 나란히 둡니다<\/h2>/);
+  assert.match(stockLandingSource, /한글 종목명·해외 티커[\s\S]*순위·티커·시총·주가·등락폭[\s\S]*시총·섹터·재무[\s\S]*추세·변동성·신호[\s\S]*후보를 나란히 비교/);
   assert.match(css, /\.dashboard-landing\s*\{/);
   assert.match(css, /\.landing-story-section\s*\{/);
   assert.match(css, /\.landing-proof-list\s*\{/);
@@ -176,11 +185,12 @@ test("landing hero has four scrollable headline sections and a seamless stock lo
   assert.match(css, /@keyframes landing-info-orbit/);
   assert.match(css, /@keyframes landing-chart-sweep/);
   assert.match(css, /@keyframes landing-compare-glow/);
-  assert.match(dashboardSource, /기술적 분석/);
-  assert.match(dashboardSource, /종목별 비교/);
-  assert.match(dashboardSource, /<span>NVDA<\/span>[\s\S]*<span>애플<\/span>[\s\S]*<span>TSLA<\/span>[\s\S]*<span>엔비디아<\/span>/);
-  assert.match(dashboardSource, /<span>삼성전자<\/span>[\s\S]*<span>SK하이닉스<\/span>[\s\S]*<span>현대차<\/span>[\s\S]*<span>네이버<\/span>/);
-  assert.match(dashboardSource, /className="landing-loop-group"[\s\S]*className="landing-loop-group" aria-hidden="true"/);
+  assert.match(stockLandingSource, /기술적 분석/);
+  assert.match(stockLandingSource, /Compare Mode/);
+  assert.match(stockLandingSource, /Market Cap Board/);
+  assert.match(stockLandingSource, /<span>NVDA<\/span>[\s\S]*<span>애플<\/span>[\s\S]*<span>TSLA<\/span>[\s\S]*<span>엔비디아<\/span>/);
+  assert.match(stockLandingSource, /<span>삼성전자<\/span>[\s\S]*<span>SK하이닉스<\/span>[\s\S]*<span>현대차<\/span>[\s\S]*<span>네이버<\/span>/);
+  assert.match(stockLandingSource, /className="landing-loop-group"[\s\S]*className="landing-loop-group" aria-hidden="true"/);
   assert.match(css, /--landing-loop-distance:\s*50%;/);
   assert.match(css, /translateX\(calc\(-1 \* var\(--landing-loop-distance\)\)\)/);
   assert.match(css, /\.landing-loop-window\s*\{[\s\S]*?mask-image:\s*linear-gradient\(90deg, transparent 0, #000 22px, #000 calc\(100% - 22px\), transparent 100%\);/);
@@ -350,8 +360,9 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /ariaLabel: "비교 종목 편집"/);
   assert.doesNotMatch(compareSource, /tickers\.length <= 1/);
   assert.match(compareSelectedTickerListSource, /disabled=\{entry\.removeDisabled\}/);
-  assert.match(compareSource, /className="stock-detail-index compare-side-index"/);
-  assert.match(compareSource, /className="stock-search-form compare-add-form compare-index-search"/);
+  assert.match(compareSource, /<CompareSideIndex/);
+  assert.match(compareSideIndexSource, /className="stock-detail-index compare-side-index"/);
+  assert.match(compareSideIndexSource, /className="stock-search-form compare-add-form compare-index-search"/);
   assert.match(compareSource, /const \[isMobileSearchOpen, setIsMobileSearchOpen\] = useState\(false\);/);
   assert.match(compareSource, /<CompareEditSheet/);
   assert.doesNotMatch(compareSource, /compare-ticker-rail|className="compare-toolbar"|compare-add-button/);
@@ -375,12 +386,16 @@ test("compare mobile editor keeps selected tickers inside the sheet and uses sha
   assert.match(compareEditSheetSource, /returnFocusRef/);
   assert.match(mobileNavLauncherSource, /ref=\{mobileContextAction\.controlRef\}/);
   assert.doesNotMatch(compareSource, /function CompareSearchSheet/);
+  assert.doesNotMatch(compareSource, /function CompareSideIndex/);
   assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /\.compare-sheet-selection\s*\{[\s\S]*?border:\s*1px solid var\(--color-border\);/);
   assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?transition:[\s\S]*?transform var\(--motion-standard\)/);
 });
 
 test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
+  assert.match(compareSectionSource, /className=\{\["compare-section", className\]/);
+  assert.match(compareSource, /<CompareSection eyebrow="종목 카드"/);
+  assert.match(compareSource, /<CompareSection eyebrow="차이가 나는 숫자"/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*184px minmax\(0,\s*968px\);[\s\S]*?gap:\s*0 28px;[\s\S]*?width:\s*min\(1180px,\s*calc\(100% - 96px\)\);/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2 \/ span 2;[\s\S]*?display:\s*grid;[\s\S]*?overflow:\s*visible;/);
   assert.match(css, /\.compare-index-search\.compare-add-form:not\(\.symbol-autocomplete-floating\) \.symbol-search-box\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
@@ -530,9 +545,9 @@ test("mobile route headers keep first content flush and compact", () => {
 
 test("compare search explains the five ticker limit in place", () => {
   assert.match(compareSource, /const compareLimitReached = tickers\.length >= MAX_COMPARE;/);
-  assert.match(compareSource, /placeholder=\{compareLimitReached \? "최대 5개입니다" : "비교할 종목 검색"\}/);
-  assert.match(compareSource, /buttonLabel=\{compareLimitReached \? "완료" : "추가"\}/);
-  assert.match(compareSource, /disabled=\{compareLimitReached\}/);
+  assert.match(compareSideIndexSource, /placeholder=\{compareLimitReached \? "최대 5개입니다" : "비교할 종목 검색"\}/);
+  assert.match(compareSideIndexSource, /buttonLabel=\{compareLimitReached \? "완료" : "추가"\}/);
+  assert.match(compareSideIndexSource, /disabled=\{compareLimitReached\}/);
   assert.match(compareSource, /closeLabel=\{compareLimitReached \? "완료" : "닫기"\}/);
 });
 

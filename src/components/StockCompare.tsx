@@ -4,9 +4,10 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppNavigationMenu from "@/components/AppNavigationMenu";
-import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import CompareEditSheet from "@/components/compare/CompareEditSheet";
-import CompareSelectedTickerList, { type CompareSelectedTickerEntry } from "@/components/compare/CompareSelectedTickerList";
+import CompareSection from "@/components/compare/CompareSection";
+import CompareSideIndex from "@/components/compare/CompareSideIndex";
+import type { CompareSelectedTickerEntry } from "@/components/compare/CompareSelectedTickerList";
 import { ComparePendingOverviewSkeleton, SkeletonSectionTitle } from "@/components/StockLoadingSkeletons";
 import SkeletonBlock from "@/components/SkeletonBlock";
 import {
@@ -177,6 +178,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         onSelect={addSymbol}
         compareLimitReached={compareLimitReached}
         selectedCount={selectedCount}
+        maxCompare={MAX_COMPARE}
         selectedTickers={selectedTickerEntries}
         onRemoveTicker={removeTicker}
       />
@@ -241,50 +243,6 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   );
 }
 
-function CompareSideIndex({
-  value,
-  onValueChange,
-  onSelect,
-  compareLimitReached,
-  selectedCount,
-  selectedTickers,
-  onRemoveTicker,
-}: {
-  value: string;
-  onValueChange: (value: string) => void;
-  onSelect: (item: SymbolSearchItem) => void;
-  compareLimitReached: boolean;
-  selectedCount: number;
-  selectedTickers: CompareSelectedTickerEntry[];
-  onRemoveTicker: (ticker: string) => void;
-}) {
-  return (
-    <nav className="stock-detail-index compare-side-index" aria-label="비교 종목 편집">
-      <span>비교 종목</span>
-      <SymbolAutocomplete
-        id="compare-side-ticker"
-        value={value}
-        onValueChange={onValueChange}
-        onSelect={onSelect}
-        placeholder={compareLimitReached ? "최대 5개입니다" : "비교할 종목 검색"}
-        buttonLabel={compareLimitReached ? "완료" : "추가"}
-        label="비교할 국내·미국 주식 검색"
-        disabled={compareLimitReached}
-        className="stock-search-form compare-add-form compare-index-search"
-      />
-      <div className="compare-side-selection">
-        <strong>{selectedCount}/{MAX_COMPARE}</strong>
-        <CompareSelectedTickerList
-          entries={selectedTickers}
-          onRemove={onRemoveTicker}
-          emptyLabel="비교할 종목을 추가해주세요"
-          className="compare-index-picks"
-        />
-      </div>
-    </nav>
-  );
-}
-
 function CompareEmptyState({ onSelect }: { onSelect: (ticker: string) => void }) {
   return (
     <section className="compare-empty-state">
@@ -304,9 +262,7 @@ function CompareEmptyState({ onSelect }: { onSelect: (ticker: string) => void })
 function CompareCards({ states, items, showEmptyCard }: { states: CompareLoadState[]; items: CompareItem[]; showEmptyCard: boolean }) {
   const itemByTicker = new Map(items.map((item) => [item.ticker, item]));
   return (
-    <section className="compare-section">
-      <span>종목 카드</span>
-      <h2>각 종목의 현재 인상이에요</h2>
+    <CompareSection eyebrow="종목 카드" title="각 종목의 현재 인상이에요">
       <div className="compare-card-grid">
         {states.map((state) => {
           const item = itemByTicker.get(displayTickerRef(state.ticker));
@@ -317,7 +273,7 @@ function CompareCards({ states, items, showEmptyCard }: { states: CompareLoadSta
         })}
         {showEmptyCard && items.length < 2 ? <EmptyCompareCard /> : null}
       </div>
-    </section>
+    </CompareSection>
   );
 }
 
@@ -456,11 +412,13 @@ function CompareChartPendingSkeleton() {
 
 function CompareChartUnavailable() {
   return (
-    <section className="compare-section compare-chart-section" role="status">
-      <span>가격 흐름</span>
-      <h2>비교할 가격 기록이 아직 부족해요</h2>
-      <p>현재가처럼 확인된 정보는 먼저 보여드리고, 같은 날짜의 가격 기록이 더 확인되면 차트로 비교해드릴게요.</p>
-    </section>
+    <CompareSection
+      eyebrow="가격 흐름"
+      title="비교할 가격 기록이 아직 부족해요"
+      description="현재가처럼 확인된 정보는 먼저 보여드리고, 같은 날짜의 가격 기록이 더 확인되면 차트로 비교해드릴게요."
+      className="compare-chart-section"
+      role="status"
+    />
   );
 }
 
@@ -475,11 +433,9 @@ function CompareChart({ items }: { items: CompareChartItem[] }) {
 
   if (!series.length) {
     return (
-      <section className="compare-section">
-        <span>가격 흐름</span>
-        <h2>비교할 가격 차트가 아직 없어요</h2>
+      <CompareSection eyebrow="가격 흐름" title="비교할 가격 차트가 아직 없어요">
         <p className="compare-empty-note" role="status">선택한 종목의 가격 기록이 충분히 모이면 1년 기준 흐름을 보여드릴게요.</p>
-      </section>
+      </CompareSection>
     );
   }
 
@@ -503,9 +459,10 @@ function CompareChart({ items }: { items: CompareChartItem[] }) {
   const summaryId = "compare-chart-summary";
 
   return (
-    <section className="compare-section">
-      <span>가격 흐름</span>
-      <h2>{series.some((entry) => entry.points.length >= 2) ? "1년 전을 100으로 맞춰봤어요" : "확인된 가격을 100으로 맞춰봤어요"}</h2>
+    <CompareSection
+      eyebrow="가격 흐름"
+      title={series.some((entry) => entry.points.length >= 2) ? "1년 전을 100으로 맞춰봤어요" : "확인된 가격을 100으로 맞춰봤어요"}
+    >
       <p id={summaryId} className="sr-only">비교 가격 흐름 요약: {chartSummary}</p>
       <div className="compare-chart">
         <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="비교 가격 흐름" aria-describedby={summaryId}>
@@ -541,7 +498,7 @@ function CompareChart({ items }: { items: CompareChartItem[] }) {
           );
         })}
       </div>
-    </section>
+    </CompareSection>
   );
 }
 
@@ -632,9 +589,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
     [items]
   );
   return (
-    <section className="compare-section">
-      <span>차이가 나는 숫자</span>
-      <h2>판단 기준별로 나눠서 볼게요</h2>
+    <CompareSection eyebrow="차이가 나는 숫자" title="판단 기준별로 나눠서 볼게요">
       <div className="sr-only">
         <table>
           <caption>종목별 주요 비교 지표</caption>
@@ -710,7 +665,7 @@ function CompareMatrix({ items }: { items: CompareItem[] }) {
           );
         })}
       </div>
-    </section>
+    </CompareSection>
   );
 }
 
@@ -767,9 +722,7 @@ function ComponentMatrix({
     [items, matrixRows, scoreFor]
   );
   return (
-    <section className="compare-section">
-      <span>{eyebrow}</span>
-      <h2>{title}</h2>
+    <CompareSection eyebrow={eyebrow} title={title}>
       <div className="sr-only">
         <table>
           <caption>종목별 항목 점수</caption>
@@ -819,7 +772,7 @@ function ComponentMatrix({
           </article>
         ))}
       </div>
-    </section>
+    </CompareSection>
   );
 }
 
