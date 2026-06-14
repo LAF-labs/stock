@@ -24,12 +24,13 @@ test("landing product showcase covers real investor workflows", () => {
     assert.match(showcaseSource, new RegExp(`function ${component}`));
   }
 
-  for (const phrase of ["종목명이나 티커 검색", "NVIDIA", "$142.80", "삼성전자", "품질 86", "20일 캔들", "후보 비교", "뉴스"]) {
+  for (const phrase of ["NVIDIA", "$142.80", "삼성전자", "품질 86", "20일 캔들", "20일선", "후보 비교", "뉴스"]) {
     assert.ok(showcaseSource.includes(phrase), `expected landing showcase source to include ${phrase}`);
   }
-  for (const phrase of ["Apple", "Microsoft", "TSMC", "NVDA 브리프", "nextScore", "--move"]) {
+  for (const phrase of ["Apple", "Microsoft", "TSMC", "NVDA 브리프", "nextScore", "--move", "시가총액", "먼저 볼 것", "CompareCandidateState"]) {
     assert.ok(showcaseSource.includes(phrase), `expected landing showcase source to include ${phrase}`);
   }
+  assert.doesNotMatch(showcaseSource, /landing-ui-toolbar|종목명이나 티커 검색/);
   assert.doesNotMatch(showcaseSource, /<strong>005930<\/strong>/);
 });
 

@@ -2038,3 +2038,377 @@ body {
     width: min(100%, 620px);
   }
 }
+
+/* Living landing previews */
+.landing-story-section,
+.dashboard-landing-hero,
+.landing-story-info,
+.landing-story-technical,
+.landing-story-compare {
+  border-top: 0;
+  background: transparent;
+}
+
+.landing-ui-canvas {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  animation: landing-canvas-breathe 7.6s ease-in-out infinite;
+}
+
+.landing-ui-canvas-search {
+  grid-template-areas:
+    "focus metrics"
+    "focus list";
+}
+
+.landing-ui-focus-card,
+.landing-ui-chip,
+.landing-ui-candidate,
+.landing-ui-market-row,
+.landing-ui-proof-panel,
+.landing-ui-news-strip,
+.landing-ui-compare-card {
+  box-shadow:
+    0 18px 42px rgba(49, 130, 246, 0.1),
+    0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.landing-ui-focus-card {
+  animation: landing-live-card 6.4s ease-in-out infinite;
+}
+
+.landing-product-showcase-search .landing-ui-candidate:nth-child(1) {
+  animation: landing-row-soft-focus 6.2s ease-in-out infinite;
+}
+
+.landing-product-showcase-search .landing-ui-candidate:nth-child(2) {
+  animation: landing-row-soft-focus 6.2s ease-in-out 1.5s infinite;
+}
+
+.landing-product-showcase-search .landing-ui-candidate:nth-child(3) {
+  animation: landing-row-soft-focus 6.2s ease-in-out 3s infinite;
+}
+
+.landing-ui-score-dial {
+  animation: landing-score-float 5.8s ease-in-out infinite;
+}
+
+.landing-ui-score-dial:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.landing-ui-score-dial strong {
+  font-size: 27px;
+}
+
+.landing-ui-score-dial strong::after {
+  color: #111827;
+}
+
+.landing-ui-candle-stage {
+  overflow: visible;
+  border: 0;
+  background:
+    linear-gradient(rgba(49, 130, 246, 0.055) 1px, transparent 1px) 0 0 / 100% 38px,
+    linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(246, 250, 255, 0.9));
+  box-shadow:
+    0 22px 48px rgba(49, 130, 246, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.landing-ui-ma-line {
+  position: absolute;
+  inset: 14px 16px 18px;
+  width: calc(100% - 32px);
+  height: calc(100% - 32px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.landing-ui-ma-line polyline {
+  fill: none;
+  stroke: rgba(15, 159, 110, 0.72);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 180;
+  animation: landing-ma-draw 4.8s ease-in-out infinite;
+}
+
+.landing-ui-ma-badge {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 5px 8px;
+  color: #0f9f6e;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 999px;
+  background: rgba(233, 248, 243, 0.92);
+}
+
+.landing-ui-candle {
+  left: var(--x);
+  width: 14px;
+  animation: landing-candle-uptrend 4.8s ease-in-out var(--delay, 0ms) infinite;
+}
+
+.landing-ui-canvas-chart .landing-ui-price-line {
+  bottom: 24px;
+  background: rgba(216, 228, 242, 0.9);
+  transform: rotate(-9deg);
+  transform-origin: left center;
+}
+
+.landing-ui-compare-board {
+  display: grid;
+  gap: 12px;
+}
+
+.landing-ui-compare-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  overflow: visible;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  animation: landing-compare-card-cycle 8s ease-in-out infinite;
+}
+
+.landing-ui-compare-card:nth-child(2) {
+  animation-delay: 1.2s;
+}
+
+.landing-ui-compare-state {
+  grid-area: 1 / 1;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.landing-ui-compare-state-current {
+  animation: landing-compare-state-current 8s ease-in-out infinite;
+}
+
+.landing-ui-compare-state-next {
+  animation: landing-compare-state-next 8s ease-in-out infinite;
+}
+
+.landing-ui-compare-card-top,
+.landing-ui-compare-scoreline,
+.landing-ui-compare-facts {
+  display: grid;
+  gap: 8px;
+}
+
+.landing-ui-compare-card-top {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.landing-ui-compare-card-top strong {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 800;
+  animation: none;
+}
+
+.landing-ui-compare-card-top b {
+  color: #e53e3e;
+  font-size: 12px;
+}
+
+.landing-ui-compare-card-top b.negative {
+  color: #2563eb;
+}
+
+.landing-ui-compare-scoreline {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.landing-ui-compare-scoreline em {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  color: #111827;
+  font-style: normal;
+  font-size: 18px;
+  font-weight: 800;
+  border-radius: 14px;
+  background: #f7fbff;
+}
+
+.landing-ui-compare-scoreline small,
+.landing-ui-compare-facts small {
+  color: #6b7b90;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.landing-ui-compare-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landing-ui-compare-facts small {
+  padding: 8px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+@keyframes landing-canvas-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes landing-live-card {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-7px) scale(1.015);
+  }
+}
+
+@keyframes landing-score-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes landing-ma-draw {
+  0%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.72;
+  }
+
+  50% {
+    stroke-dashoffset: -36;
+    opacity: 1;
+  }
+}
+
+@keyframes landing-candle-uptrend {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1);
+    opacity: 0.96;
+  }
+
+  50% {
+    transform: translateY(var(--move, -5px)) scaleY(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes landing-compare-card-cycle {
+  0%,
+  38%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  54%,
+  68% {
+    transform: translateY(-10px);
+    opacity: 0.9;
+  }
+}
+
+@keyframes landing-compare-state-current {
+  0%,
+  38%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  54%,
+  68% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes landing-compare-state-next {
+  0%,
+  38%,
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  54%,
+  68% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-landing {
+    gap: 50px;
+    padding-block: 20px 56px;
+  }
+
+  .landing-story-section {
+    gap: 50px;
+    padding: 0 16px;
+    border-top: 0;
+    background: transparent;
+  }
+
+  .landing-visual,
+  .landing-product-showcase,
+  .landing-ui-canvas {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .landing-visual {
+    min-height: 310px;
+  }
+
+  .landing-product-showcase {
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .landing-ui-canvas {
+    width: min(100%, 360px);
+    min-height: 276px;
+    padding: 0;
+  }
+
+  .landing-ui-canvas-search {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "focus"
+      "metrics"
+      "list";
+  }
+
+  .landing-ui-compare-facts {
+    grid-template-columns: 1fr;
+  }
+}

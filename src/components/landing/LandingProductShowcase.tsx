@@ -31,10 +31,6 @@ export function LandingProductShowcase({ variant }: LandingProductShowcaseProps)
 function SearchWorkbench() {
   return (
     <div className="landing-ui-canvas landing-ui-canvas-search">
-      <div className="landing-ui-toolbar">
-        <span>종목명이나 티커 검색</span>
-        <strong>검색</strong>
-      </div>
       <div className="landing-ui-focus-card">
         <div>
           <span>NVIDIA</span>
@@ -90,8 +86,8 @@ function BriefWorkbench() {
         <em>업데이트됨</em>
       </div>
       <div className="landing-ui-dual-score">
-        <ScoreDial label="품질" score="86" nextScore="88" tone="good" />
-        <ScoreDial label="기회" score="64" nextScore="69" tone="watch" />
+        <ScoreDial label="품질" score="86.2" nextScore="87.4" tone="good" />
+        <ScoreDial label="기회" score="64.8" nextScore="66.1" tone="watch" />
       </div>
       <div className="landing-ui-proof-panel">
         <span>실적 모멘텀</span>
@@ -107,12 +103,13 @@ function BriefWorkbench() {
 
 function ChartWorkbench() {
   const candles = [
-    { tone: "fall", height: "45%", top: "36%", delay: "0ms", move: "-4px" },
-    { tone: "rise", height: "34%", top: "42%", delay: "180ms", move: "5px" },
-    { tone: "fall", height: "52%", top: "28%", delay: "360ms", move: "-6px" },
-    { tone: "rise", height: "62%", top: "20%", delay: "540ms", move: "4px" },
-    { tone: "rise", height: "72%", top: "12%", delay: "720ms", move: "-5px" },
-    { tone: "fall", height: "42%", top: "34%", delay: "900ms", move: "6px" },
+    { tone: "fall", height: "32%", top: "56%", delay: "0ms", move: "4px" },
+    { tone: "rise", height: "38%", top: "49%", delay: "160ms", move: "-4px" },
+    { tone: "rise", height: "44%", top: "42%", delay: "320ms", move: "-6px" },
+    { tone: "fall", height: "36%", top: "39%", delay: "480ms", move: "3px" },
+    { tone: "rise", height: "58%", top: "26%", delay: "640ms", move: "-7px" },
+    { tone: "rise", height: "70%", top: "15%", delay: "800ms", move: "-5px" },
+    { tone: "rise", height: "62%", top: "10%", delay: "960ms", move: "-6px" },
   ];
 
   return (
@@ -123,11 +120,15 @@ function ChartWorkbench() {
       </div>
       <div className="landing-ui-candle-stage">
         <div className="landing-ui-price-line" />
+        <svg aria-hidden="true" className="landing-ui-ma-line" preserveAspectRatio="none" viewBox="0 0 100 100">
+          <polyline points="4,72 18,68 32,60 47,54 62,43 78,31 96,22" />
+        </svg>
+        <span className="landing-ui-ma-badge">20일선</span>
         {candles.map((candle, index) => (
           <span
             className={`landing-ui-candle ${candle.tone}`}
             key={`${candle.tone}-${index}`}
-            style={{ "--height": candle.height, "--top": candle.top, "--delay": candle.delay, "--move": candle.move } as CSSProperties}
+            style={{ "--height": candle.height, "--top": candle.top, "--delay": candle.delay, "--move": candle.move, "--x": `${10 + index * 12}%` } as CSSProperties}
           />
         ))}
       </div>
@@ -145,12 +146,17 @@ function CompareWorkbench() {
     <div className="landing-ui-canvas landing-ui-canvas-compare">
       <div className="landing-ui-compare-head">
         <span>후보 비교</span>
-        <strong>같은 기준으로 보기</strong>
+        <strong>품질·기회·가격 흐름</strong>
       </div>
-      <div className="landing-ui-compare-table">
-        <CompareRow name="NVIDIA" quality="86" chance="64" price="+2.1%" />
-        <CompareRow name="TSMC" quality="84" chance="70" price="+1.2%" />
-        <CompareRow name="삼성전자" quality="78" chance="71" price="+1.8%" />
+      <div className="landing-ui-compare-board">
+        <CompareCandidate
+          current={{ name: "NVIDIA", quality: "86.2", chance: "64.8", price: "+2.1%", cap: "$3.4T", strength: "마진", watch: "가격 부담" }}
+          next={{ name: "TSMC", quality: "84.0", chance: "70.2", price: "+1.2%", cap: "$950B", strength: "수익성", watch: "환율 영향" }}
+        />
+        <CompareCandidate
+          current={{ name: "삼성전자", quality: "78.1", chance: "71.0", price: "+1.8%", cap: "508조", strength: "현금흐름", watch: "성장 속도" }}
+          next={{ name: "현대차", quality: "73.6", chance: "68.4", price: "-0.6%", cap: "52조", strength: "밸류", watch: "수요 둔화" }}
+        />
       </div>
     </div>
   );
@@ -220,13 +226,41 @@ function ScoreDial({ label, score, nextScore, tone }: { label: string; score: st
   );
 }
 
-function CompareRow({ name, quality, chance, price }: { name: string; quality: string; chance: string; price: string }) {
+type CompareCandidateData = {
+  name: string;
+  quality: string;
+  chance: string;
+  price: string;
+  cap: string;
+  strength: string;
+  watch: string;
+};
+
+function CompareCandidate({ current, next }: { current: CompareCandidateData; next: CompareCandidateData }) {
   return (
-    <span className="landing-ui-compare-row">
-      <strong>{name}</strong>
-      <em>{quality}</em>
-      <em>{chance}</em>
-      <b>{price}</b>
+    <span className="landing-ui-compare-card">
+      <CompareCandidateState className="landing-ui-compare-state-current" data={current} />
+      <CompareCandidateState className="landing-ui-compare-state-next" data={next} />
+    </span>
+  );
+}
+
+function CompareCandidateState({ className, data }: { className: string; data: CompareCandidateData }) {
+  return (
+    <span className={`landing-ui-compare-state ${className}`}>
+      <span className="landing-ui-compare-card-top">
+        <strong>{data.name}</strong>
+        <b className={data.price.startsWith("-") ? "negative" : undefined}>{data.price}</b>
+      </span>
+      <span className="landing-ui-compare-scoreline">
+        <em><small>품질</small>{data.quality}</em>
+        <em><small>기회</small>{data.chance}</em>
+      </span>
+      <span className="landing-ui-compare-facts">
+        <small>시가총액 {data.cap}</small>
+        <small>강점 {data.strength}</small>
+        <small>먼저 볼 것 {data.watch}</small>
+      </span>
     </span>
   );
 }
