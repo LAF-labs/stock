@@ -21,6 +21,7 @@ const marketCapHelperSource = readFileSync(join(process.cwd(), "src/components/m
 const appNavigationSource = readFileSync(join(process.cwd(), "src/components/AppNavigationMenu.tsx"), "utf8");
 const appNavigationLinksSource = readFileSync(join(process.cwd(), "src/components/AppNavigationLinks.tsx"), "utf8");
 const appShellNavSource = readFileSync(join(process.cwd(), "src/components/layout/AppShellNav.tsx"), "utf8");
+const appGlobalSearchSource = readFileSync(join(process.cwd(), "src/components/layout/AppGlobalSearch.tsx"), "utf8");
 const mobileNavLauncherSource = readFileSync(join(process.cwd(), "src/components/layout/MobileNavLauncher.tsx"), "utf8");
 const searchChromeSource = readFileSync(join(process.cwd(), "src/components/SearchChromeWithNavigation.tsx"), "utf8");
 const searchChromeFrameSource = readFileSync(join(process.cwd(), "src/components/layout/SearchChrome.tsx"), "utf8");
@@ -73,7 +74,7 @@ test("desktop index layouts use centered grid containers", () => {
   );
   assert.match(css, /\.stock-detail-app\.has-detail-context\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
   assert.doesNotMatch(css, /\.compare-app\s*\{[^}]*grid-template-columns:\s*184px minmax\(0, 1fr\);/);
-  assert.match(css, /\.app-desktop-nav\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*12px;/);
+  assert.match(css, /\.app-desktop-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*0;[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;/);
 });
 
 test("font weights stay on supported tiers", () => {
@@ -271,6 +272,11 @@ test("shared navigation exposes global GNB and mobile bottom bar without replaci
   assert.match(appNavigationSource, /AppShellNav/);
   assert.match(appNavigationSource, /MobileNavLauncher/);
   assert.match(appShellNavSource, /AppNavigationLinks/);
+  assert.match(appShellNavSource, /AppGlobalSearch/);
+  assert.match(appGlobalSearchSource, /router\.push\(`\/\?ticker=\$\{encodeURIComponent\(symbolRef\(item\)\)\}`\)/);
+  assert.match(css, /\.app-desktop-nav-inner\s*\{[\s\S]*?justify-content:\s*flex-start;/);
+  assert.match(css, /\.app-global-search\s*\{[\s\S]*?margin-left:\s*auto;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.stock-detail-app \.stock-search > \.stock-search-form\s*\{[\s\S]*?display:\s*none;/);
   assert.doesNotMatch(appNavigationSource, /import \{ Menu \} from "lucide-react"/);
   assert.doesNotMatch(appNavigationSource, /app-navigation-trigger/);
   assert.match(appNavigationLinksSource, /type AppNavigationLinksVariant = "global" \| "bottom" \| "index"/);
@@ -342,12 +348,13 @@ test("compare page keeps selected tickers editable and removes dense duplicate c
   assert.match(compareSource, /context=\{\{ page: "compare"/);
   assert.match(compareSource, /compactSelectionLabel === "비교 종목" \? "종목 편집" : compactSelectionLabel/);
   assert.match(compareSource, /ariaLabel: "비교 종목 편집"/);
-  assert.match(compareSource, /tickers\.length <= 1/);
+  assert.doesNotMatch(compareSource, /tickers\.length <= 1/);
   assert.match(compareSelectedTickerListSource, /disabled=\{entry\.removeDisabled\}/);
-  assert.match(compareSource, /className="stock-search-form compare-add-form"/);
+  assert.match(compareSource, /className="stock-detail-index compare-side-index"/);
+  assert.match(compareSource, /className="stock-search-form compare-add-form compare-index-search"/);
   assert.match(compareSource, /const \[isMobileSearchOpen, setIsMobileSearchOpen\] = useState\(false\);/);
   assert.match(compareSource, /<CompareEditSheet/);
-  assert.match(compareSource, /compare-add-button/);
+  assert.doesNotMatch(compareSource, /compare-ticker-rail|className="compare-toolbar"|compare-add-button/);
   assert.doesNotMatch(compareSource, /isSearchCollapsed|setCompareSearchCollapsed|lastScrollYRef|isSearchCollapsedRef|variant="floating"|isCollapsed=\{/);
   assert.doesNotMatch(compareSource, /선택됨|먼저 볼 차이|높을수록 유리해요|CompareBrief|compareItemSummary/);
   assert.doesNotMatch(css, /compare-insight|compare-metric-values|compare-stock-card > p|compare-picks b\s*\{|compare-picks span\.base|--compare-count/);
@@ -368,20 +375,20 @@ test("compare mobile editor keeps selected tickers inside the sheet and uses sha
   assert.match(compareEditSheetSource, /returnFocusRef/);
   assert.match(mobileNavLauncherSource, /ref=\{mobileContextAction\.controlRef\}/);
   assert.doesNotMatch(compareSource, /function CompareSearchSheet/);
-  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-ticker-rail\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /\.compare-sheet-selection\s*\{[\s\S]*?border:\s*1px solid var\(--color-border\);/);
   assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?transition:[\s\S]*?transform var\(--motion-standard\)/);
 });
 
 test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*184px minmax\(0,\s*968px\);[\s\S]*?gap:\s*0 28px;[\s\S]*?width:\s*min\(1180px,\s*calc\(100% - 96px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2 \/ span 2;[\s\S]*?display:\s*grid;[\s\S]*?overflow:\s*visible;/);
+  assert.match(css, /\.compare-index-search\.compare-add-form:not\(\.symbol-autocomplete-floating\) \.symbol-search-box\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.app-navigation-chrome,[\s\S]*?\.compare-app \.compare-feed,[\s\S]*?\.compare-app \.compare-empty-state\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?min-width:\s*0;/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.app-navigation-chrome\s*\{[\s\S]*?padding-top:\s*24px;/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-landing,[\s\S]*?\.compare-app \.compare-picks,[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?position:\s*static;[\s\S]*?border-bottom:\s*1px solid rgba\(49,\s*130,\s*246,\s*0\.12\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-landing\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?padding:/);
+  assert.doesNotMatch(compareSource, /className="compare-toolbar"|compare-ticker-rail/);
   assert.doesNotMatch(css, /width:\s*min\(1040px,\s*calc\(100% - 48px\)\);/);
   assert.doesNotMatch(css, /width:\s*min\(1400px,\s*calc\(100% - 64px\)\);/);
-  assert.doesNotMatch(compareSource, /compare-side-index/);
 });
 
 test("compare cards give quality and opportunity matching mobile-safe score hierarchy", () => {

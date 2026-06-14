@@ -41,12 +41,12 @@ test("compare helpers normalize and cap ticker lists", () => {
   assert.equal(parseTickers("KO,TSLA,NVDA,AAPL,MSFT,GOOGL").length, MAX_COMPARE);
 });
 
-test("compare helpers remove any selected ticker but keep one ticker", () => {
+test("compare helpers remove any selected ticker including the last one", () => {
   const tickers = ["US:KO", "US:PEP", "US:MNST"];
 
   assert.deepEqual(removeCompareTicker(tickers, "US:KO"), ["US:PEP", "US:MNST"]);
   assert.deepEqual(removeCompareTicker(tickers, "US:PEP"), ["US:KO", "US:MNST"]);
-  assert.deepEqual(removeCompareTicker(["US:KO"], "US:KO"), ["US:KO"]);
+  assert.deepEqual(removeCompareTicker(["US:KO"], "US:KO"), []);
 });
 
 test("compare helpers build stable compare item fields", () => {

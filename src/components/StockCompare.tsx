@@ -102,7 +102,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     return {
       ticker,
       label: loaded ? compareItemTitle(loaded) : partialIdentity?.primary || displayTickerRef(ticker),
-      removeDisabled: tickers.length <= 1,
+      removeDisabled: false,
     };
   }), [items, partialStates, tickers]);
   const compactSelectionLabel = compareCollapsedTickerLabel(selectedTickerEntries);
@@ -153,7 +153,6 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   }
 
   function removeTicker(ticker: string) {
-    if (tickers.length <= 1) return;
     const next = removeCompareTicker(tickers, ticker);
     if (next.length !== tickers.length) pushTickers(router, next, originTicker);
   }
@@ -172,6 +171,16 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         }}
       />
 
+      <CompareSideIndex
+        value={input}
+        onValueChange={setInput}
+        onSelect={addSymbol}
+        compareLimitReached={compareLimitReached}
+        selectedCount={selectedCount}
+        selectedTickers={selectedTickerEntries}
+        onRemoveTicker={removeTicker}
+      />
+
       <section className="compare-landing">
         <section className="compare-hero">
           <div>
@@ -187,36 +196,6 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
           </div>
           <div className="compare-count">{selectedCount}/{MAX_COMPARE}</div>
         </section>
-      </section>
-
-      <section className="compare-picks compare-ticker-rail" aria-label="선택된 종목">
-        <CompareSelectedTickerList
-          entries={selectedTickerEntries}
-          onRemove={removeTicker}
-          emptyLabel="비교할 종목을 추가해주세요"
-        />
-        <button
-          type="button"
-          className="compare-add-button"
-          onClick={() => setIsMobileSearchOpen(true)}
-          disabled={compareLimitReached}
-        >
-          {compareLimitReached ? "최대 5개" : "+ 종목 추가"}
-        </button>
-      </section>
-
-      <section className="compare-toolbar">
-        <SymbolAutocomplete
-          id="compare-ticker"
-          value={input}
-          onValueChange={setInput}
-          onSelect={addSymbol}
-          placeholder={compareLimitReached ? "최대 5개입니다" : "비교할 종목 검색"}
-          buttonLabel={compareLimitReached ? "완료" : "추가"}
-          label="비교할 국내·미국 주식 검색"
-          disabled={compareLimitReached}
-          className="stock-search-form compare-add-form"
-        />
       </section>
 
       <CompareEditSheet
@@ -259,6 +238,50 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         </div>
       ) : null}
     </main>
+  );
+}
+
+function CompareSideIndex({
+  value,
+  onValueChange,
+  onSelect,
+  compareLimitReached,
+  selectedCount,
+  selectedTickers,
+  onRemoveTicker,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  onSelect: (item: SymbolSearchItem) => void;
+  compareLimitReached: boolean;
+  selectedCount: number;
+  selectedTickers: CompareSelectedTickerEntry[];
+  onRemoveTicker: (ticker: string) => void;
+}) {
+  return (
+    <nav className="stock-detail-index compare-side-index" aria-label="비교 종목 편집">
+      <span>비교 종목</span>
+      <SymbolAutocomplete
+        id="compare-side-ticker"
+        value={value}
+        onValueChange={onValueChange}
+        onSelect={onSelect}
+        placeholder={compareLimitReached ? "최대 5개입니다" : "비교할 종목 검색"}
+        buttonLabel={compareLimitReached ? "완료" : "추가"}
+        label="비교할 국내·미국 주식 검색"
+        disabled={compareLimitReached}
+        className="stock-search-form compare-add-form compare-index-search"
+      />
+      <div className="compare-side-selection">
+        <strong>{selectedCount}/{MAX_COMPARE}</strong>
+        <CompareSelectedTickerList
+          entries={selectedTickers}
+          onRemove={onRemoveTicker}
+          emptyLabel="비교할 종목을 추가해주세요"
+          className="compare-index-picks"
+        />
+      </div>
+    </nav>
   );
 }
 

@@ -117,9 +117,7 @@ export function parseTickers(raw: string | null): string[] {
 }
 
 export function removeCompareTicker(tickers: string[], ticker: string): string[] {
-  if (tickers.length <= 1) return tickers;
-  const next = tickers.filter((item) => item !== ticker);
-  return next.length ? next : tickers;
+  return tickers.filter((item) => item !== ticker);
 }
 
 export function numberFromRecord(record: Record<string, JsonValue> | undefined, key: string): number | undefined {

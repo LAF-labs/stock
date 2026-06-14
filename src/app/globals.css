@@ -467,6 +467,10 @@ a:focus-visible {
   display: none;
 }
 
+.compare-side-index {
+  display: none;
+}
+
 .stock-mobile-action {
   display: none;
 }
@@ -3487,6 +3491,7 @@ body.compare-search-open {
   .stock-detail-app {
     width: min(860px, calc(100% - 48px));
     margin-inline: auto;
+    padding-top: 80px;
     padding-bottom: 72px;
     background: transparent;
     border-inline: 0;
@@ -3504,11 +3509,12 @@ body.compare-search-open {
     position: sticky;
     grid-column: 1;
     grid-row: 2;
-    top: 116px;
+    top: 80px;
     z-index: 4;
     display: block;
     width: 100%;
-    max-height: calc(100vh - 140px);
+    height: auto;
+    max-height: calc(100vh - 96px);
     padding: 14px;
     overflow: auto;
     border: 1px solid var(--line);
@@ -3567,15 +3573,11 @@ body.compare-search-open {
   }
 
   .stock-detail-app .stock-search {
-    grid-column: 2;
-    grid-row: 1;
-    top: 16px;
-    min-height: 78px;
-    margin-top: 8px;
-    padding: 8px 0 12px;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
+    display: contents;
+  }
+
+  .stock-detail-app .stock-search > .stock-search-form {
+    display: none;
   }
 
   .technical-analysis-app .technical-topbar {
@@ -3762,6 +3764,7 @@ body.compare-search-open {
     align-items: start;
     width: min(1180px, calc(100% - 96px));
     margin-inline: auto;
+    padding-top: 80px;
     padding-bottom: 72px;
     background: transparent;
     border-inline: 0;
@@ -3779,7 +3782,117 @@ body.compare-search-open {
   }
 
   .compare-app .app-navigation-chrome {
-    padding-top: 24px;
+    padding-top: 0;
+  }
+
+  .compare-side-index {
+    grid-column: 1;
+    grid-row: 2 / span 2;
+    display: grid;
+    gap: 14px;
+    align-content: start;
+    height: auto;
+    overflow: visible;
+    z-index: 40;
+  }
+
+  .compare-side-index > span {
+    margin-bottom: 0;
+  }
+
+  .compare-index-search.compare-add-form:not(.symbol-autocomplete-floating) .symbol-search-box {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .compare-index-search.compare-add-form:not(.symbol-autocomplete-floating) input {
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fafc;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .compare-index-search.compare-add-form:not(.symbol-autocomplete-floating) > .symbol-search-box > button {
+    width: 100%;
+    min-height: 36px;
+    margin-top: 8px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .compare-index-search .symbol-suggestions {
+    top: 0;
+    right: auto;
+    left: calc(100% + 10px);
+    width: min(340px, calc(100vw - 260px));
+    max-height: calc(100vh - 116px);
+  }
+
+  .compare-side-selection {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .compare-side-selection > strong {
+    justify-self: start;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--surface-accent);
+    color: var(--accent-strong);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .compare-index-picks {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    overflow: visible;
+    background: transparent;
+  }
+
+  .compare-index-picks span {
+    max-width: none;
+    width: 100%;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 5px 0 10px;
+    border: 1px solid rgba(49, 130, 246, 0.1);
+    border-radius: 8px;
+    background: #f8fafc;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .compare-index-picks span.is-empty {
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .compare-index-picks button {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #e5e8eb;
+    color: var(--subtext);
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .compare-index-picks button:hover:not(:disabled) {
+    background: var(--surface-accent);
+    color: var(--accent-strong);
   }
 
   .compare-landing,
@@ -5666,6 +5779,7 @@ body {
     gap: 0 28px;
     align-items: start;
     width: min(1180px, calc(100% - 96px));
+    padding-top: 80px;
   }
 
   .compare-app .app-navigation-chrome,
@@ -5680,7 +5794,7 @@ body {
   }
 
   .compare-app .app-navigation-chrome {
-    padding-top: 24px;
+    padding-top: 0;
   }
 
   .compare-app .compare-landing,
@@ -5853,28 +5967,42 @@ body {
 }
 
 .app-desktop-nav {
-  position: sticky;
-  top: 12px;
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
   z-index: 80;
   display: none;
   width: 100%;
-  height: 44px;
-  margin: 0 0 10px;
+  height: 64px;
+  margin: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(18px);
   pointer-events: auto;
 }
 
 .app-desktop-nav-inner {
+  width: min(1180px, calc(100% - 48px));
   height: 100%;
+  margin-inline: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 14px;
-  padding: 4px 6px 4px 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(18px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-desktop-nav-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
 .app-desktop-nav-brand {
@@ -5909,6 +6037,36 @@ body {
 .app-desktop-nav-links a.active {
   background: var(--surface-accent);
   color: var(--accent-strong);
+}
+
+.app-global-search {
+  width: min(390px, 34vw);
+  margin-left: auto;
+}
+
+.app-global-search .symbol-search-box {
+  grid-template-columns: minmax(0, 1fr) 58px;
+  gap: 8px;
+}
+
+.app-global-search input {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.app-global-search > .symbol-search-box > button {
+  min-height: 40px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.app-global-search .symbol-suggestions {
+  top: calc(100% + 10px);
 }
 
 .app-bottom-nav {
@@ -6124,6 +6282,10 @@ body {
   .stock-app {
     padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   }
+
+  .compare-side-index {
+    display: none;
+  }
 }
 
 @media (min-width: 900px) {
@@ -6143,7 +6305,7 @@ body {
   }
 
   .stock-detail-index {
-    height: var(--detail-first-section-height, auto);
+    height: auto;
   }
 }
 
