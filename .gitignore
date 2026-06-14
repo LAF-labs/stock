@@ -11,6 +11,7 @@ output/playwright/
 *.log
 *.tsbuildinfo
 .next-server.pid
+.worktrees/
 .env
 .env.*
 !.env.example
