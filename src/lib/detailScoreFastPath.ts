@@ -6,6 +6,7 @@ import { fetchLiveDailyChart, fetchLiveQuote, liveStockProviderConfigured } from
 import { buildTechnicalAnalysis } from "@/lib/technicalAnalysisEngine";
 import { findExactSymbol } from "@/lib/symbolSearch";
 import { envValue } from "@/lib/supabaseRest";
+import { fetchKisDomesticFinanceBundle, type KisDomesticFinanceBundle } from "@/lib/kisQuoteClient";
 import type { ScoreView, StockPayload } from "@/lib/stockScoreContract";
 import type { Grade, LabeledValue, ScoreComponent } from "@/lib/types";
 
@@ -86,6 +87,7 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
   technicalAnalysis.ticker = `${daily.market}:${daily.symbol}`;
   technicalAnalysis.market = daily.market;
   technicalAnalysis.symbol = daily.symbol;
+  const financialBundle = await domesticFinancialFastPath(daily, signals, view);
 
   const priceMetrics = {
     ...daily.priceMetrics,
@@ -132,9 +134,9 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
     data_quality: "price_fast_path",
     components,
     opportunity_components: opportunityComponents,
-    key_metrics: keyMetrics(signals, daily.currency),
+    key_metrics: keyMetricsWithFinancials(keyMetrics(signals, daily.currency), financialBundle?.financials),
     stock_profile: stockProfileRows(daily, identity),
-    valuation_rows: valuationRows(signals, daily.currency),
+    valuation_rows: valuationRowsWithFinancials(valuationRows(signals, daily.currency), financialBundle?.financials, signals.latestPrice ?? daily.latestPrice),
     chart_patterns: [],
     chart_series: daily.chartSeries,
     technical_analysis: technicalAnalysis,
@@ -142,11 +144,8 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
     top_scores: [],
     news: [],
     price_metrics: priceMetrics,
-    financials: {
-      source: "pending_enrichment",
-      detail_fast_path: true,
-      message: "실적 자료가 확인되면 재무 판단을 더해 보여드립니다.",
-    },
+    financials: financialBundle?.financials ?? pendingFinancials(),
+    ...(financialBundle?.financialStatement ? { financial_statement: financialBundle.financialStatement } : {}),
     sia_snapshot: {
       symbol: daily.symbol,
       price: signals.latestPrice ?? daily.latestPrice,
@@ -184,7 +183,12 @@ export async function buildDetailScoreFastPathPayload(ticker: string, view: Scor
       score_model_version: SCORE_MODEL_VERSION,
       detail_fast_path: true,
       request_fast_path: true,
-      pending_enrichment: true,
+      ...(financialBundle
+        ? {
+            fundamentals_source: "kis_domestic_financials",
+            kis_domestic_financials: "request_fast_path",
+          }
+        : { pending_enrichment: true }),
       source: "market_data",
       provider_mode: "detail_request_fast_path",
       timeout_ms: detailRequestFastPathTimeoutMs(),
@@ -593,6 +597,22 @@ function keyMetrics(signals: PriceSignals, currency: string): LabeledValue[] {
   ];
 }
 
+function keyMetricsWithFinancials(rows: LabeledValue[], financials: Record<string, unknown> | undefined): LabeledValue[] {
+  if (!financials) return rows;
+  return [
+    ...rows,
+    ...compactRows([
+      { label: "매출", value: eokLabel(financials.totalRevenue) },
+      { label: "영업이익", value: eokLabel(financials.operatingIncome) },
+      { label: "순이익", value: eokLabel(financials.netIncome) },
+      { label: "순이익률", value: percentLabel(numberValue(financials.profitMargins)) },
+      { label: "매출 성장률", value: percentLabel(numberValue(financials.revenueGrowth)) },
+      { label: "부채/자본", value: multipleLabel(numberValue(financials.debtToEquity)) },
+      { label: "유동비율", value: multipleLabel(numberValue(financials.currentRatio)) },
+    ]),
+  ];
+}
+
 function stockProfileRows(
   daily: {
     market: "US" | "KR";
@@ -623,6 +643,101 @@ function valuationRows(signals: PriceSignals, currency: string): LabeledValue[] 
     { label: "200일선", value: formatCurrencyAmount(signals.ma200, currency) },
     { label: "52주 고점 대비", value: percentLabel(signals.distanceFromYearHigh) },
   ];
+}
+
+function valuationRowsWithFinancials(rows: LabeledValue[], financials: Record<string, unknown> | undefined, latestPrice: number | undefined): LabeledValue[] {
+  if (!financials) return rows;
+  const eps = numberValue(financials.eps);
+  const bps = numberValue(financials.bps);
+  const per = fixedRatioLabel(numberValue(financials.trailingPE)) ?? ratioLabel(latestPrice, eps);
+  const pbr = fixedRatioLabel(numberValue(financials.priceToBook)) ?? ratioLabel(latestPrice, bps);
+  const evToEbitda = numberValue(financials.evToEbitda);
+  const nextRows = rows.map((row) => {
+    if (row.label === "PER" && per) return { label: "PER", value: per };
+    if (row.label === "PBR" && pbr) return { label: "PBR", value: pbr };
+    return row;
+  });
+  return [
+    ...nextRows,
+    ...compactRows([
+      { label: "EPS", value: formatValue(eps) },
+      { label: "BPS", value: formatValue(bps) },
+      { label: "EV/EBITDA", value: evToEbitda === undefined ? undefined : evToEbitda.toFixed(2) },
+    ]),
+  ];
+}
+
+function compactRows(rows: Array<LabeledValue | undefined>): LabeledValue[] {
+  return rows.filter((row): row is LabeledValue => Boolean(row?.value && row.value !== "-"));
+}
+
+function ratioLabel(numerator: number | undefined, denominator: number | undefined): string | undefined {
+  if (numerator === undefined || denominator === undefined || denominator === 0) return undefined;
+  const ratio = numerator / denominator;
+  return Number.isFinite(ratio) ? ratio.toFixed(2) : undefined;
+}
+
+function fixedRatioLabel(value: number | undefined): string | undefined {
+  return value === undefined || !Number.isFinite(value) ? undefined : value.toFixed(2);
+}
+
+function eokLabel(value: unknown): string | undefined {
+  const parsed = numberValue(value);
+  return parsed === undefined ? undefined : `${formatValue(parsed)}억`;
+}
+
+function multipleLabel(value: number | undefined): string | undefined {
+  return value === undefined ? undefined : value.toFixed(2);
+}
+
+type FastPathFinancials = {
+  financials: Record<string, number | string>;
+  financialStatement: Record<string, unknown>;
+};
+
+async function domesticFinancialFastPath(
+  daily: { market: "US" | "KR"; symbol: string },
+  signals: PriceSignals,
+  view: ScoreView
+): Promise<FastPathFinancials | undefined> {
+  if (view !== "detail" || daily.market !== "KR") return undefined;
+  const bundle = await withTimeout(fetchKisDomesticFinanceBundle(daily.symbol), detailFinancialFastPathTimeoutMs()).catch(() => undefined);
+  if (!bundle || !Object.keys(bundle.normalized).length) return undefined;
+  return {
+    financials: bundle.normalized,
+    financialStatement: domesticFinancialStatement(bundle, signals),
+  };
+}
+
+function domesticFinancialStatement(bundle: KisDomesticFinanceBundle, signals: PriceSignals): Record<string, unknown> {
+  return {
+    kis_domestic_financials: {
+      source: "kis_domestic_financials",
+      cache: {
+        source: "kis_domestic_financials",
+        store: "provider",
+        cache: "request_fast_path",
+      },
+      symbol: bundle.symbol,
+      period: bundle.period,
+      period_type: bundle.periodType,
+      market_div_code: bundle.marketDivCode,
+      normalized: bundle.normalized,
+      raw: bundle.raw,
+      errors: bundle.errors,
+    },
+    domestic_price: {
+      stck_prpr: signals.latestPrice,
+    },
+  };
+}
+
+function pendingFinancials(): Record<string, unknown> {
+  return {
+    source: "pending_enrichment",
+    detail_fast_path: true,
+    message: "실적 자료가 확인되면 재무 판단을 더해 보여드립니다.",
+  };
 }
 
 function weightedScore(components: ScoreComponent[], weights: Record<string, number>): number {
@@ -803,4 +918,9 @@ function detailRequestFastPathTimeoutMs(): number {
 function detailDailyFastPathTimeoutMs(): number {
   const parsed = Number(envValue("STOCK_DETAIL_DAILY_FAST_PATH_TIMEOUT_MS"));
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 2_800;
+}
+
+function detailFinancialFastPathTimeoutMs(): number {
+  const parsed = Number(envValue("STOCK_DETAIL_FINANCIAL_FAST_PATH_TIMEOUT_MS"));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 5_500;
 }

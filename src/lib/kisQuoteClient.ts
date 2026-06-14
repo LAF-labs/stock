@@ -18,6 +18,13 @@ import { envValue, fetchWithTimeout } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
 import type { StockPayload } from "@/lib/stockScoreContract";
 import { KIS_DOMESTIC_EXCHANGE_LABEL, KIS_DOMESTIC_MARKET_DIV_CODE, KIS_US_MARKETS } from "@/lib/quoteContract";
+import {
+  KIS_DOMESTIC_FINANCE_ENDPOINTS,
+  KIS_DOMESTIC_SCORE_MARKET_DIV_CODE,
+  kisDomesticPeriodType,
+  normalizeKisDomesticFinancials,
+  type KisDomesticFinancialRaw,
+} from "@/lib/kisDomesticFinancials";
 
 type KisConfig = {
   appKey: string;
@@ -79,6 +86,15 @@ export type KisDailyChartPayload = {
   priceMetrics: Record<string, unknown>;
   fetch: Record<string, unknown>;
 };
+export type KisDomesticFinanceBundle = {
+  symbol: string;
+  period: string;
+  periodType: string;
+  marketDivCode: string;
+  raw: KisDomesticFinancialRaw;
+  normalized: Record<string, number | string>;
+  errors: Record<string, string>;
+};
 
 declare global {
   var __kisQuoteTokenCache: Map<string, KisTokenCacheEntry> | undefined;
@@ -129,6 +145,71 @@ export async function fetchKisDailyChart(tickerRef: string): Promise<KisDailyCha
   } finally {
     dailyChartInflight.delete(cacheKey);
   }
+}
+
+export async function fetchKisDomesticFinanceBundle(
+  symbol: string,
+  options: { period?: string; marketDivCode?: string; timeoutMs?: number } = {}
+): Promise<KisDomesticFinanceBundle> {
+  const cleanSymbol = normalizedDomesticFinanceSymbol(symbol);
+  if (!cleanSymbol) throw new KisQuoteError("Invalid KR ticker.");
+  await acquireKisQuoteSlot();
+
+  const period = String(options.period ?? "0");
+  const marketDivCode = options.marketDivCode ?? KIS_DOMESTIC_SCORE_MARKET_DIV_CODE;
+  const raw: KisDomesticFinancialRaw = {};
+  const errors: Record<string, string> = {};
+
+  try {
+    const price = outputObject(
+      await kisGet(
+        "/uapi/domestic-stock/v1/quotations/inquire-price",
+        "FHKST01010100",
+        {
+          FID_COND_MRKT_DIV_CODE: marketDivCode,
+          FID_INPUT_ISCD: cleanSymbol,
+        },
+        { timeoutMs: options.timeoutMs ?? domesticFinanceTimeoutMs() }
+      )
+    );
+    if (Object.keys(price).length) raw.domestic_price = [price];
+  } catch (error) {
+    const message = safeErrorMessage(error);
+    errors.domestic_price = message;
+    if (isHardKisFinanceError(message)) throw error;
+  }
+
+  for (const endpoint of KIS_DOMESTIC_FINANCE_ENDPOINTS) {
+    try {
+      const rows = outputList(
+        await kisGet(
+          endpoint.path,
+          endpoint.trId,
+          {
+            FID_DIV_CLS_CODE: period,
+            FID_COND_MRKT_DIV_CODE: marketDivCode,
+            FID_INPUT_ISCD: cleanSymbol,
+          },
+          { timeoutMs: options.timeoutMs ?? domesticFinanceTimeoutMs() }
+        )
+      );
+      if (rows.length) raw[endpoint.key] = rows;
+    } catch (error) {
+      const message = safeErrorMessage(error);
+      errors[endpoint.key] = message;
+      if (isHardKisFinanceError(message)) throw error;
+    }
+  }
+
+  return {
+    symbol: cleanSymbol,
+    period,
+    periodType: kisDomesticPeriodType(period),
+    marketDivCode,
+    raw,
+    normalized: normalizeKisDomesticFinancials(raw),
+    errors,
+  };
 }
 
 export function kisQuoteConfigured(): boolean {
@@ -672,6 +753,21 @@ function parseTicker(value: string): { market: "US" | "KR"; symbol: string } {
     return { market: "KR", symbol: parsed.symbol.replace(/^Q/, "") };
   }
   return { market: parsed.market, symbol: parsed.symbol };
+}
+
+function normalizedDomesticFinanceSymbol(value: string): string | undefined {
+  const symbol = value.trim().toUpperCase().replace(/^KR:/, "").replace(/^Q(?=\d{6}$)/, "");
+  return /^\d{6}$/.test(symbol) ? symbol : undefined;
+}
+
+function domesticFinanceTimeoutMs(): number {
+  const parsed = Number(envValue("STOCK_KIS_DOMESTIC_FINANCE_TIMEOUT_MS"));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1_500;
+}
+
+function isHardKisFinanceError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return message.includes("초당") || message.includes("거래건수") || normalized.includes("token") || message.includes("토큰");
 }
 
 function outputObject(payload: KisPayload, key = "output"): KisPayload {

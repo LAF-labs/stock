@@ -226,6 +226,79 @@ test("detail score cache builds a request fast path from KIS daily rows in Verce
   assert.equal(result.cache.state, "miss");
 });
 
+test("domestic detail fast path includes KIS financials instead of a pending enrichment placeholder", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  const rows = Array.from({ length: 120 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 0, 2 + index)).toISOString().slice(0, 10).replace(/-/g, "");
+    const close = 45_000 + index * 500;
+    return {
+      stck_bsop_date: date,
+      stck_oprc: String(close - 250),
+      stck_hgpr: String(close + 500),
+      stck_lwpr: String(close - 500),
+      stck_clpr: String(close),
+      acml_vol: String(500_000 + index * 1_000),
+    };
+  });
+
+  const financeResponses: Record<string, unknown[]> = {
+    "balance-sheet": [{ stac_yymm: "202603", total_aset: "12001.00", total_lblt: "8184.00", total_cptl: "3816.00", cras: "3898.00", flow_lblt: "4420.00" }],
+    "income-statement": [{ stac_yymm: "202603", sale_account: "1571.00", bsop_prti: "205.00", thtr_ntin: "172.00" }],
+    "financial-ratio": [{ stac_yymm: "202603", eps: "2427.00", bps: "13402.00", grs: "16.37", ntin_inrt: "-16.98" }],
+    "profit-ratio": [{ stac_yymm: "202603", sale_ntin_rate: "10.92", self_cptl_ntin_inrt: "18.11" }],
+    "other-major-ratios": [{ stac_yymm: "202603", ebitda: "358.00", ev_ebitda: "10.97" }],
+    "stability-ratio": [{ stac_yymm: "202603", lblt_rate: "214.45", crnt_rate: "88.19", quck_rate: "0.00" }],
+    "growth-ratio": [{ stac_yymm: "202603", grs: "16.37", bsop_prfi_inrt: "-34.58" }],
+  };
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-kr-detail-financials", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "121600",
+          eps: "2427.00",
+          bps: "13402.00",
+          per: "51.46",
+          pbr: "9.32",
+          lstn_stcn: "10460684",
+          hts_avls: "13065",
+        },
+      });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice")) {
+      return Response.json({ rt_cd: "0", output2: rows });
+    }
+    for (const [endpoint, output] of Object.entries(financeResponses)) {
+      if (text.includes(`/uapi/domestic-stock/v1/finance/${endpoint}`)) {
+        return Response.json({ rt_cd: "0", output });
+      }
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockScore("KR:183300", "detail");
+
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.requested_ticker, "KR:183300");
+  assert.equal((result.payload.fetch as Record<string, unknown>).pending_enrichment, undefined);
+  assert.equal((result.payload.financials as Record<string, unknown>).source, undefined);
+  assert.equal((result.payload.financials as Record<string, unknown>).totalRevenue, 1571);
+  assert.equal((result.payload.financials as Record<string, unknown>).profitMargins, 0.1092);
+  assert.equal((result.payload.financial_statement as Record<string, unknown>).kis_domestic_financials !== undefined, true);
+  assert.equal((result.payload.valuation_rows as Array<{ label: string; value: string }>).find((row) => row.label === "PER")?.value, "51.46");
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.cache.state, "miss");
+});
+
 test("detail score cache falls back to a quote-only fast path when daily rows are slow", async () => {
   useSnapshotOnlyRuntime();
   process.env.STOCK_API_APP_KEY = "app-key";
