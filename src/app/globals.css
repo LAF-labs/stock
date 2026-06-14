@@ -2358,7 +2358,7 @@ a:focus-visible {
   gap: 12px;
 }
 
-.disclosure-list a {
+.disclosure-list-item {
   display: grid;
   gap: 6px;
   padding: 15px 0;
@@ -2367,12 +2367,12 @@ a:focus-visible {
   text-decoration: none;
 }
 
-.disclosure-list a:first-child {
+.disclosure-list-item:first-child {
   border-top: 0;
   padding-top: 0;
 }
 
-.disclosure-list a strong {
+.disclosure-list-item strong {
   color: var(--text);
   font-size: 16px;
   line-height: 1.45;

@@ -118,16 +118,28 @@ function DisclosureModal({
 function DisclosureList({ items }: { items: SecFilingListItem[] }) {
   return (
     <div className="disclosure-list">
-      {items.map((item) => (
-        <a href={safeExternalUrl(item.sourceUrl)} target="_blank" rel="noopener noreferrer" key={item.accessionNumber}>
-          <span className="disclosure-meta">
-            {filingIsRecent(item) ? <i aria-label="최근 1주일 내 새 공시" /> : null}
-            {formatFilingDate(item.filedAt)} · {item.formType}
-            <ExternalLink size={13} aria-hidden="true" />
-          </span>
-          <strong>{item.summaryKo}</strong>
-        </a>
-      ))}
+      {items.map((item) => {
+        const href = safeExternalUrl(item.sourceUrl);
+        const content = (
+          <>
+            <span className="disclosure-meta">
+              {filingIsRecent(item) ? <i aria-label="최근 1주일 내 새 공시" /> : null}
+              {formatFilingDate(item.filedAt)} · {item.formType}
+              {href ? <ExternalLink size={13} aria-hidden="true" /> : null}
+            </span>
+            <strong>{item.summaryKo}</strong>
+          </>
+        );
+        return href ? (
+          <a className="disclosure-list-item" href={href} target="_blank" rel="noopener noreferrer" key={item.accessionNumber}>
+            {content}
+          </a>
+        ) : (
+          <div className="disclosure-list-item" key={item.accessionNumber}>
+            {content}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -147,12 +159,12 @@ function formatFilingDate(value: string): string {
   }).format(date);
 }
 
-function safeExternalUrl(value: string | undefined): string {
-  if (!value) return "#";
+function safeExternalUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname.endsWith("sec.gov") ? value : "#";
+    return url.protocol === "https:" && url.hostname.endsWith("sec.gov") ? value : undefined;
   } catch {
-    return "#";
+    return undefined;
   }
 }

@@ -12,7 +12,7 @@ export type SecFilingListItem = {
   filedAt: string;
   acceptedAt?: string;
   summaryKo: string;
-  sourceUrl: string;
+  sourceUrl?: string;
   category: string;
   importance: "low" | "medium" | "high";
   tags: string[];
@@ -36,7 +36,7 @@ type SupabaseSecFilingRow = {
   filed_at: string;
   accepted_at?: string | null;
   summary_ko: string;
-  source_url: string;
+  source_url?: string | null;
   category: string;
   importance: "low" | "medium" | "high";
   tags: string[] | null;
@@ -72,12 +72,12 @@ export async function readSecFilings(input: ReadSecFilingsInput): Promise<{ item
   return readMemorySecFilings({ ticker: input.ticker, limit, offset });
 }
 
-export async function writeSecFilings(items: SecFilingListItem[], options: { supabase?: boolean } = {}): Promise<void> {
+export async function writeSecFilings(items: SecFilingListItem[], options: { supabase?: boolean; throwOnError?: boolean } = {}): Promise<void> {
   for (const item of items) {
     memoryStore.set(item.accessionNumber, normalizeItem(item));
   }
   if (options.supabase === false || !items.length) return;
-  await writeSupabaseSecFilings(items.map(normalizeItem));
+  await writeSupabaseSecFilings(items.map(normalizeItem), Boolean(options.throwOnError));
 }
 
 export const secFilingsTestHooks = {
@@ -123,7 +123,7 @@ async function readSupabaseSecFilings(input: Required<Pick<ReadSecFilingsInput, 
   }
 }
 
-async function writeSupabaseSecFilings(items: SecFilingListItem[]): Promise<void> {
+async function writeSupabaseSecFilings(items: SecFilingListItem[], throwOnError: boolean): Promise<void> {
   const config = supabaseAdminConfig();
   if (!config) return;
   try {
@@ -139,8 +139,13 @@ async function writeSupabaseSecFilings(items: SecFilingListItem[]): Promise<void
       },
       numericEnv("SEC_FILINGS_SUPABASE_WRITE_TIMEOUT_MS", 10_000)
     );
-    if (!response.ok) console.warn("sec_filings_write_failed", { status: response.status });
+    if (!response.ok) {
+      const message = `sec_filings_write_failed HTTP ${response.status}`;
+      if (throwOnError) throw new Error(message);
+      console.warn("sec_filings_write_failed", { status: response.status });
+    }
   } catch (error) {
+    if (throwOnError) throw error;
     console.warn("sec_filings_write_failed", { error: safeErrorMessage(error) });
   }
 }
@@ -156,7 +161,7 @@ function rowToSupabase(item: SecFilingListItem): SupabaseSecFilingRow {
     filed_at: item.filedAt,
     accepted_at: item.acceptedAt || null,
     summary_ko: item.summaryKo,
-    source_url: item.sourceUrl,
+    source_url: item.sourceUrl || null,
     category: item.category,
     importance: item.importance,
     tags: item.tags,
@@ -175,7 +180,7 @@ function rowFromSupabase(row: SupabaseSecFilingRow): SecFilingListItem {
     filedAt: row.filed_at,
     acceptedAt: row.accepted_at || undefined,
     summaryKo: row.summary_ko,
-    sourceUrl: row.source_url,
+    sourceUrl: row.source_url || undefined,
     category: row.category,
     importance: row.importance,
     tags: row.tags || [],
