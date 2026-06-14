@@ -78,9 +78,69 @@ def clean_text(value: str | None) -> str:
 def is_us_etf(row: dict[str, str]) -> bool:
     security_type = clean_text(row.get("securityType"))
     type_code = clean_text(row.get("typeCode"))
-    english = clean_text(row.get("englishName")).upper()
-    korean = clean_text(row.get("koreanName")).upper()
-    return security_type == "3" or type_code in {"001", "002", "003", "005", "006"} or " ETF" in english or "ETN" in english or "ETF" in korean
+    return security_type == "3" or type_code in {"001", "002", "003", "005", "006"}
+
+
+KR_ETF_NAME_PREFIXES = (
+    "1Q",
+    "ACE",
+    "ARIRANG",
+    "BNK",
+    "DAISHIN",
+    "FOCUS",
+    "HANARO",
+    "HK",
+    "KBSTAR",
+    "KIWOOM",
+    "KOACT",
+    "KODEX",
+    "KOSEF",
+    "PLUS",
+    "RISE",
+    "SOL",
+    "TIME",
+    "TIGER",
+    "TREX",
+    "WON",
+    "마이티",
+    "파워",
+)
+
+KR_ETF_NAME_TERMS = (
+    "ETF",
+    "TDF",
+    "S&P500",
+    "국채",
+    "나스닥",
+    "레버리지",
+    "미국채",
+    "선물",
+    "인버스",
+    "채권",
+    "코스닥150",
+    "커버드콜",
+)
+
+
+def kr_instrument_type(security_group: str, korean_name: str = "") -> str:
+    normalized = clean_text(security_group).upper()
+    if normalized == "EN":
+        return "ETN"
+    if normalized in {"EF", "MF"}:
+        return "ETF"
+    name = clean_text(korean_name)
+    name_upper = name.upper()
+    if "보통주" in name:
+        return "STOCK"
+    if "ETN" in name_upper or "상장지수증권" in name:
+        return "ETN"
+    if kr_etf_brand_prefix(name_upper) or any(term in name_upper for term in KR_ETF_NAME_TERMS):
+        return "ETF"
+    return "STOCK"
+
+
+def kr_etf_brand_prefix(name_upper: str) -> bool:
+    return any(name_upper == prefix or name_upper.startswith(f"{prefix} ") for prefix in KR_ETF_NAME_PREFIXES)
 
 
 def parse_us_market(code: str, work_dir: Path) -> list[dict[str, Any]]:
@@ -123,7 +183,7 @@ def parse_kr_standard_line(line: str, tail_size: int, name_key: str, meta: dict[
     security_group = clean_text(tail[0:2])
     if not ticker or not korean_name:
         return None
-    instrument_type = "ETF" if security_group in {"EF", "EN", "MF"} or "ETF" in korean_name.upper() or "ETN" in korean_name.upper() else "STOCK"
+    instrument_type = kr_instrument_type(security_group, korean_name)
     return {
         "market": "KR",
         "ticker": ticker,
@@ -143,7 +203,7 @@ def parse_konex_line(line: str, meta: dict[str, str]) -> dict[str, Any] | None:
     security_group = clean_text(line[-184:-182])
     if not ticker or not korean_name:
         return None
-    instrument_type = "ETF" if security_group in {"EF", "EN", "MF"} or "ETF" in korean_name.upper() or "ETN" in korean_name.upper() else "STOCK"
+    instrument_type = kr_instrument_type(security_group, korean_name)
     return {
         "market": "KR",
         "ticker": ticker,

@@ -30,7 +30,7 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
   const fundamentals = partValue(envelope.parts.fundamentals) ?? fundamentalsFromScore(score);
   const industryBenchmark = partValue(envelope.parts.industryBenchmark) ?? industryBenchmarkFromScore(score);
   const news = partValue(envelope.parts.news) ?? newsFromScore(score);
-  const requiredParts = requiredDisplayPartsForScore(envelope.view, score);
+  const requiredParts = requiredDisplayPartsForScore(envelope.view);
   const presentParts = presentDisplayParts({ price, chart, score, technical, fundamentals, industryBenchmark, news }, envelope.view);
   const unavailableParts = unavailablePartsFromEnvelope(envelope, requiredParts).filter((item) => !presentParts.includes(item.part));
   const completion = planStockDisplayCompletion({
@@ -81,10 +81,8 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
   };
 }
 
-function requiredDisplayPartsForScore(view: StockDisplayView, score: StockScoreView | undefined): StockDisplayPartName[] {
-  const parts = requiredDisplayParts(view);
-  if (view === "technical" || !stockScorePayloadNeedsEnrichment(score)) return parts;
-  return [...parts, "fundamentals", "industryBenchmark"];
+function requiredDisplayPartsForScore(view: StockDisplayView): StockDisplayPartName[] {
+  return requiredDisplayParts(view);
 }
 
 function displayPartFromState<T>(
@@ -238,7 +236,15 @@ function technicalFromScore(score: StockScoreView | undefined): StockTechnicalVi
 }
 
 function fundamentalsFromScore(score: StockScoreView | undefined): StockFundamentalsView | undefined {
-  if (!score || stockScorePayloadNeedsEnrichment(score)) return undefined;
+  if (!score) return undefined;
+  if (stockScorePayloadNeedsEnrichment(score)) {
+    return compactRecord({
+      key_metrics: arrayValue(score.key_metrics),
+      stock_profile: arrayValue(score.stock_profile),
+      market_cap: numberValue(score.market_cap),
+      market_cap_label: stringValue(score.market_cap_label),
+    });
+  }
   return compactRecord({
     key_metrics: arrayValue(score.key_metrics),
     stock_profile: arrayValue(score.stock_profile),
@@ -251,7 +257,7 @@ function fundamentalsFromScore(score: StockScoreView | undefined): StockFundamen
 }
 
 function industryBenchmarkFromScore(score: StockScoreView | undefined): StockIndustryBenchmarkView | undefined {
-  if (!score || stockScorePayloadNeedsEnrichment(score)) return undefined;
+  if (!score) return undefined;
   return compactRecord({
     industry_benchmarks: arrayValue(score.industry_benchmarks),
     valuation_rows: industryBenchmarkRows(score.valuation_rows),

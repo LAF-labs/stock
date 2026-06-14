@@ -7,7 +7,7 @@ import type { StockDataEnvelope } from "../src/lib/stockDataEnvelopeTypes";
 
 const generatedAt = "2026-06-12T00:00:00.000Z";
 
-test("display projector shows degraded score while continuing financial enrichment", () => {
+test("display projector treats enrichment gaps as optional when core detail data is visible", () => {
   const payload = stockDisplayPayloadFromEnvelope(envelope({
     price: readyPart({ latest_price: 24.97 }, "market-data", generatedAt),
     chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 25.1 }, { date: "2026-06-12", close: 24.97 }] }, "market-data", generatedAt),
@@ -26,12 +26,48 @@ test("display projector shows degraded score while continuing financial enrichme
 
   assert.equal(payload.score?.value.quality_score, 47);
   assert.equal(payload.score?.freshness, "fallback");
-  assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
+  assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
   assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score"]);
-  assert.deepEqual(payload.completion.missingParts, ["fundamentals", "industryBenchmark"]);
-  assert.deepEqual(payload.completion.recoveringParts, ["fundamentals", "industryBenchmark"]);
-  assert.equal(payload.refresh.active, true);
-  assert.equal(payload.refresh.nextPollMs, 1500);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.equal(payload.refresh.active, false);
+  assert.equal(payload.refresh.nextPollMs, undefined);
+});
+
+test("display projector still exposes known profile and industry data from pending fast-path scores", () => {
+  const payload = stockDisplayPayloadFromEnvelope(envelope({
+    price: readyPart({ latest_price: 24.97 }, "market-data", generatedAt),
+    chart: readyPart({ chart_series: [{ date: "2026-06-11", close: 25.1 }, { date: "2026-06-12", close: 24.97 }] }, "market-data", generatedAt),
+    score: degradedPart(
+      {
+        score: 47,
+        quality_score: 47,
+        key_metrics: [{ label: "현재가", value: "24.97달러" }],
+        stock_profile: [{ label: "산업", value: "응용 소프트웨어" }],
+        valuation_rows: [
+          { label: "PBR", value: "-", note: "자산 자료가 확인되면 보여줄게요." },
+          { label: "업종 평균 PBR", value: "3.12", note: "국내 응용 소프트웨어 업종 평균" },
+        ],
+        industry_benchmarks: [{ metric: "pbr", median: 3.12, sampleCount: 12 }],
+        financials: { source: "pending_enrichment", detail_fast_path: true },
+        fetch: { pending_enrichment: true, detail_fast_path: true },
+      },
+      "fast-path",
+      "price_fast_path",
+      generatedAt,
+    ),
+  }));
+
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
+  assert.deepEqual(payload.fundamentals?.value.key_metrics, [{ label: "현재가", value: "24.97달러" }]);
+  assert.deepEqual(payload.fundamentals?.value.stock_profile, [{ label: "산업", value: "응용 소프트웨어" }]);
+  assert.equal(payload.fundamentals?.value.financials, undefined);
+  assert.equal(payload.fundamentals?.value.valuation_rows, undefined);
+  assert.deepEqual(payload.industryBenchmark?.value.valuation_rows, [
+    { label: "업종 평균 PBR", value: "3.12", note: "국내 응용 소프트웨어 업종 평균" },
+  ]);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.equal(payload.refresh.active, false);
 });
 
 test("display projector keeps stale visible parts on screen without promising active recovery", () => {

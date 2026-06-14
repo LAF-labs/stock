@@ -171,97 +171,19 @@ def asset_class(item: dict[str, Any]) -> str:
     instrument = clean_text(item.get("instrumentType")).upper()
     market = clean_text(item.get("market")).upper()
     symbol = clean_text(item.get("ticker")).upper()
-    name = clean_text(f"{item.get('koreanName') or ''} {item.get('englishName') or ''}")
-    name_upper = name.upper()
-    compact_name = re.sub(r"\s+", "", name_upper)
     if market == "KR" and (symbol.startswith("F") or symbol.startswith("J") or symbol.startswith("Q")):
         return "other"
-    if "ETN" in name_upper or "상장지수증권" in name:
+    if instrument in {"ETN"}:
         return "etn"
-    if "ELW" in name_upper or "WARRANT" in name_upper or "워런트" in name or "권리" in name:
+    if instrument in {"ELW", "WARRANT", "RIGHT", "RIGHTS", "UNIT", "UNITS", "DERIVATIVE", "STRUCTURED_PRODUCT"}:
         return "other"
-    if "RIGHT" in name_upper and "COMMON" not in name_upper:
-        return "other"
-    if "UNIT" in name_upper or "유닛" in name or re.search(r"/U(N)?$", symbol):
-        return "other"
-    if "리츠" in name or "REIT" in name_upper:
+    if instrument in {"REIT"}:
         return "reit"
-    if (
-        re.search(r"(?:[0-9]+)?우(?:B|C)?(?:\(전환\))?$", compact_name)
-        or "우선주" in name
-        or "우선" in name
-        or ("PREFERRED" in name_upper and "COMMON" not in name_upper)
-        or ("PREF" in name_upper and "COMMON" not in name_upper)
-        or ("PFD" in name_upper and "COMMON" not in name_upper)
-        or ("PRF" in name_upper and "COMMON" not in name_upper)
-        or ("/" in symbol and re.search(r"(?:DEP SHS|DEP REP|DEPOSITARY|SER [A-Z])", name_upper))
-        or ("/" in symbol and re.search(r"(?:%|PREFERRED|PREF|우선주)", name_upper))
-    ):
+    if instrument in {"PREFERRED", "PREF", "PFD", "PRF"}:
         return "preferred"
-    if (
-        "SPAC" in name_upper
-        or "ACQUISITION" in name_upper
-        or "MERGER" in name_upper
-        or re.search(r"\bINVT\s+CORP\b", name_upper)
-        or re.search(r"\bINVESTMENT\s+CORP(?:ORATION)?\s+(?:I{1,4}|V|VI{0,3}|IX|X)\b", name_upper)
-        or "스팩" in name
-        or "애퀴지션" in name
-        or "머저" in name
-    ):
+    if instrument in {"SPAC"}:
         return "spac"
-    if (
-        re.search(r"\b(?:CLOSED-END FUND|ETF|FUND)\b", name_upper)
-        or any(term in name for term in ("공모주", "부동산TOP", "인덱스", "파생형", "펀드"))
-        or any(term in name for term in ("X클래스", "크레딧", "아이엠에셋"))
-        or any(term in name_upper for term in ("SENIOR NOTE", "NOTE DUE", "BITCOIN TRUST", "STRATS TRUST", "ABS"))
-        or any(term in name for term in ("선순위채", "비트코인트러스트", "트러스트 ABS"))
-    ):
-        return "etf"
-    etf_prefixes = (
-        "1Q",
-        "ACE",
-        "ARIRANG",
-        "FOCUS",
-        "HANARO",
-        "HK",
-        "KBSTAR",
-        "KIWOOM",
-        "KOACT",
-        "KODEX",
-        "KOSEF",
-        "PLUS",
-        "RISE",
-        "SOL",
-        "TIME",
-        "TIGER",
-        "TREX",
-        "WON",
-        "BNK ",
-        "IBK ",
-        "DAISHIN",
-        "마이티",
-        "파워",
-    )
-    etf_terms = (
-        "ETF",
-        "TDF",
-        "국채",
-        "나스닥",
-        "데일리",
-        "레버리지",
-        "미국채",
-        "버퍼",
-        "상장지수펀드",
-        "선물",
-        "액티브",
-        "인버스",
-        "채권",
-        "커버드콜",
-        "타겟",
-        "혼합",
-        "S&P500",
-    )
-    if instrument == "ETF" or name_upper.startswith(etf_prefixes) or any(term in name_upper for term in etf_terms):
+    if instrument in {"ETF", "ETP", "FUND", "MUTUAL_FUND", "CLOSED_END_FUND"}:
         return "etf"
     return "stock"
 
