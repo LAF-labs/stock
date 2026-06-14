@@ -6,11 +6,13 @@ import { join } from "node:path";
 const globalsCss = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 const marketConsoleCss = readFileSync(join(process.cwd(), "src/styles/market-console.css"), "utf8");
 const css = `${globalsCss}\n${marketConsoleCss}`;
+const packageJsonSource = readFileSync(join(process.cwd(), "package.json"), "utf8");
 const designTokensCss = readFileSync(join(process.cwd(), "src/styles/design-tokens.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
 const stockHeaderSource = readFileSync(join(process.cwd(), "src/components/StockHeader.tsx"), "utf8");
 const stockLandingSource = readFileSync(join(process.cwd(), "src/components/landing/StockLanding.tsx"), "utf8");
+const landingShowcaseSource = readFileSync(join(process.cwd(), "src/components/landing/LandingProductShowcase.tsx"), "utf8");
 const compareSectionSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSection.tsx"), "utf8");
 const compareSideIndexSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSideIndex.tsx"), "utf8");
 const detailSectionIndexSource = readFileSync(join(process.cwd(), "src/components/stock-detail/DetailSectionIndex.tsx"), "utf8");
@@ -33,6 +35,14 @@ const mobileNavLauncherSource = readFileSync(join(process.cwd(), "src/components
 const searchChromeSource = readFileSync(join(process.cwd(), "src/components/SearchChromeWithNavigation.tsx"), "utf8");
 const searchChromeFrameSource = readFileSync(join(process.cwd(), "src/components/layout/SearchChrome.tsx"), "utf8");
 const collapsibleSearchChromeSource = readFileSync(join(process.cwd(), "src/components/useCollapsibleSearchChrome.ts"), "utf8");
+
+function readOptionalSource(path: string): string {
+  try {
+    return readFileSync(join(process.cwd(), path), "utf8");
+  } catch {
+    return "";
+  }
+}
 
 function lastCssDeclaration(selector: string, property: string): string | undefined {
   let value: string | undefined;
@@ -110,6 +120,26 @@ test("first-screen display typography uses a calmer scale", () => {
   assert.match(css, /\.technical-analysis-app \.technical-hero-heading h1\s*\{[\s\S]*?font-size:\s*36px;[\s\S]*?font-weight:\s*600;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-name-row h2\s*\{[\s\S]*?font-size:\s*30px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-app \.compare-hero h1\s*\{[\s\S]*?font-size:\s*26px;/);
+});
+
+test("score donut uses score-only text and tone-based rounded animated rings", () => {
+  assert.doesNotMatch(stockHeaderSource, /<small>\s*\/100\s*<\/small>/);
+  assert.match(stockHeaderSource, /const scoreTone = scoreToneForScore\(score\);/);
+  assert.match(stockHeaderSource, /data-score-tone=\{scoreTone\}/);
+  assert.match(stockHeaderSource, /function scoreToneForScore\(score: number\): "good" \| "neutral" \| "bad"/);
+  assert.match(stockHeaderSource, /<svg className="score-donut-ring"/);
+  assert.match(css, /\.score-donut-ring \.score-donut-progress\s*\{[\s\S]*?stroke-linecap:\s*round;[\s\S]*?animation:\s*score-donut-fill/);
+  assert.match(css, /@keyframes score-donut-fill\s*\{[\s\S]*?from\s*\{[\s\S]*?stroke-dashoffset:\s*100;[\s\S]*?to\s*\{[\s\S]*?stroke-dashoffset:\s*var\(--score-offset\);/);
+  assert.match(css, /\.score-panel\[data-score-tone="good"\][\s\S]*?--score-accent:\s*var\(--score-good\);/);
+  assert.match(css, /\.score-panel\[data-score-tone="neutral"\][\s\S]*?--score-accent:\s*var\(--score-neutral\);/);
+  assert.match(css, /\.score-panel\[data-score-tone="bad"\][\s\S]*?--score-accent:\s*var\(--score-bad\);/);
+});
+
+test("detail chart defaults to candle mode and orders candle before easy mode", () => {
+  assert.match(stockDetailSectionsSource, /useState<"line" \| "candle">\("candle"\)/);
+  assert.match(stockDetailSectionsSource, /if \(event\.key === "Home"\) return "candle";/);
+  assert.match(stockDetailSectionsSource, /if \(event\.key === "End"\) return "line";/);
+  assert.match(stockDetailSectionsSource, /onClick=\{\(\) => setChartMode\("candle"\)\}[\s\S]*?>\s*캔들\s*<\/button>[\s\S]*?onClick=\{\(\) => setChartMode\("line"\)\}[\s\S]*?>\s*쉽게\s*<\/button>/);
 });
 
 test("primary CTA styles use shared tokens instead of black overrides", () => {
@@ -241,26 +271,75 @@ test("market-cap mobile table uses four columns and hides ticker change and sect
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.market-cap-ticker,[\s\S]*?\.market-cap-change\s*\{[\s\S]*?display:\s*none;/);
 });
 
-test("landing content centers without a side rail and first visual stays bright", () => {
+test("landing content centers without a side rail and keeps the product showcase unframed", () => {
   assert.match(dashboardSource, /tickerParam \? "has-detail-context" : "stock-home-app"/);
   assert.equal(lastCssDeclaration(".stock-home-app", "width"), "min(var(--mc-wide-content-width), calc(100% - 48px))");
   assert.equal(lastCssDeclaration(".stock-home-app .dashboard-landing", "width"), "100%");
-  assert.equal(lastCssDeclaration(".dashboard-landing", "margin-inline"), "auto");
-  assert.equal(lastCssDeclaration(".dashboard-landing", "width"), "min(var(--mc-wide-content-width), calc(100vw - 48px))");
-  assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-visual", "background"), "linear-gradient(135deg, #ffffff 0%, #f8fbff 52%, #eef5ff 100%)");
-  assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-grid", "opacity"), "0.2");
-  assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-scanline", "background"), "linear-gradient(180deg, transparent, rgba(37, 99, 235, 0.16), transparent)");
+  assert.equal(lastCssDeclaration(".dashboard-landing", "margin-inline"), "0");
+  assert.equal(lastCssDeclaration(".dashboard-landing", "width"), "100%");
+  assert.equal(lastCssDeclaration(".landing-story-section", "justify-content"), "center");
+  assert.equal(lastCssDeclaration(".landing-story-section", "margin-inline"), "auto");
+  assert.equal(lastCssDeclaration(".landing-visual", "border"), "0");
+  assert.equal(lastCssDeclaration(".landing-visual", "background"), "transparent");
+  assert.equal(lastCssDeclaration(".landing-visual", "box-shadow"), "none");
+  assert.equal(lastCssDeclaration(".landing-visual", "padding"), "0");
+  assert.equal(lastCssDeclaration(".landing-visual", "place-items"), "stretch");
+  assert.equal(lastCssDeclaration(".landing-product-showcase", "background"), "transparent");
 });
 
-test("home screen has no old default ticker fallback and renders animated landing", () => {
+test("landing copy uses investor questions instead of feature-brag labels", () => {
+  assert.match(stockLandingSource, /관심 종목,\s*먼저 숫자로 좁혀보세요/);
+  assert.match(stockLandingSource, /실적이 좋아도 밸류에이션이 앞서 있으면 수익률은 달라집니다\./);
+  assert.match(stockLandingSource, /시총과 섹터로 시장의 무게중심을 봐요/);
+  assert.match(stockLandingSource, /캔들 흐름으로 진입 구간을 따로 확인해요/);
+  assert.match(stockLandingSource, /비슷한 후보는 같은 지표로 눌러봐요/);
+  assert.match(stockLandingSource, /PER|PBR|ROE|목표가|거래대금/);
+  assert.doesNotMatch(stockLandingSource, /Market Cap Board|Company Brief|Technical Flow|Compare Mode|후보만 남깁니다|기능/);
+});
+
+test("landing uses product UI previews instead of decorative 3D assets", () => {
+  assert.doesNotMatch(packageJsonSource, /"three":\s*"/);
+  assert.doesNotMatch(packageJsonSource, /"@react-three\/fiber":\s*"/);
+  assert.doesNotMatch(packageJsonSource, /"@react-three\/drei":\s*"/);
+  assert.doesNotMatch(packageJsonSource, /"lottie-web":/);
+  assert.match(stockLandingSource, /import \{ LandingProductShowcase \} from "@\/components\/landing\/LandingProductShowcase";/);
+  assert.match(stockLandingSource, /showcase: "search"/);
+  assert.match(stockLandingSource, /showcase: "rank"/);
+  assert.match(stockLandingSource, /showcase: "brief"/);
+  assert.match(stockLandingSource, /showcase: "chart"/);
+  assert.match(stockLandingSource, /showcase: "compare"/);
+  assert.match(stockLandingSource, /<LandingProductShowcase variant=\{section\.showcase\} \/>/);
+  assert.match(landingShowcaseSource, /function SearchWorkbench/);
+  assert.match(landingShowcaseSource, /function MarketWorkbench/);
+  assert.match(landingShowcaseSource, /function BriefWorkbench/);
+  assert.match(landingShowcaseSource, /function ChartWorkbench/);
+  assert.match(landingShowcaseSource, /function CompareWorkbench/);
+  assert.match(landingShowcaseSource, /종목명이나 티커 검색/);
+  assert.match(landingShowcaseSource, /20일 캔들/);
+  assert.match(landingShowcaseSource, /후보 비교/);
+  assert.match(css, /\.landing-product-showcase\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;/);
+  assert.match(css, /\.landing-ui-canvas\s*\{/);
+  assert.match(css, /\.landing-ui-candle\.rise\s*\{[\s\S]*?background:\s*#e53e3e;/);
+  assert.match(css, /\.landing-ui-candle\.fall\s*\{[\s\S]*?background:\s*#2563eb;/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
+  assert.doesNotMatch(css, /\.landing-three-scene|\.landing-three-fallback|\.landing-three-label|\.landing-three-result|\.landing-three-chart-label/);
+  assert.doesNotMatch(stockLandingSource, /landing-score-stack|landing-stock-loop|landing-market-table|landing-info-orbit|landing-chart-bars|landing-compare-board/);
+  assert.doesNotMatch(stockLandingSource, /LandingThreeScene|lottie/i);
+  assert.doesNotMatch(landingShowcaseSource, /@react-three|MeshTransmissionMaterial|RoundedBox|ContactShadows|GLTFLoader|useGLTF/);
+  assert.doesNotMatch(css, /landing-lottie/);
+});
+
+test("home screen has no old default ticker fallback and renders product landing", () => {
   assert.doesNotMatch(dashboardSource, /searchParams\.get\("ticker"\)\s*\|\|\s*"US:KO"/);
   assert.doesNotMatch(dashboardSource, /tickerParam\s*\|\|\s*"US:KO"/);
   assert.match(dashboardSource, /dashboardTickerFromSearchParam\(searchParams\.get\("ticker"\)\)/);
+  assert.match(dashboardSource, /tickerParam \? "has-detail-context" : "stock-home-app"/);
   assert.match(dashboardSource, /!tickerParam && <StockLanding \/>/);
   assert.match(stockLandingSource, /aria-label="주식 점수 검색 시작"/);
   assert.match(css, /\.dashboard-landing-hero\s*\{/);
-  assert.match(css, /@keyframes landing-orbit/);
-  assert.match(css, /@keyframes landing-pulse/);
+  assert.match(css, /\.stock-home-app\s*\{[\s\S]*?width:\s*min\(var\(--mc-wide-content-width\), calc\(100% - 48px\)\);/);
+  assert.match(stockLandingSource, /LandingProductShowcase/);
+  assert.match(css, /\.landing-product-showcase\s*\{/);
 });
 
 test("compare and technical routes do not invent a default stock selection", () => {
@@ -274,31 +353,41 @@ test("compare and technical routes do not invent a default stock selection", () 
   assert.match(technicalRouteSource, /if \(!rawTicker\) \{\s*redirect\("\/"\);/);
 });
 
-test("landing hero has scrollable product sections and a seamless stock loop", () => {
-  const storyMatches = stockLandingSource.match(/className="landing-story-section/g) || [];
-  const proofMatches = stockLandingSource.match(/className="landing-proof-list"/g) || [];
-  assert.equal(storyMatches.length, 5);
-  assert.equal(proofMatches.length, 5);
-  assert.match(stockLandingSource, /<h2>시장을 훑고, 후보만 남깁니다<\/h2>[\s\S]*<h2>큰 종목부터 빠르게 봅니다<\/h2>[\s\S]*<h2>상세 페이지는 판단 순서대로 읽힙니다<\/h2>[\s\S]*<h2>가격 흐름은 따로 분리합니다<\/h2>[\s\S]*<h2>마지막엔 후보를 나란히 둡니다<\/h2>/);
-  assert.match(stockLandingSource, /한글 종목명·해외 티커[\s\S]*순위·티커·시총·주가·등락폭[\s\S]*시총·섹터·재무[\s\S]*추세·변동성·신호[\s\S]*후보를 나란히 비교/);
+test("landing hero has scrollable product UI sections", () => {
+  const variantMatches = stockLandingSource.match(/showcase: "(search|rank|brief|chart|compare)"/g) || [];
+  const sectionClassMatches = stockLandingSource.match(/className: "landing-story|className: "dashboard-landing-hero/g) || [];
+  assert.equal(variantMatches.length, 5);
+  assert.equal(sectionClassMatches.length, 5);
+  assert.match(stockLandingSource, /className="landing-proof-list"/);
+  assert.match(stockLandingSource, /관심 종목[\s\S]*시총과 섹터로 시장의 무게중심을 봐요[\s\S]*좋은 회사인지보다,\s*얼마에 사는지가 먼저예요[\s\S]*캔들 흐름으로 진입 구간을 따로 확인해요[\s\S]*비슷한 후보는 같은 지표로 눌러봐요/);
+  for (const phrase of ["실적 모멘텀", "거래대금", "PER·PBR", "20일 추세", "ROE와 마진"]) {
+    assert.match(stockLandingSource, new RegExp(phrase));
+  }
   assert.match(css, /\.dashboard-landing\s*\{/);
   assert.match(css, /\.landing-story-section\s*\{/);
   assert.match(css, /\.landing-proof-list\s*\{/);
   assert.match(css, /\.landing-visual\s*\{[\s\S]*?min-height:\s*300px;/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.landing-visual\s*\{[\s\S]*?min-height:\s*340px;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.landing-visual\s*\{[\s\S]*?min-height:\s*clamp\(340px,\s*27vw,\s*420px\);/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.landing-visual\s*\{[\s\S]*?min-height:\s*280px;/);
-  assert.match(css, /@keyframes landing-info-orbit/);
-  assert.match(css, /@keyframes landing-chart-sweep/);
-  assert.match(css, /@keyframes landing-compare-glow/);
-  assert.match(stockLandingSource, /기술적 분석/);
-  assert.match(stockLandingSource, /Compare Mode/);
-  assert.match(stockLandingSource, /Market Cap Board/);
-  assert.match(stockLandingSource, /<span>NVDA<\/span>[\s\S]*<span>애플<\/span>[\s\S]*<span>TSLA<\/span>[\s\S]*<span>엔비디아<\/span>/);
-  assert.match(stockLandingSource, /<span>삼성전자<\/span>[\s\S]*<span>SK하이닉스<\/span>[\s\S]*<span>현대차<\/span>[\s\S]*<span>네이버<\/span>/);
-  assert.match(stockLandingSource, /className="landing-loop-group"[\s\S]*className="landing-loop-group" aria-hidden="true"/);
-  assert.match(css, /--landing-loop-distance:\s*50%;/);
-  assert.match(css, /translateX\(calc\(-1 \* var\(--landing-loop-distance\)\)\)/);
-  assert.match(css, /\.landing-loop-window\s*\{[\s\S]*?mask-image:\s*linear-gradient\(90deg, transparent 0, #000 22px, #000 calc\(100% - 22px\), transparent 100%\);/);
+  assert.match(stockLandingSource, /landingSections\.map/);
+  assert.match(landingShowcaseSource, /landing-product-showcase-\$\{variant\}/);
+  assert.match(landingShowcaseSource, /MetricChip/);
+  assert.match(landingShowcaseSource, /CandidateRow/);
+  assert.match(landingShowcaseSource, /MarketCapRow/);
+  assert.match(landingShowcaseSource, /ScoreDial/);
+  assert.match(landingShowcaseSource, /landing-ui-score-ring/);
+  assert.match(landingShowcaseSource, /CompareRow/);
+  assert.match(css, /\.landing-ui-toolbar\s*\{/);
+  assert.match(css, /\.landing-ui-market-row\s*\{/);
+  assert.match(css, /\.landing-ui-score-dial\s*\{/);
+  assert.match(css, /\.landing-ui-score-progress\s*\{[\s\S]*?stroke-linecap:\s*round;/);
+  assert.match(css, /@keyframes landing-rank-first/);
+  assert.match(css, /@keyframes landing-candle-drift/);
+  assert.match(css, /@keyframes landing-score-ring-update/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.landing-product-showcase \*/);
+  assert.match(css, /\.landing-ui-compare-row\s*\{/);
+  assert.doesNotMatch(stockLandingSource, /Compare Mode|Market Cap Board|Technical Flow|Company Brief/);
+  assert.doesNotMatch(css, /landing-loop|landing-scanline|landing-score-card/);
 });
 
 test("home search is a floating pill that collapses to a compact text pill", () => {

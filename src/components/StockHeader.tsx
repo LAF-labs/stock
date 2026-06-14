@@ -181,17 +181,20 @@ function ScoreInsightPanel({
   description: string;
   children?: ReactNode;
 }) {
-  const scoreStyle = { "--score-angle": `${score * 3.6}deg` } as CSSProperties;
-  const donutClassName = tone === "opportunity" ? "score-donut opportunity-donut" : "score-donut";
+  const scoreStyle = { "--score-offset": String(100 - score) } as CSSProperties;
+  const scoreTone = scoreToneForScore(score);
 
   return (
-    <article className={`score-panel ${tone === "opportunity" ? "opportunity-panel" : "quality-score-panel"}`}>
+    <article className={`score-panel ${tone === "opportunity" ? "opportunity-panel" : "quality-score-panel"}`} data-score-tone={scoreTone}>
       <span className="score-panel-kicker">{label}</span>
       <div className="quality-score-visual">
-        <div className={donutClassName} style={scoreStyle} role="img" aria-label={`${label} ${score.toFixed(1)}점`}>
+        <div className="score-donut" style={scoreStyle} role="img" aria-label={`${label} ${score.toFixed(1)}점, 100점 만점 기준`}>
+          <svg className="score-donut-ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <circle className="score-donut-track" cx="50" cy="50" r="42" pathLength="100" />
+            <circle className="score-donut-progress" cx="50" cy="50" r="42" pathLength="100" />
+          </svg>
           <span className="quality-donut-value">
             <strong>{score.toFixed(1)}</strong>
-            <small>/100</small>
           </span>
         </div>
         <div className="score-panel-explain">
@@ -202,6 +205,12 @@ function ScoreInsightPanel({
       </div>
     </article>
   );
+}
+
+function scoreToneForScore(score: number): "good" | "neutral" | "bad" {
+  if (score >= 70) return "good";
+  if (score >= 50) return "neutral";
+  return "bad";
 }
 
 function qualityScoreTitle(score: number): string {

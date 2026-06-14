@@ -46,7 +46,7 @@ export function ChartStory({
   technicalAnalysisHref?: string;
 }) {
   const usable = useMemo(() => usableChartPoints(points), [points]);
-  const [chartMode, setChartMode] = useState<"line" | "candle">("line");
+  const [chartMode, setChartMode] = useState<"line" | "candle">("candle");
   const summaryId = useId();
   const hasSinglePricePoint = usable.length === 1;
 
@@ -58,8 +58,8 @@ export function ChartStory({
     if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
       event.preventDefault();
       setChartMode((mode) => {
-        if (event.key === "Home") return "line";
-        if (event.key === "End") return "candle";
+        if (event.key === "Home") return "candle";
+        if (event.key === "End") return "line";
         return mode === "line" ? "candle" : "line";
       });
     }
@@ -86,11 +86,11 @@ export function ChartStory({
           <h2>{hasSinglePricePoint ? "첫 가격 기록이 확인됐어요" : "최근 1년은 이렇게 움직였어요"}</h2>
         </div>
         <div className="chart-mode-tabs" role="tablist" aria-label="차트 표시 방식" onKeyDown={onChartTabKeyDown}>
-          <button type="button" role="tab" aria-selected={chartMode === "line"} tabIndex={chartMode === "line" ? 0 : -1} className={chartMode === "line" ? "active" : undefined} onClick={() => setChartMode("line")}>
-            쉽게
-          </button>
           <button type="button" role="tab" aria-selected={chartMode === "candle"} tabIndex={chartMode === "candle" ? 0 : -1} className={chartMode === "candle" ? "active" : undefined} onClick={() => setChartMode("candle")}>
             캔들
+          </button>
+          <button type="button" role="tab" aria-selected={chartMode === "line"} tabIndex={chartMode === "line" ? 0 : -1} className={chartMode === "line" ? "active" : undefined} onClick={() => setChartMode("line")}>
+            쉽게
           </button>
         </div>
       </div>
