@@ -88,7 +88,8 @@ test("display model aborts a lane source when its deadline expires", async () =>
 
   assert.equal(aborted, true);
   assert.deepEqual(payload.completion.unavailableParts, []);
-  assert.deepEqual(payload.completion.recoveringParts, ["chart", "score"]);
+  assert.equal(payload.score?.value.data_quality, "market_data_fallback");
+  assert.deepEqual(payload.completion.recoveringParts, ["chart"]);
 });
 
 test("display model marks provider-confirmed empty lanes unavailable instead of recovering forever", async () => {

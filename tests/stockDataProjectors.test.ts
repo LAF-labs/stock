@@ -124,6 +124,34 @@ test("display projector marks provider-empty required parts unavailable instead 
   assert.equal(payload.refresh.active, false);
 });
 
+test("display projector derives a visible score when price and chart are ready but score times out", () => {
+  const payload = stockDisplayPayloadFromEnvelope(envelope({
+    price: readyPart({
+      latest_price: 12000,
+      latest_price_label: "12,000원",
+      latest_change: 0.015,
+      latest_change_label: "+1.5%",
+      currency: "KRW",
+      volume: 123456,
+      volume_label: "123,456",
+    }, "market-data", generatedAt),
+    chart: readyPart({
+      chart_series: [
+        { date: "2026-06-11", close: 11800 },
+        { date: "2026-06-12", close: 12000 },
+      ],
+    }, "market-data", generatedAt),
+  }));
+
+  assert.equal(payload.score?.value.score, 50);
+  assert.equal(payload.score?.value.data_quality, "market_data_fallback");
+  assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
+  assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
+  assert.deepEqual(payload.completion.missingParts, []);
+  assert.deepEqual(payload.completion.recoveringParts, []);
+  assert.equal(payload.refresh.active, false);
+});
+
 function envelope(parts: Partial<StockDataEnvelope["parts"]>): StockDataEnvelope {
   return {
     ticker: "US:FLNC",
