@@ -1,7 +1,7 @@
 "use client";
 
 type DetailSectionIndexProps<SectionId extends string> = {
-  sections: ReadonlyArray<{ id: SectionId; label: string }>;
+  sections: ReadonlyArray<{ id: SectionId; label: string; isNew?: boolean }>;
   activeSection: SectionId;
   onSelect: (id: SectionId) => void;
 };
@@ -23,6 +23,7 @@ export default function DetailSectionIndex<SectionId extends string>({
             aria-current={activeSection === section.id ? "true" : undefined}
             onClick={() => onSelect(section.id)}
           >
+            {section.isNew ? <i aria-label="최근 1주일 내 새 공시" /> : null}
             {section.label}
           </button>
         ))}

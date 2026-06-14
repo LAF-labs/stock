@@ -10,6 +10,7 @@ import { SkeletonSectionTitle, StockDetailLoadingSkeleton } from "@/components/S
 import SkeletonBlock from "@/components/SkeletonBlock";
 import SymbolAutocomplete from "@/components/SymbolAutocomplete";
 import StockLanding from "@/components/landing/StockLanding";
+import { DisclosureFeed, hasRecentSecFiling } from "@/components/stock-detail/DisclosureFeed";
 import DetailSectionIndex from "@/components/stock-detail/DetailSectionIndex";
 import { stockDisplayPayloadIsComplete, stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 import {
@@ -42,6 +43,7 @@ import {
 import { useStockDashboardQueries } from "@/components/useStockDashboardQueries";
 import { detailSearchScrollDecision, useCollapsibleSearchChrome } from "@/components/useCollapsibleSearchChrome";
 import { useStockNews } from "@/components/useStockNews";
+import { useStockFilings } from "@/components/useStockFilings";
 import { clampScore } from "@/lib/format";
 import { technicalAnalysisHrefForPayload } from "@/lib/technicalAnalysisLinks";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
@@ -53,6 +55,7 @@ const DETAIL_SECTIONS = [
   { id: "detail-chart", label: "가격 흐름" },
   { id: "detail-factors", label: "점수 이유" },
   { id: "detail-key-metrics", label: "핵심 숫자" },
+  { id: "detail-filings", label: "공시" },
   { id: "detail-news", label: "뉴스" },
   { id: "detail-profile", label: "회사 정보" },
   { id: "detail-valuation", label: "가격 부담" },
@@ -110,6 +113,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   } = useStockDashboardQueries(tickerParam, initialDisplayPayload);
   const displayData = data || (initialDisplayComplete ? initialDisplayData : undefined);
   const stockNewsState = useStockNews(tickerParam, Boolean(displayData));
+  const stockFilingsState = useStockFilings(tickerParam, Boolean(displayData));
   const displayNews = stockNewsState.status === "success" && stockNewsState.items.length ? stockNewsState.items : displayData?.news;
   const displayPartialData = chooseRicherStockData(partialData, !data ? initialDisplayData : undefined);
   const hasDisplayablePartialData = hasDisplayableStockPartialData(displayPartialData);
@@ -184,7 +188,13 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
 
   const visibleDetailSections = DETAIL_SECTIONS;
   const shouldShowDetailIndex = Boolean(displayData || isPartialFeedVisible);
-  const indexSections = shouldShowDetailIndex ? visibleDetailSections : [];
+  const indexSections = shouldShowDetailIndex
+    ? visibleDetailSections.map((section) => (
+      section.id === "detail-filings" && hasRecentSecFiling(stockFilingsState)
+        ? { ...section, isNew: true }
+        : section
+    ))
+    : [];
   const compareHref = displayData && tickerParam ? compareHrefForStock(displayData, quoteData, tickerParam) : "";
   const pageIdentity = displayData ? stockHeaderIdentity(displayData, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
@@ -335,6 +345,9 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
             </DetailSection>
             <DetailSection id="detail-key-metrics">
               <SimpleList title="핵심 숫자" description="처음엔 이 숫자만 봐도 충분해요." items={displayData.key_metrics} stock={displayData} defaultOpen />
+            </DetailSection>
+            <DetailSection id="detail-filings">
+              <DisclosureFeed ticker={tickerParam} state={stockFilingsState} />
             </DetailSection>
             <DetailSection id="detail-news">
               <NewsFeed news={displayNews} />

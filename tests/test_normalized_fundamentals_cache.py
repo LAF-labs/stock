@@ -1,4 +1,5 @@
 import unittest
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -109,6 +110,7 @@ class NormalizedFundamentalCacheTests(unittest.TestCase):
 
         with (
             patch.object(provider_cache, "supabase_write_config", return_value=("https://example.supabase.co", "service-key")),
+            patch.object(provider_cache, "read_supabase_normalized_fundamental_cache", return_value=(None, None, None, None)),
             patch.object(provider_cache.requests, "post", side_effect=fake_post),
             patch.object(provider_cache.time, "time", return_value=1_700_000_000),
         ):
@@ -127,6 +129,130 @@ class NormalizedFundamentalCacheTests(unittest.TestCase):
         self.assertEqual(calls[1]["json"]["source"], "yfinance")
         self.assertEqual(calls[1]["json"]["normalized_facts"], {"totalRevenue": 1000.0, "forwardPE": 18.5})
         self.assertEqual(calls[1]["json"]["coverage"]["valuation"], ["forwardPE"])
+
+    def test_yfinance_supabase_write_does_not_replace_existing_official_latest_snapshot(self):
+        calls = []
+
+        def fake_post(url, params, headers, json, timeout):
+            calls.append({"url": url, "params": params, "json": json})
+            return FakeResponse({}, status_code=204)
+
+        with (
+            patch.object(provider_cache, "supabase_write_config", return_value=("https://example.supabase.co", "service-key")),
+            patch.object(provider_cache, "read_supabase_normalized_fundamental_cache", return_value=({"totalRevenue": 2000.0}, "fresh", {"provider": "sec"}, {"provider": "sec"})),
+            patch.object(provider_cache.requests, "post", side_effect=fake_post),
+            patch.object(provider_cache.time, "time", return_value=1_700_000_000),
+        ):
+            written = provider_cache.write_supabase_yfinance_fundamental_cache(
+                "asm",
+                {"targetMeanPrice": 25.5},
+                market="US",
+                provider_mode="yahoo_quote_summary",
+            )
+
+        self.assertTrue(written)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("/rest/v1/stock_fundamental_snapshots", calls[0]["url"])
+
+    def test_sec_companyfacts_normalizer_maps_latest_annual_fields(self):
+        payload = {
+            "entityName": "Example Inc.",
+            "facts": {
+                "us-gaap": {
+                    "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                        "units": {
+                            "USD": [
+                                {"form": "10-K", "fp": "FY", "fy": 2024, "end": "2024-12-31", "filed": "2025-02-01", "val": 900},
+                                {"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 1000},
+                            ]
+                        }
+                    },
+                    "NetIncomeLoss": {"units": {"USD": [{"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 210}]}},
+                    "OperatingIncomeLoss": {"units": {"USD": [{"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 260}]}},
+                    "Assets": {"units": {"USD": [{"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 2000}]}},
+                    "Liabilities": {"units": {"USD": [{"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 800}]}},
+                    "StockholdersEquity": {"units": {"USD": [{"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 1200}]}},
+                    "EarningsPerShareDiluted": {"units": {"USD/shares": [{"form": "10-K", "fp": "FY", "fy": 2025, "end": "2025-12-31", "filed": "2026-02-01", "val": 4.2}]}},
+                }
+            },
+        }
+
+        normalized, meta, compact = provider_cache.normalize_sec_companyfacts(payload)
+
+        self.assertEqual(normalized["totalRevenue"], 1000.0)
+        self.assertEqual(normalized["netIncome"], 210.0)
+        self.assertEqual(normalized["operatingMargins"], 0.26)
+        self.assertEqual(normalized["profitMargins"], 0.21)
+        self.assertEqual(normalized["returnOnEquity"], 0.175)
+        self.assertEqual(normalized["debtToEquity"], 66.666667)
+        self.assertEqual(normalized["eps"], 4.2)
+        self.assertEqual(meta["period_end"], "2025-12-31")
+        self.assertEqual(meta["fiscal_year"], 2025)
+        self.assertEqual(compact["entity_name"], "Example Inc.")
+
+    def test_normalized_fundamentals_fetches_sec_on_us_miss_when_enabled(self):
+        with (
+            patch.dict(os.environ, {"STOCK_SEC_EDGAR_REQUEST_FETCH": "1"}, clear=False),
+            patch.object(provider_cache, "read_supabase_normalized_fundamental_cache", return_value=(None, None, provider_cache.normalized_fundamental_cache_meta("supabase", "miss"), None)),
+            patch.object(provider_cache, "sec_edgar_fundamentals", return_value=({"totalRevenue": 1000.0}, {"source": "sec_companyfacts", "cache": "refreshed"}, {"provider": "sec"})) as sec,
+        ):
+            facts, state, meta, payload = provider_cache.normalized_fundamentals("aapl", market="US")
+
+        self.assertEqual(facts, {"totalRevenue": 1000.0})
+        self.assertEqual(state, "fresh")
+        self.assertEqual(meta["source"], "sec_companyfacts")
+        self.assertEqual(payload, {"provider": "sec"})
+        sec.assert_called_once_with("AAPL")
+
+    def test_yahoo_quote_summary_normalizer_extracts_raw_values(self):
+        values = provider_cache.normalize_yahoo_quote_summary_fundamentals(
+            {
+                "financialData": {
+                    "targetMeanPrice": {"raw": 300.25},
+                    "numberOfAnalystOpinions": {"raw": 42},
+                    "recommendationMean": {"raw": 1.8},
+                    "totalRevenue": {"raw": 1000},
+                    "profitMargins": {"raw": 0.21},
+                },
+                "defaultKeyStatistics": {
+                    "forwardPE": {"raw": 24.5},
+                    "priceToBook": {"raw": 12.3},
+                    "beta": {"raw": 1.15},
+                },
+                "summaryDetail": {
+                    "trailingPE": {"raw": 28.1},
+                    "averageVolume": {"raw": 123456},
+                    "averageVolume10days": {"raw": 234567},
+                },
+            }
+        )
+
+        self.assertEqual(values["targetMeanPrice"], 300.25)
+        self.assertEqual(values["numberOfAnalystOpinions"], 42.0)
+        self.assertEqual(values["forwardPE"], 24.5)
+        self.assertEqual(values["trailingPE"], 28.1)
+        self.assertEqual(values["beta"], 1.15)
+        self.assertEqual(values["averageVolume10days"], 234567.0)
+
+    def test_yfinance_fundamentals_prefers_yahoo_quote_summary_before_yfinance_info(self):
+        with (
+            patch.dict(os.environ, {"STOCK_YFINANCE_REQUEST_FETCH": "1"}, clear=False),
+            patch.object(provider_cache, "read_supabase_yfinance_fundamental_cache", return_value=(None, None, None)),
+            patch.object(provider_cache, "read_yfinance_fundamental_cache", return_value=(None, None)),
+            patch.object(provider_cache, "yahoo_quote_summary_fundamentals", return_value={"targetMeanPrice": 300, "forwardPE": 24.5}) as yahoo,
+            patch.object(provider_cache, "write_yfinance_fundamental_cache") as local_write,
+            patch.object(provider_cache, "write_supabase_yfinance_fundamental_cache", return_value=True) as supabase_write,
+            patch.object(provider_cache, "safe_info") as safe_info,
+            patch.object(provider_cache, "one_byte_file_lock"),
+        ):
+            values, meta = provider_cache.yfinance_fundamentals("aapl")
+
+        self.assertEqual(values, {"targetMeanPrice": 300, "forwardPE": 24.5})
+        self.assertEqual(meta["provider_mode"], "yahoo_quote_summary")
+        yahoo.assert_called_once_with("AAPL")
+        local_write.assert_called_once()
+        supabase_write.assert_called_once()
+        safe_info.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,8 @@ from .cache_policy import fresh_seconds as policy_fresh_seconds, stale_seconds a
 
 YFINANCE_FUNDAMENTAL_CACHE_VERSION = 2
 YFINANCE_FUNDAMENTAL_SOURCE = "yfinance"
+SEC_EDGAR_FUNDAMENTAL_SOURCE = "sec_companyfacts"
+SEC_EDGAR_PROVIDER = "sec"
 SUPABASE_FUNDAMENTAL_TABLE = "stock_fundamental_snapshots"
 SUPABASE_FUNDAMENTAL_LATEST_TABLE = "stock_fundamental_latest"
 SUPABASE_TIMEOUT_SECONDS = 8
@@ -125,6 +129,32 @@ FUNDAMENTAL_COVERAGE_GROUPS = {
     "valuation": ["trailingPE", "forwardPE", "priceToBook", "enterpriseToRevenue", "priceToSalesTrailing12Months", "evToEbitda"],
     "market": ["marketCap", "beta", "averageVolume", "averageVolume10days", "targetMeanPrice", "numberOfAnalystOpinions", "recommendationMean"],
 }
+
+SEC_FACT_FIELDS = {
+    "totalRevenue": ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"),
+    "netIncome": ("NetIncomeLoss", "ProfitLoss"),
+    "operatingIncome": ("OperatingIncomeLoss",),
+    "totalAssets": ("Assets",),
+    "currentAssets": ("AssetsCurrent",),
+    "totalLiabilities": ("Liabilities",),
+    "currentLiabilities": ("LiabilitiesCurrent",),
+    "totalEquity": (
+        "StockholdersEquity",
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+    ),
+    "eps": ("EarningsPerShareDiluted", "EarningsPerShareBasic"),
+    "operatingCashflow": ("NetCashProvidedByUsedInOperatingActivities",),
+}
+
+SEC_FACT_UNITS = {
+    "eps": ("USD/shares", "USD / shares"),
+}
+
+YAHOO_QUOTE_SUMMARY_MODULES = (
+    "financialData",
+    "defaultKeyStatistics",
+    "summaryDetail",
+)
 
 
 def yfinance_fundamental_cache_dir() -> Path:
@@ -238,6 +268,233 @@ def merge_fundamental_values(*sources: dict[str, Any] | None) -> dict[str, float
     return merged
 
 
+def finite_divide(numerator: Any, denominator: Any, multiplier: float = 1.0) -> float | None:
+    parsed_numerator = as_float(numerator)
+    parsed_denominator = as_float(denominator)
+    if parsed_numerator is None or not parsed_denominator:
+        return None
+    value = (parsed_numerator / parsed_denominator) * multiplier
+    return round(value, 6) if math.isfinite(value) else None
+
+
+def truthy_env(name: str) -> bool | None:
+    raw = (env_value(name) or "").strip().lower()
+    if not raw:
+        return None
+    return raw in {"1", "true", "yes", "on", "enabled"}
+
+
+def sec_edgar_user_agent() -> str:
+    return (
+        env_value("STOCK_SEC_EDGAR_USER_AGENT")
+        or env_value("SEC_EDGAR_USER_AGENT")
+        or "stockstalker/0.1 contact@example.com"
+    )
+
+
+def sec_edgar_request_fetch_enabled() -> bool:
+    configured = truthy_env("STOCK_SEC_EDGAR_REQUEST_FETCH")
+    if configured is not None:
+        return configured
+    return yfinance_request_fetch_enabled()
+
+
+def yahoo_quote_summary_fetch_enabled() -> bool:
+    configured = truthy_env("STOCK_YAHOO_QUOTE_SUMMARY_FETCH")
+    return True if configured is None else configured
+
+
+def sec_fact_units(field: str) -> tuple[str, ...]:
+    return SEC_FACT_UNITS.get(field, ("USD",))
+
+
+def sec_fact_value(row: dict[str, Any]) -> float | None:
+    return finite_or_none(row.get("val"))
+
+
+def sec_fact_sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
+    form = str(row.get("form") or "").upper()
+    fp = str(row.get("fp") or "").upper()
+    annual = 1 if form in {"10-K", "10-K/A", "20-F", "20-F/A"} or fp == "FY" else 0
+    return annual, str(row.get("end") or ""), str(row.get("filed") or "")
+
+
+def latest_sec_fact(us_gaap: dict[str, Any], field: str) -> dict[str, Any] | None:
+    rows: list[dict[str, Any]] = []
+    for metric in SEC_FACT_FIELDS.get(field, ()):
+        metric_payload = us_gaap.get(metric)
+        units = metric_payload.get("units") if isinstance(metric_payload, dict) else None
+        if not isinstance(units, dict):
+            continue
+        for unit in sec_fact_units(field):
+            for row in units.get(unit) or []:
+                if not isinstance(row, dict) or sec_fact_value(row) is None:
+                    continue
+                rows.append({**row, "metric": metric, "unit": unit, "value": sec_fact_value(row)})
+    if not rows:
+        return None
+    annual_rows = [row for row in rows if sec_fact_sort_key(row)[0] == 1]
+    return max(annual_rows or rows, key=sec_fact_sort_key)
+
+
+def normalize_sec_companyfacts(payload: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any], dict[str, Any]]:
+    us_gaap = (((payload.get("facts") or {}).get("us-gaap")) if isinstance(payload.get("facts"), dict) else None)
+    if not isinstance(us_gaap, dict):
+        return {}, {}, {"source": SEC_EDGAR_FUNDAMENTAL_SOURCE, "entity_name": payload.get("entityName")}
+
+    selected: dict[str, dict[str, Any]] = {}
+    values: dict[str, Any] = {}
+    for field in SEC_FACT_FIELDS:
+        row = latest_sec_fact(us_gaap, field)
+        if not row:
+            continue
+        values[field] = row["value"]
+        selected[field] = {
+            "metric": row.get("metric"),
+            "unit": row.get("unit"),
+            "form": row.get("form"),
+            "fy": row.get("fy"),
+            "fp": row.get("fp"),
+            "end": row.get("end"),
+            "filed": row.get("filed"),
+            "val": row.get("value"),
+        }
+
+    revenue = values.get("totalRevenue")
+    values.setdefault("profitMargins", finite_divide(values.get("netIncome"), revenue))
+    values.setdefault("operatingMargins", finite_divide(values.get("operatingIncome"), revenue))
+    values.setdefault("returnOnEquity", finite_divide(values.get("netIncome"), values.get("totalEquity")))
+    values.setdefault("currentRatio", finite_divide(values.get("currentAssets"), values.get("currentLiabilities")))
+    values.setdefault("debtToEquity", finite_divide(values.get("totalLiabilities"), values.get("totalEquity"), 100.0))
+
+    cleaned = clean_fundamental_values(values)
+    primary = selected.get("totalRevenue") or next(iter(selected.values()), {})
+    fiscal_year = primary.get("fy")
+    try:
+        fiscal_year = int(fiscal_year) if fiscal_year is not None else None
+    except (TypeError, ValueError):
+        fiscal_year = None
+    meta = {
+        "period_end": primary.get("end"),
+        "fiscal_year": fiscal_year,
+        "fiscal_period": primary.get("fp"),
+        "report_type": primary.get("form"),
+        "currency": "USD",
+    }
+    compact_payload = {
+        "source": SEC_EDGAR_FUNDAMENTAL_SOURCE,
+        "entity_name": payload.get("entityName"),
+        "selected_facts": selected,
+    }
+    return cleaned, meta, compact_payload
+
+
+@lru_cache(maxsize=1)
+def sec_company_tickers() -> dict[str, Any]:
+    response = requests.get(
+        "https://www.sec.gov/files/company_tickers.json",
+        headers={"User-Agent": sec_edgar_user_agent()},
+        timeout=SUPABASE_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+def sec_cik_for_ticker(symbol: str) -> str | None:
+    ticker = clean_ticker(symbol)
+    for row in sec_company_tickers().values():
+        if not isinstance(row, dict) or clean_ticker(str(row.get("ticker") or "")) != ticker:
+            continue
+        cik = row.get("cik_str")
+        return str(cik).zfill(10) if cik is not None else None
+    return None
+
+
+def fetch_sec_companyfacts(symbol: str) -> dict[str, Any]:
+    cik = sec_cik_for_ticker(symbol)
+    if not cik:
+        return {}
+    response = requests.get(
+        f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
+        headers={"User-Agent": sec_edgar_user_agent()},
+        timeout=SUPABASE_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+def sec_edgar_fundamentals(symbol: str) -> tuple[dict[str, float], dict[str, Any], dict[str, Any]]:
+    clean_symbol = clean_ticker(symbol)
+    raw = fetch_sec_companyfacts(clean_symbol)
+    values, fact_meta, compact_payload = normalize_sec_companyfacts(raw)
+    if not values:
+        return {}, normalized_fundamental_cache_meta("provider", "miss", provider=SEC_EDGAR_PROVIDER, source=SEC_EDGAR_FUNDAMENTAL_SOURCE), compact_payload
+
+    persisted = write_supabase_normalized_fundamental_latest(
+        clean_symbol,
+        values,
+        market="US",
+        provider=SEC_EDGAR_PROVIDER,
+        source=SEC_EDGAR_FUNDAMENTAL_SOURCE,
+        payload=compact_payload,
+        period_end=fact_meta.get("period_end"),
+        fiscal_year=fact_meta.get("fiscal_year"),
+        fiscal_period=fact_meta.get("fiscal_period"),
+        report_type=fact_meta.get("report_type"),
+        currency=fact_meta.get("currency"),
+        is_consolidated=True,
+    )
+    return values, normalized_fundamental_cache_meta(
+        "provider",
+        "refreshed",
+        provider=SEC_EDGAR_PROVIDER,
+        source=SEC_EDGAR_FUNDAMENTAL_SOURCE,
+        persisted="supabase" if persisted else "memory",
+        **fact_meta,
+    ), compact_payload
+
+
+def yahoo_raw_value(value: Any) -> float | None:
+    if isinstance(value, dict) and "raw" in value:
+        return finite_or_none(value.get("raw"))
+    return finite_or_none(value)
+
+
+def normalize_yahoo_quote_summary_fundamentals(payload: dict[str, Any]) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for module in YAHOO_QUOTE_SUMMARY_MODULES:
+        section = payload.get(module)
+        if not isinstance(section, dict):
+            continue
+        for field in YFINANCE_FUNDAMENTAL_FIELDS:
+            if field in values or field not in section:
+                continue
+            parsed = yahoo_raw_value(section.get(field))
+            if parsed is not None:
+                values[field] = parsed
+    return values
+
+
+def yahoo_quote_summary_fundamentals(symbol: str) -> dict[str, Any]:
+    yahoo_symbol = clean_ticker(symbol).replace(".", "-")
+    session = requests.Session()
+    session.headers["User-Agent"] = "Mozilla/5.0"
+    session.get("https://fc.yahoo.com", timeout=SUPABASE_TIMEOUT_SECONDS)
+    crumb_response = session.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=SUPABASE_TIMEOUT_SECONDS)
+    crumb_response.raise_for_status()
+    crumb = crumb_response.text.strip()
+    response = session.get(
+        f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{yahoo_symbol}",
+        params={"modules": ",".join(YAHOO_QUOTE_SUMMARY_MODULES), "crumb": crumb},
+        timeout=SUPABASE_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    result = ((response.json().get("quoteSummary") or {}).get("result") or [{}])[0]
+    return normalize_yahoo_quote_summary_fundamentals(result if isinstance(result, dict) else {})
+
+
 def fundamental_coverage(values: dict[str, Any] | None) -> dict[str, list[str]]:
     cleaned = clean_fundamental_values(values)
     return {
@@ -332,7 +589,32 @@ def normalized_fundamentals(
     market: str = "US",
 ) -> tuple[dict[str, float], str | None, dict[str, Any], dict[str, Any]]:
     facts, state, meta, payload = read_supabase_normalized_fundamental_cache(symbol, market)
-    return facts or {}, state, meta or normalized_fundamental_cache_meta("supabase", "miss"), payload or {}
+    if facts and state == "fresh":
+        return facts, state, meta or normalized_fundamental_cache_meta("supabase", "fresh"), payload or {}
+
+    clean_market = clean_ticker(market) or "US"
+    clean_symbol = clean_ticker(symbol)
+    if clean_market != "US" or not sec_edgar_request_fetch_enabled():
+        return facts or {}, state, meta or normalized_fundamental_cache_meta("supabase", "miss"), payload or {}
+
+    stale_facts = facts if facts and state == "stale" else None
+    stale_meta = meta if facts and state == "stale" else None
+    stale_payload = payload if facts and state == "stale" else None
+    try:
+        sec_values, sec_meta, sec_payload = sec_edgar_fundamentals(clean_symbol)
+        if sec_values:
+            return sec_values, "fresh", sec_meta, sec_payload
+    except Exception as exc:
+        if stale_facts:
+            return stale_facts, "stale", {
+                **(stale_meta or normalized_fundamental_cache_meta("supabase", "stale")),
+                "refresh_error": str(exc),
+            }, stale_payload or {}
+        return {}, None, normalized_fundamental_cache_meta("provider", "miss", provider=SEC_EDGAR_PROVIDER, source=SEC_EDGAR_FUNDAMENTAL_SOURCE, refresh_error=str(exc)), {}
+
+    if stale_facts:
+        return stale_facts, "stale", stale_meta or normalized_fundamental_cache_meta("supabase", "stale"), stale_payload or {}
+    return {}, None, meta or normalized_fundamental_cache_meta("provider", "miss", provider=SEC_EDGAR_PROVIDER, source=SEC_EDGAR_FUNDAMENTAL_SOURCE), payload or {}
 
 
 def write_supabase_normalized_fundamental_latest(
@@ -398,7 +680,12 @@ def write_supabase_normalized_fundamental_latest(
         return False
 
 
-def fundamental_cache_payload(symbol: str, values: dict[str, Any], now: float | None = None) -> dict[str, Any]:
+def fundamental_cache_payload(
+    symbol: str,
+    values: dict[str, Any],
+    now: float | None = None,
+    provider_mode: str | None = None,
+) -> dict[str, Any]:
     timestamp = time.time() if now is None else now
     fetched_at = datetime.fromtimestamp(timestamp, timezone.utc)
     field_classes = {field: fundamental_field_class(field) for field in values.keys()}
@@ -417,7 +704,7 @@ def fundamental_cache_payload(symbol: str, values: dict[str, Any], now: float | 
         fresh_expires_at = datetime.fromtimestamp(timestamp + yfinance_cache_fresh_seconds(), timezone.utc)
     if stale_expires_at is None:
         stale_expires_at = datetime.fromtimestamp(timestamp + yfinance_cache_stale_seconds(), timezone.utc)
-    return {
+    payload = {
         "version": YFINANCE_FUNDAMENTAL_CACHE_VERSION,
         "symbol": clean_ticker(symbol),
         "source": YFINANCE_FUNDAMENTAL_SOURCE,
@@ -432,6 +719,9 @@ def fundamental_cache_payload(symbol: str, values: dict[str, Any], now: float | 
         "class_stale_expires_at": class_stale_expires_at,
         "values": values,
     }
+    if provider_mode:
+        payload["provider_mode"] = provider_mode
+    return payload
 
 
 def read_supabase_yfinance_fundamental_cache(symbol: str, market: str = "US") -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None]:
@@ -489,14 +779,19 @@ def read_supabase_yfinance_fundamental_cache(symbol: str, market: str = "US") ->
     }
 
 
-def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any], market: str = "US") -> bool:
+def write_supabase_yfinance_fundamental_cache(
+    symbol: str,
+    values: dict[str, Any],
+    market: str = "US",
+    provider_mode: str | None = None,
+) -> bool:
     config = supabase_write_config()
     if not config:
         return False
 
     url, key = config
     timestamp = time.time()
-    payload = fundamental_cache_payload(symbol, values, timestamp)
+    payload = fundamental_cache_payload(symbol, values, timestamp, provider_mode)
     row = {
         "market": clean_ticker(market) or "US",
         "symbol": clean_ticker(symbol),
@@ -517,17 +812,26 @@ def write_supabase_yfinance_fundamental_cache(symbol: str, values: dict[str, Any
             json=row,
             timeout=SUPABASE_TIMEOUT_SECONDS,
         )
-        write_supabase_normalized_fundamental_latest(
-            symbol,
-            values,
-            market=market,
-            provider=YFINANCE_FUNDAMENTAL_SOURCE,
-            source=YFINANCE_FUNDAMENTAL_SOURCE,
-            payload=payload,
-        )
+        if yfinance_may_publish_normalized_latest(symbol, market):
+            write_supabase_normalized_fundamental_latest(
+                symbol,
+                values,
+                market=market,
+                provider=YFINANCE_FUNDAMENTAL_SOURCE,
+                source=YFINANCE_FUNDAMENTAL_SOURCE,
+                payload=payload,
+            )
         return response.ok
     except Exception:
         return False
+
+
+def yfinance_may_publish_normalized_latest(symbol: str, market: str = "US") -> bool:
+    facts, state, meta, _ = read_supabase_normalized_fundamental_cache(symbol, market)
+    provider = str((meta or {}).get("provider") or "")
+    if facts and state in {"fresh", "stale"} and provider not in {"", "unknown", YFINANCE_FUNDAMENTAL_SOURCE}:
+        return False
+    return True
 
 
 def kis_domestic_cache_meta(store: str, state: str, **extra: Any) -> dict[str, Any]:
@@ -981,10 +1285,10 @@ def read_yfinance_fundamental_cache(symbol: str) -> tuple[dict[str, Any] | None,
     return cached_payload_values_and_state(cached, datetime.fromtimestamp(now, timezone.utc))
 
 
-def write_yfinance_fundamental_cache(symbol: str, values: dict[str, Any]) -> None:
+def write_yfinance_fundamental_cache(symbol: str, values: dict[str, Any], provider_mode: str | None = None) -> None:
     path = yfinance_fundamental_cache_path(symbol)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = fundamental_cache_payload(symbol, values)
+    payload = fundamental_cache_payload(symbol, values, provider_mode=provider_mode)
     temp_path = path.with_suffix(".tmp")
     temp_path.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False), encoding="utf-8")
     temp_path.replace(path)
@@ -992,6 +1296,7 @@ def write_yfinance_fundamental_cache(symbol: str, values: dict[str, Any]) -> Non
 
 def yfinance_fundamentals(symbol: str, market: str = "US") -> tuple[dict[str, Any], dict[str, Any]]:
     market = clean_ticker(market) or "US"
+    clean_symbol = clean_ticker(symbol)
     supabase_values, supabase_state, supabase_meta = read_supabase_yfinance_fundamental_cache(symbol, market)
     if supabase_values and supabase_state == "fresh":
         return supabase_values, supabase_meta or yfinance_cache_meta("supabase", "fresh")
@@ -1034,17 +1339,48 @@ def yfinance_fundamentals(symbol: str, market: str = "US") -> tuple[dict[str, An
             stale_values = local_values
             stale_meta = yfinance_cache_meta("file", "stale")
 
+        quote_summary_error: str | None = None
+        if market == "US" and yahoo_quote_summary_fetch_enabled():
+            try:
+                values = yahoo_quote_summary_fundamentals(clean_symbol)
+                if values:
+                    write_yfinance_fundamental_cache(clean_symbol, values, provider_mode="yahoo_quote_summary")
+                    supabase_written = write_supabase_yfinance_fundamental_cache(
+                        clean_symbol,
+                        values,
+                        market,
+                        provider_mode="yahoo_quote_summary",
+                    )
+                    return values, yfinance_cache_meta(
+                        "provider",
+                        "refreshed",
+                        provider_mode="yahoo_quote_summary",
+                        persisted="supabase" if supabase_written else "file",
+                    )
+            except Exception as exc:
+                quote_summary_error = str(exc)
+
         try:
             info = safe_info(yf.Ticker(symbol))
             values = {field: finite_or_none(info.get(field)) for field in YFINANCE_FUNDAMENTAL_FIELDS if info.get(field) is not None}
             if values:
                 write_yfinance_fundamental_cache(symbol, values)
                 supabase_written = write_supabase_yfinance_fundamental_cache(symbol, values, market)
-                return values, yfinance_cache_meta("provider", "refreshed", persisted="supabase" if supabase_written else "file")
+                return values, yfinance_cache_meta(
+                    "provider",
+                    "refreshed",
+                    provider_mode="yfinance_info",
+                    yahoo_quote_summary_error=quote_summary_error,
+                    persisted="supabase" if supabase_written else "file",
+                )
         except Exception as exc:
             if stale_values:
-                return stale_values, {**(stale_meta or yfinance_cache_meta("unknown", "stale")), "refresh_error": str(exc)}
-            return {}, yfinance_cache_meta("provider", "miss", refresh_error=str(exc))
+                return stale_values, {
+                    **(stale_meta or yfinance_cache_meta("unknown", "stale")),
+                    "refresh_error": str(exc),
+                    "yahoo_quote_summary_error": quote_summary_error,
+                }
+            return {}, yfinance_cache_meta("provider", "miss", refresh_error=str(exc), yahoo_quote_summary_error=quote_summary_error)
 
     if stale_values:
         return stale_values, stale_meta or yfinance_cache_meta("unknown", "stale")

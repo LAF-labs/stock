@@ -2348,6 +2348,160 @@ a:focus-visible {
   font-weight: 500;
 }
 
+.disclosure-card .accordion-body {
+  display: grid;
+  gap: 14px;
+}
+
+.disclosure-list {
+  display: grid;
+  gap: 12px;
+}
+
+.disclosure-list a {
+  display: grid;
+  gap: 6px;
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.disclosure-list a:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.disclosure-list a strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.disclosure-meta {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.disclosure-meta i,
+.stock-detail-index button i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #e03131;
+  box-shadow: 0 0 0 3px rgba(224, 49, 49, 0.12);
+}
+
+.disclosure-more-button,
+.disclosure-page-button,
+.disclosure-icon-button {
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.disclosure-more-button {
+  width: fit-content;
+  padding: 0 14px;
+}
+
+.disclosure-more-button:hover,
+.disclosure-page-button:hover:not(:disabled),
+.disclosure-icon-button:hover {
+  border-color: rgba(49, 130, 246, 0.42);
+  background: var(--surface-accent);
+}
+
+.disclosure-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.disclosure-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(820px, 80vw);
+  height: min(760px, 80vh);
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+}
+
+.disclosure-modal > header,
+.disclosure-modal > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.disclosure-modal > footer {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.disclosure-modal > header div {
+  display: grid;
+  gap: 5px;
+}
+
+.disclosure-modal > header span,
+.disclosure-modal > footer span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.disclosure-modal > header strong {
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.disclosure-modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.disclosure-page-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.disclosure-page-button:disabled {
+  color: var(--muted);
+  opacity: 0.48;
+}
+
+.disclosure-icon-button {
+  display: inline-grid;
+  width: 36px;
+  padding: 0;
+  place-items: center;
+}
+
 .accordion-card pre {
   max-height: 420px;
   overflow: auto;
@@ -3621,6 +3775,9 @@ body.compare-search-open {
   }
 
   .stock-detail-index button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     min-height: 32px;
     padding: 0 10px;

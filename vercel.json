@@ -3,6 +3,10 @@
     {
       "path": "/api/market-cap/refresh",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/jobs/sec-filings-backfill",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
