@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   globalNavigationItemsForContext,
@@ -7,6 +9,10 @@ import {
   navigationItemsForContext,
   nextMobileNavigationOpen,
 } from "../src/components/appNavigationMenuHelpers";
+
+const appNavigationMenuSource = readFileSync(join(process.cwd(), "src/components/AppNavigationMenu.tsx"), "utf8");
+const appShellNavSource = readFileSync(join(process.cwd(), "src/components/layout/AppShellNav.tsx"), "utf8");
+const mobileNavLauncherSource = readFileSync(join(process.cwd(), "src/components/layout/MobileNavLauncher.tsx"), "utf8");
 
 test("home navigation exposes compare and market-cap dashboard entry points", () => {
   assert.deepEqual(navigationItemsForContext({ page: "home" }).map((item) => item.label), [
@@ -102,4 +108,19 @@ test("mobile context action is full at the top and compact after scrolling", () 
   assert.equal(mobileContextActionVariant(0), "full");
   assert.equal(mobileContextActionVariant(8), "full");
   assert.equal(mobileContextActionVariant(24), "compact");
+});
+
+test("navigation menu delegates desktop and mobile chrome to layout primitives", () => {
+  assert.match(appNavigationMenuSource, /AppShellNav/);
+  assert.match(appNavigationMenuSource, /MobileNavLauncher/);
+  assert.doesNotMatch(appNavigationMenuSource, /function BottomNavigationLink/);
+  assert.match(appShellNavSource, /app-desktop-nav/);
+  assert.match(appShellNavSource, /AppNavigationLinks/);
+  assert.match(mobileNavLauncherSource, /nextMobileNavigationOpen/);
+  assert.match(mobileNavLauncherSource, /FloatingActionButton/);
+  assert.match(mobileNavLauncherSource, /Menu/);
+  assert.match(mobileNavLauncherSource, /tabIndex=\{mobileNavigation\.isOpen \? -1 : undefined\}/);
+  assert.match(mobileNavLauncherSource, /aria-hidden=\{mobileNavigation\.isOpen \? true : undefined\}/);
+  assert.match(mobileNavLauncherSource, /navRef/);
+  assert.match(mobileNavLauncherSource, /querySelector<HTMLElement>\("a, button"\)\?\.focus\(\)/);
 });

@@ -18,6 +18,8 @@ const marketCapHookSource = readFileSync(join(process.cwd(), "src/components/use
 const marketCapHelperSource = readFileSync(join(process.cwd(), "src/components/marketCapDashboardHelpers.ts"), "utf8");
 const appNavigationSource = readFileSync(join(process.cwd(), "src/components/AppNavigationMenu.tsx"), "utf8");
 const appNavigationLinksSource = readFileSync(join(process.cwd(), "src/components/AppNavigationLinks.tsx"), "utf8");
+const appShellNavSource = readFileSync(join(process.cwd(), "src/components/layout/AppShellNav.tsx"), "utf8");
+const mobileNavLauncherSource = readFileSync(join(process.cwd(), "src/components/layout/MobileNavLauncher.tsx"), "utf8");
 const searchChromeSource = readFileSync(join(process.cwd(), "src/components/SearchChromeWithNavigation.tsx"), "utf8");
 const collapsibleSearchChromeSource = readFileSync(join(process.cwd(), "src/components/useCollapsibleSearchChrome.ts"), "utf8");
 
@@ -249,7 +251,9 @@ test("market-cap dashboard renders tabs, a compact sector filter, and detail row
 
 test("shared navigation exposes global GNB and mobile bottom bar without replacing compare sheet UX", () => {
   assert.match(appNavigationSource, /globalNavigationItemsForContext/);
-  assert.match(appNavigationSource, /AppNavigationLinks/);
+  assert.match(appNavigationSource, /AppShellNav/);
+  assert.match(appNavigationSource, /MobileNavLauncher/);
+  assert.match(appShellNavSource, /AppNavigationLinks/);
   assert.doesNotMatch(appNavigationSource, /import \{ Menu \} from "lucide-react"/);
   assert.doesNotMatch(appNavigationSource, /app-navigation-trigger/);
   assert.match(appNavigationLinksSource, /type AppNavigationLinksVariant = "global" \| "bottom" \| "index"/);
@@ -397,8 +401,8 @@ test("mobile compare navigation keeps route tabs and contextual add action separ
   const mobileBottomItemRule = css.match(/\.app-bottom-nav-item\s*\{([^}]*)\}/)?.[1] || "";
   const mobileMenuTriggerRule = css.match(/\.app-bottom-menu-trigger\s*\{([^}]*)\}/)?.[1] || "";
   const mobileContextActionRule = css.match(/\.app-bottom-context-action\s*\{([^}]*)\}/)?.[1] || "";
-  const mobileContextActionSpanRule = css.match(/\.app-bottom-context-action span\s*\{([^}]*)\}/)?.[1] || "";
-  const mobileContextActionCompactSpanRule = css.match(/\.app-bottom-context-action\.is-compact span\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileContextActionSpanRule = css.match(/\.app-bottom-context-action \.ui-fab-label\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileContextActionCompactSpanRule = css.match(/\.app-bottom-context-action\.ui-fab--compact \.ui-fab-label\s*\{([^}]*)\}/)?.[1] || "";
 
   assert.match(mobileBottomNavRule, /grid-auto-flow:\s*column;/);
   assert.match(mobileBottomNavRule, /width:\s*min\(calc\(100vw - 28px\),\s*396px\);/);
@@ -407,23 +411,23 @@ test("mobile compare navigation keeps route tabs and contextual add action separ
   assert.match(mobileMenuTriggerRule, /position:\s*fixed;/);
   assert.match(mobileMenuTriggerRule, /left:\s*max\(16px,\s*calc\(\(100vw - 396px\) \/ 2 \+ 12px\)\);/);
   assert.doesNotMatch(mobileMenuTriggerRule, /left:\s*50%;/);
-  assert.match(mobileMenuTriggerRule, /width:\s*48px;/);
-  assert.match(mobileMenuTriggerRule, /height:\s*48px;/);
-  assert.match(appNavigationSource, /import \{ BarChart3, FileText, GitCompareArrows, Menu, PencilLine, Plus, Search \} from "lucide-react"/);
-  assert.match(appNavigationSource, /mobileContextAction\?\.icon === "edit" \? PencilLine : Plus/);
-  assert.match(appNavigationSource, /app-bottom-menu-trigger/);
-  assert.match(appNavigationSource, /app-bottom-nav-backdrop/);
-  assert.match(appNavigationSource, /nextMobileNavigationOpen/);
-  assert.doesNotMatch(appNavigationSource, /app-bottom-nav-action/);
-  assert.doesNotMatch(appNavigationSource, /mobileAction/);
-  assert.match(appNavigationSource, /app-bottom-context-action/);
+  assert.match(mobileMenuTriggerRule, /width:\s*var\(--control-height-lg\);/);
+  assert.match(mobileMenuTriggerRule, /height:\s*var\(--control-height-lg\);/);
+  assert.match(mobileNavLauncherSource, /import \{ BarChart3, FileText, GitCompareArrows, Menu, PencilLine, Plus, Search \} from "lucide-react"/);
+  assert.match(mobileNavLauncherSource, /mobileContextAction\?\.icon === "edit" \? PencilLine : Plus/);
+  assert.match(mobileNavLauncherSource, /app-bottom-menu-trigger/);
+  assert.match(mobileNavLauncherSource, /app-bottom-nav-backdrop/);
+  assert.match(mobileNavLauncherSource, /nextMobileNavigationOpen/);
+  assert.doesNotMatch(mobileNavLauncherSource, /app-bottom-nav-action/);
+  assert.doesNotMatch(mobileNavLauncherSource, /mobileAction/);
+  assert.match(mobileNavLauncherSource, /app-bottom-context-action/);
   assert.match(compareSource, /mobileContextAction/);
   assert.doesNotMatch(compareSource, /IntersectionObserver/);
   assert.doesNotMatch(compareSource, /isTickerRailVisible/);
   assert.match(css, /\.app-bottom-context-action\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?border-radius:\s*999px;/);
   assert.match(mobileContextActionRule, /width:\s*104px;/);
   assert.match(mobileContextActionRule, /transition:[\s\S]*?width 220ms/);
-  assert.match(css, /\.app-bottom-context-action\.is-compact\s*\{[\s\S]*?width:\s*42px;[\s\S]*?height:\s*42px;/);
+  assert.match(css, /\.app-bottom-context-action\.ui-fab--compact\s*\{[\s\S]*?width:\s*var\(--control-height-lg\);[\s\S]*?height:\s*var\(--control-height-lg\);/);
   assert.match(mobileContextActionSpanRule, /max-width:\s*64px;/);
   assert.match(mobileContextActionSpanRule, /transition:/);
   assert.match(mobileContextActionCompactSpanRule, /max-width:\s*0;/);
@@ -431,6 +435,33 @@ test("mobile compare navigation keeps route tabs and contextual add action separ
   assert.doesNotMatch(mobileContextActionCompactSpanRule, /display:\s*none;/);
   assert.match(css, /\.app-bottom-nav\.is-open\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?pointer-events:\s*auto;/);
   assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.stock-app\s*\{[\s\S]*?padding-bottom:\s*calc\(104px \+ env\(safe-area-inset-bottom,\s*0px\)\);/);
+});
+
+test("navigation primitives use shared mobile z-index and action sizing", () => {
+  const mobileBottomNavRule = css.match(/\.app-bottom-nav\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileMenuTriggerRule = css.match(/\.app-bottom-menu-trigger\s*\{([^}]*)\}/)?.[1] || "";
+  const mobileContextActionRule = css.match(/\.app-bottom-context-action\s*\{([^}]*)\}/)?.[1] || "";
+
+  assert.match(mobileBottomNavRule, /z-index:\s*var\(--z-mobile-nav\);/);
+  assert.match(mobileBottomNavRule, /min-height:\s*var\(--control-height-lg\);/);
+  assert.match(mobileBottomNavRule, /box-shadow:\s*var\(--shadow-floating\);/);
+  assert.doesNotMatch(mobileBottomNavRule, /z-index:\s*90;/);
+  assert.doesNotMatch(mobileBottomNavRule, /min-height:\s*56px;/);
+  assert.doesNotMatch(mobileBottomNavRule, /box-shadow:\s*0\s/);
+
+  assert.match(mobileMenuTriggerRule, /z-index:\s*var\(--z-mobile-nav\);/);
+  assert.match(mobileMenuTriggerRule, /width:\s*var\(--control-height-lg\);/);
+  assert.match(mobileMenuTriggerRule, /height:\s*var\(--control-height-lg\);/);
+  assert.match(mobileMenuTriggerRule, /box-shadow:\s*var\(--shadow-floating\);/);
+  assert.doesNotMatch(mobileMenuTriggerRule, /z-index:\s*90;/);
+  assert.doesNotMatch(mobileMenuTriggerRule, /box-shadow:\s*0\s/);
+
+  assert.match(mobileContextActionRule, /z-index:\s*calc\(var\(--z-mobile-nav\) \+ 1\);/);
+  assert.match(mobileContextActionRule, /min-height:\s*var\(--control-height-lg\);/);
+  assert.match(mobileContextActionRule, /box-shadow:\s*var\(--shadow-floating\);/);
+  assert.doesNotMatch(mobileContextActionRule, /z-index:\s*91;/);
+  assert.doesNotMatch(mobileContextActionRule, /min-height:\s*56px;/);
+  assert.doesNotMatch(mobileContextActionRule, /box-shadow:\s*0\s/);
 });
 
 test("mobile route headers keep first content flush and compact", () => {
@@ -446,7 +477,7 @@ test("mobile route headers keep first content flush and compact", () => {
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-search\.search-collapsed \.stock-search-form\.symbol-autocomplete-floating \.symbol-search-action svg\s*\{[\s\S]*?display:\s*none;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-feed\s*\{[\s\S]*?margin-top:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.stock-detail-app \.stock-title-card,[\s\S]*?\.compare-app \.compare-hero\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;/);
-  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?min-height:\s*56px;/);
+  assert.match(css, /\.app-bottom-nav\s*\{[\s\S]*?min-height:\s*var\(--control-height-lg\);/);
   assert.match(css, /\.app-bottom-nav-item\s*\{[\s\S]*?font-size:\s*10px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-picks\s*\{[\s\S]*?padding-top:\s*10px;[\s\S]*?padding-bottom:\s*12px;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.technical-analysis-app \.technical-hero\s*\{[\s\S]*?border-top:\s*0;[\s\S]*?padding-top:\s*28px;/);
@@ -477,8 +508,9 @@ test("mobile compare add search is an explicit sheet instead of scroll-collapsin
 test("mobile compare add sheet owns the screen while searching", () => {
   assert.match(appNavigationSource, /suppressMobileChrome/);
   assert.match(compareSource, /suppressMobileChrome=\{isMobileSearchOpen\}/);
-  assert.match(appNavigationSource, /!suppressMobileChrome && mobileNavigation\.isOpen/);
-  assert.match(appNavigationSource, /!suppressMobileChrome && mobileContextAction/);
+  assert.match(appNavigationSource, /!suppressMobileChrome \? \(\s*<MobileNavLauncher/);
+  assert.match(mobileNavLauncherSource, /mobileNavigation\.isOpen \? \(/);
+  assert.match(mobileNavLauncherSource, /mobileContextAction \? \(/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-panel\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?max-height:\s*none;[\s\S]*?border-radius:\s*0;/);
   assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.compare-sheet-search \.symbol-suggestions\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 318px - env\(safe-area-inset-bottom,\s*0px\)\);/);
 });
