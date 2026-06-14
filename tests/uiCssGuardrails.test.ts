@@ -513,3 +513,7 @@ test("compare page separates detail origin from neutral compare rows", () => {
   assert.doesNotMatch(compareSource, /className=\{index === 0 \? "base" : ""\}/);
   assert.doesNotMatch(compareSource, /ComparePendingCards|CompareWaitingCardsSkeleton|ComparePendingRowsSkeleton/);
 });
+
+test("primitive stylesheet is imported after tokens", () => {
+  assert.match(css, /@import "\.\.\/styles\/design-tokens\.css";\s*@import "\.\.\/styles\/primitives\.css";/);
+});
