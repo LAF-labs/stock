@@ -18,6 +18,7 @@ import {
 } from "@/components/stockDashboardHelpers";
 import { refreshQuote as refreshQuoteRequest } from "@/lib/stockQueryFns";
 import {
+  STOCK_DETAIL_VIEW_DEFAULT_POLL_INTERVAL_MS,
   detailViewQueryOptions,
   judgmentQueryOptions,
   displayQueryOptions,
@@ -32,6 +33,7 @@ import {
 } from "@/lib/stockQueryOptions";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "@/lib/stockQueryTypes";
+import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
 import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
@@ -154,7 +156,7 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     quoteData,
     displayData,
   });
-  const detailViewState = dashboardLoadStateFromDetailView(detailViewAdapterState, ticker);
+  const detailViewState = dashboardLoadStateFromDetailView(detailViewAdapterState, ticker, detailViewQuery.data);
   const state = chooseDashboardLoadState(detailViewState, legacyState);
   const quoteState = quoteStateFromQuery(ticker, quoteStateResult, quoteQuery.error, queryEnablement.quote && quoteQuery.isLoading);
   const judgmentState = judgmentStateFromQuery(judgmentData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(judgmentData));
@@ -267,6 +269,7 @@ function stockDataHasJudgmentInputs(data: StockScoreResponse): boolean {
 function dashboardLoadStateFromDetailView(
   detailState: ReturnType<typeof dashboardStateFromDetailView>,
   ticker: string | undefined,
+  detailViewResult: StockDetailViewResponse | undefined,
 ): DashboardLoadState | undefined {
   if (!ticker || !detailState) return undefined;
   if (detailState.status === "error") return { status: "error", error: detailState.error || "데이터를 불러오지 못했어요." };
@@ -275,7 +278,7 @@ function dashboardLoadStateFromDetailView(
   return {
     status: "partial",
     data: detailState.data,
-    pending: detailViewPending(ticker),
+    pending: detailViewResult ? detailViewPendingFromResult(detailViewResult, ticker) : pendingFromTicker(ticker),
   };
 }
 
@@ -475,12 +478,39 @@ function quoteFirstPending(ticker: string): SnapshotPendingState {
   };
 }
 
-function detailViewPending(ticker: string): SnapshotPendingState {
+export function detailViewPendingFromResult(result: StockDetailViewResponse, fallbackTicker: string): SnapshotPendingState {
+  const ticker = result.ok ? result.ticker || fallbackTicker : fallbackTicker;
+  if (result.ok && detailViewHasActiveRecovery(result)) {
+    return {
+      message: "부족한 데이터가 들어오면 자동으로 업데이트해요.",
+      ticker,
+      queued: true,
+      retryAfterSeconds: detailViewRetryAfterSeconds(result),
+    };
+  }
   return {
-    message: "확보된 정보부터 먼저 보여주고 있어요.",
+    message: "현재 제공 가능한 데이터만 표시했어요.",
     ticker,
-    queued: true,
+    queued: false,
   };
+}
+
+function detailViewHasActiveRecovery(result: StockDetailViewResponse): boolean {
+  if (!result.ok || result.mode === "ready") return false;
+  if (detailViewExplicitPollMs(result) !== undefined) return true;
+  if (result.jobs.length > 0) return true;
+  return Object.values(result.parts).some((part) => part.state === "refreshing" || part.state === "failed_retrying");
+}
+
+function detailViewRetryAfterSeconds(result: StockDetailViewResponse): number | undefined {
+  if (!result.ok) return undefined;
+  const pollMs = detailViewExplicitPollMs(result) ?? STOCK_DETAIL_VIEW_DEFAULT_POLL_INTERVAL_MS;
+  return Math.max(1, Math.ceil(pollMs / 1000));
+}
+
+function detailViewExplicitPollMs(result: StockDetailViewResponse): number | undefined {
+  if (!result.ok) return undefined;
+  return typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : undefined;
 }
 
 function errorMessage(error: unknown, fallback: string): string {

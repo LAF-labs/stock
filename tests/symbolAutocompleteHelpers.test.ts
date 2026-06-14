@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { activeSymbolItemForQuery, shouldFetchRemoteSymbolSearch, shouldFetchSymbolSearch } from "../src/components/symbolAutocompleteHelpers";
+import { activeSymbolItemForQuery, isAutocompleteImeCompositionEvent, shouldFetchRemoteSymbolSearch, shouldFetchSymbolSearch } from "../src/components/symbolAutocompleteHelpers";
 import type { SymbolSearchItem } from "../src/lib/symbolTypes";
 
 const koItem: SymbolSearchItem = {
@@ -36,4 +36,11 @@ test("active autocomplete item is ignored when result query is stale", () => {
   assert.equal(activeSymbolItemForQuery([koItem], "ko", "k", 0), undefined);
   assert.equal(activeSymbolItemForQuery([koItem], "ko", "ko", 0), koItem);
   assert.equal(activeSymbolItemForQuery([koItem], "ko", "ko", 4), koItem);
+});
+
+test("autocomplete ignores Enter while an IME composition is still active", () => {
+  assert.equal(isAutocompleteImeCompositionEvent({ key: "Enter", nativeEvent: { isComposing: true } }), true);
+  assert.equal(isAutocompleteImeCompositionEvent({ key: "Enter", nativeEvent: { keyCode: 229 } }), true);
+  assert.equal(isAutocompleteImeCompositionEvent({ key: "Enter", keyCode: 229 }), true);
+  assert.equal(isAutocompleteImeCompositionEvent({ key: "Enter", nativeEvent: { isComposing: false, keyCode: 13 } }), false);
 });

@@ -1,5 +1,14 @@
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 
+type AutocompleteKeyboardEventLike = {
+  key?: string;
+  keyCode?: number;
+  nativeEvent?: {
+    isComposing?: boolean;
+    keyCode?: number;
+  };
+};
+
 export function shouldFetchSymbolSearch(query: string): boolean {
   return query.trim().length >= 2;
 }
@@ -29,4 +38,8 @@ export function activeSymbolItemForQuery(
 ): SymbolSearchItem | undefined {
   if (resultQuery !== currentQuery) return undefined;
   return items[activeIndex] || items[0];
+}
+
+export function isAutocompleteImeCompositionEvent(event: AutocompleteKeyboardEventLike): boolean {
+  return Boolean(event.nativeEvent?.isComposing || event.nativeEvent?.keyCode === 229 || event.keyCode === 229);
 }
