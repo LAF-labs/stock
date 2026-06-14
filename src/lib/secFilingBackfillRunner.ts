@@ -33,7 +33,7 @@ type SecSubmission = {
 const SEC_ARCHIVES = "https://www.sec.gov/Archives/edgar/data";
 const SEC_DATA = "https://data.sec.gov";
 const SEC_WWW = "https://www.sec.gov";
-const DEFAULT_USER_AGENT = "LAF-labs stock SEC filings https://github.com/LAF-labs/stock";
+const DEFAULT_USER_AGENT = "LAF-labs stock filings admin@laflabs.ai";
 const IMPORTANT_FORMS = new Set(["3", "4", "5", "8-K", "8-K/A", "10-Q", "10-Q/A", "10-K", "10-K/A", "144"]);
 
 let lastSecRequestAt = 0;
