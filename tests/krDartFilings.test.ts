@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDartListUrl, dartDisclosureToFiling } from "../src/lib/krDartFilings";
+import { buildDartListUrl, dartDisclosureToFiling, filterUniqueDartFilings } from "../src/lib/krDartFilings";
 
 test("builds OpenDART list URL for one disclosure day", () => {
   const url = buildDartListUrl("https://opendart.fss.or.kr", {
@@ -54,3 +54,33 @@ test("ignores DART rows outside the local stock universe", () => {
 
   assert.equal(filing, undefined);
 });
+
+test("filters duplicate DART filings by receipt number", () => {
+  const first = filing("20260615000001", "유상증자결정");
+  const duplicate = filing("20260615000001", "유상증자결정 정정");
+  const second = filing("20260615000002", "분기보고서");
+
+  const result = filterUniqueDartFilings([first, duplicate, second], new Set(["already-seen"]));
+
+  assert.equal(result.duplicates, 1);
+  assert.deepEqual(result.items.map((item) => item.accessionNumber), ["20260615000001", "20260615000002"]);
+  assert.equal(result.items[0].formType, "유상증자결정");
+});
+
+function filing(accessionNumber: string, formType: string) {
+  return {
+    ticker: "KR:005930",
+    symbol: "005930",
+    cik: "00126380",
+    accessionNumber,
+    formType,
+    companyName: "삼성전자",
+    filedAt: "2026-06-15T00:00:00.000Z",
+    summaryKo: "요약",
+    sourceUrl: `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${accessionNumber}`,
+    category: "domestic_disclosure",
+    importance: "medium" as const,
+    tags: ["국내공시"],
+    facts: { source: "DART" },
+  };
+}

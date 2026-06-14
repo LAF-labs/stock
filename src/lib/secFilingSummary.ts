@@ -143,12 +143,13 @@ function summarizeDart(reportName: string, facts: SecFilingFacts): SecFilingSumm
   if (/자기주식.*취득/.test(report)) return makeSummary("buyback", "high", ["자사주"], "자사주를 취득한다는 공시예요. 주주환원 신호인지 확인해볼 만해요.");
   if (/자기주식.*처분/.test(report)) return makeSummary("buyback", "high", ["자사주"], "보유 자사주를 처분한다는 공시예요. 처분 목적과 물량을 확인해야 해요.");
   if (/최대주주.*변경/.test(report)) return makeSummary("major_holder", "high", ["최대주주"], "최대주주가 바뀌는 공시예요. 경영권 변화 가능성을 확인해야 해요.");
+  if (/최대주주.*소유주식변동|최대주주등소유/.test(report)) return makeSummary("major_holder", "medium", ["최대주주"], "최대주주 측 보유 주식이 변동됐어요. 지분율 변화와 매매 방향을 확인해야 해요.");
   if (/대량보유|주식등의대량보유/.test(report)) return makeSummary("major_holder", "high", ["대량보유"], "주요 투자자의 대량보유 보고예요. 지분율 변화와 목적을 확인해야 해요.");
   if (/임원.*주요주주|소유상황/.test(report)) return makeSummary("insider_transaction", "medium", ["내부자"], "임원이나 주요주주의 보유 주식 변동 공시예요. 매수인지 매도인지 원문을 확인해야 해요.");
   if (/합병/.test(report)) return makeSummary("reorganization", "high", ["합병"], "합병 관련 공시예요. 합병 비율과 일정이 주가에 영향을 줄 수 있어요.");
   if (/분할/.test(report)) return makeSummary("reorganization", "high", ["분할"], "회사 분할 관련 공시예요. 사업 구조와 주주 배정 방식을 확인해야 해요.");
   if (/영업양수|영업양도/.test(report)) return makeSummary("reorganization", "high", ["영업양수도"], "사업을 사고파는 공시예요. 매출 구조가 바뀔 수 있어요.");
-  if (/소송|횡령|배임|상장폐지|거래정지/.test(report)) return makeSummary("risk_event", "high", ["리스크"], "투자 리스크가 큰 공시예요. 원문에서 사유와 금액, 일정을 확인해야 해요.");
+  if (/소송|횡령|배임|상장폐지|거래정지|상장적격성|개선기간/.test(report)) return makeSummary("risk_event", "high", ["리스크"], "투자 리스크가 큰 공시예요. 원문에서 사유와 금액, 일정을 확인해야 해요.");
   return makeSummary("domestic_disclosure", "medium", ["국내공시"], `${report} 공시예요. 세부 내용은 원문 확인이 필요해요.`);
 }
 

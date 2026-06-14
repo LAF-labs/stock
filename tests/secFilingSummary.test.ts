@@ -69,6 +69,17 @@ test("summarizes schedule 13G index forms as major holder disclosures", () => {
   assert.match(result.summaryKo, /대량보유/);
 });
 
+test("summarizes Korean DART shareholder change reports", () => {
+  const result = summarizeSecFiling({
+    formType: "최대주주등소유주식변동신고서",
+    ticker: "KR:005930",
+    facts: { source: "DART", reportName: "최대주주등소유주식변동신고서" },
+  });
+
+  assert.equal(result.category, "major_holder");
+  assert.match(result.summaryKo, /최대주주 측 보유 주식/);
+});
+
 test("keeps unknown forms safe and short", () => {
   const result = summarizeSecFiling({ formType: "X-17A-5", companyName: "Broker Dealer" });
 

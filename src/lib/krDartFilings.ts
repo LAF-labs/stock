@@ -62,6 +62,20 @@ export function dartDisclosureToFiling(row: DartDisclosureRow, allowedSymbols: S
   };
 }
 
+export function filterUniqueDartFilings(items: SecFilingListItem[], seen = new Set<string>()): { items: SecFilingListItem[]; duplicates: number } {
+  const unique: SecFilingListItem[] = [];
+  let duplicates = 0;
+  for (const item of items) {
+    if (seen.has(item.accessionNumber)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(item.accessionNumber);
+    unique.push(item);
+  }
+  return { items: unique, duplicates };
+}
+
 function cleanReportName(value: string, corpName: string): string {
   return value
     .replace(new RegExp(`^\\[${escapeRegex(corpName)}\\]\\s*`), "")
