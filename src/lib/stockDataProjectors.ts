@@ -28,6 +28,7 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
   const sourceScore = normalizeDisplayScore(partValue(envelope.parts.score));
   const price = normalizePriceWithChart(partValue(envelope.parts.price), chart, sourceScore);
   const score = sourceScore ?? marketFallbackScoreFromParts(envelope, identityValue, price, chart);
+  const scoreDisplayState = envelope.parts.score ?? envelope.parts.chart ?? envelope.parts.price;
   const suppressTechnical = envelope.view === "technical" && unavailableReasonForPart(envelope, "chart") === "no_history";
   const technical = suppressTechnical ? undefined : partValue(envelope.parts.technical) ?? technicalFromScore(score);
   const fundamentals = partValue(envelope.parts.fundamentals) ?? fundamentalsFromScore(score);
@@ -57,11 +58,11 @@ export function stockDisplayPayloadFromEnvelope(envelope: StockDataEnvelope): St
     identity: displayPartFromState(envelope.parts.identity, "symbol-master")!,
     ...(price ? { price: displayPartFromState(envelope.parts.price, "market-data", price)! } : {}),
     ...(chart ? { chart: displayPartFromState(envelope.parts.chart, "market-data")! } : {}),
-    ...(score ? { score: displayPartFromState(envelope.parts.score, "derived", score, envelope.parts.chart ?? envelope.parts.price)! } : {}),
-    ...(technical ? { technical: displayPartFromState(envelope.parts.technical, "derived", technical, envelope.parts.score) } : {}),
-    ...(fundamentals ? { fundamentals: displayPartFromState(envelope.parts.fundamentals, "derived", fundamentals, envelope.parts.score) } : {}),
-    ...(industryBenchmark ? { industryBenchmark: displayPartFromState(envelope.parts.industryBenchmark, "derived", industryBenchmark, envelope.parts.score) } : {}),
-    ...(news ? { news: displayPartFromState(envelope.parts.news, "derived", news, envelope.parts.score) } : {}),
+    ...(score ? { score: displayPartFromState(envelope.parts.score, "derived", score, scoreDisplayState)! } : {}),
+    ...(technical ? { technical: displayPartFromState(envelope.parts.technical, "derived", technical, scoreDisplayState) } : {}),
+    ...(fundamentals ? { fundamentals: displayPartFromState(envelope.parts.fundamentals, "derived", fundamentals, scoreDisplayState) } : {}),
+    ...(industryBenchmark ? { industryBenchmark: displayPartFromState(envelope.parts.industryBenchmark, "derived", industryBenchmark, scoreDisplayState) } : {}),
+    ...(news ? { news: displayPartFromState(envelope.parts.news, "derived", news, scoreDisplayState) } : {}),
     completion: {
       requiredParts: completion.requiredParts,
       presentParts: completion.presentParts,

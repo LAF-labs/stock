@@ -145,6 +145,12 @@ test("display projector derives a visible score when price and chart are ready b
 
   assert.equal(payload.score?.value.score, 50);
   assert.equal(payload.score?.value.data_quality, "market_data_fallback");
+  assert.deepEqual(payload.fundamentals?.value.key_metrics, [
+    { label: "현재가", value: "12,000원" },
+    { label: "전일 대비", value: "+1.7%" },
+    { label: "거래량", value: "123,456" },
+  ]);
+  assert.equal(payload.industryBenchmark?.value.benchmark_label, "미국 상장 종목");
   assert.deepEqual(payload.completion.requiredParts, ["identity", "price", "chart", "score"]);
   assert.deepEqual(payload.completion.presentParts, ["identity", "price", "chart", "score", "fundamentals", "industryBenchmark"]);
   assert.deepEqual(payload.completion.missingParts, []);
