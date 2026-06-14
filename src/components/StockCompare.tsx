@@ -159,7 +159,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
   }
 
   return (
-    <main className="stock-app compare-app">
+    <>
       <AppNavigationMenu
         context={{ page: "compare", originTicker, detailHref }}
         suppressMobileChrome={isMobileSearchOpen}
@@ -172,82 +172,87 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
         }}
       />
 
-      <CompareSideIndex
-        value={input}
-        onValueChange={setInput}
-        onSelect={addSymbol}
-        compareLimitReached={compareLimitReached}
-        selectedCount={selectedCount}
-        maxCompare={MAX_COMPARE}
-        selectedTickers={selectedTickerEntries}
-        onRemoveTicker={removeTicker}
-      />
+      <main className="stock-app compare-app">
+        <CompareSideIndex
+          value={input}
+          onValueChange={setInput}
+          onSelect={addSymbol}
+          compareLimitReached={compareLimitReached}
+          selectedCount={selectedCount}
+          maxCompare={MAX_COMPARE}
+          selectedTickers={selectedTickerEntries}
+          onRemoveTicker={removeTicker}
+        />
 
-      <section className="compare-landing">
-        <section className="compare-hero">
-          <div>
-            <span>종목 비교</span>
-            <h1>선택한 종목을 함께 보기</h1>
-            <p>
-              {selectedCount === 0
-                ? "비교할 종목을 검색해서 추가해주세요. 최대 5개까지 같은 기준으로 볼 수 있어요."
-                : selectedCount === 1
-                ? `${firstItem ? compareItemTitle(firstItem) : firstTickerLabel}${subjectParticle(firstItem ? compareItemTitle(firstItem) : firstTickerLabel)} 선택되어 있어요. 비교할 종목을 추가하면 같은 기준으로 차이를 보여드릴게요.`
-                : `${selectedCount}개 종목을 점수, 가격 흐름, 재무 지표 기준으로 나란히 정리했어요.`}
-            </p>
-          </div>
-          <div className="compare-count">{selectedCount}/{MAX_COMPARE}</div>
-        </section>
-      </section>
+        <div className="compare-content">
+          <section className="compare-landing">
+            <section className="compare-hero">
+              <div>
+                <span>종목 비교</span>
+                <h1>종목 비교</h1>
+                <p>
+                  {selectedCount === 0
+                    ? "종목을 추가하면 점수, 가격 흐름, 핵심 지표를 같은 기준으로 정리합니다."
+                    : selectedCount === 1
+                    ? `${firstItem ? compareItemTitle(firstItem) : firstTickerLabel}${subjectParticle(firstItem ? compareItemTitle(firstItem) : firstTickerLabel)} 선택되어 있어요. 하나 더 추가하면 차이가 나는 지점을 바로 볼 수 있어요.`
+                    : `${selectedCount}개 종목을 점수, 가격 흐름, 재무 지표 기준으로 나란히 보고 있어요.`}
+                </p>
+              </div>
+              <div className="compare-count">{selectedCount}/{MAX_COMPARE}</div>
+            </section>
+          </section>
 
-      <CompareEditSheet
-        isOpen={isMobileSearchOpen}
-        value={input}
-        onValueChange={setInput}
-        onSelect={addSymbol}
-        onClose={() => setIsMobileSearchOpen(false)}
-        compareLimitReached={compareLimitReached}
-        selectedCount={selectedCount}
-        selectedTickers={selectedTickerEntries}
-        onRemoveTicker={removeTicker}
-        closeLabel={compareLimitReached ? "완료" : "닫기"}
-        returnFocusRef={mobileEditActionRef}
-      />
+          <CompareEditSheet
+            isOpen={isMobileSearchOpen}
+            value={input}
+            onValueChange={setInput}
+            onSelect={addSymbol}
+            onClose={() => setIsMobileSearchOpen(false)}
+            compareLimitReached={compareLimitReached}
+            selectedCount={selectedCount}
+            selectedTickers={selectedTickerEntries}
+            onRemoveTicker={removeTicker}
+            closeLabel={compareLimitReached ? "완료" : "닫기"}
+            returnFocusRef={mobileEditActionRef}
+          />
 
-      {errorStates.length ? (
-        <section className="compare-errors" role="alert" aria-live="assertive">
-          {errorStates.map((state) => (
-            <p key={state.ticker}>
-              <strong>{state.ticker}</strong> {state.error}
-            </p>
-          ))}
-          <button type="button" onClick={retryCompare}>다시 시도</button>
-        </section>
-      ) : null}
+          {errorStates.length ? (
+            <section className="compare-errors" role="alert" aria-live="assertive">
+              {errorStates.map((state) => (
+                <p key={state.ticker}>
+                  <strong>{state.ticker}</strong> {state.error}
+                </p>
+              ))}
+              <button type="button" onClick={retryCompare}>다시 시도</button>
+            </section>
+          ) : null}
 
-      {!states.length ? <CompareEmptyState onSelect={addTicker} /> : null}
+          {!states.length ? <CompareEmptyState onSelect={addTicker} /> : null}
 
-      {states.length ? (
-        <div className="compare-feed">
-          {showCompareOverviewSkeleton ? <ComparePendingOverviewSkeleton /> : null}
-          <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
-          {chartItems.length ? <CompareChart items={chartItems} /> : null}
-          {showCompareChartSkeleton ? <CompareChartPendingSkeleton /> : null}
-          {showCompareChartUnavailable ? <CompareChartUnavailable /> : null}
-          {items.length >= 2 ? <CompareMatrix items={items} /> : null}
-          {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}
-          {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
+          {states.length ? (
+            <div className="compare-feed">
+              {showCompareOverviewSkeleton ? <ComparePendingOverviewSkeleton /> : null}
+              <CompareCards states={states} items={items} showEmptyCard={tickers.length < 2} />
+              {chartItems.length ? <CompareChart items={chartItems} /> : null}
+              {showCompareChartSkeleton ? <CompareChartPendingSkeleton /> : null}
+              {showCompareChartUnavailable ? <CompareChartUnavailable /> : null}
+              {items.length >= 2 ? <CompareMatrix items={items} /> : null}
+              {items.length >= 2 ? <OpportunityComponentMatrix items={items} /> : null}
+              {items.length >= 2 ? <ComponentMatrix items={items} /> : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </main>
+      </main>
+    </>
   );
 }
 
 function CompareEmptyState({ onSelect }: { onSelect: (ticker: string) => void }) {
   return (
     <section className="compare-empty-state">
-      <span>빠른 비교</span>
-      <h2>관심 종목을 골라보세요</h2>
+      <span>비교 시작</span>
+      <h2>종목을 추가하면 바로 비교됩니다</h2>
+      <p>검색창이나 아래 빠른 선택으로 최대 5개 종목을 올려보세요.</p>
       <div>
         {COMPARE_EMPTY_SAMPLES.map((sample) => (
           <button key={sample.ticker} type="button" onClick={() => onSelect(sample.ticker)}>
@@ -262,7 +267,7 @@ function CompareEmptyState({ onSelect }: { onSelect: (ticker: string) => void })
 function CompareCards({ states, items, showEmptyCard }: { states: CompareLoadState[]; items: CompareItem[]; showEmptyCard: boolean }) {
   const itemByTicker = new Map(items.map((item) => [item.ticker, item]));
   return (
-    <CompareSection eyebrow="종목 카드" title="각 종목의 현재 인상이에요">
+    <CompareSection eyebrow="비교 현황" title="선택한 종목을 같은 기준으로 봅니다">
       <div className="compare-card-grid">
         {states.map((state) => {
           const item = itemByTicker.get(displayTickerRef(state.ticker));

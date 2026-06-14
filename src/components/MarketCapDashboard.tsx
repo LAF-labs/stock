@@ -87,9 +87,8 @@ export default function MarketCapDashboard() {
                 <span>{row.rank}</span>
                 <span>
                   <strong>{row.name}</strong>
-                  <small>{[row.sector, row.industry].filter(Boolean).join(" · ") || row.exchange || row.market}</small>
                 </span>
-                <span>{row.ticker}</span>
+                <span className="market-cap-ticker">{row.ticker}</span>
                 <span>{formatMarketCapAmount(row.marketCap, row.marketCapCurrency)}</span>
                 <span>{formatMarketCapPrice(row)}</span>
                 <PriceChange className={`market-cap-change ${marketCapChangeTone(row)}`} value={row.priceChangePercent} tone={priceChangeToneForMarketCapRow(row)}>

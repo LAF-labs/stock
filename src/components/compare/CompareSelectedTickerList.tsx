@@ -24,11 +24,12 @@ export default function CompareSelectedTickerList({
           <em className="compare-pick-label">{entry.label}</em>
           <button
             type="button"
+            className="compare-pick-remove"
             onClick={() => onRemove(entry.ticker)}
             aria-label={`${entry.label} 삭제`}
             disabled={entry.removeDisabled}
           >
-            ×
+            <span aria-hidden="true">×</span>
           </button>
         </span>
       )) : (

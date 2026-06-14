@@ -79,10 +79,14 @@ test("desktop index layouts use centered grid containers", () => {
     css,
     /--detail-index-left|--detail-content-left|--compare-side-left|--compare-content-left|calc\(50vw - 600px\)/,
   );
-  assert.match(css, /\.stock-detail-app\.has-detail-context\s*\{[\s\S]*?grid-template-columns:\s*184px minmax\(0, 1fr\);/);
+  assert.equal(lastCssDeclaration(".stock-detail-app.has-detail-context", "grid-template-columns"), "var(--mc-rail-width) minmax(0, var(--mc-content-width))");
+  assert.equal(lastCssDeclaration(".compare-app", "grid-template-columns"), "var(--mc-rail-width) minmax(0, var(--mc-compare-content-width))");
+  assert.equal(lastCssDeclaration(".stock-detail-index", "top"), "var(--mc-page-top)");
+  assert.equal(lastCssDeclaration(".compare-side-index", "top"), "var(--mc-page-top)");
+  assert.equal(lastCssDeclaration(".stock-detail-app .stock-feed", "margin-top"), "0");
+  assert.equal(lastCssDeclaration(".compare-app .compare-landing", "padding-top"), "0");
   assert.match(dashboardSource, /<DetailSectionIndex sections=\{indexSections\}/);
   assert.match(detailSectionIndexSource, /className="stock-detail-index"/);
-  assert.doesNotMatch(css, /\.compare-app\s*\{[^}]*grid-template-columns:\s*184px minmax\(0, 1fr\);/);
   assert.match(css, /\.app-desktop-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*0;[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;/);
 });
 
@@ -193,13 +197,46 @@ test("compare chart uses detail-style line-only drawing without point dots", () 
 
 test("compare page shares detail DNA with flat sections and stat strips", () => {
   assert.match(css, /\/\* Compare detail DNA alignment \*\//);
-  assert.equal(lastCssDeclaration(".compare-app .compare-landing", "border-bottom"), "0");
-  assert.equal(lastCssDeclaration(".compare-app .compare-section", "border-top"), "1px solid var(--line)");
+  assert.match(css, /\/\* Reference-informed content rework: section cards, table-like interiors \*\//);
+  assert.equal(lastCssDeclaration(".compare-app .compare-landing", "border-bottom"), "1px solid var(--mc-line)");
+  assert.equal(lastCssDeclaration(".compare-app .compare-section", "border-top"), "1px solid var(--mc-line)");
+  assert.equal(lastCssDeclaration(".compare-app .compare-hero", "background"), "transparent");
+  assert.equal(lastCssDeclaration(".compare-app .compare-hero", "border"), "0");
+  assert.equal(lastCssDeclaration(".compare-app .compare-section", "background"), "var(--mc-surface)");
+  assert.equal(lastCssDeclaration(".compare-app .compare-section", "border-radius"), "var(--mc-section-card-radius)");
   assert.equal(lastCssDeclaration(".compare-stock-card", "border"), "0");
   assert.equal(lastCssDeclaration(".compare-stock-card", "background"), "transparent");
-  assert.equal(lastCssDeclaration(".compare-score-grid", "border-top"), "1px solid var(--line)");
+  assert.equal(lastCssDeclaration(".compare-score-grid", "border-top"), "1px solid var(--mc-line)");
   assert.equal(lastCssDeclaration(".compare-score-tile", "border"), "0");
   assert.equal(lastCssDeclaration(".compare-score-tile", "background"), "transparent");
+  assert.equal(lastCssDeclaration(".compare-metric-group", "border"), "0");
+  assert.equal(lastCssDeclaration(".component-compare-list article", "border"), "0");
+});
+
+test("compare selected ticker remove buttons keep only an unclipped x glyph", () => {
+  assert.match(compareSelectedTickerListSource, /className="compare-pick-remove"/);
+  assert.match(compareSelectedTickerListSource, /<span aria-hidden="true">×<\/span>/);
+  assert.equal(lastCssDeclaration(".compare-pick-list button.compare-pick-remove", "width"), "24px");
+  assert.equal(lastCssDeclaration(".compare-pick-list button.compare-pick-remove", "height"), "24px");
+  assert.equal(lastCssDeclaration(".compare-pick-list button.compare-pick-remove", "overflow"), "visible");
+  assert.equal(lastCssDeclaration(".compare-pick-list button.compare-pick-remove span", "line-height"), "1");
+});
+
+test("market-cap mobile table uses four columns and hides ticker change and sector subtitles", () => {
+  assert.doesNotMatch(marketCapSource, /row\.sector|row\.industry/);
+  assert.match(marketCapSource, /className="market-cap-ticker"/);
+  assert.match(marketCapSource, /className=\{`market-cap-change/);
+  assert.equal(lastCssDeclaration(".market-cap-table-row small", "display"), "none");
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.market-cap-table-head,[\s\S]*?\.market-cap-table-row\s*\{[\s\S]*?grid-template-columns:\s*42px minmax\(0, 1fr\) minmax\(94px, auto\) minmax\(76px, auto\);/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.market-cap-ticker,[\s\S]*?\.market-cap-change\s*\{[\s\S]*?display:\s*none;/);
+});
+
+test("landing content centers without a side rail and first visual stays bright", () => {
+  assert.equal(lastCssDeclaration(".dashboard-landing", "margin-inline"), "auto");
+  assert.equal(lastCssDeclaration(".dashboard-landing", "width"), "min(var(--mc-wide-content-width), calc(100vw - 48px))");
+  assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-visual", "background"), "linear-gradient(135deg, #ffffff 0%, #f8fbff 52%, #eef5ff 100%)");
+  assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-grid", "opacity"), "0.2");
+  assert.equal(lastCssDeclaration(".dashboard-landing-hero .landing-scanline", "background"), "linear-gradient(180deg, transparent, rgba(37, 99, 235, 0.16), transparent)");
 });
 
 test("home screen has no old default ticker fallback and renders animated landing", () => {
@@ -219,7 +256,7 @@ test("compare and technical routes do not invent a default stock selection", () 
   assert.doesNotMatch(compareRouteSource, /parseTickers\([\s\S]*\|\|\s*"KO"/);
   assert.match(compareRouteSource, /buildInitialComparePayloads/);
   assert.match(compareRouteSource, /view: "compare"/);
-  assert.match(compareSource, /비교할 종목을 검색해서 추가해주세요/);
+  assert.match(compareSource, /종목을 추가하면 점수, 가격 흐름/);
   assert.doesNotMatch(technicalRouteSource, /firstParam\(params\?\.ticker\)\s*\|\|\s*"US:KO"/);
   assert.match(technicalRouteSource, /if \(!rawTicker\) \{\s*redirect\("\/"\);/);
 });
@@ -328,7 +365,8 @@ test("page patterns use shared search and data primitives", () => {
   assert.match(marketCapSource, /case "up":[\s\S]*?return "price-up";[\s\S]*?case "down":[\s\S]*?return "price-down";[\s\S]*?return "neutral";/);
   assert.match(marketCapSource, /tone=\{priceChangeToneForMarketCapRow\(row\)\}/);
   assert.match(css, /\.market-cap-table-row\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
-  assert.doesNotMatch(css, /\.market-cap-change(?:\.(?:up|down))?\s*\{[\s\S]*?(?:color|background):/);
+  assert.equal(lastCssDeclaration(".market-cap-change", "color"), undefined);
+  assert.equal(lastCssDeclaration(".market-cap-change", "background"), undefined);
   assert.match(css, /\.stock-detail-app \.quick-read\s*\{[\s\S]*?gap:\s*var\(--space-4\);/);
 });
 
@@ -449,13 +487,17 @@ test("compare mobile editor keeps selected tickers inside the sheet and uses sha
 
 test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
   assert.match(compareSectionSource, /className=\{\["compare-section", className\]/);
-  assert.match(compareSource, /<CompareSection eyebrow="종목 카드"/);
+  assert.match(compareSource, /className="compare-content"/);
+  assert.match(compareSource, /<CompareSection eyebrow="비교 현황"/);
   assert.match(compareSource, /<CompareSection eyebrow="차이가 나는 숫자"/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*184px minmax\(0,\s*968px\);[\s\S]*?gap:\s*0 28px;[\s\S]*?width:\s*min\(1180px,\s*calc\(100% - 96px\)\);/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-side-index\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2 \/ span 2;[\s\S]*?display:\s*grid;[\s\S]*?overflow:\s*visible;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*var\(--mc-rail-width\) minmax\(0, var\(--mc-compare-content-width\)\);[\s\S]*?gap:\s*0 32px;[\s\S]*?width:\s*min\(var\(--mc-compare-page-width\), calc\(100% - 64px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app > \.compare-side-index\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*1;[\s\S]*?position:\s*sticky;[\s\S]*?overflow:\s*visible;/);
   assert.match(css, /\.compare-index-search\.compare-add-form:not\(\.symbol-autocomplete-floating\) \.symbol-search-box\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.app-navigation-chrome,[\s\S]*?\.compare-app \.compare-feed,[\s\S]*?\.compare-app \.compare-empty-state\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?min-width:\s*0;/);
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-landing\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?padding:/);
+  assert.match(css, /\.compare-app > \.app-navigation-chrome\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?width:\s*0;[\s\S]*?height:\s*0;/);
+  assert.match(css, /\.compare-content\s*\{[\s\S]*?display:\s*grid;[\s\S]*?gap:\s*18px;/);
+  assert.match(css, /\.compare-content > \.compare-landing,[\s\S]*?\.compare-content > \.compare-feed,[\s\S]*?\.compare-content > \.compare-errors,[\s\S]*?\.compare-content > \.compare-empty-state\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?min-width:\s*0;/);
+  assert.match(css, /\.compare-content \.compare-feed,[\s\S]*?\.compare-content \.compare-empty-state\s*\{[\s\S]*?margin-top:\s*0;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app > \.compare-content\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?grid-row:\s*1;[\s\S]*?min-width:\s*0;/);
   assert.doesNotMatch(compareSource, /className="compare-toolbar"|compare-ticker-rail/);
   assert.doesNotMatch(css, /width:\s*min\(1040px,\s*calc\(100% - 48px\)\);/);
   assert.doesNotMatch(css, /width:\s*min\(1400px,\s*calc\(100% - 64px\)\);/);
@@ -477,7 +519,8 @@ test("compare empty state gives mobile users a next action instead of blank spac
   assert.match(compareSource, /function CompareEmptyState/);
   assert.match(compareSource, /엔비디아/);
   assert.match(compareSource, /삼성전자/);
-  assert.match(css, /\.compare-empty-state\s*\{[\s\S]*?border-top:\s*12px solid #f2f4f6;/);
+  assert.match(compareSource, /종목을 추가하면 바로 비교됩니다/);
+  assert.equal(lastCssDeclaration(".compare-empty-state", "border-top"), "1px solid var(--mc-line)");
 });
 
 test("compare feed grid items can shrink inside mobile viewport", () => {
