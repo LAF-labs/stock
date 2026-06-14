@@ -517,6 +517,13 @@ function PartialStockSummary({
   const marketCap = stockMarketCapDisplay(displayData);
   const defaultSummary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "현재가와 참고 지표를 먼저 반영했어요.");
   const summary = partialStockStatusSummary(defaultSummary, pending);
+  const isUpdating = pending?.queued === true;
+  const statusChip = isUpdating
+    ? "자동 업데이트 중"
+    : qualityScore === undefined
+      ? (hasPrice ? "현재가 확인" : "종목 확인")
+      : "가격 기준 참고값";
+  const retryLabel = isUpdating ? "업데이트 확인" : "다시 조회";
 
   return (
     <section className="stock-title-card partial-stock-title-card">
@@ -528,7 +535,7 @@ function PartialStockSummary({
             {identity.secondary ? <p>{identity.secondary}</p> : null}
           </div>
         </div>
-        <span className="score-time-chip">{qualityScore === undefined ? (hasPrice ? "현재가 확인" : "종목 확인") : "가격 기준 참고값"}</span>
+        <span className="score-time-chip">{statusChip}</span>
       </div>
       <div className="price-strip">
         <div className="price-block">
@@ -563,7 +570,7 @@ function PartialStockSummary({
         <strong>{qualityScore === undefined ? (hasPrice ? "현재 가격 기준으로 먼저 볼 수 있어요." : "종목 정보를 먼저 확인했어요.") : `${qualityScore.toFixed(1)}점 기준으로 먼저 볼 수 있어요.`}</strong>
         <p>{summary}</p>
         <button type="button" className="partial-retry-button" onClick={onRetry}>
-          새로고침
+          {retryLabel}
         </button>
       </div>
     </section>

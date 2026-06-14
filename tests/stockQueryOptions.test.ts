@@ -194,6 +194,110 @@ test("detail-view query options poll from nextPollMs while recovering", () => {
   assert.equal(stockDetailViewRefetchIntervalMs({ ok: false, mode: "failed_irreversible", error: "invalid_ticker", message: "bad" }), false);
 });
 
+test("detail-view query keeps polling recoverable partials even when nextPollMs is omitted", () => {
+  const partial: StockDetailViewResponse = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:LH",
+    requestedTicker: "US:LH",
+    view: "detail",
+    generatedAt: "2026-06-14T05:45:00.000Z",
+    snapshotVersion: "display-v1",
+    identity: { ticker: "US:LH", market: "US", symbol: "LH", name: "Labcorp" },
+    sections: {
+      price: { latest_price: 266.16 },
+      score: { quality_score: 59 },
+    },
+    parts: {
+      price: { state: "ready" },
+      chart: { state: "refreshing" },
+      score: { state: "ready" },
+      financials: { state: "refreshing" },
+      analyst: { state: "missing" },
+    },
+    jobs: [{ part: "chart", state: "queued" }],
+  };
+
+  assert.equal(stockDetailViewRefetchIntervalMs(partial), 1500);
+});
+
+test("detail-view query honors explicit nextPollMs even when parts are stale-ready", () => {
+  const partial: StockDetailViewResponse = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:STALE",
+    requestedTicker: "US:STALE",
+    view: "detail",
+    generatedAt: "2026-06-14T05:45:00.000Z",
+    snapshotVersion: "display-v1",
+    nextPollMs: 2500,
+    identity: { ticker: "US:STALE", market: "US", symbol: "STALE", name: "Stale Co" },
+    sections: {
+      price: { latest_price: 10 },
+    },
+    parts: {
+      price: { state: "stale_ready" },
+      chart: { state: "missing" },
+      score: { state: "missing" },
+      financials: { state: "missing" },
+      analyst: { state: "missing" },
+    },
+    jobs: [],
+  };
+
+  assert.equal(stockDetailViewRefetchIntervalMs(partial), 2500);
+});
+
+test("detail-view query does not poll missing-only partials without queued recovery work", () => {
+  const partial: StockDetailViewResponse = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:VLD",
+    requestedTicker: "US:VLD",
+    view: "detail",
+    generatedAt: "2026-06-14T05:45:00.000Z",
+    snapshotVersion: "display-v1",
+    identity: { ticker: "US:VLD", market: "US", symbol: "VLD", name: "Velo3D" },
+    sections: {},
+    parts: {
+      price: { state: "missing" },
+      chart: { state: "missing" },
+      score: { state: "missing" },
+      financials: { state: "missing" },
+      analyst: { state: "missing" },
+    },
+    jobs: [],
+  };
+
+  assert.equal(stockDetailViewRefetchIntervalMs(partial), false);
+});
+
+test("detail-view query does not invent polling for stale parts without explicit recovery metadata", () => {
+  const partial: StockDetailViewResponse = {
+    ok: true,
+    mode: "partial",
+    ticker: "US:STALE",
+    requestedTicker: "US:STALE",
+    view: "detail",
+    generatedAt: "2026-06-14T05:45:00.000Z",
+    snapshotVersion: "display-v1",
+    identity: { ticker: "US:STALE", market: "US", symbol: "STALE", name: "Stale Co" },
+    sections: {
+      price: { latest_price: 10 },
+    },
+    parts: {
+      price: { state: "stale_ready" },
+      chart: { state: "missing" },
+      score: { state: "missing" },
+      financials: { state: "missing" },
+      analyst: { state: "missing" },
+    },
+    jobs: [],
+  };
+
+  assert.equal(stockDetailViewRefetchIntervalMs(partial), false);
+});
+
 test("symbol search query option uses long-lived cache and short query guard", () => {
   assert.equal(shouldEnableSymbolSearch("k"), false);
   assert.equal(shouldEnableSymbolSearch("ko"), true);

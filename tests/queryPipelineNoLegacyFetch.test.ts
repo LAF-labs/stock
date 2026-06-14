@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 const componentSource = (file: string) => readFileSync(join(process.cwd(), "src/components", file), "utf8");
 const componentPath = (file: string) => join(process.cwd(), "src/components", file);
+const appSource = (file: string) => readFileSync(join(process.cwd(), "src/app", file), "utf8");
 const legacyDashboardCacheModule = ["stockDashboard", "Client", "Cache.ts"].join("");
 const legacyDashboardCachePattern = new RegExp(
   [
@@ -137,6 +138,14 @@ test("dashboard keeps partial stock content behind the loading skeleton", () => 
     /!\s*showStockSkeleton && displayPartialData/,
     "partial stock content must not render while the skeleton is active",
   );
+});
+
+test("stock detail route renders the client shell without blocking on display payload assembly", () => {
+  const page = appSource("page.tsx");
+
+  assert.doesNotMatch(page, /buildStockDisplayPayload/, "route rendering must not wait on full display payload assembly");
+  assert.doesNotMatch(page, /buildInitialDisplayPayload/, "route rendering must not keep a blocking initial display builder");
+  assert.match(page, /<Suspense\s+fallback=\{null\}>[\s\S]*<StockDashboard\s*\/>[\s\S]*<\/Suspense>/, "route rendering should hand off immediately to the client query shell inside a CSR boundary");
 });
 
 test("no unreviewed stock data owner components are introduced", () => {

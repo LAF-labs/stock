@@ -25,6 +25,7 @@ import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 export const STOCK_QUERY_MAX_PENDING_POLLS = 24;
 export const STOCK_QUERY_PENDING_BACKOFF_SECONDS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 60] as const;
 export const STOCK_QUERY_BACKGROUND_POLL_INTERVAL_MS = 60_000;
+export const STOCK_DETAIL_VIEW_DEFAULT_POLL_INTERVAL_MS = 1_500;
 export const STOCK_SYMBOL_SEARCH_STALE_TIME_MS = 24 * 60 * 60 * 1000;
 
 export const stockQueryStaleTimesMs = {
@@ -142,7 +143,10 @@ export function stockPendingRetryDelayMs(attempt = 0): number {
 export function stockDetailViewRefetchIntervalMs(result: StockDetailViewResponse | undefined): number | false {
   if (!result || result.ok === false) return false;
   if (result.mode === "ready") return false;
-  return typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : false;
+  const explicitPollMs = typeof result.nextPollMs === "number" && Number.isFinite(result.nextPollMs) && result.nextPollMs > 0 ? result.nextPollMs : undefined;
+  if (explicitPollMs !== undefined) return explicitPollMs;
+  if (!stockDetailViewShouldPoll(result)) return false;
+  return STOCK_DETAIL_VIEW_DEFAULT_POLL_INTERVAL_MS;
 }
 
 export function stockQueryRefetchIntervalMs(
@@ -207,6 +211,12 @@ function displayShouldPoll(payload: StockDisplayPayload): boolean {
   if (payload.refresh.pollable === false) return false;
   if (payload.refresh.queue?.attempted && payload.refresh.queue.queuedActions === 0 && payload.refresh.queue.failedActions > 0) return false;
   return payload.refresh.active || payload.completion.recoveringParts.length > 0;
+}
+
+function stockDetailViewShouldPoll(result: StockDetailViewResponse): boolean {
+  if (!result.ok || result.mode === "ready") return false;
+  if (result.jobs.length > 0) return true;
+  return Object.values(result.parts).some((part) => part.state === "refreshing" || part.state === "failed_retrying");
 }
 
 export function quoteDataFromQueryResult(result: QuoteQueryResult | undefined): StockQuoteResponse | undefined {

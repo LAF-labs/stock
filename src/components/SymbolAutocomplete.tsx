@@ -2,7 +2,7 @@
 
 import type { CSSProperties, FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeSymbolItemForQuery } from "@/components/symbolAutocompleteHelpers";
+import { activeSymbolItemForQuery, isAutocompleteImeCompositionEvent } from "@/components/symbolAutocompleteHelpers";
 import { directInputSymbolItem } from "@/components/stockDashboardHelpers";
 import { useSymbolSearchQuery } from "@/components/useSymbolSearchQuery";
 import { symbolDisplayName } from "@/lib/symbolDisplay";
@@ -82,6 +82,7 @@ export default function SymbolAutocomplete({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const suppressNextSubmitRef = useRef(false);
   const symbolSearch = useSymbolSearchQuery(value);
   const query = symbolSearch.query;
   const directItem = directInputSymbolItem(query);
@@ -171,6 +172,10 @@ export default function SymbolAutocomplete({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (suppressNextSubmitRef.current) {
+      suppressNextSubmitRef.current = false;
+      return;
+    }
     submitCurrentInput();
   }
 
@@ -200,6 +205,10 @@ export default function SymbolAutocomplete({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (isAutocompleteImeCompositionEvent(event)) {
+      if (event.key === "Enter") suppressNextSubmitRef.current = true;
+      return;
+    }
     if (!isOpen && (event.key === "ArrowDown" || event.key === "ArrowUp") && visibleItems.length) {
       event.preventDefault();
       setIsOpen(true);
