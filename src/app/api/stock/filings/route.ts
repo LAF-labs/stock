@@ -25,13 +25,6 @@ export async function GET(request: NextRequest) {
   const rateLimit = await guardedRateLimit(request, apiLimitPolicy("stock_filings", 240, 60), "stock_filings");
   if (!rateLimit.ok) return rateLimit.response;
 
-  if (!strict.ticker.startsWith("US:")) {
-    return NextResponse.json({ ok: true, items: [], total: 0 }, {
-      status: 200,
-      headers: publicVercelCdnCacheHeaders({ sMaxAgeSeconds: 300, staleWhileRevalidateSeconds: 900, staleIfErrorSeconds: 3600 }),
-    });
-  }
-
   const result = await readSecFilings({ ticker: strict.ticker, limit, offset });
   return NextResponse.json({ ok: true, ...result }, {
     status: 200,

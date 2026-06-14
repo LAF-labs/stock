@@ -1,4 +1,5 @@
 import symbols from "@/data/symbols.generated.json";
+import { buildDartListUrl, dartDisclosureToFiling, type DartDisclosureRow } from "@/lib/krDartFilings";
 import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex, rankIndexFilingFactCandidates } from "@/lib/secFilingIndexBackfill";
 import { writeSecFilings, type SecFilingListItem } from "@/lib/secFilings";
 import { safeErrorMessage } from "@/lib/errorSafety";
@@ -10,7 +11,9 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const SEC_UA = process.env.STOCK_SEC_EDGAR_USER_AGENT || "LAF-labs stock filings admin@laflabs.ai";
+const DART_BASE = "https://opendart.fss.or.kr";
 let lastSecRequestAt = 0;
+let lastDartRequestAt = 0;
 
 export async function GET(request: NextRequest) {
   return runDailyIndexJob(request);
@@ -32,34 +35,45 @@ async function runDailyIndexJob(request: NextRequest) {
     let scanned = 0;
     let rows = 0;
     let enriched = 0;
+    let dartRows = 0;
     const factFetchLimit = numericEnv("SEC_FILINGS_DAILY_FACT_FETCH_LIMIT", 80);
+    const dartApiKey = envValue("OPENDART_API_KEY");
+    const krSymbols = loadAllowedKrSymbols();
 
     for (const date of dates) {
       const text = await fetchDailyIndex(date);
-      if (!text) continue;
-      indexDays += 1;
-      const filings: SecFilingListItem[] = [];
-      for (const entry of parseMasterIndex(text)) {
-        scanned += 1;
-        const filing = indexEntryToFiling(entry, cikToTicker);
-        if (filing) filings.push(filing);
+      if (text) {
+        indexDays += 1;
+        const filings: SecFilingListItem[] = [];
+        for (const entry of parseMasterIndex(text)) {
+          scanned += 1;
+          const filing = indexEntryToFiling(entry, cikToTicker);
+          if (filing) filings.push(filing);
+        }
+        for (const candidate of rankIndexFilingFactCandidates(filings)) {
+          if (enriched >= factFetchLimit) break;
+          const filing = candidate.filing;
+          if (!filing.sourceUrl) continue;
+          const documentText = await fetchSecText(filing.sourceUrl).catch(() => "");
+          if (!documentText) continue;
+          filings[candidate.index] = enrichIndexFilingFromDocument(filing, documentText);
+          enriched += 1;
+        }
+        rows += filings.length;
+        for (let index = 0; index < filings.length; index += 250) {
+          await writeSecFilings(filings.slice(index, index + 250), { throwOnError: true });
+        }
       }
-      for (const candidate of rankIndexFilingFactCandidates(filings)) {
-        if (enriched >= factFetchLimit) break;
-        const filing = candidate.filing;
-        if (!filing.sourceUrl) continue;
-        const documentText = await fetchSecText(filing.sourceUrl).catch(() => "");
-        if (!documentText) continue;
-        filings[candidate.index] = enrichIndexFilingFromDocument(filing, documentText);
-        enriched += 1;
-      }
-      rows += filings.length;
-      for (let index = 0; index < filings.length; index += 250) {
-        await writeSecFilings(filings.slice(index, index + 250), { throwOnError: true });
+      if (dartApiKey) {
+        const dartFilings = await fetchDartFilings(date, dartApiKey, krSymbols);
+        dartRows += dartFilings.length;
+        for (let index = 0; index < dartFilings.length; index += 250) {
+          await writeSecFilings(dartFilings.slice(index, index + 250), { throwOnError: true });
+        }
       }
     }
 
-    return NextResponse.json({ ok: true, dates, indexDays, scanned, rows, enriched }, { status: 200 });
+    return NextResponse.json({ ok: true, dates, indexDays, scanned, rows, enriched, dartRows }, { status: 200 });
   } catch (error) {
     return NextResponse.json({ ok: false, error: safeErrorMessage(error) }, { status: 500 });
   }
@@ -88,6 +102,34 @@ async function fetchDailyIndex(date: string): Promise<string | undefined> {
   return await response.text();
 }
 
+async function fetchDartFilings(date: string, apiKey: string, allowedSymbols: Set<string>): Promise<SecFilingListItem[]> {
+  const filings: SecFilingListItem[] = [];
+  for (const corpClass of ["Y", "K", "N"] as const) {
+    let pageNo = 1;
+    while (pageNo <= 50) {
+      await throttleDart();
+      const response = await fetchWithTimeout(buildDartListUrl(DART_BASE, {
+        apiKey,
+        date: date.replace(/-/g, ""),
+        corpClass,
+        pageNo,
+      }), { cache: "no-store" }, 20_000);
+      if (!response.ok) throw new Error(`DART list HTTP ${response.status}`);
+      const payload = await response.json() as { status?: string; message?: string; total_page?: number | string; list?: DartDisclosureRow[] };
+      if (payload.status === "013") break;
+      if (payload.status !== "000") throw new Error(`DART list ${payload.status || "unknown"} ${payload.message || ""}`.trim());
+      for (const row of payload.list || []) {
+        const filing = dartDisclosureToFiling(row, allowedSymbols);
+        if (filing) filings.push(filing);
+      }
+      const totalPage = Number(payload.total_page || 1);
+      if (!Number.isFinite(totalPage) || pageNo >= totalPage) break;
+      pageNo += 1;
+    }
+  }
+  return filings;
+}
+
 async function loadCikToTicker(): Promise<Map<string, string>> {
   const allowed = new Set((symbols as Array<Record<string, unknown>>)
     .filter((item) => item.market === "US" && typeof item.ticker === "string")
@@ -111,11 +153,24 @@ async function loadCikToTicker(): Promise<Map<string, string>> {
   return map;
 }
 
+function loadAllowedKrSymbols(): Set<string> {
+  return new Set((symbols as Array<Record<string, unknown>>)
+    .filter((item) => item.market === "KR" && typeof item.ticker === "string")
+    .map((item) => String(item.ticker).toUpperCase()));
+}
+
 async function throttleSec(): Promise<void> {
   const now = Date.now();
   const waitMs = Math.max(0, 150 - (now - lastSecRequestAt));
   if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
   lastSecRequestAt = Date.now();
+}
+
+async function throttleDart(): Promise<void> {
+  const now = Date.now();
+  const waitMs = Math.max(0, 100 - (now - lastDartRequestAt));
+  if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  lastDartRequestAt = Date.now();
 }
 
 function recentDates(days: number): string[] {

@@ -45,7 +45,7 @@ export function useStockFilings(ticker: string | undefined, enabled: boolean): S
   const [state, setState] = useState<StockFilingsState>(IDLE_FILINGS_STATE);
 
   useEffect(() => {
-    if (!ticker || !enabled || !ticker.startsWith("US:")) {
+    if (!ticker || !enabled || !/^(US|KR):/.test(ticker)) {
       setState(IDLE_FILINGS_STATE);
       return undefined;
     }

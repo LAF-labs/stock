@@ -30,7 +30,7 @@ export function DisclosureFeed({ ticker, state }: { ticker: string | undefined; 
             </button>
           </>
         ) : (
-          <p className="static-empty">표시할 최근 SEC 공시가 없어요.</p>
+          <p className="static-empty">표시할 최근 공시가 없어요.</p>
         )}
       </div>
       {open && ticker ? (
@@ -82,12 +82,12 @@ function DisclosureModal({
         className="disclosure-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="SEC 공시 더 보기"
+        aria-label="공시 더 보기"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
           <div>
-            <span>SEC 공시</span>
+            <span>공시</span>
             <strong>최근 공시 더 보기</strong>
           </div>
           <button type="button" className="disclosure-icon-button" aria-label="닫기" onClick={onClose}>
@@ -163,7 +163,7 @@ function safeExternalUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname.endsWith("sec.gov") ? value : undefined;
+    return url.protocol === "https:" && (url.hostname.endsWith("sec.gov") || url.hostname === "dart.fss.or.kr") ? value : undefined;
   } catch {
     return undefined;
   }

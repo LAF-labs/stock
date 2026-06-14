@@ -21,6 +21,12 @@ export type SecFilingFacts = {
   holderName?: string;
   ownershipPercent?: number;
   currency?: string;
+  source?: string;
+  reportName?: string;
+  disclosureType?: string;
+  stockCode?: string;
+  filerName?: string;
+  remark?: string;
 };
 
 export type SecFilingSummaryInput = {
@@ -54,6 +60,7 @@ const EIGHT_K_ITEMS: Record<string, string> = {
 export function summarizeSecFiling(input: SecFilingSummaryInput): SecFilingSummary {
   const form = normalizeForm(input.formType);
   const facts = input.facts || {};
+  if (facts.source === "DART" || input.ticker?.startsWith("KR:")) return summarizeDart(form, facts);
   if (["3", "4", "5"].includes(form)) return summarizeOwnershipForm(form, facts);
   if (form === "8-K" || form === "8-K/A") return summarize8K(input.items ?? facts.items, facts);
   if (form === "10-Q" || form === "10-Q/A" || form === "10-K" || form === "10-K/A") return summarizePeriodic(form, facts);
@@ -121,6 +128,28 @@ function summarizeOffering(facts: SecFilingFacts): SecFilingSummary {
   const shareText = positive(facts.shares) ? ` 발행 주식 수는 ${formatShares(facts.shares)}예요.` : "";
   const priceText = positive(facts.price) ? ` 공모가는 주당 ${formatUnitPrice(facts.price, facts.currency)}입니다.` : "";
   return makeSummary("offering", "high", ["증권발행"], `증권 발행/공모 관련 공시예요.${amount}${shareText}${priceText || ""}${shareText || amount ? "" : " 기존 주주 지분 희석 가능성을 봐야 해요."}`);
+}
+
+function summarizeDart(reportName: string, facts: SecFilingFacts): SecFilingSummary {
+  const report = facts.reportName || reportName;
+  if (/분기보고서/.test(report)) return makeSummary("periodic_report", "high", ["분기 실적"], "분기 실적이 발표됐어요. 매출, 이익, 현금흐름을 확인하는 핵심 공시예요.");
+  if (/반기보고서/.test(report)) return makeSummary("periodic_report", "high", ["반기 실적"], "반기 실적이 발표됐어요. 상반기 매출과 이익 흐름을 확인하는 공시예요.");
+  if (/사업보고서/.test(report)) return makeSummary("periodic_report", "high", ["연간 실적"], "연간 실적이 발표됐어요. 한 해 실적과 사업 내용을 확인하는 핵심 공시예요.");
+  if (/유상증자/.test(report)) return makeSummary("offering", "high", ["유상증자"], "새 주식을 발행해 자금을 조달해요. 기존 주주 지분이 희석될 수 있어요.");
+  if (/무상증자/.test(report)) return makeSummary("offering", "high", ["무상증자"], "주주에게 새 주식을 무상으로 배정하는 공시예요. 기준일과 권리락 일정을 확인해야 해요.");
+  if (/감자/.test(report)) return makeSummary("capital_change", "high", ["감자"], "자본금을 줄이는 감자 공시예요. 주식 수나 자본구조가 바뀔 수 있어요.");
+  if (/전환사채|CB/.test(report)) return makeSummary("offering", "high", ["전환사채"], "전환사채 발행 공시예요. 나중에 주식으로 바뀌면 지분 희석이 생길 수 있어요.");
+  if (/신주인수권부사채|BW/.test(report)) return makeSummary("offering", "high", ["신주인수권부사채"], "신주인수권부사채 발행 공시예요. 새 주식 발행 가능성이 있어 희석을 봐야 해요.");
+  if (/자기주식.*취득/.test(report)) return makeSummary("buyback", "high", ["자사주"], "자사주를 취득한다는 공시예요. 주주환원 신호인지 확인해볼 만해요.");
+  if (/자기주식.*처분/.test(report)) return makeSummary("buyback", "high", ["자사주"], "보유 자사주를 처분한다는 공시예요. 처분 목적과 물량을 확인해야 해요.");
+  if (/최대주주.*변경/.test(report)) return makeSummary("major_holder", "high", ["최대주주"], "최대주주가 바뀌는 공시예요. 경영권 변화 가능성을 확인해야 해요.");
+  if (/대량보유|주식등의대량보유/.test(report)) return makeSummary("major_holder", "high", ["대량보유"], "주요 투자자의 대량보유 보고예요. 지분율 변화와 목적을 확인해야 해요.");
+  if (/임원.*주요주주|소유상황/.test(report)) return makeSummary("insider_transaction", "medium", ["내부자"], "임원이나 주요주주의 보유 주식 변동 공시예요. 매수인지 매도인지 원문을 확인해야 해요.");
+  if (/합병/.test(report)) return makeSummary("reorganization", "high", ["합병"], "합병 관련 공시예요. 합병 비율과 일정이 주가에 영향을 줄 수 있어요.");
+  if (/분할/.test(report)) return makeSummary("reorganization", "high", ["분할"], "회사 분할 관련 공시예요. 사업 구조와 주주 배정 방식을 확인해야 해요.");
+  if (/영업양수|영업양도/.test(report)) return makeSummary("reorganization", "high", ["영업양수도"], "사업을 사고파는 공시예요. 매출 구조가 바뀔 수 있어요.");
+  if (/소송|횡령|배임|상장폐지|거래정지/.test(report)) return makeSummary("risk_event", "high", ["리스크"], "투자 리스크가 큰 공시예요. 원문에서 사유와 금액, 일정을 확인해야 해요.");
+  return makeSummary("domestic_disclosure", "medium", ["국내공시"], `${report} 공시예요. 세부 내용은 원문 확인이 필요해요.`);
 }
 
 function financialNumbers(facts: SecFilingFacts): string {
