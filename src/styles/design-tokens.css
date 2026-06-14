@@ -1,0 +1,79 @@
+:root {
+  --color-app-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f7f8fa;
+  --color-surface-accent: #eef6ff;
+  --color-border: #edf0f3;
+  --color-border-strong: #e5e8eb;
+  --color-text-primary: #191f28;
+  --color-text-secondary: #4e5968;
+  --color-text-muted: #8b95a1;
+  --color-accent: #2878f0;
+  --color-accent-strong: #1b64da;
+  --color-accent-soft: #e8f3ff;
+  --color-positive: #0ca678;
+  --color-negative: #e5484d;
+  --color-neutral: #6b7684;
+  --color-warning: #f59f00;
+  --color-danger: #e5484d;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --control-height-sm: 36px;
+  --control-height-md: 44px;
+  --control-height-lg: 56px;
+  --control-icon-sm: 18px;
+  --control-icon-md: 20px;
+  --control-icon-lg: 24px;
+
+  --font-size-caption: 12px;
+  --font-size-body: 15px;
+  --font-size-title: 20px;
+  --font-size-display: 42px;
+  --line-height-tight: 1.15;
+  --line-height-body: 1.5;
+
+  --shadow-floating: 0 14px 36px rgba(15, 23, 42, 0.12);
+  --shadow-sheet: 0 -18px 42px rgba(15, 23, 42, 0.18);
+  --shadow-panel: 0 18px 44px rgba(15, 23, 42, 0.08);
+
+  --motion-fast: 120ms ease;
+  --motion-standard: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-enter: 220ms cubic-bezier(0.22, 1, 0.36, 1);
+
+  --z-sticky-search: 60;
+  --z-desktop-nav: 70;
+  --z-mobile-nav: 90;
+  --z-sheet: 100;
+
+  --bg: var(--color-app-bg);
+  --surface: var(--color-surface);
+  --surface-soft: var(--color-surface-subtle);
+  --surface-accent: var(--color-surface-accent);
+  --text: var(--color-text-primary);
+  --subtext: var(--color-text-secondary);
+  --muted: var(--color-text-muted);
+  --line: var(--color-border);
+  --line-strong: var(--color-border-strong);
+  --accent: var(--color-accent);
+  --accent-strong: var(--color-accent-strong);
+  --accent-soft: var(--color-accent-soft);
+  --red: var(--color-negative);
+  --red-soft: #fff0f2;
+  --down: var(--color-accent);
+  --focus: var(--color-accent);
+}

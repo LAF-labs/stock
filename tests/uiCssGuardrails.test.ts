@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+const designTokensCss = readFileSync(join(process.cwd(), "src/styles/design-tokens.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
 const autocompleteSource = readFileSync(join(process.cwd(), "src/components/SymbolAutocomplete.tsx"), "utf8");
@@ -36,6 +37,24 @@ function lastCssDeclaration(selector: string, property: string): string | undefi
   }
   return value;
 }
+
+const semanticRootAliases: Record<string, string> = {
+  "--bg": "var(--color-app-bg)",
+  "--surface": "var(--color-surface)",
+  "--surface-soft": "var(--color-surface-subtle)",
+  "--surface-accent": "var(--color-surface-accent)",
+  "--text": "var(--color-text-primary)",
+  "--subtext": "var(--color-text-secondary)",
+  "--muted": "var(--color-text-muted)",
+  "--line": "var(--color-border)",
+  "--line-strong": "var(--color-border-strong)",
+  "--accent": "var(--color-accent)",
+  "--accent-strong": "var(--color-accent-strong)",
+  "--accent-soft": "var(--color-accent-soft)",
+  "--red": "var(--color-negative)",
+  "--down": "var(--color-accent)",
+  "--focus": "var(--color-accent)",
+};
 
 test("visited link color is scoped to news links", () => {
   assert.doesNotMatch(css, /(^|})\s*a:visited\s*\{/);
@@ -71,6 +90,37 @@ test("primary CTA styles use shared tokens instead of black overrides", () => {
   assert.match(css, /--cta-primary-bg:\s*var\(--accent\);/);
   assert.match(css, /\.technical-analysis-link\s*\{[\s\S]*?background:\s*var\(--cta-secondary-bg\);/);
   assert.doesNotMatch(css, /\.technical-analysis-link\s*\{[\s\S]*?background:\s*#111827;/);
+});
+
+test("design system foundation tokens are role based and imported first", () => {
+  assert.equal(css.startsWith('@import "../styles/design-tokens.css";'), true);
+  assert.match(designTokensCss, /--color-app-bg:\s*#f5f7fa;/);
+  assert.match(designTokensCss, /--color-surface:\s*#ffffff;/);
+  assert.match(designTokensCss, /--color-text-primary:\s*#191f28;/);
+  assert.match(designTokensCss, /--color-accent:\s*#2878f0;/);
+  assert.match(designTokensCss, /--space-4:\s*16px;/);
+  assert.match(designTokensCss, /--radius-pill:\s*999px;/);
+  assert.match(designTokensCss, /--control-height-lg:\s*56px;/);
+  assert.match(designTokensCss, /--motion-standard:\s*180ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/);
+  assert.match(designTokensCss, /--bg:\s*var\(--color-app-bg\);/);
+  assert.match(designTokensCss, /--surface:\s*var\(--color-surface\);/);
+
+  const seenAliases = new Set<string>();
+  const rootBlocks = Array.from(css.matchAll(/:root\s*\{([^{}]*)\}/g));
+  assert.ok(rootBlocks.length > 0);
+  rootBlocks.forEach((rootBlock, rootIndex) => {
+    for (const declaration of rootBlock[1].split(";")) {
+      const [rawName, ...rawValueParts] = declaration.split(":");
+      const name = rawName?.trim();
+      if (!name || !(name in semanticRootAliases)) continue;
+      const value = rawValueParts.join(":").trim();
+      seenAliases.add(name);
+      assert.equal(value, semanticRootAliases[name], `${name} in :root block ${rootIndex + 1}`);
+    }
+  });
+  for (const alias of Object.keys(semanticRootAliases)) {
+    assert.equal(seenAliases.has(alias), true, `${alias} is declared in a :root block`);
+  }
 });
 
 test("mobile stock summary prioritizes judgment and compact score cards", () => {

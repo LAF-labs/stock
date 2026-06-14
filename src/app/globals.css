@@ -1,16 +1,18 @@
+@import "../styles/design-tokens.css";
+
 :root {
-  --bg: #f2f4f6;
-  --surface: #ffffff;
-  --surface-soft: #f7f8fa;
-  --surface-accent: #eef6ff;
-  --text: #191f28;
-  --subtext: #4e5968;
-  --muted: #8b95a1;
-  --line: #edf0f3;
-  --line-strong: #e5e8eb;
-  --accent: #3182f6;
-  --accent-strong: #1b64da;
-  --accent-soft: #e8f3ff;
+  --bg: var(--color-app-bg);
+  --surface: var(--color-surface);
+  --surface-soft: var(--color-surface-subtle);
+  --surface-accent: var(--color-surface-accent);
+  --text: var(--color-text-primary);
+  --subtext: var(--color-text-secondary);
+  --muted: var(--color-text-muted);
+  --line: var(--color-border);
+  --line-strong: var(--color-border-strong);
+  --accent: var(--color-accent);
+  --accent-strong: var(--color-accent-strong);
+  --accent-soft: var(--color-accent-soft);
   --cta-primary-bg: var(--accent);
   --cta-primary-bg-hover: var(--accent-strong);
   --cta-primary-text: #ffffff;
@@ -21,10 +23,10 @@
   --cta-tertiary-bg-hover: #e8edf4;
   --cta-tertiary-text: var(--subtext);
   --cta-disabled-bg: #d5dbe3;
-  --red: #f04452;
+  --red: var(--color-negative);
   --red-soft: #fff0f2;
-  --down: #3182f6;
-  --focus: #3182f6;
+  --down: var(--color-accent);
+  --focus: var(--color-accent);
 }
 
 * {
@@ -4035,9 +4037,9 @@ body.compare-search-open {
 
 /* Variant C: Investor Coach */
 :root {
-  --bg: #eef6ff;
-  --surface-soft: #f7fbff;
-  --surface-accent: #e8f3ff;
+  --bg: var(--color-app-bg);
+  --surface-soft: var(--color-surface-subtle);
+  --surface-accent: var(--color-surface-accent);
   --coach-blue: #2f80ed;
   --coach-line: rgba(49, 130, 246, 0.18);
   --coach-shadow: 0 20px 46px rgba(49, 130, 246, 0.14);
