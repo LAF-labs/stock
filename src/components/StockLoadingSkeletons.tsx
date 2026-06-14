@@ -80,11 +80,6 @@ export function StockDetailLoadingSkeleton({ tickerLabel }: { tickerLabel?: stri
             </article>
           ))}
         </div>
-        <div className="hero-verdict neutral partial-verdict">
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="headline" />
-          <SkeletonBlock className="wide" />
-        </div>
       </section>
       <section className="chart-story partial-pending-section">
         <SkeletonSectionTitle />

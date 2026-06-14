@@ -471,6 +471,7 @@ function CompareChart({ items }: { items: CompareChartItem[] }) {
             <g key={entry.item.ticker}>
               {entry.points.length >= 2 ? (
                 <polyline
+                  className="compare-chart-line"
                   points={entry.points.map((point) => `${x(point.dateIndex)},${y(point.value)}`).join(" ")}
                   fill="none"
                   stroke={entry.color}
@@ -478,10 +479,18 @@ function CompareChart({ items }: { items: CompareChartItem[] }) {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
+              ) : entry.points[0] ? (
+                <line
+                  className="compare-chart-line"
+                  x1={Math.max(padX, x(entry.points[0].dateIndex) - 10)}
+                  y1={y(entry.points[0].value)}
+                  x2={Math.min(width - padX, x(entry.points[0].dateIndex) + 10)}
+                  y2={y(entry.points[0].value)}
+                  stroke={entry.color}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                />
               ) : null}
-              {entry.points.map((point) => (
-                <circle key={`${entry.item.ticker}-${point.date}`} cx={x(point.dateIndex)} cy={y(point.value)} r="5" fill={entry.color} />
-              ))}
             </g>
           ))}
         </svg>

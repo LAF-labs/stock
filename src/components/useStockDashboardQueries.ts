@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JudgmentState, PriceRefreshState, QuoteState } from "@/components/StockHeader";
+import type { PriceRefreshState, QuoteState } from "@/components/StockHeader";
 import {
   chooseRicherStockData,
   dashboardStateFromDetailView,
@@ -12,15 +12,12 @@ import {
   refreshCooldownMessage,
   scoreDataWithQuote,
   snapshotPendingFromPayload,
-  stringFromUnknown,
-  stockJudgmentRequestPayload,
   type SnapshotPendingState,
 } from "@/components/stockDashboardHelpers";
 import { refreshQuote as refreshQuoteRequest } from "@/lib/stockQueryFns";
 import {
   STOCK_DETAIL_VIEW_DEFAULT_POLL_INTERVAL_MS,
   detailViewQueryOptions,
-  judgmentQueryOptions,
   displayQueryOptions,
   displayQueryResultFromPayload,
   quoteDataFromQueryResult,
@@ -35,7 +32,7 @@ import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import type { ApiPending, QuoteQueryResult, QuoteRefreshMutationResult, ScoreQueryResult } from "@/lib/stockQueryTypes";
 import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
 import type { StockDisplayPayload } from "@/lib/stockDisplayTypes";
-import type { StockJudgment, StockQuoteResponse, StockScoreResponse } from "@/lib/types";
+import type { StockQuoteResponse, StockScoreResponse } from "@/lib/types";
 import { stockScoreDataFromDisplayPayload } from "@/components/stockDisplayAdapters";
 
 export type DashboardLoadState =
@@ -49,7 +46,6 @@ export type StockDashboardQueryView = {
   state: DashboardLoadState;
   quoteState: QuoteState;
   priceRefreshState: PriceRefreshState;
-  judgmentState: JudgmentState;
   scorePending: SnapshotPendingState | undefined;
   quotePending: SnapshotPendingState | undefined;
   quoteData: StockQuoteResponse | undefined;
@@ -109,18 +105,6 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
   const quoteData = quoteDataFromQueryResult(quoteQuery.data) || quoteDataFromQueryResult(detailViewQuoteResult);
   const displayData = displayQuery.data?.state === "ready" ? stockScoreDataFromDisplayPayload(displayQuery.data.data) : undefined;
   const rawScoreData = scoreQuery.data?.state === "ready" ? scoreQuery.data.data : undefined;
-  const judgmentData = judgmentSourceData(detailViewScoreData, rawScoreData);
-  const judgmentPayload = useMemo(() => (judgmentData ? stockJudgmentRequestPayload(judgmentData) : undefined), [judgmentData]);
-  const judgmentInputHash = useMemo(() => (judgmentPayload ? stablePayloadHash(judgmentPayload) : ""), [judgmentPayload]);
-  const scoreVersion = stringFromUnknown(judgmentData?.score_model_version) || stringFromUnknown(judgmentData?.server_cache?.fetched_at) || "score";
-  const judgmentQuery = useQuery(
-    judgmentQueryOptions({
-      ticker: tickerKey,
-      scoreVersion,
-      inputHash: judgmentInputHash,
-      payload: judgmentPayload,
-    })
-  );
 
   const priceRefreshMutation = useMutation({
     mutationFn: (requestedTicker: string) => refreshQuoteRequest(requestedTicker),
@@ -159,7 +143,6 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
   const detailViewState = dashboardLoadStateFromDetailView(detailViewAdapterState, ticker, detailViewQuery.data);
   const state = chooseDashboardLoadState(detailViewState, legacyState);
   const quoteState = quoteStateFromQuery(ticker, quoteStateResult, quoteQuery.error, queryEnablement.quote && quoteQuery.isLoading);
-  const judgmentState = judgmentStateFromQuery(judgmentData ? judgmentQuery.data?.data : undefined, judgmentQuery.error, judgmentQuery.isLoading && Boolean(judgmentData));
   const data = ticker && state.status === "success" ? state.data : undefined;
   const partialData = ticker && state.status === "partial" ? scoreDataWithQuote(state.data, quoteData) : undefined;
   const scorePending = ticker && (state.status === "pending" || state.status === "partial") ? state.pending : undefined;
@@ -182,8 +165,7 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     if (queryEnablement.display) void displayQuery.refetch();
     if (queryEnablement.score) void scoreQuery.refetch();
     if (queryEnablement.quote) void quoteQuery.refetch();
-    if (judgmentData) void judgmentQuery.refetch();
-  }, [detailViewQuery, displayQuery, judgmentData, judgmentQuery, queryEnablement.display, queryEnablement.quote, queryEnablement.score, quoteQuery, scoreQuery, ticker]);
+  }, [detailViewQuery, displayQuery, queryEnablement.display, queryEnablement.quote, queryEnablement.score, quoteQuery, scoreQuery, ticker]);
 
   const refreshPrice = useCallback(() => {
     if (!ticker) return;
@@ -195,7 +177,6 @@ export function useStockDashboardQueries(ticker: string | undefined, initialDisp
     state,
     quoteState,
     priceRefreshState,
-    judgmentState,
     scorePending,
     quotePending,
     quoteData,
@@ -245,25 +226,6 @@ function quoteResultForHeader(
 ): QuoteQueryResult | undefined {
   if (quoteResult?.state === "ready" || quoteResult?.state === "partial") return quoteResult;
   return detailViewQuoteResult || quoteResult;
-}
-
-function judgmentSourceData(
-  detailViewData: StockScoreResponse | undefined,
-  scoreData: StockScoreResponse | undefined,
-): StockScoreResponse | undefined {
-  if (detailViewData && stockDataHasJudgmentInputs(detailViewData)) return detailViewData;
-  if (scoreData && stockDataHasJudgmentInputs(scoreData)) return scoreData;
-  return undefined;
-}
-
-function stockDataHasJudgmentInputs(data: StockScoreResponse): boolean {
-  return (
-    typeof data.score === "number" ||
-    typeof data.quality_score === "number" ||
-    typeof data.opportunity_score === "number" ||
-    Boolean(data.components?.length) ||
-    Boolean(data.key_metrics?.length)
-  );
 }
 
 function dashboardLoadStateFromDetailView(
@@ -423,12 +385,6 @@ function priceRefreshStateFromMutation(
   return { status: "idle" };
 }
 
-function judgmentStateFromQuery(judgment: StockJudgment | undefined, error: unknown, isLoading: boolean): JudgmentState {
-  if (judgment) return { status: "success", judgment };
-  if (error) return { status: "error", error: errorMessage(error, "판단을 불러오지 못했어요.") };
-  return isLoading ? { status: "loading" } : { status: "idle" };
-}
-
 function scorePlaceholder(ticker: string): ScoreQueryResult {
   return {
     state: "partial",
@@ -514,24 +470,4 @@ function detailViewExplicitPollMs(result: StockDetailViewResponse): number | und
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-function stablePayloadHash(payload: Record<string, unknown>): string {
-  let hash = 2_166_136_261;
-  const normalized = stableStringify(payload);
-  for (let index = 0; index < normalized.length; index += 1) {
-    hash ^= normalized.charCodeAt(index);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(",")}}`;
 }

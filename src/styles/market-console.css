@@ -1102,3 +1102,160 @@ body {
     border-top: 0;
   }
 }
+
+.compare-app .compare-landing {
+  border-bottom: 0;
+  /* Compare detail DNA alignment */
+}
+
+.compare-app .compare-section {
+  border-top: 1px solid var(--line);
+}
+
+.compare-stock-card {
+  border: 0;
+  background: transparent;
+}
+
+.compare-score-grid {
+  border-top: 1px solid var(--line);
+}
+
+.compare-score-tile {
+  border: 0;
+  background: transparent;
+}
+
+/* Detail score comprehension */
+.stock-detail-app .quick-read .score-panel {
+  min-height: 166px;
+  padding: 22px 18px 10px;
+  align-content: stretch;
+  gap: 12px;
+}
+
+.stock-detail-app .quality-score-visual {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.stock-detail-app .score-donut {
+  width: 120px;
+  height: 120px;
+}
+
+.stock-detail-app .score-donut::before {
+  inset: 12px;
+}
+
+.stock-detail-app .quality-donut-value {
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.stock-detail-app .score-donut small {
+  color: var(--mc-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stock-detail-app .score-panel-explain {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.stock-detail-app .score-panel-explain strong {
+  color: var(--mc-text);
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.stock-detail-app .score-panel-explain p {
+  margin: 0;
+  color: var(--mc-subtext);
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.stock-detail-app .score-panel-signals {
+  display: grid;
+  gap: 8px;
+}
+
+.stock-detail-app .score-chip-row,
+.stock-detail-app .opportunity-movers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stock-detail-app .quick-read .score-chip-row span,
+.stock-detail-app .quick-read .opportunity-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--mc-radius-pill);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.stock-detail-app .quick-read .opportunity-chip {
+  gap: 6px;
+}
+
+.stock-detail-app .quick-read .opportunity-chip b {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stock-detail-app .quick-read .opportunity-chip.best {
+  color: #0f7a54;
+  background: rgba(24, 169, 118, 0.12);
+}
+
+.stock-detail-app .quick-read .opportunity-chip.worst {
+  color: var(--mc-accent);
+  background: var(--mc-accent-soft);
+}
+
+@media (max-width: 640px) {
+  .stock-detail-app .quick-read .score-panel {
+    padding: 16px 14px;
+  }
+
+  .stock-detail-app .quick-read .quality-score-visual {
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .stock-detail-app .quick-read .score-donut {
+    width: 82px;
+    height: 82px;
+  }
+
+  .stock-detail-app .quick-read .score-donut::before {
+    inset: 8px;
+  }
+
+  .stock-detail-app .quick-read .score-donut .quality-donut-value strong {
+    font-size: 23px;
+  }
+
+  .stock-detail-app .quick-read .score-donut small {
+    font-size: 10px;
+  }
+
+  .stock-detail-app .quick-read .score-panel-explain strong {
+    font-size: 15px;
+  }
+
+  .stock-detail-app .quick-read .score-panel-explain p {
+    font-size: 12px;
+  }
+}

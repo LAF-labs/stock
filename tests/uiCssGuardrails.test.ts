@@ -9,6 +9,7 @@ const css = `${globalsCss}\n${marketConsoleCss}`;
 const designTokensCss = readFileSync(join(process.cwd(), "src/styles/design-tokens.css"), "utf8");
 const dashboardSource = readFileSync(join(process.cwd(), "src/components/StockDashboard.tsx"), "utf8");
 const compareSource = readFileSync(join(process.cwd(), "src/components/StockCompare.tsx"), "utf8");
+const stockHeaderSource = readFileSync(join(process.cwd(), "src/components/StockHeader.tsx"), "utf8");
 const stockLandingSource = readFileSync(join(process.cwd(), "src/components/landing/StockLanding.tsx"), "utf8");
 const compareSectionSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSection.tsx"), "utf8");
 const compareSideIndexSource = readFileSync(join(process.cwd(), "src/components/compare/CompareSideIndex.tsx"), "utf8");
@@ -85,6 +86,13 @@ test("desktop index layouts use centered grid containers", () => {
   assert.match(css, /\.app-desktop-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*0;[\s\S]*?right:\s*0;[\s\S]*?left:\s*0;/);
 });
 
+test("detail side index tracks scroll in both complete and partial feeds", () => {
+  assert.match(dashboardSource, /const shouldShowDetailIndex = Boolean\(displayData \|\| isPartialFeedVisible\);/);
+  assert.match(dashboardSource, /const indexSections = shouldShowDetailIndex \? visibleDetailSections : \[\];/);
+  assert.match(dashboardSource, /if \(!shouldShowDetailIndex \|\| !visibleDetailSections\.length\) return;/);
+  assert.doesNotMatch(dashboardSource, /if \(!displayData \|\| !visibleDetailSections\.length\) return;/);
+});
+
 test("font weights stay on supported tiers", () => {
   assert.doesNotMatch(css, /font-weight:\s*(?:550|650|750|760|780|790|820)\b/);
 });
@@ -137,14 +145,28 @@ test("design system foundation tokens are role based and imported first", () => 
   }
 });
 
-test("mobile stock summary prioritizes judgment and compact score cards", () => {
-  assert.match(css, /\.stock-detail-app \.hero-verdict\s*\{[\s\S]*?order:\s*3;/);
+test("stock detail summary ends at the score panels without a judgment card", () => {
+  assert.doesNotMatch(stockHeaderSource, /오늘의 판단|hero-verdict|stockJudgment|stock-mobile-action stock-verdict-action/);
+  assert.doesNotMatch(dashboardSource, /오늘의 판단|partial-verdict/);
+  assert.doesNotMatch(loadingSkeletonSource, /hero-verdict|partial-verdict/);
   assert.match(css, /\.stock-detail-app \.quick-read\s*\{[\s\S]*?order:\s*4;[\s\S]*?grid-template-columns:\s*1fr;/);
   assert.match(css, /\.stock-detail-app \.quick-read article,[\s\S]*?\.stock-detail-app \.quick-read \.score-panel\s*\{[\s\S]*?grid-column:\s*1;/);
   assert.match(css, /\.stock-detail-app \.quick-read article\.quick-metric-card\s*\{[\s\S]*?grid-column:\s*1;/);
   assert.match(css, /\.stock-detail-app \.quick-read \.quality-score-panel\s*\{[\s\S]*?order:\s*1;/);
   assert.match(css, /\.stock-detail-app \.quick-read \.opportunity-panel\s*\{[\s\S]*?order:\s*2;/);
-  assert.match(css, /\.stock-detail-app \.score-donut\s*\{[\s\S]*?width:\s*64px;[\s\S]*?height:\s*64px;/);
+  assert.match(css, /\.stock-detail-app \.quick-read \.score-donut\s*\{[\s\S]*?width:\s*82px;[\s\S]*?height:\s*82px;/);
+});
+
+test("detail score panels explain quality and opportunity in plain language with larger visuals", () => {
+  assert.match(stockHeaderSource, /품질 점수/);
+  assert.match(stockHeaderSource, /회사의 기본 체력/);
+  assert.match(stockHeaderSource, /기회 점수/);
+  assert.match(stockHeaderSource, /지금 보기 좋은 자리인지/);
+  assert.match(stockHeaderSource, /가격 흐름·목표가·리스크/);
+  assert.equal(lastCssDeclaration(".stock-detail-app .score-donut", "width"), "120px");
+  assert.equal(lastCssDeclaration(".stock-detail-app .score-donut", "height"), "120px");
+  assert.equal(lastCssDeclaration(".stock-detail-app .quality-score-visual", "display"), "grid");
+  assert.equal(lastCssDeclaration(".stock-detail-app .score-panel-explain strong", "font-size"), "18px");
 });
 
 test("detail summary quick read is a flat stat strip, not nested cards", () => {
@@ -154,6 +176,30 @@ test("detail summary quick read is a flat stat strip, not nested cards", () => {
   assert.equal(lastCssDeclaration(".stock-detail-app .quick-read article.quick-metric-card", "border"), "0");
   assert.equal(lastCssDeclaration(".stock-detail-app .quick-read .score-panel", "border"), "0");
   assert.equal(lastCssDeclaration(".stock-detail-app .quick-read .score-panel", "background"), "transparent");
+});
+
+test("detail chart stands alone without the extra price volatility summary list", () => {
+  assert.doesNotMatch(dashboardSource, /가격·변동성 요약/);
+  assert.doesNotMatch(dashboardSource, /priceVolatilitySummaryItems/);
+});
+
+test("compare chart uses detail-style line-only drawing without point dots", () => {
+  assert.match(compareSource, /className="compare-chart-line"/);
+  assert.doesNotMatch(compareSource, /<circle\b/);
+  assert.equal(lastCssDeclaration(".compare-chart-line", "fill"), "none");
+  assert.equal(lastCssDeclaration(".compare-chart-line", "stroke-linecap"), "round");
+  assert.equal(lastCssDeclaration(".compare-chart-line", "stroke-linejoin"), "round");
+});
+
+test("compare page shares detail DNA with flat sections and stat strips", () => {
+  assert.match(css, /\/\* Compare detail DNA alignment \*\//);
+  assert.equal(lastCssDeclaration(".compare-app .compare-landing", "border-bottom"), "0");
+  assert.equal(lastCssDeclaration(".compare-app .compare-section", "border-top"), "1px solid var(--line)");
+  assert.equal(lastCssDeclaration(".compare-stock-card", "border"), "0");
+  assert.equal(lastCssDeclaration(".compare-stock-card", "background"), "transparent");
+  assert.equal(lastCssDeclaration(".compare-score-grid", "border-top"), "1px solid var(--line)");
+  assert.equal(lastCssDeclaration(".compare-score-tile", "border"), "0");
+  assert.equal(lastCssDeclaration(".compare-score-tile", "background"), "transparent");
 });
 
 test("home screen has no old default ticker fallback and renders animated landing", () => {

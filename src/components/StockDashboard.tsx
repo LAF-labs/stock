@@ -27,8 +27,6 @@ import {
   PARTIAL_SECTION_SKELETON_DEADLINE_MS,
   partialStockDataFromTicker,
   partialSectionDisplayState,
-  partialStockStatusSummary,
-  priceVolatilitySummaryItems,
   scoreDataWithQuote,
   shouldShowStockSkeleton,
   stockMarketCapDisplay,
@@ -102,7 +100,6 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
     state,
     quoteState,
     priceRefreshState,
-    judgmentState,
     quoteData,
     data,
     partialData,
@@ -183,12 +180,14 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   }
 
   const visibleDetailSections = DETAIL_SECTIONS;
+  const shouldShowDetailIndex = Boolean(displayData || isPartialFeedVisible);
+  const indexSections = shouldShowDetailIndex ? visibleDetailSections : [];
   const compareHref = displayData && tickerParam ? compareHrefForStock(displayData, quoteData, tickerParam) : "";
   const pageIdentity = displayData ? stockHeaderIdentity(displayData, quoteData) : undefined;
   const pageTitle = tickerParam ? `${pageIdentity?.primary || dashboardInputValue(tickerParam)} 주식 상세` : "주식 점수 검색";
 
   useEffect(() => {
-    if (!displayData || !visibleDetailSections.length) return;
+    if (!shouldShowDetailIndex || !visibleDetailSections.length) return;
 
     const sectionIds = visibleDetailSections.map((section) => section.id);
     let frame = 0;
@@ -222,7 +221,7 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
       window.removeEventListener("scroll", updateActiveSection);
       window.removeEventListener("resize", updateActiveSection);
     };
-  }, [displayData, visibleDetailSections]);
+  }, [shouldShowDetailIndex, visibleDetailSections]);
 
   useEffect(() => {
     const root = detailAppRef.current;
@@ -266,7 +265,6 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   }
 
   const detailAppClassName = ["stock-app", "stock-detail-app", tickerParam ? "has-detail-context" : ""].filter(Boolean).join(" ");
-  const indexSections = displayData || isPartialFeedVisible ? visibleDetailSections : [];
 
   return (
     <main ref={detailAppRef} className={detailAppClassName}>
@@ -305,7 +303,6 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
           quote={quoteData}
           pending={state.status === "partial" ? state.pending : undefined}
           loadingWindow={partialLoadingWindow?.ticker === tickerParam ? partialLoadingWindow : undefined}
-          onRetry={retryLoad}
         />
       ) : null}
 
@@ -318,13 +315,10 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
                 quoteState={quoteState}
                 priceRefreshState={priceRefreshState}
                 onRefreshPrice={refreshPrice}
-                judgmentState={judgmentState}
-                compareHref={compareHref}
               />
             </DetailSection>
             <DetailSection id="detail-chart">
               <ChartStory points={displayData.chart_series} patterns={displayData.chart_patterns} technicalAnalysisHref={technicalAnalysisHrefForPayload(displayData)} />
-              <SimpleList title="가격·변동성 요약" description="가격 흐름을 볼 때 함께 참고하는 숫자예요." items={priceVolatilitySummaryItems(displayData)} stock={displayData} desktopOpen />
             </DetailSection>
             <DetailSection id="detail-factors">
               <FactorStory components={displayData.components} stock={displayData} eyebrow="품질 점수 이유" title="기초체력과 가격 부담" />
@@ -358,13 +352,11 @@ function PartialStockFeed({
   quote,
   pending,
   loadingWindow,
-  onRetry,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
   pending: SnapshotPendingState | undefined;
   loadingWindow: PartialLoadingWindow | undefined;
-  onRetry: () => void;
 }) {
   const hasChart = usableChartPoints(data.chart_series).length >= 1;
   const hasFactors = hasDisplayableScoreComponents(data.components) || hasDisplayableScoreComponents(data.opportunity_components);
@@ -387,12 +379,11 @@ function PartialStockFeed({
   return (
     <div className="stock-feed partial-stock-feed" role="status" aria-live="polite">
       <DetailSection id="detail-summary">
-        <PartialStockSummary data={data} quote={quote} pending={pending} onRetry={onRetry} />
+        <PartialStockSummary data={data} quote={quote} pending={pending} />
       </DetailSection>
       {chartState === "content" ? (
         <DetailSection id="detail-chart">
           <ChartStory points={data.chart_series} patterns={data.chart_patterns} />
-          <SimpleList title="가격·변동성 요약" description="가격 흐름을 볼 때 함께 참고하는 숫자예요." items={priceVolatilitySummaryItems(data)} stock={data} desktopOpen />
         </DetailSection>
       ) : chartState === "loading" ? (
         <DetailSection id="detail-chart">
@@ -499,12 +490,10 @@ function PartialStockSummary({
   data,
   quote,
   pending,
-  onRetry,
 }: {
   data: StockScoreResponse;
   quote: StockQuoteResponse | undefined;
   pending: SnapshotPendingState | undefined;
-  onRetry: () => void;
 }) {
   const displayData = scoreDataWithQuote(data, quote);
   const identity = stockHeaderIdentity(displayData, quote);
@@ -515,15 +504,12 @@ function PartialStockSummary({
   const qualityScore = hasDisplayableScoreComponents(displayData.components) && typeof rawScore === "number" && Number.isFinite(rawScore) ? clampScore(rawScore) : undefined;
   const { strongest, weakest } = strongestAndWeakest(displayData);
   const marketCap = stockMarketCapDisplay(displayData);
-  const defaultSummary = displayData.summary || (qualityScore === undefined ? (hasPrice ? "현재 확인된 가격 정보를 먼저 반영했어요." : "종목 정보를 확인했어요.") : "현재가와 참고 지표를 먼저 반영했어요.");
-  const summary = partialStockStatusSummary(defaultSummary, pending);
   const isUpdating = pending?.queued === true;
   const statusChip = isUpdating
     ? "자동 업데이트 중"
     : qualityScore === undefined
       ? (hasPrice ? "현재가 확인" : "종목 확인")
       : "가격 기준 참고값";
-  const retryLabel = isUpdating ? "업데이트 확인" : "다시 조회";
 
   return (
     <section className="stock-title-card partial-stock-title-card">
@@ -564,14 +550,6 @@ function PartialStockSummary({
             <strong className="partial-pending-score">{qualityScore.toFixed(1)}</strong>
           </article>
         ) : null}
-      </div>
-      <div className="hero-verdict neutral partial-verdict">
-        <span>오늘의 판단</span>
-        <strong>{qualityScore === undefined ? (hasPrice ? "현재 가격 기준으로 먼저 볼 수 있어요." : "종목 정보를 먼저 확인했어요.") : `${qualityScore.toFixed(1)}점 기준으로 먼저 볼 수 있어요.`}</strong>
-        <p>{summary}</p>
-        <button type="button" className="partial-retry-button" onClick={onRetry}>
-          {retryLabel}
-        </button>
       </div>
     </section>
   );
