@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { indexEntryToFiling, parseMasterIndex } from "../src/lib/secFilingIndexBackfill";
+import { dailyMasterIndexUrl, indexEntryToFiling, parseMasterIndex } from "../src/lib/secFilingIndexBackfill";
 
 test("parses SEC master index rows into rule-summary filings", () => {
   const entries = parseMasterIndex(`
@@ -17,4 +17,11 @@ CIK|Company Name|Form Type|Date Filed|Filename
   assert.equal(filing?.filedAt, "2026-06-10T00:00:00.000Z");
   assert.equal(filing?.sourceUrl, "https://www.sec.gov/Archives/edgar/data/320193/0000320193-26-000078.txt");
   assert.match(filing?.summaryKo || "", /8-K/);
+});
+
+test("builds SEC daily master index URL from a filing date", () => {
+  assert.equal(
+    dailyMasterIndexUrl("2026-06-12"),
+    "https://www.sec.gov/Archives/edgar/daily-index/2026/QTR2/master.20260612.idx"
+  );
 });

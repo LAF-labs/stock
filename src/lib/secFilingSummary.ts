@@ -55,7 +55,7 @@ export function summarizeSecFiling(input: SecFilingSummaryInput): SecFilingSumma
   if (form === "8-K" || form === "8-K/A") return summarize8K(input.items, facts);
   if (form === "10-Q" || form === "10-Q/A" || form === "10-K" || form === "10-K/A") return summarizePeriodic(form, facts);
   if (form === "144") return summarizeForm144(facts);
-  if (form.startsWith("SC 13D") || form.startsWith("SC 13G")) return summarizeOwnershipStake(form, facts);
+  if (isBeneficialOwnershipForm(form)) return summarizeOwnershipStake(form, facts);
   if (isOfferingForm(form)) return summarizeOffering(facts);
   if (form === "6-K") {
     return makeSummary("foreign_report", "medium", ["해외기업", "수시공시"], "해외 상장사가 주요 자료를 SEC에 제출했어요. 세부 내용은 원문 확인이 필요해요.");
@@ -150,6 +150,13 @@ function normalizeItems(value: string[] | string | undefined): string[] {
 
 function isOfferingForm(form: string): boolean {
   return /^(S|F)-[13]\b/.test(form) || form.startsWith("424B") || form === "POS AM";
+}
+
+function isBeneficialOwnershipForm(form: string): boolean {
+  return form.startsWith("SC 13D")
+    || form.startsWith("SC 13G")
+    || form.startsWith("SCHEDULE 13D")
+    || form.startsWith("SCHEDULE 13G");
 }
 
 function positive(value: unknown): value is number {

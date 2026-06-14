@@ -59,6 +59,14 @@ test("summarizes offering forms with amount", () => {
   assert.match(result.summaryKo, /\$750\.0M/);
 });
 
+test("summarizes schedule 13G index forms as major holder disclosures", () => {
+  const result = summarizeSecFiling({ formType: "SCHEDULE 13G/A" });
+
+  assert.equal(result.category, "major_holder");
+  assert.equal(result.importance, "high");
+  assert.match(result.summaryKo, /대량보유/);
+});
+
 test("keeps unknown forms safe and short", () => {
   const result = summarizeSecFiling({ formType: "X-17A-5", companyName: "Broker Dealer" });
 

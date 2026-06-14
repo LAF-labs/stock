@@ -33,6 +33,15 @@ export function parseMasterIndex(text: string): SecMasterIndexEntry[] {
   return rows;
 }
 
+export function dailyMasterIndexUrl(date: string | Date): string {
+  const value = typeof date === "string" ? new Date(`${date}T00:00:00Z`) : date;
+  const year = value.getUTCFullYear();
+  const month = value.getUTCMonth();
+  const quarter = Math.floor(month / 3) + 1;
+  const yyyymmdd = `${year}${String(month + 1).padStart(2, "0")}${String(value.getUTCDate()).padStart(2, "0")}`;
+  return `https://www.sec.gov/Archives/edgar/daily-index/${year}/QTR${quarter}/master.${yyyymmdd}.idx`;
+}
+
 export function indexEntryToFiling(entry: SecMasterIndexEntry, cikToTicker: Map<string, string>): SecFilingListItem | undefined {
   const symbol = cikToTicker.get(entry.cik);
   if (!symbol) return undefined;
