@@ -3756,11 +3756,30 @@ body.compare-search-open {
   }
 
   .compare-app {
-    width: min(1040px, calc(100% - 48px));
+    display: grid;
+    grid-template-columns: 184px minmax(0, 968px);
+    gap: 0 28px;
+    align-items: start;
+    width: min(1180px, calc(100% - 96px));
     margin-inline: auto;
     padding-bottom: 72px;
     background: transparent;
     border-inline: 0;
+  }
+
+  .compare-app .app-navigation-chrome,
+  .compare-app .compare-landing,
+  .compare-app .compare-picks,
+  .compare-app .compare-toolbar,
+  .compare-app .compare-feed,
+  .compare-app .compare-errors,
+  .compare-app .compare-empty-state {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .compare-app .app-navigation-chrome {
+    padding-top: 24px;
   }
 
   .compare-landing,
@@ -5642,9 +5661,26 @@ body {
 
 @media (min-width: 900px) {
   .compare-app {
-    grid-template-columns: 176px minmax(0, 1fr);
-    gap: 0 32px;
-    width: min(1400px, calc(100% - 64px));
+    display: grid;
+    grid-template-columns: 184px minmax(0, 968px);
+    gap: 0 28px;
+    align-items: start;
+    width: min(1180px, calc(100% - 96px));
+  }
+
+  .compare-app .app-navigation-chrome,
+  .compare-app .compare-landing,
+  .compare-app .compare-picks,
+  .compare-app .compare-toolbar,
+  .compare-app .compare-feed,
+  .compare-app .compare-errors,
+  .compare-app .compare-empty-state {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .compare-app .app-navigation-chrome {
+    padding-top: 24px;
   }
 
   .compare-app .compare-landing,

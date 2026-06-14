@@ -374,9 +374,13 @@ test("compare mobile editor keeps selected tickers inside the sheet and uses sha
 });
 
 test("desktop compare layout keeps page chrome open instead of stacking large cards", () => {
-  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?width:\s*min\(1040px,\s*calc\(100% - 48px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*184px minmax\(0,\s*968px\);[\s\S]*?gap:\s*0 28px;[\s\S]*?width:\s*min\(1180px,\s*calc\(100% - 96px\)\);/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.app-navigation-chrome,[\s\S]*?\.compare-app \.compare-feed,[\s\S]*?\.compare-app \.compare-empty-state\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?min-width:\s*0;/);
+  assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.app-navigation-chrome\s*\{[\s\S]*?padding-top:\s*24px;/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-landing,[\s\S]*?\.compare-app \.compare-picks,[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
   assert.match(css, /@media \(min-width: 900px\)[\s\S]*?\.compare-app \.compare-toolbar\s*\{[\s\S]*?position:\s*static;[\s\S]*?border-bottom:\s*1px solid rgba\(49,\s*130,\s*246,\s*0\.12\);/);
+  assert.doesNotMatch(css, /width:\s*min\(1040px,\s*calc\(100% - 48px\)\);/);
+  assert.doesNotMatch(css, /width:\s*min\(1400px,\s*calc\(100% - 64px\)\);/);
   assert.doesNotMatch(compareSource, /compare-side-index/);
 });
 
