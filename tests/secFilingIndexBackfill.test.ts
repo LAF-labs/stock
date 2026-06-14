@@ -87,6 +87,7 @@ test("enriches indexed 8-K summaries with item and financial numbers", () => {
 
   assert.equal(enriched.category, "current_report");
   assert.equal(enriched.importance, "high");
+  assert.deepEqual(enriched.facts.items, ["2.02"]);
   assert.match(enriched.summaryKo, /매출 약 \$70\.1B/);
   assert.match(enriched.summaryKo, /순이익 약 \$25\.8B/);
 });

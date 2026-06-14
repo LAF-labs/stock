@@ -16,7 +16,7 @@ export function DisclosureFeed({ ticker, state }: { ticker: string | undefined; 
   return (
     <section className="static-card disclosure-card">
       <header>
-        <span>SEC 공시를 사람 말로 짧게 풀어줘요.</span>
+        <span>빠르게 최신 공시를 확인하세요.</span>
         <strong>최근 공시</strong>
       </header>
       <div className="accordion-body">

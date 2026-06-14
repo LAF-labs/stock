@@ -1,4 +1,5 @@
 import { safeErrorMessage } from "@/lib/errorSafety";
+import { summarizeSecFiling, type SecFilingFacts } from "@/lib/secFilingSummary";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
 import { normalizeTickerRef } from "@/lib/tickerRef";
 
@@ -190,13 +191,24 @@ function rowFromSupabase(row: SupabaseSecFilingRow): SecFilingListItem {
 
 function normalizeItem(item: SecFilingListItem): SecFilingListItem {
   const ticker = normalizeTickerRef(item.ticker);
+  const facts = { ...item.facts };
+  const summary = summarizeSecFiling({
+    formType: item.formType,
+    companyName: item.companyName,
+    ticker,
+    items: filingItems(facts),
+    facts: facts as SecFilingFacts,
+  });
   return {
     ...item,
     ticker,
     symbol: item.symbol.trim().toUpperCase(),
     cik: item.cik.padStart(10, "0"),
-    tags: [...item.tags],
-    facts: { ...item.facts },
+    summaryKo: summary.summaryKo || item.summaryKo,
+    category: summary.category,
+    importance: summary.importance,
+    tags: summary.tags,
+    facts,
   };
 }
 
@@ -219,4 +231,10 @@ function totalFromContentRange(value: string | null): number | undefined {
   if (!total) return undefined;
   const parsed = Number(total);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function filingItems(facts: Record<string, unknown>): string[] | string | undefined {
+  const items = facts.items;
+  if (Array.isArray(items)) return items.filter((item): item is string => typeof item === "string");
+  return typeof items === "string" ? items : undefined;
 }

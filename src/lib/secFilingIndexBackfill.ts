@@ -95,7 +95,7 @@ export function enrichIndexFilingFromDocument(filing: SecFilingListItem, text: s
     category: summary.category,
     importance: summary.importance,
     tags: summary.tags,
-    facts: compactFacts(facts),
+    facts: compactFacts(items ? { ...facts, items } : facts),
   };
 }
 

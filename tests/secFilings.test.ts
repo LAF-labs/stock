@@ -22,7 +22,24 @@ test("sec filing store dedupes by accession and returns newest rows first", asyn
 
   assert.equal(result.total, 2);
   assert.deepEqual(result.items.map((item) => item.accessionNumber), ["0002", "0001"]);
-  assert.equal(result.items[1].summaryKo, "updated");
+  assert.equal(result.items[1].filedAt, "2026-06-11T00:00:00Z");
+});
+
+test("sec filing summaries render from facts instead of stored cache text", async () => {
+  secFilingsTestHooks.resetMemory();
+  await writeSecFilings([
+    filing({
+      formType: "10-Q",
+      summaryKo: "stale cached summary",
+      facts: { fiscalPeriod: "Q1", revenue: 215_225_000, netIncome: -53_191_000, currency: "USD" },
+    }),
+  ], { supabase: false });
+
+  const result = await readSecFilings({ ticker: "US:AAPL", limit: 1, offset: 0, supabase: false });
+
+  assert.match(result.items[0].summaryKo, /1분기 실적이 발표/);
+  assert.match(result.items[0].summaryKo, /매출 약 \$215\.2M/);
+  assert.notEqual(result.items[0].summaryKo, "stale cached summary");
 });
 
 test("sec filing read url selects ticker rows with range pagination", () => {

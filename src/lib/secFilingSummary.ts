@@ -14,6 +14,7 @@ export type SecFilingFacts = {
   netIncome?: number;
   fiscalPeriod?: string;
   periodEnd?: string;
+  items?: string[] | string;
   offeringAmount?: number;
   shares?: number;
   price?: number;
@@ -54,7 +55,7 @@ export function summarizeSecFiling(input: SecFilingSummaryInput): SecFilingSumma
   const form = normalizeForm(input.formType);
   const facts = input.facts || {};
   if (["3", "4", "5"].includes(form)) return summarizeOwnershipForm(form, facts);
-  if (form === "8-K" || form === "8-K/A") return summarize8K(input.items, facts);
+  if (form === "8-K" || form === "8-K/A") return summarize8K(input.items ?? facts.items, facts);
   if (form === "10-Q" || form === "10-Q/A" || form === "10-K" || form === "10-K/A") return summarizePeriodic(form, facts);
   if (form === "144") return summarizeForm144(facts);
   if (isBeneficialOwnershipForm(form)) return summarizeOwnershipStake(form, facts);
