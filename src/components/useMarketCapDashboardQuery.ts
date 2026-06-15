@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { marketCapDashboardHref } from "@/components/marketCapDashboardHelpers";
 import type { MarketCapApiResponse, MarketCapScope } from "@/lib/marketCapRankingTypes";
 
-const MARKET_CAP_PENDING_RETRY_MS = 2_000;
+const MARKET_CAP_PENDING_RETRY_MS = 5_000;
 
 type MarketCapDashboardQueryState =
   | { status: "loading" }
@@ -16,7 +16,7 @@ export function marketCapPendingRetryDelayMs(payload: MarketCapApiResponse): num
   return payload.ok ? undefined : MARKET_CAP_PENDING_RETRY_MS;
 }
 
-export function useMarketCapDashboardQuery(scope: MarketCapScope, sector: string | undefined): MarketCapDashboardQueryState {
+export function useMarketCapDashboardQuery(scope: MarketCapScope): MarketCapDashboardQueryState {
   const [state, setState] = useState<MarketCapDashboardQueryState>({ status: "loading" });
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export function useMarketCapDashboardQuery(scope: MarketCapScope, sector: string
       clearRetry();
       if (showLoading) setState({ status: "loading" });
       try {
-        const response = await fetch(apiHref(scope, sector), {
+        const response = await fetch(apiHref(scope), {
           signal: controller.signal,
           headers: { Accept: "application/json" },
         });
@@ -65,11 +65,11 @@ export function useMarketCapDashboardQuery(scope: MarketCapScope, sector: string
       controller.abort();
       clearRetry();
     };
-  }, [scope, sector]);
+  }, [scope]);
 
   return state;
 }
 
-function apiHref(scope: MarketCapScope, sector: string | undefined): string {
-  return marketCapDashboardHref({ scope, sector }).replace(/^\/market-cap/, "/api/market-cap");
+function apiHref(scope: MarketCapScope): string {
+  return marketCapDashboardHref({ scope }).replace(/^\/market-cap/, "/api/market-cap");
 }

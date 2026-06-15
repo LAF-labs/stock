@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   mergeMarketCapRows,
   normalizeDomesticMarketCapRow,
+  normalizeNasdaqMarketCapRow,
   normalizeOverseasMarketCapRow,
   overseasMarketCapRequestParams,
 } from "../src/lib/marketCapRankingProvider";
@@ -57,6 +58,30 @@ test("normalizes overseas KIS market-cap rows into USD dashboard rows", () => {
   assert.equal(row?.priceChangePercent, 0.013);
   assert.equal(row?.marketCap, 4_750_000_000_000);
   assert.equal(row?.marketCapCurrency, "USD");
+});
+
+test("normalizes Nasdaq screener market-cap rows into USD dashboard rows", () => {
+  const row = normalizeNasdaqMarketCapRow({
+    symbol: "BRK/B",
+    name: "Berkshire Hathaway Inc. Class B Common Stock",
+    lastsale: "$512.30",
+    netchange: "-1.20",
+    pctchange: "-0.234%",
+    marketCap: "1100000000000.00",
+    sector: "Finance",
+    industry: "Property-Casualty Insurers",
+  }, fetchedAt);
+
+  assert.equal(row?.rank, 0);
+  assert.equal(row?.ticker, "US:BRK.B");
+  assert.equal(row?.market, "US");
+  assert.equal(row?.symbol, "BRK.B");
+  assert.equal(row?.price, 512.3);
+  assert.equal(row?.priceChange, -1.2);
+  assert.equal(row?.priceChangePercent, -0.00234);
+  assert.equal(row?.marketCap, 1_100_000_000_000);
+  assert.equal(row?.marketCapCurrency, "USD");
+  assert.equal(row?.source, "nasdaq-fallback");
 });
 
 test("overseas KIS market-cap requests include required currency parameter", () => {

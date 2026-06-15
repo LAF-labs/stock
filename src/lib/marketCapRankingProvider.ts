@@ -5,6 +5,7 @@ import { getIndustryTaxonomyMappingForProfile } from "@/lib/industryTaxonomy";
 import { kisGetRaw, kisQuoteConfigured } from "@/lib/kisQuoteClient";
 import { KIS_DOMESTIC_EXCHANGE_LABEL, KIS_US_MARKETS } from "@/lib/quoteContract";
 import { getSymbolIndustryProfile } from "@/lib/symbolProfiles";
+import { fetchWithTimeout } from "@/lib/supabaseRest";
 import symbols from "@/data/symbols.generated.json";
 import type { MarketCapDashboardSnapshot, MarketCapRankingRow, MarketCapScope } from "@/lib/marketCapRankingTypes";
 import type { SymbolMasterItem } from "@/lib/symbolTypes";
@@ -27,6 +28,13 @@ const DEFAULT_LIMIT = 100;
 const DOMESTIC_MARKET_CAP_UNIT = 100_000_000;
 const DEFAULT_USD_KRW_RATE = 1400;
 const MARKET_CAP_FRESH_MS = 60 * 60 * 1000;
+const NASDAQ_SCREENER_URL = "https://api.nasdaq.com/api/screener/stocks";
+const NASDAQ_SCREENER_HEADERS = {
+  "User-Agent": "Mozilla/5.0",
+  Accept: "application/json,text/plain,*/*",
+  Origin: "https://www.nasdaq.com",
+  Referer: "https://www.nasdaq.com/market-activity/stocks/screener",
+};
 
 const localSymbols = symbols as SymbolMasterItem[];
 
@@ -34,14 +42,15 @@ export async function buildMarketCapRankingSnapshot(options: ProviderBuildOption
   const nowMs = options.nowMs ?? Date.now();
   const fetchedAt = new Date(nowMs).toISOString();
   const usdKrwRate = marketCapUsdKrwRate();
-  const rows: MarketCapRankingRow[] = [];
+  const fetches: Array<Promise<MarketCapRankingRow[]>> = [];
 
   if (options.scope === "domestic" || options.scope === "all") {
-    rows.push(...await fetchDomesticMarketCapRows({ fetchedAt, usdKrwRate }));
+    fetches.push(fetchDomesticMarketCapRows({ fetchedAt, usdKrwRate }));
   }
   if (options.scope === "overseas" || options.scope === "all") {
-    rows.push(...await fetchOverseasMarketCapRows({ fetchedAt }));
+    fetches.push(fetchOverseasMarketCapRows({ fetchedAt }));
   }
+  const rows = (await Promise.all(fetches)).flat();
 
   const merged = mergeMarketCapRows(rows, {
     scope: options.scope,
@@ -51,6 +60,7 @@ export async function buildMarketCapRankingSnapshot(options: ProviderBuildOption
   const enriched = await enrichMarketCapRowsWithSectors(merged);
   const sectors = sectorsFromRows(enriched);
 
+  const source = rows.some((row) => row.source === "nasdaq-fallback") ? "mixed" : "kis";
   return {
     scope: options.scope,
     rows: enriched,
@@ -58,7 +68,7 @@ export async function buildMarketCapRankingSnapshot(options: ProviderBuildOption
     fetchedAt,
     updatedAt: fetchedAt,
     expiresAt: new Date(nowMs + MARKET_CAP_FRESH_MS).toISOString(),
-    source: "kis",
+    source,
     usdKrwRate,
   };
 }
@@ -107,6 +117,30 @@ export function normalizeOverseasMarketCapRow(raw: ProviderPayload, fetchedAt: s
     marketCapUsd: marketCap,
     fetchedAt,
     source: "kis-overseas",
+  };
+}
+
+export function normalizeNasdaqMarketCapRow(raw: ProviderPayload, fetchedAt: string): MarketCapRankingRow | undefined {
+  const symbol = normalizeUsSymbol(raw.symbol);
+  const marketCap = numberValue(raw.marketCap);
+  const price = numberValue(raw.lastsale);
+  if (!symbol || marketCap === undefined || marketCap <= 0 || price === undefined) return undefined;
+  return {
+    rank: 0,
+    ticker: `US:${symbol}`,
+    market: "US",
+    symbol,
+    name: text(raw.name) || symbol,
+    price,
+    priceChange: numberValue(raw.netchange) ?? 0,
+    priceChangePercent: percentValue(raw.pctchange),
+    marketCap,
+    marketCapCurrency: "USD",
+    marketCapUsd: marketCap,
+    sector: meaningfulText(raw.sector),
+    industry: meaningfulText(raw.industry),
+    fetchedAt,
+    source: "nasdaq-fallback",
   };
 }
 
@@ -194,6 +228,8 @@ async function fetchDomesticMarketCapRows(options: { fetchedAt: string; usdKrwRa
 }
 
 async function fetchOverseasMarketCapRows(options: { fetchedAt: string }): Promise<MarketCapRankingRow[]> {
+  const nasdaqRows = await fetchNasdaqMarketCapRows(options);
+  if (nasdaqRows.length) return nasdaqRows;
   if (!kisQuoteConfigured()) return [];
   await acquireKisMarketCapSlot();
   const perMarket = await Promise.all(KIS_US_MARKETS.map(async (market) => {
@@ -221,6 +257,26 @@ async function fetchOverseasMarketCapRows(options: { fetchedAt: string }): Promi
     return rows;
   }));
   return perMarket.flat();
+}
+
+async function fetchNasdaqMarketCapRows(options: { fetchedAt: string }): Promise<MarketCapRankingRow[]> {
+  const params = new URLSearchParams({ tableonly: "true", download: "true" });
+  try {
+    const response = await fetchWithTimeout(
+      `${NASDAQ_SCREENER_URL}?${params.toString()}`,
+      { headers: NASDAQ_SCREENER_HEADERS, cache: "no-store" },
+      5_000
+    );
+    if (!response.ok) throw new Error(`nasdaq_market_cap_http_${response.status}`);
+    const payload = await response.json() as ProviderPayload;
+    const data = recordValue(payload.data);
+    return outputList(data || {}, "rows")
+      .map((item) => normalizeNasdaqMarketCapRow(item, options.fetchedAt))
+      .filter((row): row is MarketCapRankingRow => !!row);
+  } catch (error) {
+    console.warn("market_cap_nasdaq_fetch_failed", { error: safeErrorMessage(error) });
+    return [];
+  }
 }
 
 async function enrichMarketCapRowWithSector(row: MarketCapRankingRow): Promise<MarketCapRankingRow> {
@@ -267,6 +323,10 @@ function outputList(payload: ProviderPayload, key: string): ProviderPayload[] {
   return [];
 }
 
+function recordValue(value: unknown): ProviderPayload | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as ProviderPayload : undefined;
+}
+
 function acquireKisMarketCapSlot() {
   return acquireRateLimit(
     fixedRateLimitKey("stock-kis-market-cap-provider-global"),
@@ -294,4 +354,8 @@ function text(value: unknown): string {
 function meaningfulText(value: unknown): string | undefined {
   const cleaned = text(value);
   return cleaned && cleaned !== "-" ? cleaned : undefined;
+}
+
+function normalizeUsSymbol(value: unknown): string {
+  return text(value).toUpperCase().replace("/", ".");
 }

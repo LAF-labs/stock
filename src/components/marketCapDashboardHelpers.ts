@@ -1,5 +1,5 @@
 import { formatCompactUsd, formatKoreanWonLarge, formatPercent } from "@/lib/format";
-import type { MarketCapRankingRow, MarketCapScope } from "@/lib/marketCapRankingTypes";
+import type { MarketCapDashboardSnapshot, MarketCapRankingRow, MarketCapScope } from "@/lib/marketCapRankingTypes";
 
 export function marketCapScopeFromParam(value: string | null | undefined): MarketCapScope {
   return value === "domestic" || value === "overseas" ? value : "all";
@@ -16,6 +16,15 @@ export function marketCapDashboardHref(input: { scope: MarketCapScope; sector?: 
 
 export function detailHrefForMarketCapRow(row: Pick<MarketCapRankingRow, "ticker">): string {
   return `/?ticker=${encodeURIComponent(row.ticker)}`;
+}
+
+export function filterMarketCapSnapshotRows(snapshot: MarketCapDashboardSnapshot, sector: string | null | undefined): MarketCapDashboardSnapshot {
+  const selected = cleanSector(sector);
+  if (!selected) return snapshot;
+  const rows = snapshot.rows
+    .filter((row) => cleanSector(row.sector).toLowerCase() === selected.toLowerCase())
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+  return { ...snapshot, rows };
 }
 
 export function formatMarketCapAmount(value: number | undefined, currency: string | undefined): string {
@@ -44,4 +53,8 @@ export function marketCapScopeLabel(scope: MarketCapScope): string {
   if (scope === "domestic") return "국내";
   if (scope === "overseas") return "해외";
   return "전체";
+}
+
+function cleanSector(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }

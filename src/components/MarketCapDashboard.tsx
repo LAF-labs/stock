@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppNavigationMenu from "@/components/AppNavigationMenu";
 import {
   detailHrefForMarketCapRow,
+  filterMarketCapSnapshotRows,
   formatMarketCapAmount,
   formatMarketCapChange,
   formatMarketCapPrice,
@@ -24,9 +25,10 @@ export default function MarketCapDashboard() {
   const searchParams = useSearchParams();
   const scope = marketCapScopeFromParam(searchParams.get("scope"));
   const sector = searchParams.get("sector")?.trim() || undefined;
-  const state = useMarketCapDashboardQuery(scope, sector);
-  const snapshot = state.status === "success" || state.status === "pending" ? state.payload.snapshot : undefined;
-  const sectors = snapshot?.sectors || [];
+  const state = useMarketCapDashboardQuery(scope);
+  const rawSnapshot = state.status === "success" || state.status === "pending" ? state.payload.snapshot : undefined;
+  const snapshot = rawSnapshot ? filterMarketCapSnapshotRows(rawSnapshot, sector) : undefined;
+  const sectors = rawSnapshot?.sectors || [];
   const rows = snapshot?.rows || [];
 
   function selectSector(value: string) {

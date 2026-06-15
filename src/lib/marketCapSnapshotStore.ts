@@ -1,4 +1,5 @@
 import { buildMarketCapRankingSnapshot, mergeMarketCapRows } from "@/lib/marketCapRankingProvider";
+import { filterMarketCapSnapshotRows } from "@/components/marketCapDashboardHelpers";
 import { getMarketSession, type MarketCode, type MarketSession, type MarketSessionState } from "@/lib/marketCalendar";
 import { safeErrorMessage } from "@/lib/errorSafety";
 import { fetchWithTimeout, numericEnv, supabaseAdminConfig, supabaseHeaders, supabaseReadConfig } from "@/lib/supabaseRest";
@@ -55,20 +56,18 @@ export function shouldRefreshMarketCapSnapshot(input: RefreshDecisionInput): boo
   return input.nowMs - fetchedAtMs >= (input.freshMs ?? FRESH_MS);
 }
 
-export function filterMarketCapSnapshotRows(snapshot: MarketCapDashboardSnapshot, sector: string | null | undefined): MarketCapDashboardSnapshot {
-  const selected = cleanSector(sector);
-  if (!selected) return snapshot;
-  const rows = snapshot.rows
-    .filter((row) => cleanSector(row.sector).toLowerCase() === selected.toLowerCase())
-    .map((row, index) => ({ ...row, rank: index + 1 }));
-  return { ...snapshot, rows };
-}
+export { filterMarketCapSnapshotRows };
 
 export async function getMarketCapSnapshotResponse(input: { scope: MarketCapScope; sector?: string | null; nowMs?: number }): Promise<MarketCapApiResponse> {
   const nowMs = input.nowMs ?? Date.now();
   const snapshot = await readMarketCapSnapshot(input.scope);
-  const sessions = await sessionsForScope(input.scope, nowMs);
-  const refreshStarted = maybeScheduleMarketCapRefresh(input.scope, snapshot, sessions, nowMs);
+  const expiresAtMs = snapshot ? Date.parse(snapshot.expiresAt) : NaN;
+  const snapshotFresh = !!snapshot && Number.isFinite(expiresAtMs) && expiresAtMs > nowMs;
+  let refreshStarted = false;
+  if (!snapshotFresh) {
+    const sessions = await sessionsForScope(input.scope, nowMs);
+    refreshStarted = maybeScheduleMarketCapRefresh(input.scope, snapshot, sessions, nowMs);
+  }
   if (!snapshot) {
     return {
       ok: false,
@@ -82,12 +81,11 @@ export async function getMarketCapSnapshotResponse(input: { scope: MarketCapScop
     };
   }
 
-  const state = Date.parse(snapshot.expiresAt) > nowMs ? "fresh" : "stale";
   return {
     ok: true,
     snapshot: filterMarketCapSnapshotRows(snapshot.snapshot, input.sector),
     cache: {
-      state,
+      state: snapshotFresh ? "fresh" : "stale",
       scope: input.scope,
       fetchedAt: snapshot.fetchedAt,
       expiresAt: snapshot.expiresAt,
