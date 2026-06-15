@@ -133,6 +133,19 @@ export default function StockDashboard({ initialDisplayPayload }: StockDashboard
   const previousTickerParamRef = useRef(tickerParam);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    void fetch("/api/admin/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker: tickerParam,
+        path: `${window.location.pathname}${window.location.search}`,
+      }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }, [tickerParam]);
+
+  useEffect(() => {
     if (!tickerParam || !isPartialFeedVisible) {
       setPartialLoadingWindow(undefined);
       return;
