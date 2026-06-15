@@ -18,6 +18,19 @@ export type SecFilingFacts = {
   offeringAmount?: number;
   shares?: number;
   price?: number;
+  bondAmount?: number;
+  conversionPrice?: number;
+  conversionShares?: number;
+  exercisePrice?: number;
+  exerciseShares?: number;
+  fundingPurpose?: string;
+  issueMethod?: string;
+  treasuryShares?: number;
+  treasuryValue?: number;
+  transactionPurpose?: string;
+  ownershipChangeShares?: number;
+  ownershipPercentChange?: number;
+  reportReason?: string;
   holderName?: string;
   ownershipPercent?: number;
   currency?: string;
@@ -135,22 +148,69 @@ function summarizeDart(reportName: string, facts: SecFilingFacts): SecFilingSumm
   if (/분기보고서/.test(report)) return makeSummary("periodic_report", "high", ["분기 실적"], "분기 실적이 발표됐어요. 매출, 이익, 현금흐름을 확인하는 핵심 공시예요.");
   if (/반기보고서/.test(report)) return makeSummary("periodic_report", "high", ["반기 실적"], "반기 실적이 발표됐어요. 상반기 매출과 이익 흐름을 확인하는 공시예요.");
   if (/사업보고서/.test(report)) return makeSummary("periodic_report", "high", ["연간 실적"], "연간 실적이 발표됐어요. 한 해 실적과 사업 내용을 확인하는 핵심 공시예요.");
-  if (/유상증자/.test(report)) return makeSummary("offering", "high", ["유상증자"], "새 주식을 발행해 자금을 조달해요. 기존 주주 지분이 희석될 수 있어요.");
+  if (/유상증자/.test(report)) return summarizeDartCapitalIncrease(facts);
   if (/무상증자/.test(report)) return makeSummary("offering", "high", ["무상증자"], "주주에게 새 주식을 무상으로 배정하는 공시예요. 기준일과 권리락 일정을 확인해야 해요.");
   if (/감자/.test(report)) return makeSummary("capital_change", "high", ["감자"], "자본금을 줄이는 감자 공시예요. 주식 수나 자본구조가 바뀔 수 있어요.");
-  if (/전환사채|CB/.test(report)) return makeSummary("offering", "high", ["전환사채"], "전환사채 발행 공시예요. 나중에 주식으로 바뀌면 지분 희석이 생길 수 있어요.");
-  if (/신주인수권부사채|BW/.test(report)) return makeSummary("offering", "high", ["신주인수권부사채"], "신주인수권부사채 발행 공시예요. 새 주식 발행 가능성이 있어 희석을 봐야 해요.");
-  if (/자기주식.*취득/.test(report)) return makeSummary("buyback", "high", ["자사주"], "자사주를 취득한다는 공시예요. 주주환원 신호인지 확인해볼 만해요.");
-  if (/자기주식.*처분/.test(report)) return makeSummary("buyback", "high", ["자사주"], "보유 자사주를 처분한다는 공시예요. 처분 목적과 물량을 확인해야 해요.");
+  if (/전환사채|CB/.test(report)) return summarizeDartConvertibleBond(facts);
+  if (/신주인수권부사채|BW/.test(report)) return summarizeDartWarrantBond(facts);
+  if (/자기주식.*취득/.test(report)) return summarizeDartTreasuryStock(facts, "acquire");
+  if (/자기주식.*처분/.test(report)) return summarizeDartTreasuryStock(facts, "dispose");
   if (/최대주주.*변경/.test(report)) return makeSummary("major_holder", "high", ["최대주주"], "최대주주가 바뀌는 공시예요. 경영권 변화 가능성을 확인해야 해요.");
-  if (/최대주주.*소유주식변동|최대주주등소유/.test(report)) return makeSummary("major_holder", "medium", ["최대주주"], "최대주주 측 보유 주식이 변동됐어요. 지분율 변화와 매매 방향을 확인해야 해요.");
-  if (/대량보유|주식등의대량보유/.test(report)) return makeSummary("major_holder", "high", ["대량보유"], "주요 투자자의 대량보유 보고예요. 지분율 변화와 목적을 확인해야 해요.");
-  if (/임원.*주요주주|소유상황/.test(report)) return makeSummary("insider_transaction", "medium", ["내부자"], "임원이나 주요주주의 보유 주식 변동 공시예요. 매수인지 매도인지 원문을 확인해야 해요.");
+  if (/최대주주.*소유주식변동|최대주주등소유/.test(report)) return summarizeDartHolderChange(facts, "최대주주 측", "medium", ["최대주주"], "major_holder");
+  if (/대량보유|주식등의대량보유/.test(report)) return summarizeDartHolderChange(facts, facts.holderName || "주요 투자자", "high", ["대량보유"], "major_holder");
+  if (/임원.*주요주주|소유상황/.test(report)) return summarizeDartHolderChange(facts, facts.holderName || "임원/주요주주", "medium", ["내부자"], "insider_transaction");
   if (/합병/.test(report)) return makeSummary("reorganization", "high", ["합병"], "합병 관련 공시예요. 합병 비율과 일정이 주가에 영향을 줄 수 있어요.");
   if (/분할/.test(report)) return makeSummary("reorganization", "high", ["분할"], "회사 분할 관련 공시예요. 사업 구조와 주주 배정 방식을 확인해야 해요.");
   if (/영업양수|영업양도/.test(report)) return makeSummary("reorganization", "high", ["영업양수도"], "사업을 사고파는 공시예요. 매출 구조가 바뀔 수 있어요.");
   if (/소송|횡령|배임|상장폐지|거래정지|상장적격성|개선기간/.test(report)) return makeSummary("risk_event", "high", ["리스크"], "투자 리스크가 큰 공시예요. 원문에서 사유와 금액, 일정을 확인해야 해요.");
   return makeSummary("domestic_disclosure", "medium", ["국내공시"], `${report} 공시예요. 세부 내용은 원문 확인이 필요해요.`);
+}
+
+function summarizeDartCapitalIncrease(facts: SecFilingFacts): SecFilingSummary {
+  const parts: string[] = [];
+  if (positive(facts.offeringAmount)) parts.push(`조달 규모 약 ${formatMoney(facts.offeringAmount, facts.currency)}`);
+  if (positive(facts.shares)) parts.push(`신주 ${formatShares(facts.shares)}`);
+  if (facts.fundingPurpose) parts.push(`목적: ${facts.fundingPurpose}`);
+  if (facts.issueMethod) parts.push(`${facts.issueMethod} 방식`);
+  if (!parts.length) return makeSummary("offering", "high", ["유상증자"], "새 주식을 발행해 자금을 조달해요. 기존 주주 지분이 희석될 수 있어요.");
+  return makeSummary("offering", "high", ["유상증자"], `유상증자를 결정했어요. ${parts.join(", ")}. 기존 주주 지분 희석 가능성을 봐야 해요.`);
+}
+
+function summarizeDartConvertibleBond(facts: SecFilingFacts): SecFilingSummary {
+  const amount = facts.bondAmount || facts.offeringAmount;
+  const parts: string[] = [];
+  if (positive(amount)) parts.push(`발행액 약 ${formatMoney(amount, facts.currency)}`);
+  if (positive(facts.conversionPrice)) parts.push(`전환가 ${formatUnitPrice(facts.conversionPrice, facts.currency)}`);
+  if (positive(facts.conversionShares)) parts.push(`전환 가능 주식 ${formatShares(facts.conversionShares)}`);
+  return makeSummary("offering", "high", ["전환사채"], `전환사채를 발행해요.${parts.length ? ` ${parts.join(", ")}.` : ""} 주식으로 바뀌면 지분이 희석될 수 있어요.`);
+}
+
+function summarizeDartWarrantBond(facts: SecFilingFacts): SecFilingSummary {
+  const amount = facts.bondAmount || facts.offeringAmount;
+  const parts: string[] = [];
+  if (positive(amount)) parts.push(`발행액 약 ${formatMoney(amount, facts.currency)}`);
+  if (positive(facts.exercisePrice)) parts.push(`행사가 ${formatUnitPrice(facts.exercisePrice, facts.currency)}`);
+  if (positive(facts.exerciseShares)) parts.push(`행사 가능 주식 ${formatShares(facts.exerciseShares)}`);
+  return makeSummary("offering", "high", ["신주인수권부사채"], `신주인수권부사채를 발행해요.${parts.length ? ` ${parts.join(", ")}.` : ""} 새 주식 발행 가능성이 있어 희석을 봐야 해요.`);
+}
+
+function summarizeDartTreasuryStock(facts: SecFilingFacts, mode: "acquire" | "dispose"): SecFilingSummary {
+  const action = mode === "acquire" ? "취득" : "처분";
+  const parts: string[] = [];
+  if (positive(facts.treasuryShares)) parts.push(`예정 물량 ${formatShares(facts.treasuryShares)}`);
+  if (positive(facts.treasuryValue)) parts.push(`금액 약 ${formatMoney(facts.treasuryValue, facts.currency)}`);
+  if (facts.transactionPurpose) parts.push(`목적: ${facts.transactionPurpose}`);
+  const fallback = mode === "acquire" ? "주주환원 신호인지 확인해볼 만해요." : "처분 목적과 물량을 확인해야 해요.";
+  return makeSummary("buyback", "high", ["자사주"], `자사주를 ${action}해요.${parts.length ? ` ${parts.join(", ")}.` : ` ${fallback}`}`);
+}
+
+function summarizeDartHolderChange(facts: SecFilingFacts, who: string, importance: SecFilingSummary["importance"], tags: string[], category: string): SecFilingSummary {
+  const parts: string[] = [];
+  if (facts.ownershipChangeShares !== undefined && Number.isFinite(facts.ownershipChangeShares)) parts.push(`보유 주식 ${formatSignedShares(facts.ownershipChangeShares)}`);
+  if (facts.ownershipPercentChange !== undefined && Number.isFinite(facts.ownershipPercentChange)) parts.push(`지분율 ${formatSignedPercentPoint(facts.ownershipPercentChange)}`);
+  if (positive(facts.ownershipPercent)) parts.push(`현재 지분율 ${facts.ownershipPercent.toFixed(2).replace(/\.00$/, "")}%`);
+  if (facts.reportReason) parts.push(`사유: ${facts.reportReason}`);
+  return makeSummary(category, importance, tags, `${who} 보유 주식/지분이 변동됐어요.${parts.length ? ` ${parts.join(", ")}.` : " 지분율 변화와 매매 방향을 확인해야 해요."}`);
 }
 
 function financialNumbers(facts: SecFilingFacts): string {
@@ -217,12 +277,23 @@ function formatShares(value: number | undefined): string {
   return `${Math.round(value || 0).toLocaleString("en-US")}주`;
 }
 
+function formatSignedShares(value: number): string {
+  const direction = value < 0 ? "감소" : "증가";
+  return `${formatShares(Math.abs(value))} ${direction}`;
+}
+
+function formatSignedPercentPoint(value: number): string {
+  const direction = value < 0 ? "감소" : "증가";
+  return `${Math.abs(value).toFixed(2).replace(/\.00$/, "")}%p ${direction}`;
+}
+
 export function formatSecCompactMoney(value: number | undefined, currency = "USD"): string {
   return formatMoney(value, currency);
 }
 
 function formatMoney(value: number | undefined, currency = "USD"): string {
   const amount = Math.abs(value || 0);
+  if (currency.toUpperCase() === "KRW") return formatKrw(amount);
   const prefix = currency.toUpperCase() === "USD" ? "$" : `${currency.toUpperCase()} `;
   if (amount >= 1_000_000_000) return `${prefix}${(amount / 1_000_000_000).toFixed(1)}B`;
   if (amount >= 1_000_000) return `${prefix}${(amount / 1_000_000).toFixed(1)}M`;
@@ -232,7 +303,19 @@ function formatMoney(value: number | undefined, currency = "USD"): string {
 
 function formatUnitPrice(value: number | undefined, currency = "USD"): string {
   const amount = Math.abs(value || 0);
+  if (currency.toUpperCase() === "KRW") return `${Math.round(amount).toLocaleString("ko-KR")}원`;
   if (amount >= 1_000) return formatMoney(amount, currency);
   const prefix = currency.toUpperCase() === "USD" ? "$" : `${currency.toUpperCase()} `;
   return `${prefix}${amount.toFixed(2).replace(/\.00$/, "")}`;
+}
+
+function formatKrw(amount: number): string {
+  if (amount >= 1_000_000_000_000) return `${trimDecimal(amount / 1_000_000_000_000)}조원`;
+  if (amount >= 100_000_000) return `${trimDecimal(amount / 100_000_000)}억원`;
+  if (amount >= 10_000) return `${trimDecimal(amount / 10_000)}만원`;
+  return `${Math.round(amount).toLocaleString("ko-KR")}원`;
+}
+
+function trimDecimal(value: number): string {
+  return value.toFixed(value >= 10 ? 0 : 1).replace(/\.0$/, "");
 }

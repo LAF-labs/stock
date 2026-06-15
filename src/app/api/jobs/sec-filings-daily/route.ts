@@ -1,5 +1,5 @@
 import symbols from "@/data/symbols.generated.json";
-import { buildDartListUrl, dartDisclosureToFiling, type DartDisclosureRow } from "@/lib/krDartFilings";
+import { buildDartDetailUrl, buildDartListUrl, dartDetailEndpointForReportName, dartDisclosureToFiling, enrichDartFilingWithDetail, type DartDetailEndpoint, type DartDetailRow, type DartDisclosureRow } from "@/lib/krDartFilings";
 import { dailyMasterIndexUrl, enrichIndexFilingFromDocument, indexEntryToFiling, parseMasterIndex, rankIndexFilingFactCandidates } from "@/lib/secFilingIndexBackfill";
 import { writeSecFilings, type SecFilingListItem } from "@/lib/secFilings";
 import { safeErrorMessage } from "@/lib/errorSafety";
@@ -37,6 +37,7 @@ async function runDailyIndexJob(request: NextRequest) {
     let enriched = 0;
     let dartRows = 0;
     const factFetchLimit = numericEnv("SEC_FILINGS_DAILY_FACT_FETCH_LIMIT", 80);
+    const dartDetailBudget = { remaining: numericEnv("DART_FILINGS_DAILY_DETAIL_FETCH_LIMIT", 120) };
     const dartApiKey = envValue("OPENDART_API_KEY");
     const krSymbols = loadAllowedKrSymbols();
 
@@ -65,7 +66,7 @@ async function runDailyIndexJob(request: NextRequest) {
         }
       }
       if (dartApiKey) {
-        const dartFilings = await fetchDartFilings(date, dartApiKey, krSymbols);
+        const dartFilings = await fetchDartFilings(date, dartApiKey, krSymbols, dartDetailBudget);
         dartRows += dartFilings.length;
         for (let index = 0; index < dartFilings.length; index += 250) {
           await writeSecFilings(dartFilings.slice(index, index + 250), { throwOnError: true });
@@ -102,8 +103,9 @@ async function fetchDailyIndex(date: string): Promise<string | undefined> {
   return await response.text();
 }
 
-async function fetchDartFilings(date: string, apiKey: string, allowedSymbols: Set<string>): Promise<SecFilingListItem[]> {
+async function fetchDartFilings(date: string, apiKey: string, allowedSymbols: Set<string>, detailBudget: { remaining: number }): Promise<SecFilingListItem[]> {
   const filings: SecFilingListItem[] = [];
+  const detailCache = new Map<string, Promise<DartDetailRow[]>>();
   for (const corpClass of ["Y", "K", "N"] as const) {
     let pageNo = 1;
     while (pageNo <= 50) {
@@ -120,7 +122,7 @@ async function fetchDartFilings(date: string, apiKey: string, allowedSymbols: Se
       if (payload.status !== "000") throw new Error(`DART list ${payload.status || "unknown"} ${payload.message || ""}`.trim());
       for (const row of payload.list || []) {
         const filing = dartDisclosureToFiling(row, allowedSymbols);
-        if (filing) filings.push(filing);
+        if (filing) filings.push(await enrichDartFiling(apiKey, filing, detailCache, detailBudget));
       }
       const totalPage = Number(payload.total_page || 1);
       if (!Number.isFinite(totalPage) || pageNo >= totalPage) break;
@@ -128,6 +130,53 @@ async function fetchDartFilings(date: string, apiKey: string, allowedSymbols: Se
     }
   }
   return filings;
+}
+
+async function enrichDartFiling(apiKey: string, filing: SecFilingListItem, cache: Map<string, Promise<DartDetailRow[]>>, detailBudget: { remaining: number }): Promise<SecFilingListItem> {
+  const endpoint = dartDetailEndpointForReportName(filing.formType);
+  if (!endpoint) return filing;
+  const date = filing.filedAt.slice(0, 10).replace(/-/g, "");
+  const key = `${endpoint}:${filing.cik}:${endpoint === "majorstock" || endpoint === "elestock" ? "" : date}`;
+  if (!cache.has(key)) {
+    if (detailBudget.remaining <= 0) return filing;
+    detailBudget.remaining -= 1;
+  }
+  try {
+    const rows = await cachedDartDetailRows(apiKey, endpoint, filing.cik, date, cache, key);
+    const detail = rows.find((row) => row.rcept_no === filing.accessionNumber);
+    return detail ? enrichDartFilingWithDetail(filing, detail) : filing;
+  } catch {
+    return filing;
+  }
+}
+
+async function cachedDartDetailRows(
+  apiKey: string,
+  endpoint: DartDetailEndpoint,
+  corpCode: string,
+  date: string,
+  cache: Map<string, Promise<DartDetailRow[]>>,
+  key: string
+): Promise<DartDetailRow[]> {
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const request = fetchDartDetailRows(apiKey, endpoint, corpCode, date);
+  cache.set(key, request);
+  return request;
+}
+
+async function fetchDartDetailRows(apiKey: string, endpoint: DartDetailEndpoint, corpCode: string, date: string): Promise<DartDetailRow[]> {
+  await throttleDart();
+  const response = await fetchWithTimeout(buildDartDetailUrl(DART_BASE, endpoint, {
+    apiKey,
+    corpCode,
+    date,
+  }), { cache: "no-store" }, 20_000);
+  if (!response.ok) throw new Error(`DART detail HTTP ${response.status}`);
+  const payload = await response.json() as { status?: string; message?: string; list?: DartDetailRow[] };
+  if (payload.status === "013" || payload.status === "014") return [];
+  if (payload.status !== "000") throw new Error(`DART detail ${payload.status || "unknown"} ${payload.message || ""}`.trim());
+  return payload.list || [];
 }
 
 async function loadCikToTicker(): Promise<Map<string, string>> {

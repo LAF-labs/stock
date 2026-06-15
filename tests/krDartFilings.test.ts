@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDartListUrl, dartDisclosureToFiling, filterUniqueDartFilings } from "../src/lib/krDartFilings";
+import { buildDartDetailUrl, buildDartListUrl, dartDetailEndpointForReportName, dartDisclosureToFiling, enrichDartFilingWithDetail, filterUniqueDartFilings } from "../src/lib/krDartFilings";
 
 test("builds OpenDART list URL for one disclosure day", () => {
   const url = buildDartListUrl("https://opendart.fss.or.kr", {
@@ -14,6 +14,20 @@ test("builds OpenDART list URL for one disclosure day", () => {
   assert.equal(
     url,
     "https://opendart.fss.or.kr/api/list.json?crtfc_key=test-key&bgn_de=20260615&end_de=20260615&corp_cls=Y&page_no=2&page_count=100&sort=date&sort_mth=desc"
+  );
+});
+
+test("builds OpenDART detail URL for structured major disclosures", () => {
+  const url = buildDartDetailUrl("https://opendart.fss.or.kr", "piicDecsn", {
+    apiKey: "test-key",
+    corpCode: "00126380",
+    date: "20260615",
+  });
+
+  assert.equal(dartDetailEndpointForReportName("주요사항보고서(유상증자결정)"), "piicDecsn");
+  assert.equal(
+    url,
+    "https://opendart.fss.or.kr/api/piicDecsn.json?crtfc_key=test-key&corp_code=00126380&bgn_de=20260615&end_de=20260615"
   );
 });
 
@@ -39,6 +53,23 @@ test("converts DART disclosures into stock filing rows", () => {
   assert.match(filing.summaryKo, /새 주식을 발행/);
   assert.equal(filing.facts.source, "DART");
   assert.equal(filing.facts.reportName, "유상증자결정");
+});
+
+test("enriches DART filings with structured detail facts", () => {
+  const base = filing("20260615000001", "유상증자결정");
+  const enriched = enrichDartFilingWithDetail(base, {
+    rcept_no: "20260615000001",
+    nstk_ostk_cnt: "3,000,000",
+    fdpp_op: "10,000,000,000",
+    fdpp_dtrp: "5,000,000,000",
+    ic_mthn: "제3자배정증자",
+  });
+
+  assert.equal(enriched.facts.offeringAmount, 15_000_000_000);
+  assert.equal(enriched.facts.shares, 3_000_000);
+  assert.match(enriched.summaryKo, /150억원/);
+  assert.match(enriched.summaryKo, /3,000,000주/);
+  assert.match(enriched.summaryKo, /제3자배정증자/);
 });
 
 test("ignores DART rows outside the local stock universe", () => {

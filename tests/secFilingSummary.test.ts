@@ -80,6 +80,48 @@ test("summarizes Korean DART shareholder change reports", () => {
   assert.match(result.summaryKo, /최대주주 측 보유 주식/);
 });
 
+test("summarizes Korean paid-in capital increases with amount and shares", () => {
+  const result = summarizeSecFiling({
+    formType: "유상증자결정",
+    ticker: "KR:005930",
+    facts: {
+      source: "DART",
+      reportName: "유상증자결정",
+      shares: 3_000_000,
+      offeringAmount: 15_000_000_000,
+      fundingPurpose: "운영자금 100억원, 채무상환 50억원",
+      issueMethod: "제3자배정증자",
+      currency: "KRW",
+    },
+  });
+
+  assert.equal(result.category, "offering");
+  assert.match(result.summaryKo, /150억원/);
+  assert.match(result.summaryKo, /3,000,000주/);
+  assert.match(result.summaryKo, /운영자금 100억원, 채무상환 50억원/);
+  assert.match(result.summaryKo, /제3자배정증자/);
+});
+
+test("summarizes Korean convertible bonds with conversion price and shares", () => {
+  const result = summarizeSecFiling({
+    formType: "전환사채권발행결정",
+    ticker: "KR:005930",
+    facts: {
+      source: "DART",
+      reportName: "전환사채권발행결정",
+      bondAmount: 20_000_000_000,
+      conversionPrice: 6_500,
+      conversionShares: 3_076_923,
+      currency: "KRW",
+    },
+  });
+
+  assert.equal(result.category, "offering");
+  assert.match(result.summaryKo, /200억원/);
+  assert.match(result.summaryKo, /전환가 6,500원/);
+  assert.match(result.summaryKo, /3,076,923주/);
+});
+
 test("keeps unknown forms safe and short", () => {
   const result = summarizeSecFiling({ formType: "X-17A-5", companyName: "Broker Dealer" });
 
