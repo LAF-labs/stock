@@ -312,7 +312,7 @@ export function componentScore(item: CompareItem, key: string): number | undefin
 
 export function opportunityComponentScore(item: CompareItem, key: string): number | undefined {
   const component = item.data.opportunity_components?.find((itemComponent) => itemComponent.key === key);
-  if (!component || !componentHasDisplayableScore(component)) return undefined;
+  if (!component) return undefined;
   const score = component.score;
   return typeof score === "number" ? clampScore(score) : undefined;
 }

@@ -206,12 +206,13 @@ test("opportunityComponentScore reads opportunity breakdown scores separately fr
     data: {
       components: [{ key: "momentum", score: 80 }],
       opportunity_components: [
-        { key: "opportunity_momentum", score: 72.4, metrics: [{ label: "1개월", value: "+4.1%" }] },
+        { key: "opportunity_momentum", score: 72.4, metrics: [] },
         { key: "opportunity_risk", score: 41.6, metrics: [{ label: "60일 변동성", value: "32.0%" }] },
       ],
     },
   } as any;
 
+  assert.equal(opportunityComponentScore(item, "opportunity_momentum"), 72.4);
   assert.equal(opportunityComponentScore(item, "opportunity_risk"), 41.6);
   assert.equal(opportunityComponentScore(item, "momentum"), undefined);
 });

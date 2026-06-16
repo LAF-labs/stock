@@ -71,7 +71,9 @@ type StockCompareProps = {
 export default function StockCompare({ initialDisplayPayloads = [] }: StockCompareProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tickers = useMemo(() => parseTickers(searchParams.get("tickers") || searchParams.get("ticker")), [searchParams]);
+  const routeTickers = useMemo(() => parseTickers(searchParams.get("tickers") || searchParams.get("ticker")), [searchParams]);
+  const [optimisticTickers, setOptimisticTickers] = useState<string[] | undefined>(undefined);
+  const tickers = optimisticTickers ?? routeTickers;
   const firstTicker = tickers[0] || "";
   const firstTickerLabel = firstTicker ? displayTickerRef(firstTicker) : "";
   const originTicker = useMemo(() => normalizeTicker(searchParams.get("origin") || "") || firstTicker, [firstTicker, searchParams]);
@@ -107,6 +109,11 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     };
   }), [items, partialStates, tickers]);
   const compactSelectionLabel = compareCollapsedTickerLabel(selectedTickerEntries);
+  const routeTickersKey = routeTickers.join("|");
+
+  useEffect(() => {
+    setOptimisticTickers(undefined);
+  }, [routeTickersKey]);
 
   useEffect(() => {
     if (!hasRecoveringCompareWork || !tickersKey) {
@@ -146,6 +153,7 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
     if (!ticker || tickers.includes(ticker) || compareLimitReached) return;
     const nextTickers = [...tickers, ticker];
     setInput("");
+    setOptimisticTickers(nextTickers);
     pushTickers(router, nextTickers, originTicker);
   }
 
@@ -155,7 +163,10 @@ export default function StockCompare({ initialDisplayPayloads = [] }: StockCompa
 
   function removeTicker(ticker: string) {
     const next = removeCompareTicker(tickers, ticker);
-    if (next.length !== tickers.length) pushTickers(router, next, originTicker);
+    if (next.length !== tickers.length) {
+      setOptimisticTickers(next);
+      pushTickers(router, next, originTicker);
+    }
   }
 
   return (

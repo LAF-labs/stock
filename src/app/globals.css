@@ -2645,7 +2645,7 @@ a:focus-visible {
 .compare-add-form:not(.symbol-autocomplete-floating) input,
 .compare-add-form:not(.symbol-autocomplete-floating) > .symbol-search-box > button,
 .compare-suggestions button,
-.compare-picks span {
+.compare-picks > span {
   border: 0;
   border-radius: 8px;
 }
@@ -2892,7 +2892,7 @@ body.compare-search-open {
   background: transparent;
 }
 
-.compare-sheet-picks span {
+.compare-sheet-picks > span {
   min-width: 0;
   min-height: 38px;
   display: inline-flex;
@@ -2909,7 +2909,7 @@ body.compare-search-open {
   box-shadow: 0 6px 14px rgba(15, 23, 42, 0.04);
 }
 
-.compare-sheet-picks span.is-empty {
+.compare-sheet-picks > span.is-empty {
   grid-column: 1 / -1;
   justify-content: center;
   color: var(--muted);
@@ -2990,7 +2990,7 @@ body.compare-search-open {
   background: transparent;
 }
 
-.compare-picks span {
+.compare-picks > span {
   max-width: 220px;
   min-height: 36px;
   display: inline-flex;
@@ -3003,7 +3003,7 @@ body.compare-search-open {
   white-space: nowrap;
 }
 
-.compare-picks span,
+.compare-picks > span,
 .compare-suggestions button {
   scroll-snap-align: start;
 }
@@ -3544,8 +3544,9 @@ body.compare-search-open {
 
 .compare-metric-label {
   min-width: 0;
-  display: grid;
-  gap: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .compare-metric-row header .compare-metric-label > strong {
@@ -3554,6 +3555,8 @@ body.compare-search-open {
 }
 
 .compare-metric-help {
+  position: relative;
+  flex: 0 0 auto;
   width: max-content;
 }
 
@@ -3577,9 +3580,12 @@ body.compare-search-open {
 }
 
 .compare-metric-help span {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 20;
   display: block;
   width: min(180px, calc(100vw - 48px));
-  margin-top: 7px;
   padding: 8px 9px;
   border-radius: 8px;
   background: #191f28;
@@ -4099,7 +4105,7 @@ body.compare-search-open {
     background: transparent;
   }
 
-  .compare-index-picks span {
+  .compare-index-picks > span {
     max-width: none;
     width: 100%;
     min-height: 36px;
@@ -4116,7 +4122,7 @@ body.compare-search-open {
     font-weight: 800;
   }
 
-  .compare-index-picks span.is-empty {
+  .compare-index-picks > span.is-empty {
     color: var(--muted);
     font-weight: 700;
   }
@@ -6111,7 +6117,7 @@ body {
     padding-top: 28px;
   }
 
-  .compare-picks span,
+  .compare-picks > span,
   .compare-suggestions button,
   .chart-mode-tabs button,
   .technical-chart-legend button {
@@ -6377,7 +6383,7 @@ body {
     border-bottom: 1px solid rgba(49, 130, 246, 0.1);
   }
 
-  .compare-app .compare-picks span {
+  .compare-app .compare-picks > span {
     border: 1px solid rgba(49, 130, 246, 0.1);
     background: rgba(255, 255, 255, 0.84);
   }

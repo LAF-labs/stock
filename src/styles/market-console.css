@@ -424,7 +424,7 @@ body {
   color: #fff;
 }
 
-.compare-index-picks span {
+.compare-index-picks > span {
   border-color: var(--mc-line);
   background: var(--mc-surface-soft);
   color: var(--mc-text);
@@ -1152,6 +1152,7 @@ body {
 .compare-pick-list button.compare-pick-remove {
   width: 24px;
   height: 24px;
+  min-height: 24px;
   flex: 0 0 24px;
   display: inline-grid;
   place-items: center;
@@ -1641,7 +1642,7 @@ body {
   border-top: 1px solid var(--mc-line);
 }
 
-.compare-index-picks span {
+.compare-index-picks > span {
   min-height: 34px;
   border-color: var(--mc-line);
   background: transparent;
@@ -1651,6 +1652,7 @@ body {
 .compare-pick-list button.compare-pick-remove {
   width: 24px;
   height: 24px;
+  min-height: 24px;
   flex-basis: 24px;
   display: inline-grid;
   place-items: center;
