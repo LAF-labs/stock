@@ -1,13 +1,15 @@
 import { fetchKisDailyChart, fetchKisQuote, kisQuoteConfigured, type KisDailyChartPayload } from "@/lib/kisQuoteClient";
+import { fetchTossDailyChart, fetchTossQuote, tossInvestConfigured } from "@/lib/tossInvestClient";
 import { fetchYahooDailyChart, fetchYahooQuote, yahooFinanceFallbackEnabled } from "@/lib/yahooFinanceClient";
 import { combineProviderErrors } from "@/lib/stockProviderErrors";
 import type { StockPayload } from "@/lib/stockScoreContract";
 
 export function liveStockProviderConfigured(env: Record<string, string | undefined> = process.env): boolean {
-  return kisConfigured(env) || yahooFinanceFallbackEnabled(env);
+  return tossInvestConfigured(env) || kisConfigured(env) || yahooFinanceFallbackEnabled(env);
 }
 
 export async function fetchLiveQuote(ticker: string): Promise<StockPayload> {
+  if (tossInvestConfigured()) return fetchTossQuote(ticker);
   const attempts: Array<() => Promise<StockPayload>> = [];
   if (kisQuoteConfigured()) attempts.push(() => fetchKisQuote(ticker));
   if (yahooFinanceFallbackEnabled()) attempts.push(() => fetchYahooQuote(ticker));
@@ -19,6 +21,7 @@ function kisConfigured(env: Record<string, string | undefined>): boolean {
 }
 
 export async function fetchLiveDailyChart(ticker: string): Promise<KisDailyChartPayload> {
+  if (tossInvestConfigured()) return fetchTossDailyChart(ticker);
   const attempts: Array<() => Promise<KisDailyChartPayload>> = [];
   if (kisQuoteConfigured()) attempts.push(() => fetchKisDailyChart(ticker));
   if (yahooFinanceFallbackEnabled()) attempts.push(() => fetchYahooDailyChart(ticker));

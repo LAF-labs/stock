@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { GET as refreshMarketCap } from "../src/app/api/market-cap/refresh/route";
-import { fetchLiveDailyChart } from "../src/lib/stockLiveProvider";
+import { fetchLiveDailyChart, fetchLiveQuote } from "../src/lib/stockLiveProvider";
 
 const ENV_KEYS = [
   "CRON_SECRET",
@@ -20,6 +20,9 @@ const ENV_KEYS = [
   "STOCK_KIS_TOKEN_CACHE_DIR",
   "STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES",
   "STOCK_YAHOO_FALLBACK",
+  "TOSS_INVEST_API_BASE",
+  "TOSS_INVEST_CLIENT_ID",
+  "TOSS_INVEST_CLIENT_SECRET",
   "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_URL",
@@ -33,6 +36,8 @@ const globalWithKisCache = globalThis as typeof globalThis & {
   __kisQuoteDiscoveryCache?: Map<string, unknown>;
   __kisDailyChartMemoryCache?: Map<string, unknown>;
   __kisDailyChartInflight?: Map<string, unknown>;
+  __tossInvestTokenCache?: Map<string, unknown>;
+  __tossInvestTokenInflight?: Map<string, unknown>;
 };
 let tokenCacheDir: string | undefined;
 
@@ -50,6 +55,8 @@ function restore() {
   globalWithKisCache.__kisQuoteDiscoveryCache?.clear();
   globalWithKisCache.__kisDailyChartMemoryCache?.clear();
   globalWithKisCache.__kisDailyChartInflight?.clear();
+  globalWithKisCache.__tossInvestTokenCache?.clear();
+  globalWithKisCache.__tossInvestTokenInflight?.clear();
 }
 
 function setupLiveProviderEnv() {
@@ -120,4 +127,37 @@ test("live provider waits for a slower fallback before declaring provider-empty"
 
   assert.equal(daily.latestPrice, 12500);
   assert.equal(daily.fetch.provider, "yahoo_finance");
+});
+
+test("live provider uses Toss without touching KIS or Yahoo when Toss is configured", async () => {
+  setupLiveProviderEnv();
+  process.env.TOSS_INVEST_API_BASE = "https://toss.example.com";
+  process.env.TOSS_INVEST_CLIENT_ID = "client-id";
+  process.env.TOSS_INVEST_CLIENT_SECRET = "client-secret";
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("kis.example.com") || url.includes("query1.finance.yahoo.com")) {
+      throw new Error(`legacy provider should not run: ${url}`);
+    }
+    if (url.endsWith("/oauth2/token")) {
+      return Response.json({ access_token: "token-1", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.includes("/api/v1/stocks?")) {
+      return Response.json({
+        result: [{ symbol: "005930", name: "삼성전자", market: "KOSPI", currency: "KRW", sharesOutstanding: "10" }],
+      });
+    }
+    if (url.includes("/api/v1/prices?")) {
+      return Response.json({
+        result: [{ symbol: "005930", timestamp: "2026-06-19T09:30:00+09:00", lastPrice: "70000", currency: "KRW" }],
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const quote = await fetchLiveQuote("KR:005930");
+
+  assert.equal(quote.latest_price, 70000);
+  assert.equal((quote.fetch as Record<string, unknown>).provider, "toss_invest");
 });
