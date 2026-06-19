@@ -37,6 +37,9 @@ const ENV_KEYS = [
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
+const globalWithScoreCache = globalThis as typeof globalThis & {
+  __stockScoreMemoryCache?: Map<string, Record<string, unknown>>;
+};
 
 function restoreEnv() {
   for (const key of ENV_KEYS) {
@@ -48,6 +51,7 @@ function restoreEnv() {
     }
   }
   globalThis.fetch = originalFetch;
+  globalWithScoreCache.__stockScoreMemoryCache?.clear();
 }
 
 function reported(asOfDate: string, raw: number, currencyCode?: string) {
@@ -290,6 +294,73 @@ test("US detail fast path includes Yahoo fundamentals instead of an empty financ
   assert.equal((result.payload.financials as Record<string, unknown>).netIncome, 28_564_000);
   assert.equal((result.payload.financials as Record<string, unknown>).trailingPE, 39.277108);
   assert.equal((result.payload.financial_statement as Record<string, unknown>).yahoo_fundamentals !== undefined, true);
+});
+
+test("stale score snapshots refresh inline from request fast path in Vercel snapshot mode", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.STOCK_API_APP_KEY = "app-key";
+  process.env.STOCK_API_APP_SECRET = "app-secret";
+  process.env.STOCK_API_BASE = "https://kis.example";
+
+  let dailyCalls = 0;
+  let fundamentalCalls = 0;
+  const rows = Array.from({ length: 120 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 0, 2 + index)).toISOString().slice(0, 10).replace(/-/g, "");
+    const close = 30 + index * 0.03;
+    return {
+      xymd: date,
+      open: String(close - 0.1),
+      high: String(close + 0.2),
+      low: String(close - 0.2),
+      clos: String(close),
+      tvol: String(50_000 + index),
+    };
+  });
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-stale-inline-refresh", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/overseas-price/v1/quotations/dailyprice")) {
+      dailyCalls += 1;
+      return Response.json({ rt_cd: "0", output2: rows });
+    }
+    if (text.includes("query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/STALEREFRESH")) {
+      fundamentalCalls += 1;
+      return Response.json({
+        timeseries: {
+          result: [
+            { meta: { symbol: ["STALEREFRESH"], type: ["trailingTotalRevenue"] }, trailingTotalRevenue: [reported("2026-03-31", 2_014_108_000, "USD")] },
+            { meta: { symbol: ["STALEREFRESH"], type: ["trailingNetIncome"] }, trailingNetIncome: [reported("2026-03-31", 28_564_000, "USD")] },
+          ],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const first = await getStockScore("US:STALEREFRESH", "detail");
+  assert.equal(first.cache.state, "miss");
+
+  const key = "detail:US:STALEREFRESH";
+  const snapshot = globalWithScoreCache.__stockScoreMemoryCache?.get(key);
+  assert.ok(snapshot);
+  globalWithScoreCache.__stockScoreMemoryCache?.set(key, {
+    ...snapshot,
+    fetchedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  dailyCalls = 0;
+  fundamentalCalls = 0;
+
+  const stale = await getStockScore("US:STALEREFRESH", "detail");
+  await sleep(50);
+
+  assert.equal(stale.cache.state, "stale");
+  assert.equal(stale.cache.refreshStarted, true);
+  assert.ok(dailyCalls + fundamentalCalls > 0);
 });
 
 test("domestic detail fast path includes KIS financials instead of a pending enrichment placeholder", async () => {

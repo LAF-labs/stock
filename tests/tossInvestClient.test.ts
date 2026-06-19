@@ -7,6 +7,7 @@ import { fetchTossDailyChart, fetchTossQuote, tossInvestConfigured } from "../sr
 const ENV_KEYS = [
   "STOCK_YAHOO_FALLBACK",
   "TOSS_INVEST_API_BASE",
+  "TOSS_INVEST_ENABLED",
   "TOSS_INVEST_CLIENT_ID",
   "TOSS_INVEST_CLIENT_SECRET",
 ] as const;
@@ -34,6 +35,7 @@ test.afterEach(restore);
 test("Toss provider config requires client id and secret", () => {
   assert.equal(tossInvestConfigured({}), false);
   assert.equal(tossInvestConfigured({ TOSS_INVEST_CLIENT_ID: "id", TOSS_INVEST_CLIENT_SECRET: "secret" }), true);
+  assert.equal(tossInvestConfigured({ TOSS_INVEST_ENABLED: "0", TOSS_INVEST_CLIENT_ID: "id", TOSS_INVEST_CLIENT_SECRET: "secret" }), false);
 });
 
 test("fetchTossQuote maps Toss stock and price data into the public quote shape", async () => {
@@ -142,6 +144,43 @@ test("fetchTossDailyChart maps Toss candles into ascending daily bars", async ()
   assert.equal(daily.fetch.provider, "toss_invest");
 });
 
+test("fetchTossDailyChart follows nextBefore until it has enough history for 52-week signals", async () => {
+  setupEnv();
+  const candleUrls: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/oauth2/token")) {
+      return Response.json({ access_token: "token-paged", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.includes("/api/v1/stocks?")) {
+      return Response.json({
+        result: [{ symbol: "AAPL", name: "Apple", englishName: "Apple Inc.", market: "NASDAQ", currency: "USD", sharesOutstanding: "10" }],
+      });
+    }
+    if (url.includes("/api/v1/candles?")) {
+      candleUrls.push(url);
+      const before = new URL(url).searchParams.get("before");
+      const start = before ? 0 : 80;
+      const count = before ? 80 : 200;
+      return Response.json({
+        result: {
+          candles: Array.from({ length: count }, (_, index) => tossCandle(start + index)),
+          nextBefore: before ? null : "2026-03-22T00:00:00.000Z",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const daily = await fetchTossDailyChart("US:AAPL");
+
+  assert.equal(candleUrls.length, 2);
+  assert.equal(new URL(candleUrls[1] || "").searchParams.get("before"), "2026-03-22T00:00:00.000Z");
+  assert.ok(daily.chartSeries.length >= 260);
+  assert.equal(daily.latestDate, "2026-10-07");
+  assert.equal(daily.fetch.history_rows, daily.chartSeries.length);
+});
+
 test("Toss chart data still uses existing Yahoo fundamentals enrichment", async () => {
   setupEnv();
   process.env.STOCK_YAHOO_FALLBACK = "0";
@@ -201,11 +240,77 @@ test("Toss chart data still uses existing Yahoo fundamentals enrichment", async 
   assert.equal((payload.financials as Record<string, unknown>).trailingPE, 39.277108);
 });
 
+test("Toss quote-only detail still uses existing Yahoo fundamentals enrichment", async () => {
+  setupEnv();
+  process.env.STOCK_YAHOO_FALLBACK = "0";
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/oauth2/token")) {
+      return Response.json({ access_token: "token-quote-only-financials", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.includes("/api/v1/stocks?")) {
+      return Response.json({
+        result: [{
+          symbol: "PZZA",
+          name: "Papa Johns",
+          englishName: "Papa Johns International",
+          market: "NASDAQ",
+          currency: "USD",
+          status: "ACTIVE",
+          sharesOutstanding: "31000000",
+        }],
+      });
+    }
+    if (url.includes("/api/v1/candles?")) {
+      return Response.json({ result: { candles: [], nextBefore: null } });
+    }
+    if (url.includes("/api/v1/prices?")) {
+      return Response.json({
+        result: [{ symbol: "PZZA", timestamp: "2026-06-19T09:30:00-04:00", lastPrice: "39.25", currency: "USD" }],
+      });
+    }
+    if (url.includes("query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/PZZA")) {
+      return Response.json({
+        timeseries: {
+          result: [
+            { meta: { symbol: ["PZZA"], type: ["trailingTotalRevenue"] }, trailingTotalRevenue: [reported("2026-03-31", 2_014_108_000, "USD")] },
+            { meta: { symbol: ["PZZA"], type: ["trailingNetIncome"] }, trailingNetIncome: [reported("2026-03-31", 28_564_000, "USD")] },
+            { meta: { symbol: ["PZZA"], type: ["trailingPeRatio"] }, trailingPeRatio: [reported("2026-06-12", 39.277108)] },
+          ],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const payload = await buildDetailScoreFastPathPayload("US:PZZA", "detail");
+
+  assert.equal(payload.data_quality, "quote_fast_path");
+  assert.equal((payload.fetch as Record<string, unknown>).pending_enrichment, undefined);
+  assert.equal((payload.fetch as Record<string, unknown>).fundamentals_source, "yahoo_fundamentals");
+  assert.equal((payload.financials as Record<string, unknown>).totalRevenue, 2_014_108_000);
+  assert.equal((payload.financials as Record<string, unknown>).trailingPE, 39.277108);
+});
+
 function reported(asOfDate: string, raw: number, currencyCode?: string) {
   return {
     asOfDate,
     periodType: "TTM",
     ...(currencyCode ? { currencyCode } : {}),
     reportedValue: { raw, fmt: String(raw) },
+  };
+}
+
+function tossCandle(dayIndex: number) {
+  const close = 100 + dayIndex;
+  return {
+    timestamp: new Date(Date.UTC(2026, 0, 1 + dayIndex)).toISOString(),
+    openPrice: String(close - 1),
+    highPrice: String(close + 1),
+    lowPrice: String(close - 2),
+    closePrice: String(close),
+    volume: String(1000 + dayIndex),
+    currency: "USD",
   };
 }

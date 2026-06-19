@@ -113,7 +113,7 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
           ticker: snapshot.ticker,
           market: target.market,
           symbol: target.symbol,
-          source: "kis",
+          source: providerSourceFromPayload(snapshot.payload),
           payload: sanitizeSnapshotPayload(snapshot.payload),
           fetched_at: snapshot.fetchedAt,
           expires_at: snapshot.expiresAt,
@@ -129,6 +129,15 @@ async function writeSupabaseSnapshot(snapshot: StoredQuoteSnapshot): Promise<voi
     // Quote cache writes are best effort.
     console.warn("stock_quote_cache_write_failed", { ticker: snapshot.ticker, error: safeErrorMessage(error) });
   }
+}
+
+function providerSourceFromPayload(payload: StockPayload): string {
+  const fetch = payload.fetch;
+  if (fetch && typeof fetch === "object" && !Array.isArray(fetch)) {
+    const provider = (fetch as Record<string, unknown>).provider;
+    if (typeof provider === "string" && provider.trim()) return provider.trim();
+  }
+  return "kis";
 }
 
 async function collectLiveQuotePayload(ticker: string): Promise<StockPayload> {

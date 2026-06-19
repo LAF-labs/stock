@@ -276,10 +276,23 @@ function decorate(snapshot: StoredScoreSnapshot, state: CacheState, source: Cach
 }
 
 function scheduleRefresh(ticker: string, view: ScoreView) {
-  if (!pythonCollectorEnabled()) return;
   const key = cacheKey(ticker, view);
   if (inflightRefreshes.has(key)) return;
   void refreshSnapshot(ticker, view).catch(() => undefined);
+}
+
+async function inlineScoreRefreshAvailable(view: ScoreView): Promise<boolean> {
+  if (pythonCollectorEnabled()) return true;
+  try {
+    if (view === "technical") {
+      const { technicalRequestFastPathEnabled } = await import("@/lib/technicalScoreFastPath");
+      return technicalRequestFastPathEnabled();
+    }
+    const { detailRequestFastPathEnabled } = await import("@/lib/detailScoreFastPath");
+    return detailRequestFastPathEnabled();
+  } catch {
+    return false;
+  }
 }
 
 function scoreSupabaseReadTimeoutMs(): number {
@@ -331,7 +344,7 @@ export async function getStockScore(tickerRef: string, view: ScoreView, options:
 
     if (staleCandidate) {
       rememberMemorySnapshot(key, staleCandidate, nowMs);
-      if (pythonCollectorEnabled()) {
+      if (await inlineScoreRefreshAvailable(view)) {
         scheduleRefresh(ticker, view);
         return decorate(staleCandidate, "stale", staleSource, { refreshStarted: true });
       }

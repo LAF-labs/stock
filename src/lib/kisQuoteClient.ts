@@ -285,6 +285,7 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
     },
     fetch: {
       source: "market_data",
+      provider: "kis",
       price_endpoint: "/uapi/domestic-stock/v1/quotations/inquire-price",
       market_div_code: KIS_DOMESTIC_MARKET_DIV_CODE,
       fetched_at: now.toISOString(),
@@ -406,6 +407,7 @@ async function fetchUsQuoteForMarket(symbol: string, market: KisUsMarket, cached
     },
     fetch: {
       source: "market_data",
+      provider: "kis",
       price_detail_endpoint: "/uapi/overseas-price/v1/quotations/price-detail",
       search_info_endpoint: cachedSearch ? undefined : "/uapi/overseas-price/v1/quotations/search-info",
       exchange_code: market.excd,
@@ -503,6 +505,7 @@ async function fetchDomesticDailyChart(symbol: string): Promise<KisDailyChartPay
     priceMetrics: priceMetricsFromChart(chartSeries),
     fetch: {
       source: "market_data",
+      provider: "kis",
       provider_mode: "technical_request_fast_path",
       daily_price_endpoint: "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
       market_div_code: marketDivCode,
@@ -538,6 +541,7 @@ async function fetchUsDailyChart(symbol: string): Promise<KisDailyChartPayload> 
         priceMetrics: priceMetricsFromChart(chartSeries),
         fetch: {
           source: "market_data",
+          provider: "kis",
           provider_mode: "technical_request_fast_path",
           daily_price_endpoint: "/uapi/overseas-price/v1/quotations/dailyprice",
           exchange_code: market.excd,

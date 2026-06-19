@@ -41,6 +41,11 @@ type TossCandle = {
   currency?: unknown;
 };
 
+type TossCandlePage = {
+  candles?: TossCandle[];
+  nextBefore?: unknown;
+};
+
 declare global {
   var __tossInvestTokenCache: Map<string, TossToken> | undefined;
   var __tossInvestTokenInflight: Map<string, Promise<TossToken>> | undefined;
@@ -50,6 +55,7 @@ const tokenCache = (globalThis.__tossInvestTokenCache ??= new Map<string, TossTo
 const tokenInflight = (globalThis.__tossInvestTokenInflight ??= new Map<string, Promise<TossToken>>());
 
 export function tossInvestConfigured(env: Record<string, string | undefined> = process.env): boolean {
+  if (disabled(env.TOSS_INVEST_ENABLED)) return false;
   return !!((env.TOSS_INVEST_CLIENT_ID || env.TOSS_INVEST_API_KEY) && (env.TOSS_INVEST_CLIENT_SECRET || env.TOSS_INVEST_SECRET_KEY));
 }
 
@@ -146,13 +152,24 @@ async function fetchTossPrice(symbol: string): Promise<TossPrice> {
 }
 
 async function fetchTossCandles(symbol: string): Promise<TossCandle[]> {
-  const payload = await tossGet<{ candles?: TossCandle[] }>("/api/v1/candles", {
-    symbol,
-    interval: "1d",
-    count: "200",
-    adjusted: "true",
-  });
-  return Array.isArray(payload.candles) ? payload.candles : [];
+  const candles: TossCandle[] = [];
+  let before: string | undefined;
+
+  while (candles.length < 260) {
+    const payload = await tossGet<TossCandlePage>("/api/v1/candles", {
+      symbol,
+      interval: "1d",
+      count: "200",
+      adjusted: "true",
+      ...(before ? { before } : {}),
+    });
+    const page = Array.isArray(payload.candles) ? payload.candles : [];
+    candles.push(...page);
+    before = text(payload.nextBefore);
+    if (!before || !page.length) break;
+  }
+
+  return candles;
 }
 
 async function tossGetArray<T>(path: string, params: Record<string, string>): Promise<T[]> {
@@ -235,6 +252,11 @@ function tossConfig(): TossConfig {
     clientSecret,
     baseUrl: (process.env.TOSS_INVEST_API_BASE?.trim() || "https://openapi.tossinvest.com").replace(/\/$/, ""),
   };
+}
+
+function disabled(value: string | undefined): boolean {
+  const raw = value?.trim().toLowerCase();
+  return raw === "0" || raw === "false" || raw === "off";
 }
 
 function candlesToBars(candles: TossCandle[], fallbackCurrency: string): KisDailyChartBar[] {

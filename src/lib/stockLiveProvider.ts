@@ -9,10 +9,10 @@ export function liveStockProviderConfigured(env: Record<string, string | undefin
 }
 
 export async function fetchLiveQuote(ticker: string): Promise<StockPayload> {
-  if (tossInvestConfigured()) return fetchTossQuote(ticker);
-  const attempts: Array<() => Promise<StockPayload>> = [];
-  if (kisQuoteConfigured()) attempts.push(() => fetchKisQuote(ticker));
-  if (yahooFinanceFallbackEnabled()) attempts.push(() => fetchYahooQuote(ticker));
+  const attempts: Array<LiveProviderAttempt<StockPayload>> = [];
+  if (tossInvestConfigured()) attempts.push({ provider: "toss_invest", run: () => fetchTossQuote(ticker) });
+  if (kisQuoteConfigured()) attempts.push({ provider: "kis", run: () => fetchKisQuote(ticker) });
+  if (yahooFinanceFallbackEnabled()) attempts.push({ provider: "yahoo_finance", run: () => fetchYahooQuote(ticker) });
   return firstLiveProviderResult(ticker, attempts, "No live quote provider is configured.");
 }
 
@@ -21,40 +21,49 @@ function kisConfigured(env: Record<string, string | undefined>): boolean {
 }
 
 export async function fetchLiveDailyChart(ticker: string): Promise<KisDailyChartPayload> {
-  if (tossInvestConfigured()) return fetchTossDailyChart(ticker);
-  const attempts: Array<() => Promise<KisDailyChartPayload>> = [];
-  if (kisQuoteConfigured()) attempts.push(() => fetchKisDailyChart(ticker));
-  if (yahooFinanceFallbackEnabled()) attempts.push(() => fetchYahooDailyChart(ticker));
+  const attempts: Array<LiveProviderAttempt<KisDailyChartPayload>> = [];
+  if (tossInvestConfigured()) attempts.push({ provider: "toss_invest", run: () => fetchTossDailyChart(ticker) });
+  if (kisQuoteConfigured()) attempts.push({ provider: "kis", run: () => fetchKisDailyChart(ticker) });
+  if (yahooFinanceFallbackEnabled()) attempts.push({ provider: "yahoo_finance", run: () => fetchYahooDailyChart(ticker) });
   return firstLiveProviderResult(ticker, attempts, "No live chart provider is configured.");
 }
 
-async function firstLiveProviderResult<T>(ticker: string, attempts: Array<() => Promise<T>>, unconfiguredMessage: string): Promise<T> {
+type LiveProviderAttempt<T> = {
+  provider: string;
+  run: () => Promise<T>;
+};
+
+async function firstLiveProviderResult<T extends { fetch?: unknown }>(ticker: string, attempts: Array<LiveProviderAttempt<T>>, unconfiguredMessage: string): Promise<T> {
   if (!attempts.length) throw new Error(unconfiguredMessage);
-  const pending = attempts.map((attempt) => settleProvider(attempt()));
   const errors: unknown[] = [];
+  const attempted: string[] = [];
+  const failed: string[] = [];
 
-  while (pending.length) {
-    const { index, result } = await Promise.race(pending.map((promise, index) => promise.then((result) => ({ index, result }))));
-    pending.splice(index, 1);
-    if (result.ok) {
-      drainPending(pending);
-      return result.value;
+  for (const attempt of attempts) {
+    attempted.push(attempt.provider);
+    try {
+      const value = await attempt.run();
+      return withProviderAttemptMetadata(value, attempted, failed);
+    } catch (error) {
+      errors.push(error);
+      failed.push(attempt.provider);
     }
-
-    errors.push(result.error);
   }
 
   throw combineProviderErrors(ticker, errors);
 }
 
-async function settleProvider<T>(promise: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
-  try {
-    return { ok: true, value: await promise };
-  } catch (error) {
-    return { ok: false, error };
-  }
+function withProviderAttemptMetadata<T extends { fetch?: unknown }>(value: T, providerAttempts: string[], fallbackFrom: string[]): T {
+  return {
+    ...value,
+    fetch: {
+      ...(isRecord(value.fetch) ? value.fetch : {}),
+      provider_attempts: providerAttempts,
+      ...(fallbackFrom.length ? { fallback_from: fallbackFrom } : {}),
+    },
+  };
 }
 
-function drainPending<T>(pending: Array<Promise<T>>) {
-  for (const promise of pending) void promise.catch(() => undefined);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }

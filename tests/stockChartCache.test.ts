@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { isStockDataUnavailableError } from "../src/lib/stockDataRuntime";
-import { getStockChart } from "../src/lib/stockChartCache";
+import { getStockChart, writeSupabaseChartSnapshotWithConfig } from "../src/lib/stockChartCache";
 
 const ENV_KEYS = [
   "SUPABASE_URL",
@@ -186,6 +186,35 @@ test("stock chart cache refreshes cold charts inline from Yahoo fallback", async
   assert.equal(result.cache.lastBarDate, "2026-06-05");
   assert.equal((result.payload.chart_series as unknown[]).length, 2);
   assert.equal((result.payload.fetch as Record<string, unknown>).provider, "yahoo_finance");
+});
+
+test("stock chart cache writes the actual provider source to Supabase", async () => {
+  let capturedBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_input, init) => {
+    capturedBody = JSON.parse(String(init?.body));
+    return new Response(null, { status: 201 });
+  };
+
+  await writeSupabaseChartSnapshotWithConfig(
+    { url: "https://example.supabase.co", key: "service-role-key" },
+    {
+      ticker: "US:AAPL",
+      payload: {
+        ok: true,
+        requested_ticker: "US:AAPL",
+        market: "US",
+        symbol: "AAPL",
+        chart_series: [{ date: "2026-06-18", close: 202 }],
+        fetch: { provider: "toss_invest" },
+      },
+      fetchedAt: "2026-06-19T00:00:00.000Z",
+      expiresAt: "2026-06-19T00:05:00.000Z",
+      staleExpiresAt: "2026-07-19T00:00:00.000Z",
+      lastBarDate: "2026-06-18",
+    }
+  );
+
+  assert.equal(capturedBody?.source, "toss_invest");
 });
 
 test("stock chart cache queues forced misses before regular chart misses", async () => {

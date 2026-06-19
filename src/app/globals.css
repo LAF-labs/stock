@@ -3003,7 +3003,7 @@ body.compare-search-open {
   white-space: nowrap;
 }
 
-.compare-picks > span,
+.compare-picks span,
 .compare-suggestions button {
   scroll-snap-align: start;
 }

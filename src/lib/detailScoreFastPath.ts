@@ -223,6 +223,17 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
   technicalAnalysis.ticker = `${market}:${symbol}`;
   technicalAnalysis.market = market;
   technicalAnalysis.symbol = symbol;
+  const financialBundle = await financialFastPath(
+    {
+      market,
+      symbol,
+      requestedTicker: ticker,
+      latestPrice: signals.latestPrice,
+      priceMetrics: isRecord(quote.price_metrics) ? quote.price_metrics : undefined,
+    },
+    signals,
+    view
+  );
 
   return {
     ok: true,
@@ -259,9 +270,9 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
     data_quality: "quote_fast_path",
     components,
     opportunity_components: opportunityComponents,
-    key_metrics: keyMetrics(signals, currency),
+    key_metrics: keyMetricsWithFinancials(keyMetrics(signals, currency), financialBundle?.financials),
     stock_profile: stockProfileRows({ market, symbol, exchange: stringValue(quote.exchange) || "", currency }, identity),
-    valuation_rows: valuationRows(signals, currency),
+    valuation_rows: valuationRowsWithFinancials(valuationRows(signals, currency), financialBundle?.financials, signals.latestPrice),
     chart_patterns: [],
     chart_series: [],
     technical_analysis: technicalAnalysis,
@@ -275,11 +286,12 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
       latest_change: signals.latestChange,
       volume: numberValue(quote.volume),
     },
-    financials: {
+    financials: financialBundle?.financials ?? {
       source: "pending_enrichment",
       quote_only_fast_path: true,
       message: "가격 흐름과 실적 자료가 확인되면 판단을 더해 보여드립니다.",
     },
+    ...(financialBundle?.financialStatement ? { financial_statement: financialBundle.financialStatement } : {}),
     sia_snapshot: {
       symbol,
       price: signals.latestPrice,
@@ -315,7 +327,7 @@ async function buildQuoteOnlyDetailScorePayload(quote: StockPayload, view: Score
       detail_fast_path: true,
       quote_only_fast_path: true,
       request_fast_path: true,
-      pending_enrichment: true,
+      ...(financialBundle?.fetch ?? { pending_enrichment: true }),
       source: "market_data",
       provider_mode: "detail_quote_fast_path",
       daily_timeout_ms: detailDailyFastPathTimeoutMs(),

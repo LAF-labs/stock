@@ -21,6 +21,7 @@ const ENV_KEYS = [
   "STOCK_TECHNICAL_KIS_DAILY_MAX_PAGES",
   "STOCK_YAHOO_FALLBACK",
   "TOSS_INVEST_API_BASE",
+  "TOSS_INVEST_ENABLED",
   "TOSS_INVEST_CLIENT_ID",
   "TOSS_INVEST_CLIENT_SECRET",
   "SUPABASE_PUBLISHABLE_KEY",
@@ -160,4 +161,85 @@ test("live provider uses Toss without touching KIS or Yahoo when Toss is configu
 
   assert.equal(quote.latest_price, 70000);
   assert.equal((quote.fetch as Record<string, unknown>).provider, "toss_invest");
+});
+
+test("live provider falls back to Yahoo quote data when Toss returns empty data", async () => {
+  setupLiveProviderEnv();
+  process.env.TOSS_INVEST_API_BASE = "https://toss.example.com";
+  process.env.TOSS_INVEST_CLIENT_ID = "client-id";
+  process.env.TOSS_INVEST_CLIENT_SECRET = "client-secret";
+  process.env.STOCK_YAHOO_FALLBACK = "1";
+  delete process.env.STOCK_API_APP_KEY;
+  delete process.env.STOCK_API_APP_SECRET;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/oauth2/token")) {
+      return Response.json({ access_token: "token-empty-toss", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.includes("/api/v1/stocks?") || url.includes("/api/v1/prices?")) {
+      return Response.json({ result: [] });
+    }
+    if (url.includes("query1.finance.yahoo.com/v8/finance/chart/KO")) {
+      return Response.json({
+        chart: {
+          result: [{
+            meta: { currency: "USD", regularMarketPrice: 72.5, chartPreviousClose: 71.5, exchangeName: "NYQ" },
+            timestamp: [1780531200, 1780617600],
+            indicators: { quote: [{ open: [71, 72], high: [72, 73], low: [70, 71], close: [71.5, 72.5], volume: [1000, 1100] }] },
+          }],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const quote = await fetchLiveQuote("US:KO");
+
+  assert.equal(quote.latest_price, 72.5);
+  assert.equal((quote.fetch as Record<string, unknown>).provider, "yahoo_finance");
+  assert.deepEqual((quote.fetch as Record<string, unknown>).fallback_from, ["toss_invest"]);
+});
+
+test("live provider falls back to Yahoo chart data when Toss chart is empty", async () => {
+  setupLiveProviderEnv();
+  process.env.TOSS_INVEST_API_BASE = "https://toss.example.com";
+  process.env.TOSS_INVEST_CLIENT_ID = "client-id";
+  process.env.TOSS_INVEST_CLIENT_SECRET = "client-secret";
+  process.env.STOCK_YAHOO_FALLBACK = "1";
+  delete process.env.STOCK_API_APP_KEY;
+  delete process.env.STOCK_API_APP_SECRET;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/oauth2/token")) {
+      return Response.json({ access_token: "token-empty-toss-chart", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.includes("/api/v1/stocks?")) {
+      return Response.json({ result: [{ symbol: "KO", name: "Coca-Cola", market: "NYSE", currency: "USD", sharesOutstanding: "100" }] });
+    }
+    if (url.includes("/api/v1/candles?")) {
+      return Response.json({ result: { candles: [], nextBefore: null } });
+    }
+    if (url.includes("query1.finance.yahoo.com/v8/finance/chart/KO")) {
+      return Response.json({
+        chart: {
+          result: [{
+            meta: { currency: "USD", regularMarketPrice: 72.5, chartPreviousClose: 71.5, exchangeName: "NYQ" },
+            timestamp: [1780531200, 1780617600],
+            indicators: { quote: [{ open: [71, 72], high: [72, 73], low: [70, 71], close: [71.5, 72.5], volume: [1000, 1100] }] },
+          }],
+          error: null,
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const daily = await fetchLiveDailyChart("US:KO");
+
+  assert.equal(daily.latestPrice, 72.5);
+  assert.equal(daily.fetch.provider, "yahoo_finance");
+  assert.deepEqual(daily.fetch.fallback_from, ["toss_invest"]);
 });

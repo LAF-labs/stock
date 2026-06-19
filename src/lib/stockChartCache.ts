@@ -73,7 +73,7 @@ async function readSupabaseSnapshot(ticker: string): Promise<StoredChartSnapshot
   if (!config) return undefined;
 
   try {
-    const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,payload,fetched_at,expires_at,stale_expires_at,last_bar_date&limit=1`;
+    const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,payload,fetched_at,expires_at,stale_expires_at,last_bar_date&order=fetched_at.desc&limit=1`;
     const response = await fetchWithTimeout(url, { headers: supabaseHeaders(config.key), cache: "no-store" }, chartSupabaseReadTimeoutMs());
     if (!response.ok) return undefined;
     const rows = (await response.json()) as SupabaseChartRow[];
@@ -312,7 +312,7 @@ export async function writeSupabaseChartSnapshotWithConfig(config: SupabaseConfi
         ticker: target,
         market,
         symbol,
-        source: "kis",
+        source: providerSourceFromPayload(snapshot.payload),
         payload: sanitizeSnapshotPayload(snapshot.payload),
         last_bar_date: snapshot.lastBarDate || lastBarDateFromChartPayload(snapshot.payload),
         fetched_at: snapshot.fetchedAt,
@@ -326,6 +326,15 @@ export async function writeSupabaseChartSnapshotWithConfig(config: SupabaseConfi
     const text = await response.text().catch(() => "");
     throw new Error(`Supabase chart snapshot upsert failed: HTTP ${response.status} ${text.slice(0, 300)}`);
   }
+}
+
+function providerSourceFromPayload(payload: ChartPayload): string {
+  const fetch = payload.fetch;
+  if (fetch && typeof fetch === "object" && !Array.isArray(fetch)) {
+    const provider = (fetch as Record<string, unknown>).provider;
+    if (typeof provider === "string" && provider.trim()) return provider.trim();
+  }
+  return "kis";
 }
 
 export async function chartSnapshotExpiresAt(ticker: string, fetchedAtMs = Date.now()) {
