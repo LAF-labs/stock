@@ -390,6 +390,29 @@ test("ready-looking enriched chart fast path still polls when financial enrichme
   assert.equal(stockQueryRefetchIntervalMs(fastPath, 0), 1_000);
 });
 
+test("ready-looking stale score snapshots poll while the server refresh is active", () => {
+  const staleRefreshing: ScoreQueryResult = {
+    state: "ready",
+    status: 200,
+    payload: {
+      ok: true,
+      requested_ticker: "KR:005380",
+      latest_bar_date: "2026-06-16",
+      server_cache: { state: "stale", refresh_started: true },
+    },
+    data: {
+      requested_ticker: "KR:005380",
+      symbol: "005380",
+      latest_bar_date: "2026-06-16",
+      server_cache: { state: "stale", refresh_started: true },
+    } as StockScoreResponse,
+  };
+
+  assert.equal(stockQueryShouldPoll(staleRefreshing), true);
+  assert.equal(stockQueryRefetchOnMount(staleRefreshing), "always");
+  assert.equal(stockQueryRefetchIntervalMs(staleRefreshing, 0), 1_000);
+});
+
 test("persisted stock data refetches on mount without freezing placeholder views", () => {
   const identityOnlyPartial: ScoreQueryResult = {
     state: "partial",

@@ -70,10 +70,19 @@ test("shouldRefreshMarketCapSnapshot stops US refreshes after after-hours", () =
   }), false);
 });
 
-test("shouldRefreshMarketCapSnapshot stops KR refreshes after NXT hours", () => {
+test("shouldRefreshMarketCapSnapshot refreshes stale KR snapshots shortly after NXT hours", () => {
   assert.equal(shouldRefreshMarketCapSnapshot({
     scope: "domestic",
     nowMs: Date.parse("2026-06-12T11:01:00.000Z"),
+    snapshotFetchedAt: "2026-06-12T09:30:00.000Z",
+    sessions: [{ market: "KR", state: "closed", closeAt: "2026-06-12T06:30:00.000Z" }],
+  }), true);
+});
+
+test("shouldRefreshMarketCapSnapshot stops KR refreshes after the NXT close grace window", () => {
+  assert.equal(shouldRefreshMarketCapSnapshot({
+    scope: "domestic",
+    nowMs: Date.parse("2026-06-12T13:01:00.000Z"),
     snapshotFetchedAt: "2026-06-12T09:30:00.000Z",
     sessions: [{ market: "KR", state: "closed", closeAt: "2026-06-12T06:30:00.000Z" }],
   }), false);

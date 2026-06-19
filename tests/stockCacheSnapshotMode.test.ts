@@ -39,6 +39,7 @@ const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[k
 const originalFetch = globalThis.fetch;
 const globalWithScoreCache = globalThis as typeof globalThis & {
   __stockScoreMemoryCache?: Map<string, Record<string, unknown>>;
+  __stockQuoteMemoryCache?: Map<string, Record<string, unknown>>;
 };
 
 function restoreEnv() {
@@ -52,6 +53,7 @@ function restoreEnv() {
   }
   globalThis.fetch = originalFetch;
   globalWithScoreCache.__stockScoreMemoryCache?.clear();
+  globalWithScoreCache.__stockQuoteMemoryCache?.clear();
 }
 
 function reported(asOfDate: string, raw: number, currencyCode?: string) {
@@ -784,6 +786,67 @@ test("quote cache reports background-only refresh in Vercel snapshot mode", asyn
       return true;
     }
   );
+});
+
+test("quote cache ignores fresh snapshots with zero latest price", async () => {
+  useSnapshotOnlyRuntime();
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.STOCK_API_APP_KEY = "zero-app-key";
+  process.env.STOCK_API_APP_SECRET = "zero-app-secret";
+  process.env.STOCK_API_BASE = "https://kis-zero.example.com";
+
+  const ticker = "KR:091990";
+  const nowMs = Date.now();
+  let providerCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/rest/v1/stock_quote_snapshots?")) {
+      return Response.json([
+        {
+          ticker,
+          payload: {
+            ok: true,
+            type: "quote",
+            requested_ticker: ticker,
+            market: "KR",
+            symbol: "091990",
+            latest_price: 0,
+          },
+          fetched_at: new Date(nowMs).toISOString(),
+          expires_at: new Date(nowMs + 60_000).toISOString(),
+        },
+      ]);
+    }
+    if (text.includes("/rest/v1/market_calendar?")) {
+      return Response.json([]);
+    }
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "zero-token", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      providerCalls += 1;
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "12300",
+          stck_sdpr: "12000",
+          prdy_ctrt: "2.50",
+          acml_vol: "100",
+          hts_kor_isnm: "셀트리온헬스케어",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  const result = await getStockQuote(ticker);
+
+  assert.equal(result.cache.source, "market-data");
+  assert.equal(result.payload.latest_price, 12300);
+  assert.equal(providerCalls, 1);
 });
 
 test("quote cache refreshes cold quotes from Yahoo fallback in Vercel snapshot mode", async () => {

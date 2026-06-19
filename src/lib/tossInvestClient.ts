@@ -64,6 +64,7 @@ export async function fetchTossQuote(tickerRef: string): Promise<StockPayload> {
   const [stock, price] = await Promise.all([fetchTossStock(symbol), fetchTossPrice(symbol)]);
   const currency = text(price.currency) || text(stock.currency) || (market === "KR" ? "KRW" : "USD");
   const latestPrice = decimal(price.lastPrice);
+  if (latestPrice === undefined || latestPrice <= 0) throw new Error(`${ticker} empty toss price`);
   const shares = decimal(stock.sharesOutstanding);
   const marketCap = latestPrice !== undefined && shares !== undefined ? latestPrice * shares : undefined;
   const latestDate = dateOnly(price.timestamp);

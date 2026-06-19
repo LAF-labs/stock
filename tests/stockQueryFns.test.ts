@@ -10,6 +10,7 @@ import {
   fetchStockQuote,
   fetchStockScore,
   fetchSymbols,
+  postJudgment,
   refreshQuote,
 } from "../src/lib/stockQueryFns";
 
@@ -220,4 +221,47 @@ test("symbol fetcher returns typed ready payloads", async () => {
   assert.equal(symbols.state, "ready");
   assert.equal(symbols.data.query, "ko");
   assert.equal(symbols.data.items[0].ticker, "KO");
+});
+
+test("judgment poster strips bulky score fields before sending the request body", async () => {
+  let requestBody = "";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), "/api/judgment");
+    requestBody = String(init?.body || "");
+    return Response.json({
+      ok: true,
+      judgment: {
+        headline: "균형 있게 봐야 해요",
+        body: "점수는 72.0점으로 양호해요.",
+        watch: "가격 부담 지표를 함께 확인해요.",
+        tone: "neutral",
+        model: "rule-v2",
+        promptVersion: "stock-rule-judge-v4",
+      },
+    });
+  }) as typeof fetch;
+
+  const result = await postJudgment({
+    requested_ticker: "US:AAPL",
+    market: "US",
+    symbol: "AAPL",
+    name: "Apple",
+    quality_score: 72,
+    opportunity_score: 64,
+    latest_bar_date: "2026-06-18",
+    sia_snapshot: { raw_signal: "HOLD", risk_level: "LOW" },
+    key_metrics: [{ label: "PER", value: "28.5" }],
+    valuation_rows: [{ label: "Forward PER", value: "24.1" }],
+    stock_profile: [{ label: "Sector", value: "Technology" }],
+    components: [{ key: "growth", label: "성장 흐름", score: 75, metrics: [{ label: "매출 성장률", value: "+8.2%" }] }],
+    chart_series: Array.from({ length: 500 }, (_, index) => ({ date: `2026-01-${String((index % 28) + 1).padStart(2, "0")}`, close: 100 + index })),
+    financials: { oversized: "x".repeat(80_000) },
+  });
+
+  const payload = JSON.parse(requestBody) as Record<string, unknown>;
+  assert.equal(result.state, "ready");
+  assert.equal("chart_series" in payload, false);
+  assert.equal("financials" in payload, false);
+  assert.equal(payload.symbol, "AAPL");
+  assert.ok(Buffer.byteLength(requestBody, "utf8") < 64 * 1024);
 });

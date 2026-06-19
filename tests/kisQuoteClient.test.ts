@@ -122,6 +122,32 @@ test("fetchKisQuote maps domestic KIS quote payload into public quote shape", as
   assert.equal((payload.fetch as { source?: unknown } | undefined)?.source, "market_data");
 });
 
+test("fetchKisQuote rejects domestic KIS quote payloads with zero latest price", async () => {
+  setupEnv();
+
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    if (text.includes("/oauth2/tokenP")) {
+      return Response.json({ access_token: "token-zero", expires_in: 3600 });
+    }
+    if (text.includes("/uapi/domestic-stock/v1/quotations/inquire-price")) {
+      return Response.json({
+        rt_cd: "0",
+        output: {
+          stck_prpr: "0",
+          stck_sdpr: "0",
+          prdy_ctrt: "0",
+          hts_kor_isnm: "테스트",
+          stck_bsop_date: "20260605",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${text}`);
+  };
+
+  await assert.rejects(() => fetchKisQuote("KR:091990"), /empty domestic price/);
+});
+
 test("fetchKisQuote maps US KIS quote payload into public quote shape", async () => {
   setupEnv();
 

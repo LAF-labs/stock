@@ -26,6 +26,13 @@ export function stockScorePayloadIsDurable(payload: unknown): boolean {
   return !stockScorePayloadNeedsEnrichment(payload);
 }
 
+export function stockScorePayloadIsRefreshingStale(payload: unknown): boolean {
+  const record = recordFromUnknown(payload);
+  if (!record) return false;
+  const cache = recordFromUnknown(record.server_cache);
+  return stringFromUnknown(cache?.state)?.toLowerCase() === "stale" && flagFromRecord(cache, "refresh_started");
+}
+
 export function hasUsableChartSeries(value: unknown): boolean {
   if (!Array.isArray(value)) return false;
   let usable = 0;

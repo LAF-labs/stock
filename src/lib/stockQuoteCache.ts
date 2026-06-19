@@ -65,6 +65,15 @@ function isFresh(snapshot: StoredQuoteSnapshot, nowMs: number): boolean {
   return Date.parse(snapshot.expiresAt) > nowMs;
 }
 
+function isUsableQuoteSnapshot(snapshot: StoredQuoteSnapshot): boolean {
+  return quotePayloadHasUsablePrice(snapshot.payload);
+}
+
+function quotePayloadHasUsablePrice(payload: StockPayload): boolean {
+  const price = payload.latest_price;
+  return typeof price === "number" && Number.isFinite(price) && price > 0;
+}
+
 function isServeableStale(snapshot: StoredQuoteSnapshot, nowMs: number): boolean {
   const staleExpiresAt = Date.parse(snapshot.staleExpiresAt || "");
   if (Number.isFinite(staleExpiresAt)) return staleExpiresAt > nowMs;
@@ -178,6 +187,13 @@ async function refreshQuoteSnapshot(
     }
 
     const payload = await collectLiveQuotePayload(ticker);
+    if (!quotePayloadHasUsablePrice(payload)) {
+      throw new StockDataUnavailableError({
+        kind: "quote",
+        ticker,
+        reason: options.unavailableReason || "snapshot_miss",
+      });
+    }
     const nowMs = Date.now();
     const market = payload.market === "KR" || payload.market === "US" ? payload.market : marketFromTicker(ticker);
     const { expiresAt, session } = await cacheExpiresAtForMarket(market, "quote", nowMs);
@@ -292,23 +308,25 @@ export async function getStockQuote(tickerRef: string, options: { forceRefresh?:
   let staleSource: QuoteCacheSource = "memory";
 
   const memorySnapshot = memoryCache.get(ticker);
-  if (memorySnapshot && isFresh(memorySnapshot, nowMs)) {
+  if (memorySnapshot && !isUsableQuoteSnapshot(memorySnapshot)) {
+    memoryCache.delete(ticker);
+  } else if (memorySnapshot && isFresh(memorySnapshot, nowMs)) {
     freshCandidate = memorySnapshot;
     freshSource = "memory";
   }
-  if (memorySnapshot && isServeableStale(memorySnapshot, nowMs)) {
+  if (memorySnapshot && isUsableQuoteSnapshot(memorySnapshot) && isServeableStale(memorySnapshot, nowMs)) {
     staleCandidate = memorySnapshot;
     staleSource = "memory";
   }
 
   if (!freshCandidate) {
     const dbSnapshot = await readSupabaseSnapshot(ticker);
-    if (dbSnapshot && isFresh(dbSnapshot, nowMs)) {
+    if (dbSnapshot && isUsableQuoteSnapshot(dbSnapshot) && isFresh(dbSnapshot, nowMs)) {
       memoryCache.set(ticker, dbSnapshot);
       freshCandidate = dbSnapshot;
       freshSource = "supabase";
     }
-    if (dbSnapshot && isServeableStale(dbSnapshot, nowMs)) {
+    if (dbSnapshot && isUsableQuoteSnapshot(dbSnapshot) && isServeableStale(dbSnapshot, nowMs)) {
       staleCandidate = dbSnapshot;
       staleSource = "supabase";
     }

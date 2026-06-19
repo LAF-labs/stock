@@ -1,4 +1,5 @@
 import { apiJson, apiPayloadMessage, stringFromUnknown, type ClientApiPayload } from "@/lib/clientApi";
+import { stockJudgmentRequestPayload } from "@/lib/stockJudgmentPayload";
 import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import type {
   ApiCooldown,
@@ -141,7 +142,7 @@ export async function postJudgment(payload: Record<string, unknown>, signal?: Ab
     headers: {
       "content-type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(stockJudgmentRequestPayload(payload)),
   });
   if (!response.ok || responsePayload.ok === false) throwStockQueryError(responsePayload, response.status, "judgment_failed");
   const judgment = responsePayload.judgment;

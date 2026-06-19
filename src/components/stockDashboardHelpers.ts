@@ -1,6 +1,7 @@
 import { clampScore, formatApproxKrwAmount, formatCompactUsd, formatCurrencyAmount, formatKoreanWonLarge, formatPercent, formatValue, recordEntries } from "@/lib/format";
 import { stockScoreDataFromDetailView } from "@/components/stockDisplayAdapters";
 import { displayTicker, isUsDerivativeSymbol } from "@/lib/symbolDisplay";
+export { stockJudgmentRequestPayload } from "@/lib/stockJudgmentPayload";
 import type { StockDetailViewResponse } from "@/lib/stockDetailViewTypes";
 import type { SymbolSearchItem } from "@/lib/symbolTypes";
 import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
@@ -533,31 +534,6 @@ export function metricValue(items: LabeledValue[] | undefined, label: string): s
   return formatValue(items?.find((item) => item.label === label)?.value);
 }
 
-export function stockJudgmentRequestPayload(data: StockScoreResponse): Record<string, unknown> {
-  return compactRecord({
-    requested_ticker: data.requested_ticker,
-    market: data.market,
-    symbol: data.symbol,
-    name: data.name,
-    latest_bar_date: data.latest_bar_date,
-    score: data.score,
-    quality_score: data.quality_score,
-    opportunity_score: data.opportunity_score,
-    sector: typeof data.sector === "string" ? data.sector : undefined,
-    industry: typeof data.industry === "string" ? data.industry : undefined,
-    sia_snapshot: data.sia_snapshot
-      ? compactRecord({
-          raw_signal: data.sia_snapshot.raw_signal,
-          risk_level: data.sia_snapshot.risk_level,
-        })
-      : undefined,
-    key_metrics: compactMetrics(data.key_metrics, 12),
-    valuation_rows: compactMetrics(data.valuation_rows, 8),
-    stock_profile: compactMetrics(data.stock_profile, 16),
-    components: compactComponents(data.components),
-  });
-}
-
 export function stockMarketCapDisplay(data: StockScoreResponse): MarketCapDisplay {
   const rawValue =
     data.key_metrics?.find((item) => item.label === "시가총액")?.value
@@ -675,33 +651,6 @@ function financialMoneyDisplay(value: number, data: StockScoreResponse | undefin
   const converted = typeof data.usd_krw_rate === "number" && Number.isFinite(data.usd_krw_rate) ? formatKoreanWonLarge(value * data.usd_krw_rate) : undefined;
   const source = formatCompactUsd(value);
   return converted && converted !== "-" ? `${converted} (${source})` : source;
-}
-
-function compactComponents(components: ScoreComponent[] | undefined): Array<Record<string, unknown>> | undefined {
-  if (!components?.length) return undefined;
-  return components.slice(0, 5).map((component) =>
-    compactRecord({
-      key: component.key,
-      label: component.label,
-      score: component.score,
-      metrics: compactMetrics(component.metrics, 2),
-    })
-  );
-}
-
-function compactMetrics(items: LabeledValue[] | undefined, count: number): Array<Record<string, unknown>> | undefined {
-  if (!items?.length) return undefined;
-  return items.slice(0, count).map((item) =>
-    compactRecord({
-      label: item.label,
-      value: item.value,
-      note: item.note,
-    })
-  );
-}
-
-function compactRecord<T extends Record<string, unknown>>(record: T): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 export function formatPrimaryPrice(data: StockScoreResponse, fallback = "-"): string {

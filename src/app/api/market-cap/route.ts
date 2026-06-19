@@ -7,7 +7,8 @@ import type { MarketCapScope } from "@/lib/marketCapRankingTypes";
 export const dynamic = "force-dynamic";
 
 export function readMarketCapRequestParams(url: URL): { scope: MarketCapScope; sector?: string } {
-  const scope = marketCapScopeFromParam(url.searchParams.get("scope"));
+  const scopeParam = url.searchParams.get("scope");
+  const scope = scopeParam === null ? marketCapScopeFromMarketParam(url.searchParams.get("market")) : marketCapScopeFromParam(scopeParam);
   const sector = url.searchParams.get("sector")?.trim() || undefined;
   return { scope, sector };
 }
@@ -23,4 +24,11 @@ export async function GET(request: Request) {
       staleIfErrorSeconds: 600,
     }),
   });
+}
+
+function marketCapScopeFromMarketParam(value: string | null): MarketCapScope {
+  const normalized = value?.trim().toUpperCase();
+  if (normalized === "KR" || normalized === "DOMESTIC") return "domestic";
+  if (normalized === "US" || normalized === "OVERSEAS") return "overseas";
+  return "all";
 }

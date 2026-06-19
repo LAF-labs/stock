@@ -94,6 +94,40 @@ test("fetchTossQuote maps Toss stock and price data into the public quote shape"
   assert.ok(seen.some((url) => url.includes("symbols=005930")));
 });
 
+test("fetchTossQuote rejects empty latest prices so fallback providers can run", async () => {
+  setupEnv();
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/oauth2/token")) {
+      return Response.json({ access_token: "token-empty", token_type: "Bearer", expires_in: 3600 });
+    }
+    if (url.includes("/api/v1/stocks?")) {
+      return Response.json({
+        result: [{
+          symbol: "005930",
+          name: "삼성전자",
+          market: "KOSPI",
+          currency: "KRW",
+          sharesOutstanding: "5919637922",
+        }],
+      });
+    }
+    if (url.includes("/api/v1/prices?")) {
+      return Response.json({
+        result: [{
+          symbol: "005930",
+          timestamp: "2026-06-19T09:30:00+09:00",
+          lastPrice: "0",
+          currency: "KRW",
+        }],
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  await assert.rejects(() => fetchTossQuote("KR:005930"), /empty toss price/);
+});
+
 test("fetchTossDailyChart maps Toss candles into ascending daily bars", async () => {
   setupEnv();
   globalThis.fetch = async (input) => {

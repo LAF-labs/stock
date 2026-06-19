@@ -249,6 +249,9 @@ async function fetchDomesticQuote(symbol: string): Promise<StockPayload> {
   );
   const now = new Date();
   const latestPrice = asFloat(price.stck_prpr);
+  if (latestPrice === undefined || latestPrice <= 0) {
+    throw new KisQuoteError("empty domestic price");
+  }
   const previousClose = asFloat(price.stck_sdpr) ?? asFloat(price.stck_prdy_clpr);
   const latestChange = kisPercent(price.prdy_ctrt) ?? changeFrom(latestPrice, previousClose);
   const volume = asInt(price.acml_vol);
@@ -347,7 +350,7 @@ async function fetchUsQuoteForMarket(symbol: string, market: KisUsMarket, cached
     })
   );
   const latestPrice = asFloat(detail.last);
-  if (latestPrice === undefined) {
+  if (latestPrice === undefined || latestPrice <= 0) {
     throw new KisQuoteError("empty price");
   }
 

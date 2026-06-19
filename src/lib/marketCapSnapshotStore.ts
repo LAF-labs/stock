@@ -43,6 +43,7 @@ const FRESH_MS = 60 * 60 * 1000;
 const KR_NXT_TIME_ZONE = "Asia/Seoul";
 const KR_NXT_START_SECONDS = 8 * 60 * 60;
 const KR_NXT_END_SECONDS = 20 * 60 * 60;
+const KR_NXT_CLOSE_GRACE_END_SECONDS = 22 * 60 * 60;
 const US_AFTER_HOURS_MS = 4 * 60 * 60 * 1000;
 const memoryStore = (globalThis.__marketCapSnapshotMemoryStore ??= new Map<MarketCapScope, StoredMarketCapSnapshot>());
 const inflightRefreshes = (globalThis.__marketCapSnapshotInflight ??= new Map<MarketCapScope, Promise<MarketCapDashboardSnapshot | undefined>>());
@@ -218,7 +219,7 @@ function scopeMarkets(scope: MarketCapScope): MarketCode[] {
 function isMarketCapRefreshSessionActive(session: RefreshSession | undefined, nowMs: number): boolean {
   if (!session) return false;
   if (session.state === "open") return true;
-  if (session.market === "KR") return session.state === "closed" && isWithinKoreanNxtHours(nowMs);
+  if (session.market === "KR") return session.state === "closed" && (isWithinKoreanNxtHours(nowMs) || isWithinKoreanNxtCloseGrace(session, nowMs));
   if (session.market === "US") return session.state === "closed" && isWithinUsAfterHours(session, nowMs);
   return false;
 }
@@ -226,6 +227,12 @@ function isMarketCapRefreshSessionActive(session: RefreshSession | undefined, no
 function isWithinKoreanNxtHours(nowMs: number): boolean {
   const seconds = secondsInTimeZone(nowMs, KR_NXT_TIME_ZONE);
   return seconds >= KR_NXT_START_SECONDS && seconds <= KR_NXT_END_SECONDS;
+}
+
+function isWithinKoreanNxtCloseGrace(session: RefreshSession, nowMs: number): boolean {
+  if (!session.closeAt) return false;
+  const seconds = secondsInTimeZone(nowMs, KR_NXT_TIME_ZONE);
+  return seconds > KR_NXT_END_SECONDS && seconds <= KR_NXT_CLOSE_GRACE_END_SECONDS;
 }
 
 function isWithinUsAfterHours(session: RefreshSession, nowMs: number): boolean {

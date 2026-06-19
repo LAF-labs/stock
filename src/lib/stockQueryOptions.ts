@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { STOCK_QUERY_CACHE_MAX_AGE_MS } from "@/components/QueryProvider";
 import { stockCachePolicyFreshSeconds } from "@/lib/stockCachePolicy";
-import { stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
+import { stockScorePayloadIsRefreshingStale, stockScorePayloadNeedsEnrichment } from "@/lib/stockQueryCompleteness";
 import { fetchStockDetailView, fetchStockDisplay, fetchStockQuote, fetchStockScore, fetchSymbols, fetchTechnicalScore, postJudgment } from "@/lib/stockQueryFns";
 import { stockQueryKeys } from "@/lib/stockQueryKeys";
 import { cleanTickerSymbol, resolveTickerAlias } from "@/lib/tickerRef";
@@ -169,7 +169,14 @@ export function stockQueryShouldPoll(
   if (isDisplayQueryResult(result)) return displayShouldPoll(result.data);
   if (result.state === "pending") return isPollablePending(result);
   if (result.state === "partial") return isPollablePending(result.pending);
-  if (result.state === "ready") return stockScorePayloadNeedsEnrichment(result.data) || stockScorePayloadNeedsEnrichment(result.payload);
+  if (result.state === "ready") {
+    return (
+      stockScorePayloadNeedsEnrichment(result.data) ||
+      stockScorePayloadNeedsEnrichment(result.payload) ||
+      stockScorePayloadIsRefreshingStale(result.data) ||
+      stockScorePayloadIsRefreshingStale(result.payload)
+    );
+  }
   if (result.state === "unsupported") return false;
   return false;
 }

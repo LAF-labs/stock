@@ -12,6 +12,17 @@ test("readMarketCapRequestParams accepts one scope and one sector filter", () =>
   });
 });
 
+test("readMarketCapRequestParams accepts legacy market aliases for scoped snapshots", () => {
+  assert.deepEqual(readMarketCapRequestParams(new URL("https://example.test/api/market-cap?market=KR")), {
+    scope: "domestic",
+    sector: undefined,
+  });
+  assert.deepEqual(readMarketCapRequestParams(new URL("https://example.test/api/market-cap?market=US")), {
+    scope: "overseas",
+    sector: undefined,
+  });
+});
+
 test("readMarketCapRequestParams falls back to all scope and drops blank sectors", () => {
   const params = readMarketCapRequestParams(new URL("https://example.test/api/market-cap?scope=bad&sector=%20"));
 
