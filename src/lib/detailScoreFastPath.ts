@@ -693,12 +693,11 @@ type FastPathFinancials = {
 };
 
 async function financialFastPath(
-  daily: { market: "US" | "KR"; symbol: string; requestedTicker?: string; latestPrice?: number; priceMetrics?: Record<string, unknown>; fetch?: Record<string, unknown> },
+  daily: { market: "US" | "KR"; symbol: string; requestedTicker?: string; latestPrice?: number; priceMetrics?: Record<string, unknown> },
   signals: PriceSignals,
   view: ScoreView
 ): Promise<FastPathFinancials | undefined> {
   if (view !== "detail") return undefined;
-  if (stringValue(daily.fetch?.provider) === "toss_invest") return undefined;
   if (daily.market === "US") return yahooFinancialFastPath(daily, signals);
   if (daily.market !== "KR") return undefined;
   const bundle = await withTimeout(fetchKisDomesticFinanceBundle(daily.symbol), detailFinancialFastPathTimeoutMs()).catch(() => undefined);
