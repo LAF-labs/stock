@@ -1,6 +1,9 @@
 import unittest
+from pathlib import Path
 
 import scripts.supabase_runtime_readiness as readiness
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class SupabaseRuntimeReadinessTests(unittest.TestCase):
@@ -84,6 +87,14 @@ class SupabaseRuntimeReadinessTests(unittest.TestCase):
             readiness.requests.get = original_get
 
         self.assertEqual(payload, {"ok": True, "failures": []})
+
+    def test_chart_refresh_leases_are_allowed_by_latest_migration(self):
+        sql = (ROOT / "supabase" / "migrations" / "20260623091000_allow_chart_refresh_leases.sql").read_text(encoding="utf-8")
+
+        self.assertIn("stock_refresh_leases_kind_check", sql)
+        self.assertIn("kind in ('quote', 'score', 'chart', 'fundamentals', 'judgment')", sql)
+        self.assertIn("normalized_kind not in ('quote', 'score', 'chart', 'fundamentals', 'judgment')", sql)
+        self.assertIn("if normalized_kind <> 'score' then", sql)
 
 
 if __name__ == "__main__":
