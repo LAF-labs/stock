@@ -353,7 +353,7 @@ function assertSuccessfulScorePayload(payload: StockPayload) {
 }
 
 async function publishChartSnapshot(ticker: string, config: SupabaseConfig) {
-  const existing = await getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false }).catch(() => undefined);
+  const existing = await getStockChart(ticker, { enqueueOnMiss: false, enqueueStaleRefresh: false, readOnly: true }).catch(() => undefined);
   if (existing?.cache.state === "fresh") return;
 
   const refreshed = await refreshChartSnapshot(ticker);

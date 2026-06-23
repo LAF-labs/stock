@@ -617,6 +617,67 @@ test("TypeScript snapshot worker completes chart jobs without collector when cha
   }
 });
 
+test("TypeScript snapshot worker completes cold chart jobs after inline refresh", async () => {
+  const envKeys = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY", "STOCK_YAHOO_FALLBACK"] as const;
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+  process.env.STOCK_YAHOO_FALLBACK = "1";
+
+  let leaseCalls = 0;
+  const calls: Array<{ url: string; body?: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ url, body });
+    if (url.includes("/rest/v1/stock_chart_snapshots") && init?.method !== "POST") return Response.json([]);
+    if (url.includes("/rest/v1/market_calendar")) return Response.json([]);
+    if (url.endsWith("/rest/v1/rpc/acquire_stock_refresh_lease")) {
+      leaseCalls += 1;
+      return Response.json({ acquired: leaseCalls === 1, lease_until: new Date(Date.now() + 45_000).toISOString(), locked_by: "test" });
+    }
+    if (url.includes("query1.finance.yahoo.com/v8/finance/chart/FASTQUEUE")) {
+      return Response.json({
+        chart: {
+          result: [
+            {
+              meta: { currency: "USD", exchangeName: "NMS", regularMarketPrice: 12.5, chartPreviousClose: 11.5 },
+              timestamp: [1780531200, 1780617600],
+              indicators: { quote: [{ open: [11, 12], high: [12, 13], low: [10, 11], close: [11.5, 12.5], volume: [1000, 1100] }] },
+            },
+          ],
+          error: null,
+        },
+      });
+    }
+    if (url.includes("/rest/v1/stock_chart_snapshots") && init?.method === "POST") return new Response(null, { status: 201 });
+    if (url.endsWith("/rest/v1/rpc/complete_stock_refresh_job")) return new Response(null, { status: 204 });
+    if (url.endsWith("/rest/v1/rpc/fail_stock_refresh_job")) return new Response(null, { status: 204 });
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const options = parseOptions(["--drain-queue", "--kind", "chart", "--worker-id", "worker-chart"], {});
+    const row = await publishQueueJob(
+      { id: "job-chart-cold", kind: "chart", market: "US", symbol: "FASTQUEUE", attempts: 1 },
+      { url: "https://example.supabase.co", key: "service-role-key" },
+      options
+    );
+
+    assert.equal(row.status, "succeeded");
+    assert.equal(leaseCalls, 1);
+    assert.ok(calls.some((call) => call.url.includes("/rest/v1/rpc/complete_stock_refresh_job")));
+    assert.equal(calls.some((call) => call.url.includes("/rest/v1/rpc/fail_stock_refresh_job")), false);
+  } finally {
+    for (const key of envKeys) {
+      const value = originalEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("TypeScript snapshot worker keeps retry and permanent failure contracts", () => {
   assert.equal(retryAfterSeconds({ attempts: 1 }), 120);
   assert.equal(retryAfterSeconds({ attempts: 20 }), 3600);

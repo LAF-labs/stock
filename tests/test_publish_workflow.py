@@ -88,7 +88,7 @@ class PublishWorkflowTests(unittest.TestCase):
             quote_block.index("Drain quote refresh queue and optionally warm quote snapshots"),
         )
 
-    def test_quote_worker_default_drain_capacity_covers_planned_and_stale_enqueues(self):
+    def test_quote_worker_default_drain_capacity_exceeds_planned_and_stale_enqueues(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         quote_block = text.split("\n  quote:", 1)[1].split("\n  score:", 1)[0]
 
@@ -96,7 +96,7 @@ class PublishWorkflowTests(unittest.TestCase):
         planned_limit = workflow_default_int(quote_block, "STOCK_REFRESH_PLANNER_QUOTE_LIMIT")
         stale_limit = workflow_default_int(quote_block, "STOCK_STALE_QUOTE_REFRESH_LIMIT")
 
-        self.assertGreaterEqual(queue_limit, planned_limit + stale_limit)
+        self.assertGreater(queue_limit, planned_limit + stale_limit)
 
     def test_score_worker_enqueues_stale_snapshots_before_queue_check(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -112,7 +112,7 @@ class PublishWorkflowTests(unittest.TestCase):
             score_block.index("Check due legacy score refresh jobs"),
         )
 
-    def test_score_worker_default_drain_capacity_covers_planned_and_stale_enqueues(self):
+    def test_score_worker_default_drain_capacity_exceeds_planned_and_stale_enqueues(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         score_block = text.split("\n  score:", 1)[1]
 
@@ -120,7 +120,16 @@ class PublishWorkflowTests(unittest.TestCase):
         planned_limit = workflow_default_int(score_block, "STOCK_REFRESH_PLANNER_SCORE_LIMIT")
         stale_limit = workflow_default_int(score_block, "STOCK_STALE_SCORE_REFRESH_LIMIT")
 
-        self.assertGreaterEqual(queue_limit, planned_limit + stale_limit)
+        self.assertGreater(queue_limit, planned_limit + stale_limit)
+
+    def test_chart_worker_default_drain_capacity_exceeds_planned_enqueues(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        chart_block = workflow_job_block(text, "chart")
+
+        queue_limit = workflow_default_int(chart_block, "STOCK_CHART_SNAPSHOT_QUEUE_LIMIT")
+        planned_limit = workflow_default_int(chart_block, "STOCK_REFRESH_PLANNER_CHART_LIMIT")
+
+        self.assertGreater(queue_limit, planned_limit)
 
     def test_score_queue_worker_records_row_failures_without_failing_workflow(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
