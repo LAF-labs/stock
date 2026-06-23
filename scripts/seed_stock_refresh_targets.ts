@@ -194,6 +194,7 @@ function refreshTargetInstrumentType({
   name: string;
   sourceInstrumentType: string;
 }): string {
+  if (market === "KR" && !/^\d{6}$/.test(symbol)) return "UNSUPPORTED_KR_PRODUCT";
   if (market === "KR" && exchange === "KONEX") return "KONEX_STOCK";
   if (isPreferredShareName(symbol, name)) return "PREFERRED_STOCK";
   if (sourceInstrumentType === "ETF" || isEtfLikeName(name)) return "ETF";
