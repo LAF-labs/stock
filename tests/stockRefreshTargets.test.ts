@@ -76,9 +76,10 @@ test("stock refresh target seed protects the queue from product-like rows miscla
     koreanName: "SK시그넷",
   });
 
-  assert.equal(kodex.instrument_type, "ETF");
-  assert.equal(kodex.tier, "etf");
-  assert.equal(kodex.quote_interval_seconds, stockRefreshTargetIntervals.etf.quote);
+  assert.equal(kodex.instrument_type, "UNSUPPORTED_KR_PRODUCT");
+  assert.equal(kodex.enabled, false);
+  assert.equal(kodex.tier, "inactive");
+  assert.equal(kodex.quote_interval_seconds, null);
   assert.equal(kodex.score_detail_interval_seconds, null);
   assert.equal(kodex.score_compare_interval_seconds, null);
   assert.equal(kodex.score_technical_interval_seconds, null);
@@ -91,6 +92,31 @@ test("stock refresh target seed protects the queue from product-like rows miscla
   assert.equal(konex.instrument_type, "KONEX_STOCK");
   assert.equal(konex.tier, "etf");
   assert.equal(konex.score_detail_interval_seconds, null);
+});
+
+test("stock refresh target seed disables unsupported alphanumeric KR product codes", () => {
+  const fund = buildRefreshTargetRow({
+    market: "KR",
+    ticker: "F77200027",
+    exchange: "KOSPI",
+    instrumentType: "STOCK",
+    koreanName: "한국밸류코리아기업가치포커스2호C-F",
+  });
+  const warrant = buildRefreshTargetRow({
+    market: "KR",
+    ticker: "J0036221D",
+    exchange: "KOSPI",
+    instrumentType: "STOCK",
+    koreanName: "KG모빌리티 122WR",
+  });
+
+  assert.equal(fund.instrument_type, "UNSUPPORTED_KR_PRODUCT");
+  assert.equal(fund.enabled, false);
+  assert.equal(fund.quote_interval_seconds, null);
+  assert.equal(fund.score_detail_interval_seconds, null);
+  assert.equal(fund.chart_interval_seconds, null);
+  assert.equal(warrant.instrument_type, "UNSUPPORTED_KR_PRODUCT");
+  assert.equal(warrant.enabled, false);
 });
 
 test("stock refresh target seed dedupes normalized symbol rows", () => {
@@ -141,6 +167,17 @@ test("refresh target cleanup migration turns product-like targets into quote-onl
   assert.match(migration, /chart_interval_seconds = null/i);
   assert.match(migration, /delete from public\.stock_refresh_jobs/i);
   assert.match(migration, /status in \('queued', 'running'\)/i);
+});
+
+test("unsupported KR product cleanup disables alphanumeric targets and removes bad quote snapshots", () => {
+  const migration = readFileSync("supabase/migrations/20260623093000_disable_unsupported_kr_refresh_targets.sql", "utf8");
+
+  assert.match(migration, /symbol !~ '\^\[0-9\]\{6\}\$'/i);
+  assert.match(migration, /enabled = false/i);
+  assert.match(migration, /UNSUPPORTED_KR_PRODUCT/i);
+  assert.match(migration, /delete from public\.stock_refresh_jobs/i);
+  assert.match(migration, /delete from public\.stock_quote_snapshots/i);
+  assert.match(migration, /invalid_ticker/i);
 });
 
 test("provider-empty cleanup migration dead-letters terminal no-data refresh jobs", () => {
