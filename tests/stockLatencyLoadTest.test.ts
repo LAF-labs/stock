@@ -48,7 +48,7 @@ test("stock latency load test fails non-2xx responses", async () => {
   assert.equal(report.rows.every((row: { ok: boolean }) => row.ok === false), true);
 });
 
-test("stock latency load test fails when p95 exceeds the configured budget", async () => {
+test("stock latency load test reports p95 budget overruns without failing by default", async () => {
   const report = await runStockLatencyLoadTest(
     { baseUrl: "https://stock.example", iterations: 1, maxP95Ms: 1 },
     async () => {
@@ -57,9 +57,25 @@ test("stock latency load test fails when p95 exceeds the configured budget", asy
     }
   );
 
-  assert.equal(report.ok, false);
+  assert.equal(report.ok, true);
   assert.equal(report.latency_budget_ok, false);
   assert.equal(report.latency_budget?.max_p95_ms, 1);
+  assert.equal(report.latency_budget?.enforced, false);
+});
+
+test("stock latency load test can enforce the p95 budget", async () => {
+  const report = await runStockLatencyLoadTest(
+    { baseUrl: "https://stock.example", iterations: 1, maxP95Ms: 1, failOnLatencyBudget: true },
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return Response.json({ ok: true, parts: { score: { state: "fresh" } } });
+    }
+  );
+
+  assert.equal(report.ok, false);
+  assert.equal(report.hard_ok, true);
+  assert.equal(report.latency_budget_ok, false);
+  assert.equal(report.latency_budget?.enforced, true);
 });
 
 test("stock latency load test can exclude warmup iterations from latency budget", async () => {
@@ -77,4 +93,21 @@ test("stock latency load test can exclude warmup iterations from latency budget"
   assert.equal(report.latency_budget_ok, true);
   assert.equal(report.measured_requests, 5);
   assert.equal(report.warmup_requests, 5);
+});
+
+test("stock latency load test excludes warmup HTTP errors from hard status", async () => {
+  let call = 0;
+  const report = await runStockLatencyLoadTest(
+    { baseUrl: "https://stock.example", iterations: 2, warmupIterations: 1 },
+    async () => {
+      call += 1;
+      if (call <= 5) return Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
+      return Response.json({ ok: true, parts: { score: { state: "fresh" } } });
+    }
+  );
+
+  assert.equal(report.ok, true);
+  assert.equal(report.hard_ok, true);
+  assert.equal(report.rows.slice(0, 5).every((row: { ok: boolean }) => row.ok === false), true);
+  assert.equal(report.measured_requests, 5);
 });
