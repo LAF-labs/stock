@@ -1,5 +1,6 @@
 import { fetchWithTimeout, supabaseAdminConfig, supabaseHeaders, type SupabaseConfig } from "@/lib/supabaseRest";
 import { parseTickerRef } from "@/lib/tickerRef";
+import { fetchRefreshTargetRows, scoreEnabledTargetTickers } from "./stock_operations_report";
 import { loadLocalEnvFiles } from "./localEnv";
 
 type ScoreView = "detail" | "compare" | "technical";
@@ -69,12 +70,26 @@ export function parseOptions(argv: string[], env: Record<string, string | undefi
 export async function enqueueStaleScoreSnapshots(config: SupabaseConfig, options: Options, now = new Date()): Promise<EnqueueSummary> {
   const cutoff = new Date(now.getTime() - options.staleHours * 3_600_000).toISOString();
   const nowIso = now.toISOString();
-  const staleRows = await fetchStaleScoreRows(config, options, cutoff, nowIso);
+  const [staleRows, targetRows] = await Promise.all([
+    fetchStaleScoreRows(config, options, cutoff, nowIso),
+    fetchRefreshTargetRows({ url: config.url, key: config.key, timeoutMs: options.timeoutMs }),
+  ]);
+  const scoreEnabledTickers = scoreEnabledTargetTickers(targetRows);
   const rows: Array<Record<string, unknown>> = [];
   let queued = 0;
   let skipped = 0;
 
   for (const row of staleRows) {
+    if (!isScoreEnabledRow(row, scoreEnabledTickers)) {
+      rows.push({
+        ticker: stringValue(row.ticker),
+        view: scoreView(row.view_mode),
+        status: "ignored",
+        reason: "score target disabled",
+      });
+      skipped += 1;
+      continue;
+    }
     const result = await enqueueStaleRow(config, row, options);
     rows.push(result);
     if (result.status === "queued") queued += 1;
@@ -82,7 +97,7 @@ export async function enqueueStaleScoreSnapshots(config: SupabaseConfig, options
   }
 
   return {
-    ok: rows.every((row) => row.status === "queued" || row.status === "dry_run"),
+    ok: rows.every((row) => row.status === "queued" || row.status === "dry_run" || row.status === "ignored"),
     dry_run: options.dryRun,
     cutoff,
     stale_rows: staleRows.length,
@@ -90,6 +105,16 @@ export async function enqueueStaleScoreSnapshots(config: SupabaseConfig, options
     skipped,
     rows,
   };
+}
+
+function isScoreEnabledRow(row: StaleScoreRow, scoreEnabledTickers: Set<string>) {
+  const ticker = stringValue(row.ticker);
+  if (!ticker) return false;
+  try {
+    return scoreEnabledTickers.has(parseTickerRef(ticker).ticker);
+  } catch {
+    return false;
+  }
 }
 
 async function fetchStaleScoreRows(config: SupabaseConfig, options: Options, cutoff: string, nowIso: string): Promise<StaleScoreRow[]> {

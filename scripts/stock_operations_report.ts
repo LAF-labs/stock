@@ -360,6 +360,32 @@ export function summarizeRefreshTargets(rows: JsonRecord[]) {
   };
 }
 
+export function scoreEnabledTargetTickers(rows: JsonRecord[]) {
+  const tickers = new Set<string>();
+  for (const row of rows) {
+    if (row.enabled !== true) continue;
+    if (
+      intValue(row.score_detail_interval_seconds) <= 0
+      && intValue(row.score_compare_interval_seconds) <= 0
+      && intValue(row.score_technical_interval_seconds) <= 0
+    ) {
+      continue;
+    }
+    const market = stringValue(row.market);
+    const symbol = stringValue(row.symbol);
+    if (market && symbol) tickers.add(`${market}:${symbol}`);
+  }
+  return tickers;
+}
+
+export function filterScoreRowsForEnabledTargets(scoreRows: JsonRecord[], targetRows: JsonRecord[]) {
+  const enabledTickers = scoreEnabledTargetTickers(targetRows);
+  return scoreRows.filter((row) => {
+    const ticker = stringValue(row.ticker);
+    return ticker !== undefined && enabledTickers.has(ticker);
+  });
+}
+
 export function summarizeMarketCalendar(rows: JsonRecord[], expectedDays = 30) {
   const byMarket: Record<string, { rows: number; open_days: number; last_trade_date: string | null }> = {};
   for (const row of rows) {
@@ -412,12 +438,13 @@ export async function fetchSupabaseReport(
   ]);
   const generatedAt = new Date();
   generatedAt.setMilliseconds(0);
+  const scoreRowsForReport = filterScoreRowsForEnabledTargets(scoreRows, targetRows);
   return {
     ok: true,
     generated_at: generatedAt.toISOString().replace(".000Z", "+00:00"),
     refresh_queue: summarizeQueueRows(refreshQueueRows, generatedAt, deadJobRows),
     score_snapshots: isRecord(rawOperations) && isRecord(rawOperations.score_snapshots) ? rawOperations.score_snapshots : {},
-    score_calibration: summarizeScoreSnapshots(scoreRows, expectedModelVersion, generatedAt, staleAfterHours),
+    score_calibration: summarizeScoreSnapshots(scoreRowsForReport, expectedModelVersion, generatedAt, staleAfterHours),
     quote_freshness: summarizeQuoteSnapshots(quoteRows, generatedAt),
     industry_benchmarks: summarizeIndustryBenchmarks(benchmarkRows, generatedAt),
     refresh_targets: summarizeRefreshTargets(targetRows),
