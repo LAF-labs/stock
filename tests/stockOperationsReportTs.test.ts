@@ -440,6 +440,44 @@ test("TypeScript operations report fetches Supabase report through REST only", a
   }
 });
 
+test("TypeScript operations report retries transient Supabase failures", async () => {
+  const attempts = new Map<string, number>();
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    const url = String(input);
+    const attempt = (attempts.get(url) || 0) + 1;
+    attempts.set(url, attempt);
+
+    if (url.includes("/rest/v1/rpc/stock_operations_report")) {
+      if (attempt === 1) return new Response("web server down", { status: 521 });
+      return jsonResponse({ refresh_queue: [{ kind: "score", status: "queued", jobs: 1 }] });
+    }
+    if (url.includes("/rest/v1/stock_score_snapshots?")) {
+      if (attempt === 1) return new Response("bad gateway", { status: 502 });
+      return jsonResponse([scoreRow("US:NVDA", 88, 88, 70, 0.9, "2026-06-05T23:00:00+00:00")]);
+    }
+    if (url.includes("/rest/v1/stock_quote_snapshots?")) return jsonResponse([]);
+    if (url.includes("/rest/v1/stock_industry_benchmarks?")) return jsonResponse([]);
+    if (url.includes("/rest/v1/stock_refresh_targets?")) {
+      return jsonResponse([{ market: "US", symbol: "NVDA", instrument_type: "STOCK", enabled: true, score_detail_interval_seconds: 604800 }]);
+    }
+    if (url.includes("/rest/v1/stock_refresh_jobs?")) return jsonResponse([]);
+    if (url.includes("/rest/v1/market_calendar?")) return jsonResponse([]);
+    return jsonResponse({ error: "unexpected" }, 404);
+  };
+
+  try {
+    const payload = await fetchSupabaseReport({ url: "https://example.supabase.co", key: "service-role-key", timeoutMs: 9000 }, 50, 24);
+
+    assert.equal(payload.refresh_queue.queued_jobs, 1);
+    assert.equal(payload.score_calibration.total_snapshots, 1);
+    assert.equal([...attempts].filter(([url]) => url.includes("/rest/v1/rpc/stock_operations_report"))[0][1], 2);
+    assert.equal([...attempts].filter(([url]) => url.includes("/rest/v1/stock_score_snapshots?"))[0][1], 2);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("TypeScript operations option parser keeps threshold contract", () => {
   const options = parseOperationsOptions([
     "--json",

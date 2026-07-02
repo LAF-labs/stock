@@ -3,10 +3,12 @@ from pathlib import Path
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.sync_external_industry_benchmarks import (
     benchmark_expires_at,
     build_finviz_benchmark_rows,
+    delete_expired_finviz_benchmark_rows,
     finviz_rows_from_existing_benchmarks,
     fetch_text_with_cache,
     parse_finviz_group_rows,
@@ -232,6 +234,29 @@ class FinvizIndustryBenchmarkTests(unittest.TestCase):
         )
 
         self.assertEqual(rows[0]["pe"], 46.62)
+
+    def test_delete_expired_finviz_benchmark_rows_prunes_only_expired_finviz_rows(self):
+        class Response:
+            status_code = 204
+            text = ""
+            headers = {"Content-Range": "*/42"}
+
+        with patch.dict(os.environ, {"SUPABASE_URL": "https://example.supabase.co", "SUPABASE_SERVICE_ROLE_KEY": "service-role-key"}):
+            with patch("requests.delete", return_value=Response()) as delete:
+                count = delete_expired_finviz_benchmark_rows(
+                    False,
+                    now=datetime(2026, 7, 2, 0, 0, tzinfo=timezone.utc),
+                    timeout_seconds=12,
+                )
+
+        self.assertEqual(count, 42)
+        _args, kwargs = delete.call_args
+        self.assertEqual(kwargs["params"], {
+            "source": "eq.finviz_industry",
+            "expires_at": "lte.2026-07-02T00:00:00+00:00",
+        })
+        self.assertEqual(kwargs["timeout"], 12)
+        self.assertEqual(kwargs["headers"]["Prefer"], "return=minimal,count=exact")
 
 
 if __name__ == "__main__":
