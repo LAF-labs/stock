@@ -393,6 +393,7 @@ test("TypeScript operations report fetches Supabase report through REST only", a
       return jsonResponse([
         scoreRow("US:NVDA", 88, 88, 70, 0.9, "2026-06-05T23:00:00+00:00"),
         technicalRow("US:NVDA", true, "2026-06-05T23:05:00+00:00", "2026-06-06T02:00:00+00:00"),
+        scoreRow("US:TQQQ", 67.9, 67.9, 66.2, 0.349, "2026-06-05T23:06:00+00:00"),
       ]);
     }
     if (url.includes("/rest/v1/stock_quote_snapshots?")) {
@@ -404,6 +405,7 @@ test("TypeScript operations report fetches Supabase report through REST only", a
     if (url.includes("/rest/v1/stock_refresh_targets?")) {
       return jsonResponse([
         { market: "US", symbol: "NVDA", tier: "cold_stock", instrument_type: "STOCK", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: 604800 },
+        { market: "US", symbol: "TQQQ", tier: "etf", instrument_type: "ETF", enabled: true, quote_interval_seconds: 86400, score_detail_interval_seconds: null },
       ]);
     }
     if (url.includes("/rest/v1/stock_refresh_jobs?")) {
@@ -422,9 +424,11 @@ test("TypeScript operations report fetches Supabase report through REST only", a
     assert.equal(payload.refresh_queue.queued_jobs, 2);
     assert.equal(payload.score_calibration.total_snapshots, 2);
     assert.equal(payload.score_calibration.technical_snapshots, 1);
+    assert.equal(payload.score_calibration.low_confidence_high_score_count, 0);
     assert.equal(payload.quote_freshness.total_snapshots, 1);
     assert.equal(payload.industry_benchmarks.total_rows, 1);
-    assert.equal(payload.refresh_targets.total_targets, 1);
+    assert.equal(payload.refresh_targets.total_targets, 2);
+    assert.equal(payload.refresh_targets.score_enabled_targets, 1);
     assert.equal(payload.market_calendar.total_rows, 1);
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].url, "https://example.supabase.co/rest/v1/rpc/stock_operations_report");
