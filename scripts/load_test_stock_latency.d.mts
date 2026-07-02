@@ -12,7 +12,8 @@ export function runStockLatencyLoadTest(
   measured_requests: number;
   p50_ms: number | null;
   p95_ms: number | null;
+  hard_ok: boolean;
   latency_budget_ok: boolean;
-  latency_budget?: { max_p95_ms: number };
+  latency_budget?: { max_p95_ms: number; enforced: boolean };
   rows: Array<{ ok: boolean }>;
 }>;

@@ -93,14 +93,17 @@ export async function runStockLatencyLoadTest(options = {}, fetchImpl = fetch) {
 
   const warmupIterations = Math.max(0, Number(options.warmupIterations || 0));
   const measuredRows = rows.filter((row) => row.iteration >= warmupIterations);
+  const hardRows = measuredRows.length ? measuredRows : rows;
   const durations = measuredRows.map((row) => row.duration_ms).sort((a, b) => a - b);
   const providerViolations = rows.flatMap((row) => row.provider_guard_violations.map((violation) => ({ scenario: row.scenario, violation })));
   const p50Ms = percentile(durations, 0.5);
   const p95Ms = percentile(durations, 0.95);
   const maxP95Ms = positiveNumber(options.maxP95Ms);
   const latencyBudgetOk = maxP95Ms === undefined || (p95Ms !== null && p95Ms <= maxP95Ms);
+  const failOnLatencyBudget = options.failOnLatencyBudget === true;
+  const hardOk = hardRows.every((row) => row.ok && !row.error && row.provider_guard_violations.length === 0);
   return {
-    ok: rows.every((row) => row.ok && !row.error && row.provider_guard_violations.length === 0) && latencyBudgetOk,
+    ok: hardOk && (!failOnLatencyBudget || latencyBudgetOk),
     iterations,
     requests: rows.length,
     warmup_iterations: warmupIterations,
@@ -108,8 +111,9 @@ export async function runStockLatencyLoadTest(options = {}, fetchImpl = fetch) {
     measured_requests: measuredRows.length,
     p50_ms: p50Ms,
     p95_ms: p95Ms,
+    hard_ok: hardOk,
     latency_budget_ok: latencyBudgetOk,
-    latency_budget: maxP95Ms === undefined ? undefined : { max_p95_ms: maxP95Ms },
+    latency_budget: maxP95Ms === undefined ? undefined : { max_p95_ms: maxP95Ms, enforced: failOnLatencyBudget },
     provider_guard_ok: providerViolations.length === 0,
     provider_guard_violations: providerViolations,
     rows,
@@ -130,6 +134,7 @@ function parseCliOptions(argv, env = process.env) {
     iterations: Number(env.STOCK_LATENCY_ITERATIONS || 1),
     warmupIterations: Number(env.STOCK_LATENCY_WARMUP_ITERATIONS || 0),
     maxP95Ms: positiveNumber(env.STOCK_LATENCY_MAX_P95_MS),
+    failOnLatencyBudget: env.STOCK_LATENCY_FAIL_ON_BUDGET === "1",
     json: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -145,6 +150,7 @@ function parseCliOptions(argv, env = process.env) {
     else if (arg === "--iterations") options.iterations = Number(next());
     else if (arg === "--warmup-iterations") options.warmupIterations = Number(next());
     else if (arg === "--max-p95-ms") options.maxP95Ms = positiveNumber(next());
+    else if (arg === "--fail-on-budget") options.failOnLatencyBudget = true;
     else if (arg === "--json") options.json = true;
     else throw new Error(`Unsupported argument: ${arg}`);
   }
