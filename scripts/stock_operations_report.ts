@@ -650,7 +650,7 @@ export async function fetchMarketCalendarRows(config: SupabaseReportConfig, days
 }
 
 export async function postSupabaseRpc(config: SupabaseReportConfig, name: string, body: JsonRecord) {
-  const response = await fetchWithTimeout(
+  const response = await fetchSupabaseWithRetry(
     `${trimUrl(config.url)}/rest/v1/rpc/${name}`,
     {
       method: "POST",
@@ -669,7 +669,7 @@ export async function postSupabaseRpc(config: SupabaseReportConfig, name: string
 
 async function fetchRows(config: SupabaseReportConfig, table: string, params: Record<string, string>) {
   const query = new URLSearchParams(params);
-  const response = await fetchWithTimeout(
+  const response = await fetchSupabaseWithRetry(
     `${trimUrl(config.url)}/rest/v1/${table}?${query.toString()}`,
     { headers: supabaseHeaders(config.key) },
     config.timeoutMs
@@ -687,7 +687,7 @@ async function fetchPagedRows(config: SupabaseReportConfig, table: string, param
   const rows: JsonRecord[] = [];
   for (let offset = 0; offset < maxRows; offset += pageSize) {
     const query = new URLSearchParams(params);
-    const response = await fetchWithTimeout(
+    const response = await fetchSupabaseWithRetry(
       `${trimUrl(config.url)}/rest/v1/${table}?${query.toString()}`,
       {
         headers: {
@@ -709,6 +709,25 @@ async function fetchPagedRows(config: SupabaseReportConfig, table: string, param
     if (pageRows.length < pageSize) break;
   }
   return rows;
+}
+
+async function fetchSupabaseWithRetry(url: string, init: RequestInit, timeoutMs: number) {
+  const attempts = 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(url, init, timeoutMs);
+      if (!retryableSupabaseStatus(response.status) || attempt === attempts - 1) return response;
+      await response.text().catch(() => "");
+    } catch (error) {
+      if (attempt === attempts - 1) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  }
+  throw new Error("Supabase request retry exhausted.");
+}
+
+function retryableSupabaseStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
 }
 
 export function supabaseReportConfig(options: OperationsOptions): SupabaseReportConfig {

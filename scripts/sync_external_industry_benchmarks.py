@@ -333,6 +333,33 @@ def upsert_rows(rows: list[dict[str, Any]], batch_size: int, dry_run: bool) -> i
     return total
 
 
+def delete_expired_finviz_benchmark_rows(dry_run: bool, now: datetime | None = None, timeout_seconds: int = 30) -> int | None:
+    if dry_run:
+        return None
+
+    url, key = supabase_write_config()
+    import requests
+
+    now_ts = now or datetime.now(timezone.utc)
+    if now_ts.tzinfo is None:
+        now_ts = now_ts.replace(tzinfo=timezone.utc)
+    response = requests.delete(
+        f"{url}/rest/v1/{BENCHMARK_TABLE}",
+        params={
+            "source": f"eq.{FINVIZ_SOURCE}",
+            "expires_at": f"lte.{now_ts.astimezone(timezone.utc).isoformat()}",
+        },
+        timeout=timeout_seconds,
+        headers={
+            **supabase_headers(key),
+            "Prefer": "return=minimal,count=exact",
+        },
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Supabase expired benchmark prune failed: HTTP {response.status_code} {response.text[:1000]}")
+    return response_count(response)
+
+
 def fetch_existing_finviz_benchmark_rows(timeout_seconds: int = 30) -> list[dict[str, Any]]:
     url, key = supabase_write_config()
     import requests
@@ -352,6 +379,14 @@ def fetch_existing_finviz_benchmark_rows(timeout_seconds: int = 30) -> list[dict
         raise RuntimeError(f"Supabase benchmark fallback query failed: HTTP {response.status_code} {response.text[:1000]}")
     rows = response.json()
     return rows if isinstance(rows, list) else []
+
+
+def response_count(response: Any) -> int | None:
+    content_range = response.headers.get("Content-Range") or response.headers.get("content-range")
+    if not content_range or "/" not in content_range:
+        return None
+    total = content_range.rsplit("/", 1)[1]
+    return int(total) if total.isdigit() else None
 
 
 def canonical_names(provider_sector: str, provider_group: str) -> tuple[str, str, float]:
@@ -572,6 +607,7 @@ def main() -> int:
             raw_source = "existing_finviz_benchmark_fallback"
     benchmark_rows = build_finviz_benchmark_rows(finviz_rows, args.as_of_date)
     upserted = upsert_rows(benchmark_rows, args.batch_size, args.dry_run)
+    expired_pruned = delete_expired_finviz_benchmark_rows(args.dry_run)
     print(
         json.dumps(
             {
@@ -581,6 +617,7 @@ def main() -> int:
                 "raw_groups": len(finviz_rows),
                 "benchmark_rows": len(benchmark_rows),
                 "upserted": upserted,
+                "expired_pruned": expired_pruned,
                 "dry_run": args.dry_run,
             },
             ensure_ascii=False,
